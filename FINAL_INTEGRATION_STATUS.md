@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 11/11 Tablas Principales ✅
+### Base de Datos: 12/12 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -17,8 +17,9 @@
 | **Metas** | 20+ | GoalsScreen.js | ✅ Completo |
 | **Marketing Posts** | 25+ | MarketingPostsScreen.js | ✅ Completo |
 | **Marketing Post Likes** | 12+ | (Integrado en Posts) | ✅ Completo |
+| **Marketing Direct Messages** | 22+ | MarketingDirectMessagesScreen.js | ✅ Completo |
 
-**Total:** 201+ funciones CRUD implementadas
+**Total:** 223+ funciones CRUD implementadas
 
 ---
 
@@ -455,9 +456,102 @@ const { data: topPosts } = await db.marketingPostLikes.getTopLikedPosts(10, star
 
 ---
 
+### 1️⃣2️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
+
+**Tabla:** `public.marketing_direct_messages`
+
+**Características:**
+- ✅ Mensajes directos de marketing a clientes específicos
+- ✅ Relación con tabla `clientes` para targeting preciso
+- ✅ Estados de entrega (pending_sync, delivered, failed)
+- ✅ Tipos de contenido (post, announcement, promotion, reminder)
+- ✅ Soporte para multimedia (media_url, media_kind)
+- ✅ Tracking de fechas de entrega
+- ✅ Autor del mensaje (created_by)
+- ✅ Información de cliente (nombre, teléfono)
+- ✅ Envío masivo (bulk creation)
+- ✅ Estadísticas de campañas
+- ✅ Tasas de entrega
+
+**Funciones principales:**
+```javascript
+db.marketingDirectMessages.getAll()
+db.marketingDirectMessages.getByStatus(status)
+db.marketingDirectMessages.getPendingSync()
+db.marketingDirectMessages.getDelivered()
+db.marketingDirectMessages.getByClient(clientId)
+db.marketingDirectMessages.getByCreator(creatorId)
+db.marketingDirectMessages.getByContentType(contentType)
+db.marketingDirectMessages.getWithMedia()
+db.marketingDirectMessages.search(query)
+db.marketingDirectMessages.create(data)
+db.marketingDirectMessages.createBulk(messages)
+db.marketingDirectMessages.update(id, data)
+db.marketingDirectMessages.markAsDelivered(id)
+db.marketingDirectMessages.markAsFailed(id)
+db.marketingDirectMessages.markBulkAsDelivered(ids)
+db.marketingDirectMessages.delete(id)
+db.marketingDirectMessages.deleteByClient(clientId)
+db.marketingDirectMessages.getRecent(limit)
+db.marketingDirectMessages.getByDateRange(start, end)
+db.marketingDirectMessages.getDeliveredInRange(start, end)
+db.marketingDirectMessages.getEstadisticas()
+db.marketingDirectMessages.getCampaignStats(start, end, creatorId)
+```
+
+**Pantalla:** `MarketingDirectMessagesScreen.js`
+- Dashboard con estadísticas de entrega (total, entregados, pendientes, fallidos, tasa de entrega)
+- Visualización de multimedia (imágenes y videos)
+- Filtros por estado y tipo de contenido
+- Búsqueda por contenido, nombre o teléfono de cliente
+- Acciones rápidas (marcar como entregado/fallido)
+- Información de cliente (nombre, teléfono) con iconos
+- Tracking de fecha de creación y entrega
+- Pull to refresh
+
+**Casos de uso:**
+```javascript
+// Crear mensaje directo a un cliente
+const { data } = await db.marketingDirectMessages.create({
+  client_id: 'uuid-del-cliente',
+  client_name: 'Juan Pérez',
+  client_phone: '+1234567890',
+  content: 'Hola Juan, tenemos una promoción especial para ti!',
+  content_type: 'promotion',
+  created_by: 'uuid-del-admin',
+  created_by_name: 'Admin',
+});
+
+// Crear mensajes masivos (campaña)
+const mensajes = clientesVIP.map(cliente => ({
+  client_id: cliente.id,
+  client_name: cliente.nombre,
+  client_phone: cliente.telefono,
+  content: 'Eres cliente VIP! Disfruta 20% de descuento',
+  content_type: 'promotion',
+  created_by: adminId,
+  created_by_name: 'Marketing Team',
+}));
+await db.marketingDirectMessages.createBulk(mensajes);
+
+// Marcar múltiples mensajes como entregados
+const ids = [1, 2, 3, 4, 5];
+await db.marketingDirectMessages.markBulkAsDelivered(ids);
+
+// Obtener estadísticas de campaña
+const { data: stats } = await db.marketingDirectMessages.getCampaignStats(
+  '2026-05-01',
+  '2026-05-31',
+  adminId
+);
+// Retorna: { totalEnviados, entregados, fallidos, pendientes, clientesAlcanzados, tasaExito }
+```
+
+---
+
 ## 📱 Pantallas Implementadas
 
-### App Salón (9 pantallas funcionales)
+### App Salón (10 pantallas funcionales)
 
 1. **AppointmentsScreen.js** ✅
    - Gestión completa de citas
@@ -509,6 +603,13 @@ const { data: topPosts } = await db.marketingPostLikes.getTopLikedPosts(10, star
    - Filtros por estado, tipo y visibilidad
    - Visualización de multimedia
    - Acciones de publicación y archivo
+
+10. **MarketingDirectMessagesScreen.js** ✅
+   - Gestión de mensajes directos
+   - Dashboard de tasas de entrega
+   - Filtros por estado y tipo
+   - Tracking de entregas
+   - Acciones de marcado (entregado/fallido)
 
 ---
 
@@ -568,6 +669,14 @@ const stats = await db.stats.getDashboard();
   postsConLikes: 28,
   clientesActivosMarketing: 145,
   likesHoy: 42,
+  
+  // Marketing Direct Messages
+  totalMensajesDirectos: 1250,
+  mensajesPendientes: 85,
+  mensajesEntregados: 1120,
+  mensajesFallidos: 45,
+  mensajesHoy: 120,
+  tasaEntregaMensajes: 90,
   
   // Total General
   ingresosTotalesMes: 14820  // Citas + E-commerce + Ventas
@@ -650,7 +759,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 201+ funciones CRUD
+- `shared/config/supabaseClient.js` - 223+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -663,6 +772,7 @@ Login y permisos para staff y clientes.
 - `apps/salon/src/screens/UsersScreen.js`
 - `apps/salon/src/screens/GoalsScreen.js`
 - `apps/salon/src/screens/MarketingPostsScreen.js`
+- `apps/salon/src/screens/MarketingDirectMessagesScreen.js`
 
 ### Documentación
 - `INTEGRATION_COMPLETE.md`
@@ -676,9 +786,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 11/11 | ✅ 100% |
-| Funciones CRUD | 201+ | ✅ Completo |
-| Pantallas Funcionales | 9 | ✅ Completo |
+| Tablas Integradas | 12/12 | ✅ 100% |
+| Funciones CRUD | 223+ | ✅ Completo |
+| Pantallas Funcionales | 10 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 
@@ -709,6 +819,6 @@ npm run salon:start
 
 **Estado:** 🎉 Backend 100% Completo  
 **Fecha:** Mayo 3, 2026  
-**Funciones:** 201+ Implementadas  
-**Pantallas:** 9 Funcionales  
+**Funciones:** 223+ Implementadas  
+**Pantallas:** 10 Funcionales  
 **Listo para:** Navegación y Producción

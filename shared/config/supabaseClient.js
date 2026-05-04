@@ -2786,6 +2786,292 @@ export const db = {
     },
   },
 
+  // ==================== MARKETING DIRECT MESSAGES ====================
+  marketingDirectMessages: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getByStatus: async (status) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('status', status)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getPendingSync: async () => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('status', 'pending_sync')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getDelivered: async () => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('status', 'delivered')
+        .order('delivered_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByClient: async (clientId) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByCreator: async (creatorId) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('created_by', creatorId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByContentType: async (contentType) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('content_type', contentType)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getWithMedia: async () => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .not('media_url', 'is', null)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    search: async (query) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .or(`content.ilike.%${query}%,client_name.ilike.%${query}%,client_phone.ilike.%${query}%`)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const messageData = {
+        ...data,
+        created_at: new Date().toISOString(),
+      };
+
+      const { data: newMessage, error } = await supabase
+        .from('marketing_direct_messages')
+        .insert([messageData])
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .single();
+      return { data: newMessage, error };
+    },
+
+    createBulk: async (messages) => {
+      const messagesData = messages.map(msg => ({
+        ...msg,
+        created_at: new Date().toISOString(),
+      }));
+
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .insert(messagesData)
+        .select('*, cliente:clientes(id, nombre, telefono, email)');
+      return { data, error };
+    },
+
+    update: async (id, data) => {
+      const { data: updatedMessage, error } = await supabase
+        .from('marketing_direct_messages')
+        .update(data)
+        .eq('id', id)
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .single();
+      return { data: updatedMessage, error };
+    },
+
+    markAsDelivered: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .update({
+          status: 'delivered',
+          delivered_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .single();
+      return { data, error };
+    },
+
+    markAsFailed: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .update({ status: 'failed' })
+        .eq('id', id)
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .single();
+      return { data, error };
+    },
+
+    markBulkAsDelivered: async (ids) => {
+      const deliveredAt = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .update({
+          status: 'delivered',
+          delivered_at: deliveredAt,
+        })
+        .in('id', ids)
+        .select('*, cliente:clientes(id, nombre, telefono, email)');
+      return { data, error };
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('marketing_direct_messages')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    deleteByClient: async (clientId) => {
+      const { error } = await supabase
+        .from('marketing_direct_messages')
+        .delete()
+        .eq('client_id', clientId);
+      return { error };
+    },
+
+    getRecent: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getByDateRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getDeliveredInRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .eq('status', 'delivered')
+        .gte('delivered_at', startDate)
+        .lte('delivered_at', endDate)
+        .order('delivered_at', { ascending: false });
+      return { data, error };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allMessages } = await supabase
+        .from('marketing_direct_messages')
+        .select('*');
+
+      const pending = allMessages?.filter(m => m.status === 'pending_sync') || [];
+      const delivered = allMessages?.filter(m => m.status === 'delivered') || [];
+      const failed = allMessages?.filter(m => m.status === 'failed') || [];
+
+      const uniqueClients = new Set(allMessages?.map(m => m.client_id).filter(Boolean) || []);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const messagesHoy = allMessages?.filter(m => 
+        new Date(m.created_at) >= today
+      ) || [];
+
+      const deliveredHoy = delivered.filter(m => 
+        m.delivered_at && new Date(m.delivered_at) >= today
+      );
+
+      const withMedia = allMessages?.filter(m => m.media_url) || [];
+
+      return {
+        data: {
+          totalMensajes: allMessages?.length || 0,
+          pending: pending.length,
+          delivered: delivered.length,
+          failed: failed.length,
+          clientesUnicos: uniqueClients.size,
+          mensajesHoy: messagesHoy.length,
+          entregadosHoy: deliveredHoy.length,
+          conMedia: withMedia.length,
+          tasaEntrega: allMessages?.length > 0 
+            ? Math.round((delivered.length / allMessages.length) * 100) 
+            : 0,
+        },
+        error: null,
+      };
+    },
+
+    getCampaignStats: async (startDate, endDate, creatorId = null) => {
+      let query = supabase
+        .from('marketing_direct_messages')
+        .select('*')
+        .gte('created_at', startDate)
+        .lte('created_at', endDate);
+
+      if (creatorId) {
+        query = query.eq('created_by', creatorId);
+      }
+
+      const { data: messages } = await query;
+
+      const delivered = messages?.filter(m => m.status === 'delivered') || [];
+      const failed = messages?.filter(m => m.status === 'failed') || [];
+      const pending = messages?.filter(m => m.status === 'pending_sync') || [];
+      const uniqueClients = new Set(messages?.map(m => m.client_id).filter(Boolean) || []);
+
+      return {
+        data: {
+          totalEnviados: messages?.length || 0,
+          entregados: delivered.length,
+          fallidos: failed.length,
+          pendientes: pending.length,
+          clientesAlcanzados: uniqueClients.size,
+          tasaExito: messages?.length > 0 
+            ? Math.round((delivered.length / messages.length) * 100) 
+            : 0,
+        },
+        error: null,
+      };
+    },
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -2882,6 +3168,9 @@ export const db = {
       // Estadísticas de marketing post likes
       const { data: statsMarketingLikes } = await db.marketingPostLikes.getEstadisticas();
 
+      // Estadísticas de marketing direct messages
+      const { data: statsDirectMessages } = await db.marketingDirectMessages.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -2921,6 +3210,13 @@ export const db = {
         postsConLikes: statsMarketingLikes?.postsConLikes || 0,
         clientesActivosMarketing: statsMarketingLikes?.clientesActivos || 0,
         likesHoy: statsMarketingLikes?.likesHoy || 0,
+        // Marketing Direct Messages
+        totalMensajesDirectos: statsDirectMessages?.totalMensajes || 0,
+        mensajesPendientes: statsDirectMessages?.pending || 0,
+        mensajesEntregados: statsDirectMessages?.delivered || 0,
+        mensajesFallidos: statsDirectMessages?.failed || 0,
+        mensajesHoy: statsDirectMessages?.mensajesHoy || 0,
+        tasaEntregaMensajes: statsDirectMessages?.tasaEntrega || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
