@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 17/17 Tablas Principales ✅
+### Base de Datos: 18/18 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -13,6 +13,7 @@
 | **E-commerce Order Items** | 18+ | (Integrado en Orders) | ✅ Completo |
 | **Inventario** | 25+ | InventoryScreen.js | ✅ Completo |
 | **Ventas** | 20+ | SalesScreen.js | ✅ Completo |
+| **Cajas** | 25+ | CajasScreen.js | ✅ Completo |
 | **Cambios de Productos** | 22+ | CambiosProductosScreen.js | ✅ Completo |
 | **Devoluciones** | 26+ | DevolucionesScreen.js | ✅ Completo |
 | **Profiles (Usuarios)** | 20+ | UsersScreen.js | ✅ Completo |
@@ -24,7 +25,7 @@
 | **Marketing Comments** | 22+ | (Integrado en Posts) | ✅ Completo |
 | **Incidentes** | 26+ | IncidentesScreen.js | ✅ Completo |
 
-**Total:** 337+ funciones CRUD implementadas
+**Total:** 362+ funciones CRUD implementadas
 
 ---
 
@@ -340,7 +341,197 @@ db.ventas.getTopVendedores(start, end, limit)
 
 ---
 
-### 8️⃣ CAMBIOS DE PRODUCTOS (22+ funciones)
+### 8️⃣ CAJAS (25+ funciones)
+
+**Tabla:** `public.cajas`
+
+**Características:**
+- ✅ Sistema completo de apertura/cierre de caja
+- ✅ Estados: 'abierta' o 'cerrada'
+- ✅ Control de monto inicial y final
+- ✅ Tracking de responsables (apertura y cierre)
+- ✅ Cálculo automático de cuadre de caja
+- ✅ Integración con ventas, devoluciones y cambios
+- ✅ Movimientos de caja (entradas/salidas)
+- ✅ Estadísticas por responsable
+- ✅ Detección de diferencias (sobrante/faltante)
+- ✅ Historial completo de turnos
+- ✅ Arqueo automático
+
+**Funciones principales:**
+```javascript
+db.cajas.getAll()
+db.cajas.getById(id)
+db.cajas.getAbiertas()
+db.cajas.getCerradas()
+db.cajas.getCajaActual()
+db.cajas.getByResponsable(responsable)
+db.cajas.getByFecha(fecha)
+db.cajas.getHoy()
+db.cajas.getByDateRange(start, end)
+db.cajas.abrir(data)
+db.cajas.cerrar(id, data)
+db.cajas.update(id, data)
+db.cajas.delete(id)
+db.cajas.getMovimientos(cajaId)
+db.cajas.getVentas(cajaId)
+db.cajas.getDevoluciones(cajaId)
+db.cajas.getCambios(cajaId)
+db.cajas.calcularCuadre(cajaId)
+db.cajas.getEstadisticas()
+db.cajas.getEstadisticasPorResponsable()
+```
+
+**Pantalla:** `CajasScreen.js`
+- Dashboard con caja actual abierta (destacada en dorado)
+- Estadísticas generales (total, abiertas, cerradas, promedios)
+- Botón de apertura de caja con modal
+- Botón de cierre de caja con modal de arqueo
+- Historial completo de cajas por turno
+- Modal de cuadre detallado con:
+  - Monto de apertura
+  - Total de ventas
+  - Total de devoluciones
+  - Diferencias de cambios
+  - Entradas y salidas de efectivo
+  - Monto esperado vs real
+  - Diferencia (sobrante/faltante/correcto)
+  - Indicadores visuales de estado
+- Pull to refresh
+
+**Estados de caja:**
+- `abierta` - Caja en operación, aceptando transacciones
+- `cerrada` - Caja cerrada, turno finalizado
+
+**Flujo de uso:**
+```javascript
+// Abrir una caja al inicio del turno
+const { data: caja } = await db.cajas.abrir({
+  monto_apertura: 1000.00,
+  responsable: 'María López',
+  responsable_apertura: 'María López',
+});
+// Estado: 'abierta'
+// Fecha apertura: hoy
+// Monto cierre: null
+
+// Obtener la caja actual (abierta)
+const { data: cajaActual } = await db.cajas.getCajaActual();
+// Retorna la caja actualmente abierta para procesar transacciones
+
+// Procesar ventas, cambios, devoluciones...
+// (todas las transacciones se vinculan a caja_id)
+
+// Calcular cuadre antes de cerrar
+const { data: cuadre } = await db.cajas.calcularCuadre(caja.id);
+// Retorna: {
+//   caja_id: 'uuid',
+//   monto_apertura: "1000.00",
+//   total_ventas: "3500.00",            // Suma de todas las ventas
+//   total_devoluciones: "250.00",       // Suma de devoluciones
+//   total_diferencias_cambios: "150.00", // Diferencias cobradas en cambios
+//   total_entradas: "500.00",           // Entradas de efectivo
+//   total_salidas: "200.00",            // Salidas de efectivo
+//   monto_cierre_esperado: "4700.00",   // Calculado automáticamente
+//   monto_cierre_real: null,            // Pendiente de arqueo
+//   diferencia: null,
+//   estado_cuadre: 'pendiente'
+// }
+
+// Cerrar la caja al final del turno
+const { data: cajaCerrada } = await db.cajas.cerrar(caja.id, {
+  monto_cierre: 4720.00, // Efectivo contado físicamente
+  responsable_cierre: 'María López',
+});
+// Estado: 'cerrada'
+// Fecha cierre: timestamp actual
+
+// Recalcular cuadre con el cierre real
+const { data: cuadreFinal } = await db.cajas.calcularCuadre(caja.id);
+// Retorna: {
+//   monto_cierre_esperado: "4700.00",
+//   monto_cierre_real: "4720.00",
+//   diferencia: "20.00",              // Sobrante de $20
+//   estado_cuadre: 'sobrante'         // 'correcto', 'sobrante' o 'faltante'
+// }
+
+// Obtener todas las transacciones de una caja
+const { data: ventas } = await db.cajas.getVentas(caja.id);
+const { data: devoluciones } = await db.cajas.getDevoluciones(caja.id);
+const { data: cambios } = await db.cajas.getCambios(caja.id);
+const { data: movimientos } = await db.cajas.getMovimientos(caja.id);
+
+// Estadísticas generales
+const { data: stats } = await db.cajas.getEstadisticas();
+// Retorna: {
+//   totalCajas: 45,
+//   cajasAbiertas: 1,
+//   cajasCerradas: 44,
+//   cajasHoy: 3,
+//   totalAperturas: "45000.00",
+//   totalCierres: "187500.00",
+//   promedioApertura: "1000.00",
+//   promedioCierre: "4261.36"
+// }
+
+// Estadísticas por responsable
+const { data: statsPorResponsable } = await db.cajas.getEstadisticasPorResponsable();
+// Retorna: [{
+//   responsable: 'María López',
+//   totalCajas: 25,
+//   totalApertura: "25000.00",
+//   totalCierre: "105000.00",
+//   cajasAbiertas: 0,
+//   cajasCerradas: 25
+// }, ...]
+
+// Cajas de hoy
+const { data: cajasHoy } = await db.cajas.getHoy();
+
+// Cajas por rango de fechas
+const { data: cajasMes } = await db.cajas.getByDateRange(
+  '2026-05-01',
+  '2026-05-31'
+);
+```
+
+**Integración con otras tablas:**
+- ✅ `ventas`: Cada venta se asocia a una caja (FK: caja_id)
+- ✅ `cambios_productos`: Cada cambio se procesa en una caja (FK: caja_id)
+- ✅ `devoluciones`: Cada devolución se registra en una caja (FK: caja_id)
+- ✅ `movimientos_caja`: Entradas/salidas de efectivo por caja (FK: caja_id)
+- ✅ Dashboard global: Métricas de cajas incluidas
+
+**Cálculo de cuadre:**
+```
+Monto Esperado = 
+  Monto Apertura
+  + Total Ventas
+  + Diferencias Cambios (cobradas)
+  + Entradas de Efectivo
+  - Devoluciones
+  - Salidas de Efectivo
+
+Diferencia = Monto Real - Monto Esperado
+
+Estado:
+  - "correcto" si |diferencia| < $0.01
+  - "sobrante" si diferencia > 0
+  - "faltante" si diferencia < 0
+  - "pendiente" si no hay cierre real
+```
+
+**Consideraciones importantes:**
+- Solo puede haber **una caja abierta a la vez** por punto de venta
+- El monto de apertura es obligatorio y define el fondo de caja inicial
+- Las transacciones (ventas, cambios, devoluciones) se vinculan a la caja activa
+- El cuadre se calcula automáticamente basado en todas las transacciones
+- La diferencia indica sobrante (positivo) o faltante (negativo) de efectivo
+- Los responsables de apertura y cierre pueden ser diferentes (cambio de turno)
+
+---
+
+### 9️⃣ CAMBIOS DE PRODUCTOS (22+ funciones)
 
 **Tabla:** `public.cambios_productos`
 
@@ -484,7 +675,7 @@ const { data: sinDiferencia } = await db.cambiosProductos.getSinDiferencia();
 
 ---
 
-### 9️⃣ DEVOLUCIONES (26+ funciones)
+### 🔟 DEVOLUCIONES (26+ funciones)
 
 **Tabla:** `public.devoluciones`
 
@@ -632,7 +823,7 @@ console.log(`Total devuelto este mes: $${totalMes}`);
 
 ---
 
-### 🔟 PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
+### 1️⃣1️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
 
 **Tabla:** `public.profiles`
 
@@ -667,7 +858,7 @@ db.profiles.getEstadisticas()
 
 ---
 
-### 1️⃣1️⃣ NOTIFICACIONES (18+ funciones)
+### 1️⃣2️⃣ NOTIFICACIONES (18+ funciones)
 
 **Tabla:** `public.notificaciones`
 
@@ -700,7 +891,7 @@ db.notificaciones.notificarStockBajo(empleadoIds, productoNombre, stock)
 
 ---
 
-### 1️⃣2️⃣ METAS Y OBJETIVOS (20+ funciones)
+### 1️⃣3️⃣ METAS Y OBJETIVOS (20+ funciones)
 
 **Tabla:** `public.metas`
 
@@ -746,7 +937,7 @@ db.metas.getEstadisticas()
 
 ---
 
-### 1️⃣3️⃣ MARKETING POSTS (25+ funciones)
+### 1️⃣4️⃣ MARKETING POSTS (25+ funciones)
 
 **Tabla:** `public.marketing_posts`
 
@@ -803,7 +994,7 @@ db.marketingPosts.getEstadisticas()
 
 ---
 
-### 1️⃣4️⃣ MARKETING POST LIKES (12+ funciones)
+### 1️⃣5️⃣ MARKETING POST LIKES (12+ funciones)
 
 **Tabla:** `public.marketing_post_likes`
 
@@ -859,7 +1050,7 @@ const { data: topPosts } = await db.marketingPostLikes.getTopLikedPosts(10, star
 
 ---
 
-### 1️⃣5️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
+### 1️⃣6️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
 
 **Tabla:** `public.marketing_direct_messages`
 
@@ -952,7 +1143,7 @@ const { data: stats } = await db.marketingDirectMessages.getCampaignStats(
 
 ---
 
-### 1️⃣6️⃣ MARKETING COMMENTS (22+ funciones)
+### 1️⃣7️⃣ MARKETING COMMENTS (22+ funciones)
 
 **Tabla:** `public.marketing_comments`
 
@@ -1046,7 +1237,7 @@ const { data: stats } = await db.marketingComments.getEstadisticas();
 
 ---
 
-### 1️⃣7️⃣ INCIDENTES (26+ funciones)
+### 1️⃣8️⃣ INCIDENTES (26+ funciones)
 
 **Tabla:** `public.incidentes`
 
@@ -1278,6 +1469,14 @@ const stats = await db.stats.getDashboard();
   productosUnicosVendidos: 45,
   promedioUnidadesPorOrden: "4.12",
   
+  // Cajas
+  totalCajas: 45,
+  cajasAbiertas: 1,
+  cajasCerradas: 44,
+  cajasHoy: 3,
+  promedioAperturaCaja: "1000.00",
+  promedioCierreCaja: "4261.36",
+  
   // Cambios de Productos
   totalCambios: 150,
   cambiosConDiferencia: 90,
@@ -1439,7 +1638,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 337+ funciones CRUD
+- `shared/config/supabaseClient.js` - 362+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -1449,6 +1648,7 @@ Login y permisos para staff y clientes.
 - `apps/salon/src/screens/OrdersScreen.js`
 - `apps/salon/src/screens/InventoryScreen.js`
 - `apps/salon/src/screens/SalesScreen.js`
+- `apps/salon/src/screens/CajasScreen.js`
 - `apps/salon/src/screens/CambiosProductosScreen.js`
 - `apps/salon/src/screens/DevolucionesScreen.js`
 - `apps/salon/src/screens/UsersScreen.js`
@@ -1469,9 +1669,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 17/17 | ✅ 100% |
-| Funciones CRUD | 337+ | ✅ Completo |
-| Pantallas Funcionales | 13 | ✅ Completo |
+| Tablas Integradas | 18/18 | ✅ 100% |
+| Funciones CRUD | 362+ | ✅ Completo |
+| Pantallas Funcionales | 14 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 

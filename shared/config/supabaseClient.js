@@ -3326,6 +3326,329 @@ export const db = {
     },
   },
 
+  // ==================== CAJAS ====================
+  cajas: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getAbiertas: async () => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('estado', 'abierta')
+        .order('fecha_apertura', { ascending: false });
+      return { data, error };
+    },
+
+    getCerradas: async () => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('estado', 'cerrada')
+        .order('fecha_cierre', { ascending: false });
+      return { data, error };
+    },
+
+    getCajaActual: async () => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('estado', 'abierta')
+        .order('fecha_apertura', { ascending: false })
+        .limit(1)
+        .single();
+      return { data, error };
+    },
+
+    getByResponsable: async (responsable) => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('responsable', responsable)
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getByFecha: async (fecha) => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('fecha_apertura', fecha)
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getHoy: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      return await db.cajas.getByFecha(today);
+    },
+
+    getByDateRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .gte('fecha_apertura', startDate)
+        .lte('fecha_apertura', endDate)
+        .order('fecha_apertura', { ascending: false });
+      return { data, error };
+    },
+
+    abrir: async (data) => {
+      const cajaData = {
+        monto_apertura: data.monto_apertura,
+        responsable: data.responsable,
+        responsable_apertura: data.responsable_apertura || data.responsable,
+        estado: 'abierta',
+        fecha_apertura: new Date().toISOString().split('T')[0],
+        creado_a: new Date().toISOString(),
+      };
+
+      const { data: newCaja, error } = await supabase
+        .from('cajas')
+        .insert([cajaData])
+        .select()
+        .single();
+      return { data: newCaja, error };
+    },
+
+    cerrar: async (id, data) => {
+      const cierreData = {
+        monto_cierre: data.monto_cierre,
+        responsable_cierre: data.responsable_cierre,
+        fecha_cierre: new Date().toISOString(),
+        estado: 'cerrada',
+      };
+
+      const { data: cajaCerrada, error } = await supabase
+        .from('cajas')
+        .update(cierreData)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data: cajaCerrada, error };
+    },
+
+    update: async (id, data) => {
+      const { data: updatedCaja, error } = await supabase
+        .from('cajas')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data: updatedCaja, error };
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('cajas')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    getMovimientos: async (cajaId) => {
+      const { data, error } = await supabase
+        .from('movimientos_caja')
+        .select('*')
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getVentas: async (cajaId) => {
+      const { data, error } = await supabase
+        .from('ventas')
+        .select('*')
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getDevoluciones: async (cajaId) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*')
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getCambios: async (cajaId) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select('*')
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    calcularCuadre: async (cajaId) => {
+      const { data: caja } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('id', cajaId)
+        .single();
+
+      if (!caja) return { data: null, error: { message: 'Caja no encontrada' } };
+
+      const { data: ventas } = await supabase
+        .from('ventas')
+        .select('total')
+        .eq('caja_id', cajaId);
+
+      const { data: movimientos } = await supabase
+        .from('movimientos_caja')
+        .select('tipo, monto')
+        .eq('caja_id', cajaId);
+
+      const { data: devoluciones } = await supabase
+        .from('devoluciones')
+        .select('monto_devuelto')
+        .eq('caja_id', cajaId);
+
+      const { data: cambios } = await supabase
+        .from('cambios_productos')
+        .select('diferencia_cobrada')
+        .eq('caja_id', cajaId);
+
+      const totalVentas = ventas?.reduce((sum, v) => sum + Number(v.total || 0), 0) || 0;
+      const totalDevoluciones = devoluciones?.reduce((sum, d) => sum + Number(d.monto_devuelto || 0), 0) || 0;
+      const totalDiferenciasCambios = cambios?.reduce((sum, c) => sum + Number(c.diferencia_cobrada || 0), 0) || 0;
+
+      let totalEntradas = 0;
+      let totalSalidas = 0;
+
+      movimientos?.forEach(m => {
+        const monto = Number(m.monto || 0);
+        if (m.tipo === 'entrada') {
+          totalEntradas += monto;
+        } else if (m.tipo === 'salida') {
+          totalSalidas += monto;
+        }
+      });
+
+      const montoApertura = Number(caja.monto_apertura || 0);
+      const montoCierreEsperado = montoApertura + totalVentas + totalDiferenciasCambios + totalEntradas - totalDevoluciones - totalSalidas;
+      const montoCierreReal = caja.monto_cierre ? Number(caja.monto_cierre) : null;
+      const diferencia = montoCierreReal !== null ? (montoCierreReal - montoCierreEsperado) : null;
+
+      return {
+        data: {
+          caja_id: cajaId,
+          monto_apertura: montoApertura.toFixed(2),
+          total_ventas: totalVentas.toFixed(2),
+          total_devoluciones: totalDevoluciones.toFixed(2),
+          total_diferencias_cambios: totalDiferenciasCambios.toFixed(2),
+          total_entradas: totalEntradas.toFixed(2),
+          total_salidas: totalSalidas.toFixed(2),
+          monto_cierre_esperado: montoCierreEsperado.toFixed(2),
+          monto_cierre_real: montoCierreReal !== null ? montoCierreReal.toFixed(2) : null,
+          diferencia: diferencia !== null ? diferencia.toFixed(2) : null,
+          estado_cuadre: diferencia === null ? 'pendiente' : (Math.abs(diferencia) < 0.01 ? 'correcto' : (diferencia > 0 ? 'sobrante' : 'faltante')),
+        },
+        error: null,
+      };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allCajas } = await supabase
+        .from('cajas')
+        .select('*');
+
+      const abiertas = allCajas?.filter(c => c.estado === 'abierta') || [];
+      const cerradas = allCajas?.filter(c => c.estado === 'cerrada') || [];
+
+      const totalAperturas = allCajas?.reduce((sum, c) => sum + Number(c.monto_apertura || 0), 0) || 0;
+      const totalCierres = cerradas.reduce((sum, c) => sum + Number(c.monto_cierre || 0), 0) || 0;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split('T')[0];
+
+      const cajasHoy = allCajas?.filter(c =>
+        c.fecha_apertura === todayStr
+      ) || [];
+
+      const promedioApertura = allCajas?.length > 0
+        ? (totalAperturas / allCajas.length)
+        : 0;
+
+      const promedioCierre = cerradas.length > 0
+        ? (totalCierres / cerradas.length)
+        : 0;
+
+      return {
+        data: {
+          totalCajas: allCajas?.length || 0,
+          cajasAbiertas: abiertas.length,
+          cajasCerradas: cerradas.length,
+          cajasHoy: cajasHoy.length,
+          totalAperturas: totalAperturas.toFixed(2),
+          totalCierres: totalCierres.toFixed(2),
+          promedioApertura: promedioApertura.toFixed(2),
+          promedioCierre: promedioCierre.toFixed(2),
+        },
+        error: null,
+      };
+    },
+
+    getEstadisticasPorResponsable: async () => {
+      const { data: allCajas } = await supabase
+        .from('cajas')
+        .select('*');
+
+      if (!allCajas) return { data: [], error: null };
+
+      const responsablesStats = {};
+      allCajas.forEach(caja => {
+        const responsable = caja.responsable || 'Sin especificar';
+        if (!responsablesStats[responsable]) {
+          responsablesStats[responsable] = {
+            responsable,
+            totalCajas: 0,
+            totalApertura: 0,
+            totalCierre: 0,
+            cajasAbiertas: 0,
+            cajasCerradas: 0,
+          };
+        }
+        responsablesStats[responsable].totalCajas++;
+        responsablesStats[responsable].totalApertura += Number(caja.monto_apertura || 0);
+        
+        if (caja.estado === 'abierta') {
+          responsablesStats[responsable].cajasAbiertas++;
+        } else if (caja.estado === 'cerrada') {
+          responsablesStats[responsable].cajasCerradas++;
+          responsablesStats[responsable].totalCierre += Number(caja.monto_cierre || 0);
+        }
+      });
+
+      const stats = Object.values(responsablesStats)
+        .sort((a, b) => b.totalCajas - a.totalCajas)
+        .map(s => ({
+          ...s,
+          totalApertura: s.totalApertura.toFixed(2),
+          totalCierre: s.totalCierre.toFixed(2),
+        }));
+
+      return { data: stats, error: null };
+    },
+  },
+
   // ==================== CAMBIOS DE PRODUCTOS ====================
   cambiosProductos: {
     getAll: async () => {
@@ -4584,6 +4907,9 @@ export const db = {
       // Estadísticas de cambios de productos
       const { data: statsCambios } = await db.cambiosProductos.getEstadisticas();
 
+      // Estadísticas de cajas
+      const { data: statsCajas } = await db.cajas.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -4651,6 +4977,13 @@ export const db = {
         totalVentasOrderItems: statsOrderItems?.totalVentas || 0,
         productosUnicosVendidos: statsOrderItems?.productosUnicos || 0,
         promedioUnidadesPorOrden: statsOrderItems?.promedioUnidadesPorOrden || 0,
+        // Cajas
+        totalCajas: statsCajas?.totalCajas || 0,
+        cajasAbiertas: statsCajas?.cajasAbiertas || 0,
+        cajasCerradas: statsCajas?.cajasCerradas || 0,
+        cajasHoy: statsCajas?.cajasHoy || 0,
+        promedioAperturaCaja: statsCajas?.promedioApertura || 0,
+        promedioCierreCaja: statsCajas?.promedioCierre || 0,
         // Devoluciones
         totalDevoluciones: statsDevoluciones?.totalDevoluciones || 0,
         devolucionesAprobadas: statsDevoluciones?.aprobadas || 0,
