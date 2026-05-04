@@ -10,6 +10,8 @@ export default function OrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('todas'); // 'todas', 'pending', 'confirmed', 'prepared', 'delivered'
+  const [expandedOrders, setExpandedOrders] = useState({});
+  const [orderItems, setOrderItems] = useState({});
 
   useEffect(() => {
     loadOrders();
@@ -129,6 +131,21 @@ export default function OrdersScreen() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const toggleOrderExpansion = async (orderId) => {
+    if (expandedOrders[orderId]) {
+      setExpandedOrders(prev => ({ ...prev, [orderId]: false }));
+    } else {
+      setExpandedOrders(prev => ({ ...prev, [orderId]: true }));
+      
+      if (!orderItems[orderId]) {
+        const { data, error } = await db.ecommerceOrderItems.getByOrder(orderId);
+        if (!error && data) {
+          setOrderItems(prev => ({ ...prev, [orderId]: data }));
+        }
+      }
+    }
   };
 
   if (loading) {
@@ -291,6 +308,53 @@ export default function OrdersScreen() {
                       <Text className="text-xs text-[#C0C0C0] font-light italic">
                         {order.notes}
                       </Text>
+                    </View>
+                  )}
+
+                  {/* Ver Items Button */}
+                  <TouchableOpacity
+                    onPress={() => toggleOrderExpansion(order.id)}
+                    className="flex-row items-center justify-center py-2 mb-3"
+                  >
+                    <Package size={14} color="#C0C0C0" />
+                    <Text className="text-xs text-[#C0C0C0] font-light ml-2">
+                      {expandedOrders[order.id] ? 'Ocultar productos' : 'Ver productos'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Items List (Expandible) */}
+                  {expandedOrders[order.id] && (
+                    <View className="mb-3 bg-[#F8F8F8] rounded-xl p-3">
+                      {orderItems[order.id] ? (
+                        orderItems[order.id].length > 0 ? (
+                          <>
+                            <Text className="text-xs text-[#C0C0C0] font-light mb-2">
+                              Productos en esta orden:
+                            </Text>
+                            {orderItems[order.id].map((item, idx) => (
+                              <View key={item.id} className="flex-row justify-between items-center py-2 border-b border-[#E0E0E0] last:border-0">
+                                <View className="flex-1">
+                                  <Text className="text-sm font-light text-[#2C2C2C]">
+                                    {item.product_name}
+                                  </Text>
+                                  <Text className="text-xs text-[#C0C0C0] font-light">
+                                    ${Number(item.unit_price).toFixed(2)} × {item.qty}
+                                  </Text>
+                                </View>
+                                <Text className="text-sm font-light text-[#D4AF37]">
+                                  ${Number(item.line_total).toFixed(2)}
+                                </Text>
+                              </View>
+                            ))}
+                          </>
+                        ) : (
+                          <Text className="text-xs text-[#C0C0C0] font-light italic text-center">
+                            Esta orden no tiene productos asociados
+                          </Text>
+                        )
+                      ) : (
+                        <ActivityIndicator size="small" color="#D4AF37" />
+                      )}
                     </View>
                   )}
 

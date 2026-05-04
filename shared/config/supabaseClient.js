@@ -3326,6 +3326,232 @@ export const db = {
     },
   },
 
+  // ==================== ECOMMERCE ORDER ITEMS ====================
+  ecommerceOrderItems: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('ecommerce_order_items')
+        .select('*, order:ecommerce_orders(id, tracking_code, status), product:inventario(id, nombre, imagen_url)')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('ecommerce_order_items')
+        .select('*, order:ecommerce_orders(id, tracking_code, status), product:inventario(id, nombre, imagen_url)')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getByOrder: async (orderId) => {
+      const { data, error } = await supabase
+        .from('ecommerce_order_items')
+        .select('*, product:inventario(id, nombre, imagen_url, stock_actual)')
+        .eq('order_id', orderId)
+        .order('created_at', { ascending: true });
+      return { data, error };
+    },
+
+    getByProduct: async (productId) => {
+      const { data, error } = await supabase
+        .from('ecommerce_order_items')
+        .select('*, order:ecommerce_orders(id, tracking_code, status, customer_name)')
+        .eq('product_id', productId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const itemData = {
+        ...data,
+        line_total: Number(data.unit_price) * Number(data.qty),
+        created_at: new Date().toISOString(),
+      };
+
+      const { data: newItem, error } = await supabase
+        .from('ecommerce_order_items')
+        .insert([itemData])
+        .select('*, product:inventario(id, nombre, imagen_url)')
+        .single();
+      return { data: newItem, error };
+    },
+
+    createBulk: async (items) => {
+      const itemsData = items.map(item => ({
+        ...item,
+        line_total: Number(item.unit_price) * Number(item.qty),
+        created_at: new Date().toISOString(),
+      }));
+
+      const { data, error } = await supabase
+        .from('ecommerce_order_items')
+        .insert(itemsData)
+        .select('*, product:inventario(id, nombre, imagen_url)');
+      return { data, error };
+    },
+
+    update: async (id, data) => {
+      const updateData = { ...data };
+      
+      if (data.unit_price !== undefined || data.qty !== undefined) {
+        const { data: currentItem } = await supabase
+          .from('ecommerce_order_items')
+          .select('unit_price, qty')
+          .eq('id', id)
+          .single();
+
+        if (currentItem) {
+          const price = data.unit_price !== undefined ? Number(data.unit_price) : Number(currentItem.unit_price);
+          const quantity = data.qty !== undefined ? Number(data.qty) : Number(currentItem.qty);
+          updateData.line_total = price * quantity;
+        }
+      }
+
+      const { data: updatedItem, error } = await supabase
+        .from('ecommerce_order_items')
+        .update(updateData)
+        .eq('id', id)
+        .select('*, product:inventario(id, nombre, imagen_url)')
+        .single();
+      return { data: updatedItem, error };
+    },
+
+    updateQuantity: async (id, qty) => {
+      const { data: item } = await supabase
+        .from('ecommerce_order_items')
+        .select('unit_price')
+        .eq('id', id)
+        .single();
+
+      if (!item) return { data: null, error: { message: 'Item no encontrado' } };
+
+      const { data, error } = await supabase
+        .from('ecommerce_order_items')
+        .update({
+          qty,
+          line_total: Number(item.unit_price) * Number(qty),
+        })
+        .eq('id', id)
+        .select('*, product:inventario(id, nombre, imagen_url)')
+        .single();
+      return { data, error };
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('ecommerce_order_items')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    deleteByOrder: async (orderId) => {
+      const { error } = await supabase
+        .from('ecommerce_order_items')
+        .delete()
+        .eq('order_id', orderId);
+      return { error };
+    },
+
+    getOrderTotal: async (orderId) => {
+      const { data: items } = await supabase
+        .from('ecommerce_order_items')
+        .select('line_total')
+        .eq('order_id', orderId);
+
+      const total = items?.reduce((sum, item) => sum + Number(item.line_total), 0) || 0;
+      return { data: total, error: null };
+    },
+
+    getOrderSummary: async (orderId) => {
+      const { data: items } = await supabase
+        .from('ecommerce_order_items')
+        .select('qty, line_total')
+        .eq('order_id', orderId);
+
+      if (!items) return { data: null, error: { message: 'No items found' } };
+
+      const totalItems = items.reduce((sum, item) => sum + item.qty, 0);
+      const totalAmount = items.reduce((sum, item) => sum + Number(item.line_total), 0);
+
+      return {
+        data: {
+          itemsCount: items.length,
+          totalUnits: totalItems,
+          totalAmount: totalAmount.toFixed(2),
+        },
+        error: null,
+      };
+    },
+
+    getTopProducts: async (limit = 10, startDate = null, endDate = null) => {
+      let query = supabase
+        .from('ecommerce_order_items')
+        .select('product_id, product_name, qty, inventario(imagen_url)');
+
+      if (startDate) {
+        query = query.gte('created_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('created_at', endDate);
+      }
+
+      const { data: items } = await query;
+
+      if (!items) return { data: [], error: null };
+
+      const productSales = {};
+      items.forEach(item => {
+        if (!productSales[item.product_id]) {
+          productSales[item.product_id] = {
+            product_id: item.product_id,
+            product_name: item.product_name,
+            total_sold: 0,
+            imagen_url: item.inventario?.imagen_url,
+          };
+        }
+        productSales[item.product_id].total_sold += item.qty;
+      });
+
+      const topProducts = Object.values(productSales)
+        .sort((a, b) => b.total_sold - a.total_sold)
+        .slice(0, limit);
+
+      return { data: topProducts, error: null };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allItems } = await supabase
+        .from('ecommerce_order_items')
+        .select('*');
+
+      const totalItems = allItems?.length || 0;
+      const totalUnidades = allItems?.reduce((sum, item) => sum + item.qty, 0) || 0;
+      const totalVentas = allItems?.reduce((sum, item) => sum + Number(item.line_total), 0) || 0;
+
+      const uniqueProducts = new Set(allItems?.map(item => item.product_id) || []);
+      const uniqueOrders = new Set(allItems?.map(item => item.order_id) || []);
+
+      const avgUnitsPerOrder = uniqueOrders.size > 0 ? (totalUnidades / uniqueOrders.size).toFixed(2) : 0;
+      const avgAmountPerOrder = uniqueOrders.size > 0 ? (totalVentas / uniqueOrders.size).toFixed(2) : 0;
+
+      return {
+        data: {
+          totalItems,
+          totalUnidades,
+          totalVentas: totalVentas.toFixed(2),
+          productosUnicos: uniqueProducts.size,
+          ordenesConItems: uniqueOrders.size,
+          promedioUnidadesPorOrden: avgUnitsPerOrder,
+          promedioMontoPorOrden: avgAmountPerOrder,
+        },
+        error: null,
+      };
+    },
+  },
+
   // ==================== INCIDENTES ====================
   incidentes: {
     getAll: async () => {
@@ -3735,6 +3961,9 @@ export const db = {
       // Estadísticas de incidentes
       const { data: statsIncidentes } = await db.incidentes.getEstadisticas();
 
+      // Estadísticas de ecommerce order items
+      const { data: statsOrderItems } = await db.ecommerceOrderItems.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -3796,6 +4025,12 @@ export const db = {
         incidentesHoy: statsIncidentes?.incidentesHoy || 0,
         totalPerdidasIncidentes: statsIncidentes?.totalPerdidas || 0,
         tasaResolucionIncidentes: statsIncidentes?.tasaResolucion || 0,
+        // E-commerce Order Items
+        totalOrderItems: statsOrderItems?.totalItems || 0,
+        totalUnidadesVendidas: statsOrderItems?.totalUnidades || 0,
+        totalVentasOrderItems: statsOrderItems?.totalVentas || 0,
+        productosUnicosVendidos: statsOrderItems?.productosUnicos || 0,
+        promedioUnidadesPorOrden: statsOrderItems?.promedioUnidadesPorOrden || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };

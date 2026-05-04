@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 14/14 Tablas Principales ✅
+### Base de Datos: 15/15 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -10,6 +10,7 @@
 | **Citas** | 15+ | AppointmentsScreen.js | ✅ Completo |
 | **Empleados** | 11+ | StaffScreen.js | ✅ Completo |
 | **Órdenes E-commerce** | 20+ | OrdersScreen.js | ✅ Completo |
+| **E-commerce Order Items** | 18+ | (Integrado en Orders) | ✅ Completo |
 | **Inventario** | 25+ | InventoryScreen.js | ✅ Completo |
 | **Ventas** | 20+ | SalesScreen.js | ✅ Completo |
 | **Profiles (Usuarios)** | 20+ | UsersScreen.js | ✅ Completo |
@@ -21,7 +22,7 @@
 | **Marketing Comments** | 22+ | (Integrado en Posts) | ✅ Completo |
 | **Incidentes** | 26+ | IncidentesScreen.js | ✅ Completo |
 
-**Total:** 271+ funciones CRUD implementadas
+**Total:** 289+ funciones CRUD implementadas
 
 ---
 
@@ -152,7 +153,113 @@ db.orders.getEstadisticas(start, end)
 
 ---
 
-### 5️⃣ INVENTARIO (25+ funciones)
+### 5️⃣ E-COMMERCE ORDER ITEMS (18+ funciones)
+
+**Tabla:** `public.ecommerce_order_items`
+
+**Características:**
+- ✅ Detalles de productos por orden
+- ✅ Relación con `ecommerce_orders` (cascade delete)
+- ✅ Relación con `inventario` (productos)
+- ✅ Cálculo automático de line_total (unit_price × qty)
+- ✅ Validación de cantidad (qty > 0)
+- ✅ JOINs automáticos con orden y producto
+- ✅ Productos más vendidos
+- ✅ Estadísticas de ventas por producto
+- ✅ Resumen de órdenes
+
+**Funciones principales:**
+```javascript
+db.ecommerceOrderItems.getAll()
+db.ecommerceOrderItems.getById(id)
+db.ecommerceOrderItems.getByOrder(orderId)
+db.ecommerceOrderItems.getByProduct(productId)
+db.ecommerceOrderItems.create(data)
+db.ecommerceOrderItems.createBulk(items)
+db.ecommerceOrderItems.update(id, data)
+db.ecommerceOrderItems.updateQuantity(id, qty)
+db.ecommerceOrderItems.delete(id)
+db.ecommerceOrderItems.deleteByOrder(orderId)
+db.ecommerceOrderItems.getOrderTotal(orderId)
+db.ecommerceOrderItems.getOrderSummary(orderId)
+db.ecommerceOrderItems.getTopProducts(limit, startDate, endDate)
+db.ecommerceOrderItems.getEstadisticas()
+```
+
+**Integración:**
+- Se integra automáticamente con `db.orders` (ecommerce_orders)
+- Al eliminar una orden, todos sus items se eliminan (cascade)
+- Cálculo automático de totales
+- No requiere pantalla dedicada, funciona desde `OrdersScreen.js`
+
+**Flujo de uso:**
+```javascript
+// Crear items de una orden
+const items = [
+  {
+    order_id: orderId,
+    product_id: 'uuid-producto-1',
+    product_name: 'Shampoo Premium',
+    unit_price: 25.00,
+    qty: 2,
+    // line_total se calcula automáticamente: 50.00
+  },
+  {
+    order_id: orderId,
+    product_id: 'uuid-producto-2',
+    product_name: 'Acondicionador',
+    unit_price: 20.00,
+    qty: 1,
+    // line_total se calcula automáticamente: 20.00
+  }
+];
+await db.ecommerceOrderItems.createBulk(items);
+
+// Obtener items de una orden
+const { data: items } = await db.ecommerceOrderItems.getByOrder(orderId);
+// Incluye información del producto (nombre, imagen, stock)
+
+// Calcular total de la orden
+const { data: total } = await db.ecommerceOrderItems.getOrderTotal(orderId);
+console.log(`Total: $${total}`); // Total: $70.00
+
+// Resumen completo de la orden
+const { data: summary } = await db.ecommerceOrderItems.getOrderSummary(orderId);
+// Retorna: {
+//   itemsCount: 2,           // 2 productos diferentes
+//   totalUnits: 3,           // 3 unidades en total
+//   totalAmount: "70.00"     // $70.00 total
+// }
+
+// Productos más vendidos del mes
+const { data: topProducts } = await db.ecommerceOrderItems.getTopProducts(
+  10, 
+  '2026-05-01', 
+  '2026-05-31'
+);
+// Retorna: [{
+//   product_id: 'uuid',
+//   product_name: 'Shampoo Premium',
+//   total_sold: 150,         // 150 unidades vendidas
+//   imagen_url: 'https://...'
+// }, ...]
+
+// Estadísticas generales
+const { data: stats } = await db.ecommerceOrderItems.getEstadisticas();
+// Retorna: {
+//   totalItems: 1250,                    // Total de líneas de items
+//   totalUnidades: 3500,                 // Total de unidades vendidas
+//   totalVentas: "87500.00",            // Total en ventas
+//   productosUnicos: 45,                 // Productos diferentes vendidos
+//   ordenesConItems: 850,                // Órdenes con items
+//   promedioUnidadesPorOrden: "4.12",   // Promedio de unidades
+//   promedioMontoPorOrden: "102.94"     // Promedio de monto
+// }
+```
+
+---
+
+### 6️⃣ INVENTARIO (25+ funciones)
 
 **Tabla:** `public.inventario`
 
@@ -195,7 +302,7 @@ db.inventario.getEstadisticas()
 
 ---
 
-### 6️⃣ VENTAS (20+ funciones)
+### 7️⃣ VENTAS (20+ funciones)
 
 **Tabla:** `public.ventas`
 
@@ -231,7 +338,7 @@ db.ventas.getTopVendedores(start, end, limit)
 
 ---
 
-### 7️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
+### 8️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
 
 **Tabla:** `public.profiles`
 
@@ -266,7 +373,7 @@ db.profiles.getEstadisticas()
 
 ---
 
-### 8️⃣ NOTIFICACIONES (18+ funciones)
+### 9️⃣ NOTIFICACIONES (18+ funciones)
 
 **Tabla:** `public.notificaciones`
 
@@ -299,7 +406,7 @@ db.notificaciones.notificarStockBajo(empleadoIds, productoNombre, stock)
 
 ---
 
-### 9️⃣ METAS Y OBJETIVOS (20+ funciones)
+### 🔟 METAS Y OBJETIVOS (20+ funciones)
 
 **Tabla:** `public.metas`
 
@@ -870,6 +977,13 @@ const stats = await db.stats.getDashboard();
   ordenesPendientes: 8,
   ventasEcommerceMes: 3420,
   
+  // E-commerce Order Items
+  totalOrderItems: 1250,
+  totalUnidadesVendidas: 3500,
+  totalVentasOrderItems: "87500.00",
+  productosUnicosVendidos: 45,
+  promedioUnidadesPorOrden: "4.12",
+  
   // Inventario
   totalProductos: 45,
   productosBajoStock: 3,
@@ -1012,7 +1126,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 271+ funciones CRUD
+- `shared/config/supabaseClient.js` - 289+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -1040,8 +1154,8 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 14/14 | ✅ 100% |
-| Funciones CRUD | 271+ | ✅ Completo |
+| Tablas Integradas | 15/15 | ✅ 100% |
+| Funciones CRUD | 289+ | ✅ Completo |
 | Pantallas Funcionales | 11 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
