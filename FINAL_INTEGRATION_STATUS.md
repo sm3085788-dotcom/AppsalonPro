@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 12/12 Tablas Principales ✅
+### Base de Datos: 13/13 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -18,8 +18,9 @@
 | **Marketing Posts** | 25+ | MarketingPostsScreen.js | ✅ Completo |
 | **Marketing Post Likes** | 12+ | (Integrado en Posts) | ✅ Completo |
 | **Marketing Direct Messages** | 22+ | MarketingDirectMessagesScreen.js | ✅ Completo |
+| **Marketing Comments** | 22+ | (Integrado en Posts) | ✅ Completo |
 
-**Total:** 223+ funciones CRUD implementadas
+**Total:** 245+ funciones CRUD implementadas
 
 ---
 
@@ -549,6 +550,100 @@ const { data: stats } = await db.marketingDirectMessages.getCampaignStats(
 
 ---
 
+### 1️⃣3️⃣ MARKETING COMMENTS (22+ funciones)
+
+**Tabla:** `public.marketing_comments`
+
+**Características:**
+- ✅ Sistema de comentarios para posts de marketing
+- ✅ Relación con `marketing_posts` (cascade delete)
+- ✅ Relación con `auth.users` para autor
+- ✅ Sistema de moderación (visible, hidden, pending)
+- ✅ Timestamps automáticos
+- ✅ Conteo de comentarios por post
+- ✅ Posts más comentados
+- ✅ Estadísticas de engagement
+
+**Funciones principales:**
+```javascript
+db.marketingComments.getAll()
+db.marketingComments.getById(id)
+db.marketingComments.getByPost(postId)
+db.marketingComments.getByAuthor(authorId)
+db.marketingComments.getByModerationStatus(status)
+db.marketingComments.getVisible()
+db.marketingComments.getVisibleByPost(postId)
+db.marketingComments.getPendingModeration()
+db.marketingComments.getHidden()
+db.marketingComments.countByPost(postId)
+db.marketingComments.create(data)
+db.marketingComments.update(id, data)
+db.marketingComments.moderate(id, status)
+db.marketingComments.approve(id)
+db.marketingComments.hide(id)
+db.marketingComments.markPending(id)
+db.marketingComments.delete(id)
+db.marketingComments.deleteByPost(postId)
+db.marketingComments.deleteByAuthor(authorId)
+db.marketingComments.getRecent(limit)
+db.marketingComments.getRecentByPost(postId, limit)
+db.marketingComments.getWithPagination(offset, limit)
+db.marketingComments.getEstadisticas()
+db.marketingComments.getTopCommentedPosts(limit)
+```
+
+**Integración:**
+- Se integra automáticamente con `db.marketingPosts`
+- No requiere pantalla dedicada, funciona desde `MarketingPostsScreen.js`
+- Sistema de moderación de 3 estados para control de contenido
+
+**Estados de moderación:**
+- `visible` - Comentario aprobado y visible públicamente
+- `hidden` - Comentario oculto por moderación
+- `pending` - Comentario pendiente de revisión
+
+**Flujo de uso:**
+```javascript
+// Obtener comentarios visibles de un post
+const { data: comments } = await db.marketingComments.getVisibleByPost(postId);
+
+// Crear un nuevo comentario
+const { data: comment } = await db.marketingComments.create({
+  post_id: postId,
+  content: 'Excelente contenido!',
+  author_id: userId,
+  author_name: 'Juan Pérez',
+  moderation_status: 'visible',  // o 'pending' si requiere moderación
+});
+
+// Moderar comentarios
+await db.marketingComments.approve(commentId);  // Aprobar
+await db.marketingComments.hide(commentId);     // Ocultar
+await db.marketingComments.markPending(commentId); // Marcar como pendiente
+
+// Obtener conteo de comentarios de un post
+const { data: count } = await db.marketingComments.countByPost(postId);
+
+// Posts más comentados
+const { data: topPosts } = await db.marketingComments.getTopCommentedPosts(10);
+// Retorna: [{ post_id, comments_count, post: {...} }]
+
+// Estadísticas generales
+const { data: stats } = await db.marketingComments.getEstadisticas();
+// Retorna: {
+//   totalComentarios,
+//   visible,
+//   hidden,
+//   pending,
+//   postsConComentarios,
+//   autoresUnicos,
+//   comentariosHoy,
+//   promedioComentariosPorPost
+// }
+```
+
+---
+
 ## 📱 Pantallas Implementadas
 
 ### App Salón (10 pantallas funcionales)
@@ -678,6 +773,14 @@ const stats = await db.stats.getDashboard();
   mensajesHoy: 120,
   tasaEntregaMensajes: 90,
   
+  // Marketing Comments
+  totalComentarios: 850,
+  comentariosVisibles: 780,
+  comentariosOcultos: 40,
+  comentariosPendientes: 30,
+  comentariosHoy: 65,
+  postsConComentarios: 32,
+  
   // Total General
   ingresosTotalesMes: 14820  // Citas + E-commerce + Ventas
 }
@@ -759,7 +862,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 223+ funciones CRUD
+- `shared/config/supabaseClient.js` - 245+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -786,8 +889,8 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 12/12 | ✅ 100% |
-| Funciones CRUD | 223+ | ✅ Completo |
+| Tablas Integradas | 13/13 | ✅ 100% |
+| Funciones CRUD | 245+ | ✅ Completo |
 | Pantallas Funcionales | 10 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
@@ -818,7 +921,7 @@ npm run salon:start
 ---
 
 **Estado:** 🎉 Backend 100% Completo  
-**Fecha:** Mayo 3, 2026  
-**Funciones:** 223+ Implementadas  
+**Fecha:** Mayo 4, 2026  
+**Funciones:** 245+ Implementadas  
 **Pantallas:** 10 Funcionales  
 **Listo para:** Navegación y Producción

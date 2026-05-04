@@ -3072,6 +3072,260 @@ export const db = {
     },
   },
 
+  // ==================== MARKETING COMMENTS ====================
+  marketingComments: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getByPost: async (postId) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByAuthor: async (authorId) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('author_id', authorId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByModerationStatus: async (status) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('moderation_status', status)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getVisible: async () => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('moderation_status', 'visible')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getVisibleByPost: async (postId) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('post_id', postId)
+        .eq('moderation_status', 'visible')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getPendingModeration: async () => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('moderation_status', 'pending')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getHidden: async () => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('moderation_status', 'hidden')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    countByPost: async (postId) => {
+      const { count, error } = await supabase
+        .from('marketing_comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId)
+        .eq('moderation_status', 'visible');
+      return { data: count || 0, error };
+    },
+
+    create: async (data) => {
+      const commentData = {
+        ...data,
+        created_at: new Date().toISOString(),
+      };
+
+      const { data: newComment, error } = await supabase
+        .from('marketing_comments')
+        .insert([commentData])
+        .select()
+        .single();
+      return { data: newComment, error };
+    },
+
+    update: async (id, data) => {
+      const { data: updatedComment, error } = await supabase
+        .from('marketing_comments')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data: updatedComment, error };
+    },
+
+    moderate: async (id, status) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .update({ moderation_status: status })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    approve: async (id) => {
+      return await db.marketingComments.moderate(id, 'visible');
+    },
+
+    hide: async (id) => {
+      return await db.marketingComments.moderate(id, 'hidden');
+    },
+
+    markPending: async (id) => {
+      return await db.marketingComments.moderate(id, 'pending');
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('marketing_comments')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    deleteByPost: async (postId) => {
+      const { error } = await supabase
+        .from('marketing_comments')
+        .delete()
+        .eq('post_id', postId);
+      return { error };
+    },
+
+    deleteByAuthor: async (authorId) => {
+      const { error } = await supabase
+        .from('marketing_comments')
+        .delete()
+        .eq('author_id', authorId);
+      return { error };
+    },
+
+    getRecent: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getRecentByPost: async (postId, limit = 10) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .eq('post_id', postId)
+        .eq('moderation_status', 'visible')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getWithPagination: async (offset = 0, limit = 20) => {
+      const { data, error } = await supabase
+        .from('marketing_comments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      return { data, error };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allComments } = await supabase
+        .from('marketing_comments')
+        .select('*');
+
+      const visible = allComments?.filter(c => c.moderation_status === 'visible') || [];
+      const hidden = allComments?.filter(c => c.moderation_status === 'hidden') || [];
+      const pending = allComments?.filter(c => c.moderation_status === 'pending') || [];
+
+      const uniquePosts = new Set(allComments?.map(c => c.post_id) || []);
+      const uniqueAuthors = new Set(allComments?.map(c => c.author_id).filter(Boolean) || []);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const commentsHoy = allComments?.filter(c => 
+        new Date(c.created_at) >= today
+      ) || [];
+
+      return {
+        data: {
+          totalComentarios: allComments?.length || 0,
+          visible: visible.length,
+          hidden: hidden.length,
+          pending: pending.length,
+          postsConComentarios: uniquePosts.size,
+          autoresUnicos: uniqueAuthors.size,
+          comentariosHoy: commentsHoy.length,
+          promedioComentariosPorPost: uniquePosts.size > 0 
+            ? Math.round((allComments?.length || 0) / uniquePosts.size) 
+            : 0,
+        },
+        error: null,
+      };
+    },
+
+    getTopCommentedPosts: async (limit = 10) => {
+      const { data: allComments } = await supabase
+        .from('marketing_comments')
+        .select('post_id, marketing_posts(*)');
+
+      if (!allComments) return { data: [], error: null };
+
+      const commentsCount = {};
+      allComments.forEach(comment => {
+        if (comment.post_id) {
+          commentsCount[comment.post_id] = (commentsCount[comment.post_id] || 0) + 1;
+        }
+      });
+
+      const topPosts = Object.entries(commentsCount)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, limit)
+        .map(([postId, count]) => ({
+          post_id: postId,
+          comments_count: count,
+          post: allComments.find(c => c.post_id === parseInt(postId))?.marketing_posts,
+        }));
+
+      return { data: topPosts, error: null };
+    },
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -3171,6 +3425,9 @@ export const db = {
       // Estadísticas de marketing direct messages
       const { data: statsDirectMessages } = await db.marketingDirectMessages.getEstadisticas();
 
+      // Estadísticas de marketing comments
+      const { data: statsComments } = await db.marketingComments.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -3217,6 +3474,13 @@ export const db = {
         mensajesFallidos: statsDirectMessages?.failed || 0,
         mensajesHoy: statsDirectMessages?.mensajesHoy || 0,
         tasaEntregaMensajes: statsDirectMessages?.tasaEntrega || 0,
+        // Marketing Comments
+        totalComentarios: statsComments?.totalComentarios || 0,
+        comentariosVisibles: statsComments?.visible || 0,
+        comentariosOcultos: statsComments?.hidden || 0,
+        comentariosPendientes: statsComments?.pending || 0,
+        comentariosHoy: statsComments?.comentariosHoy || 0,
+        postsConComentarios: statsComments?.postsConComentarios || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
