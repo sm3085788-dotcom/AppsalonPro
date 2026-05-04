@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 13/13 Tablas Principales ✅
+### Base de Datos: 14/14 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -19,8 +19,9 @@
 | **Marketing Post Likes** | 12+ | (Integrado en Posts) | ✅ Completo |
 | **Marketing Direct Messages** | 22+ | MarketingDirectMessagesScreen.js | ✅ Completo |
 | **Marketing Comments** | 22+ | (Integrado en Posts) | ✅ Completo |
+| **Incidentes** | 26+ | IncidentesScreen.js | ✅ Completo |
 
-**Total:** 245+ funciones CRUD implementadas
+**Total:** 271+ funciones CRUD implementadas
 
 ---
 
@@ -644,9 +645,141 @@ const { data: stats } = await db.marketingComments.getEstadisticas();
 
 ---
 
+### 1️⃣4️⃣ INCIDENTES (26+ funciones)
+
+**Tabla:** `public.incidentes`
+
+**Características:**
+- ✅ Registro de incidencias operacionales
+- ✅ Folio automático generado (INC-XXXXXX)
+- ✅ Estados de seguimiento (registrado, en_proceso, resuelto)
+- ✅ Tipos de incidente configurables
+- ✅ Tracking de empleados y clientes involucrados
+- ✅ Sistema de reembolsos y compensaciones
+- ✅ Montos de pérdida y costos estimados
+- ✅ Hasta 3 fotos por incidente
+- ✅ Estadísticas por tipo de incidente
+- ✅ Tasa de resolución
+
+**Funciones principales:**
+```javascript
+db.incidentes.getAll()
+db.incidentes.getById(id)
+db.incidentes.getByFolio(folio)
+db.incidentes.getByEstado(estado)
+db.incidentes.getRegistrados()
+db.incidentes.getEnProceso()
+db.incidentes.getResueltos()
+db.incidentes.getByTipo(tipo)
+db.incidentes.getByEmpleado(empleadoNombre)
+db.incidentes.getByCliente(clienteNombre)
+db.incidentes.getByCreador(creadorId)
+db.incidentes.getConReembolso()
+db.incidentes.getConCompensacion()
+db.incidentes.search(query)
+db.incidentes.create(data)
+db.incidentes.update(id, data)
+db.incidentes.updateEstado(id, estado)
+db.incidentes.marcarEnProceso(id)
+db.incidentes.marcarResuelto(id)
+db.incidentes.delete(id)
+db.incidentes.getRecent(limit)
+db.incidentes.getByDateRange(start, end)
+db.incidentes.getHoy()
+db.incidentes.getEstadisticas()
+db.incidentes.getEstadisticasPorTipo()
+```
+
+**Pantalla:** `IncidentesScreen.js`
+- Dashboard con estadísticas (total, resueltos, en proceso, pérdidas, tasa de resolución)
+- Visualización de hasta 3 imágenes por incidente
+- Filtros por estado y tipo
+- Búsqueda por folio, descripción, empleado o cliente
+- Acciones rápidas (marcar en proceso/resuelto)
+- Indicadores de reembolso y compensación
+- Sistema de folios automáticos
+- Tracking de montos (pérdidas y costos)
+- Pull to refresh
+
+**Estados del incidente:**
+- `registrado` - Incidente recién registrado
+- `en_proceso` - En proceso de resolución
+- `resuelto` - Incidente resuelto
+
+**Tipos comunes:**
+- `daño` - Daño a propiedad o equipo
+- `pérdida` - Pérdida de producto o dinero
+- `robo` - Robo o hurto
+- `accidente` - Accidente laboral
+- `queja` - Queja de cliente
+- `otro` - Otros tipos
+
+**Flujo de uso:**
+```javascript
+// Crear un nuevo incidente
+const { data: incidente } = await db.incidentes.create({
+  tipo_incidente: 'daño',
+  empleado_nombre: 'María López',
+  cliente_nombre: 'Juan Pérez',
+  descripcion: 'Producto dañado durante el servicio',
+  monto_perdida: 150,
+  costo_estimado: 200,
+  aplica_reembolso: true,
+  aplica_compensacion: false,
+  imagen_url: 'https://...',
+  creado_por: userId,
+});
+// Folio generado automáticamente: INC-A1B2C3
+
+// Marcar como en proceso
+await db.incidentes.marcarEnProceso(incidente.id);
+
+// Marcar como resuelto
+await db.incidentes.marcarResuelto(incidente.id);
+
+// Obtener incidentes por estado
+const { data: pendientes } = await db.incidentes.getRegistrados();
+const { data: enProceso } = await db.incidentes.getEnProceso();
+const { data: resueltos } = await db.incidentes.getResueltos();
+
+// Estadísticas generales
+const { data: stats } = await db.incidentes.getEstadisticas();
+// Retorna: {
+//   totalIncidentes,
+//   registrados,
+//   enProceso,
+//   resueltos,
+//   conReembolso,
+//   conCompensacion,
+//   totalPerdidas: "1250.00",
+//   totalCostos: "1800.00",
+//   incidentesHoy,
+//   tipoMasFrecuente: "daño",
+//   frecuenciaMasFrecuente: 15,
+//   tasaResolucion: 85  // 85% resueltos
+// }
+
+// Estadísticas por tipo
+const { data: porTipo } = await db.incidentes.getEstadisticasPorTipo();
+// Retorna: [{
+//   tipo: "daño",
+//   cantidad: 15,
+//   perdidas: "1200.00",
+//   costos: "1500.00",
+//   resueltos: 12,
+//   tasaResolucion: 80
+// }, ...]
+
+// Buscar incidentes
+const { data } = await db.incidentes.search('INC-A1B2C3');
+// Busca en folio, tipo, empleado, cliente y descripción
+```
+
+---
+
 ## 📱 Pantallas Implementadas
 
-### App Salón (10 pantallas funcionales)
+### App Salón (11 pantallas funcionales)
 
 1. **AppointmentsScreen.js** ✅
    - Gestión completa de citas
@@ -705,6 +838,14 @@ const { data: stats } = await db.marketingComments.getEstadisticas();
    - Filtros por estado y tipo
    - Tracking de entregas
    - Acciones de marcado (entregado/fallido)
+
+11. **IncidentesScreen.js** ✅
+   - Registro y seguimiento de incidentes
+   - Dashboard de estadísticas y resolución
+   - Filtros por estado y tipo de incidente
+   - Visualización de hasta 3 imágenes
+   - Acciones de workflow (registro → proceso → resuelto)
+   - Tracking de pérdidas y costos
 
 ---
 
@@ -780,6 +921,15 @@ const stats = await db.stats.getDashboard();
   comentariosPendientes: 30,
   comentariosHoy: 65,
   postsConComentarios: 32,
+  
+  // Incidentes
+  totalIncidentes: 45,
+  incidentesRegistrados: 8,
+  incidentesEnProceso: 12,
+  incidentesResueltos: 25,
+  incidentesHoy: 3,
+  totalPerdidasIncidentes: "2450.00",
+  tasaResolucionIncidentes: 85,
   
   // Total General
   ingresosTotalesMes: 14820  // Citas + E-commerce + Ventas
@@ -862,7 +1012,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 245+ funciones CRUD
+- `shared/config/supabaseClient.js` - 271+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -876,6 +1026,7 @@ Login y permisos para staff y clientes.
 - `apps/salon/src/screens/GoalsScreen.js`
 - `apps/salon/src/screens/MarketingPostsScreen.js`
 - `apps/salon/src/screens/MarketingDirectMessagesScreen.js`
+- `apps/salon/src/screens/IncidentesScreen.js`
 
 ### Documentación
 - `INTEGRATION_COMPLETE.md`
@@ -889,9 +1040,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 13/13 | ✅ 100% |
-| Funciones CRUD | 245+ | ✅ Completo |
-| Pantallas Funcionales | 10 | ✅ Completo |
+| Tablas Integradas | 14/14 | ✅ 100% |
+| Funciones CRUD | 271+ | ✅ Completo |
+| Pantallas Funcionales | 11 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 
@@ -922,6 +1073,6 @@ npm run salon:start
 
 **Estado:** 🎉 Backend 100% Completo  
 **Fecha:** Mayo 4, 2026  
-**Funciones:** 245+ Implementadas  
-**Pantallas:** 10 Funcionales  
+**Funciones:** 271+ Implementadas  
+**Pantallas:** 11 Funcionales  
 **Listo para:** Navegación y Producción

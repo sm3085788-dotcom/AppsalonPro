@@ -3326,6 +3326,310 @@ export const db = {
     },
   },
 
+  // ==================== INCIDENTES ====================
+  incidentes: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getByFolio: async (folio) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('folio', folio)
+        .single();
+      return { data, error };
+    },
+
+    getByEstado: async (estado) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('estado', estado)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getRegistrados: async () => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('estado', 'registrado')
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getEnProceso: async () => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('estado', 'en_proceso')
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getResueltos: async () => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('estado', 'resuelto')
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByTipo: async (tipo) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('tipo_incidente', tipo)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByEmpleado: async (empleadoNombre) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('empleado_nombre', empleadoNombre)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByCliente: async (clienteNombre) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('cliente_nombre', clienteNombre)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByCreador: async (creadorId) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('creado_por', creadorId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getConReembolso: async () => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('aplica_reembolso', true)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getConCompensacion: async () => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .eq('aplica_compensacion', true)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    search: async (query) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .or(`folio.ilike.%${query}%,tipo_incidente.ilike.%${query}%,empleado_nombre.ilike.%${query}%,cliente_nombre.ilike.%${query}%,descripcion.ilike.%${query}%`)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const incidenteData = {
+        ...data,
+        fecha: data.fecha || new Date().toISOString(),
+      };
+
+      const { data: nuevoIncidente, error } = await supabase
+        .from('incidentes')
+        .insert([incidenteData])
+        .select()
+        .single();
+      return { data: nuevoIncidente, error };
+    },
+
+    update: async (id, data) => {
+      const { data: incidenteActualizado, error } = await supabase
+        .from('incidentes')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data: incidenteActualizado, error };
+    },
+
+    updateEstado: async (id, estado) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .update({ estado })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    marcarEnProceso: async (id) => {
+      return await db.incidentes.updateEstado(id, 'en_proceso');
+    },
+
+    marcarResuelto: async (id) => {
+      return await db.incidentes.updateEstado(id, 'resuelto');
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('incidentes')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    getRecent: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .order('fecha', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getByDateRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .gte('fecha', startDate)
+        .lte('fecha', endDate)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getHoy: async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const { data, error } = await supabase
+        .from('incidentes')
+        .select('*')
+        .gte('fecha', today.toISOString())
+        .lt('fecha', tomorrow.toISOString())
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allIncidentes } = await supabase
+        .from('incidentes')
+        .select('*');
+
+      const registrados = allIncidentes?.filter(i => i.estado === 'registrado') || [];
+      const enProceso = allIncidentes?.filter(i => i.estado === 'en_proceso') || [];
+      const resueltos = allIncidentes?.filter(i => i.estado === 'resuelto') || [];
+
+      const conReembolso = allIncidentes?.filter(i => i.aplica_reembolso) || [];
+      const conCompensacion = allIncidentes?.filter(i => i.aplica_compensacion) || [];
+
+      const totalPerdidas = allIncidentes?.reduce((sum, i) => sum + Number(i.monto_perdida || 0), 0) || 0;
+      const totalCostos = allIncidentes?.reduce((sum, i) => sum + Number(i.costo_estimado || 0), 0) || 0;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const incidentesHoy = allIncidentes?.filter(i => 
+        new Date(i.fecha) >= today
+      ) || [];
+
+      const tiposCount = {};
+      allIncidentes?.forEach(i => {
+        if (i.tipo_incidente) {
+          tiposCount[i.tipo_incidente] = (tiposCount[i.tipo_incidente] || 0) + 1;
+        }
+      });
+
+      const tipoMasFrecuente = Object.entries(tiposCount)
+        .sort(([, a], [, b]) => b - a)[0];
+
+      return {
+        data: {
+          totalIncidentes: allIncidentes?.length || 0,
+          registrados: registrados.length,
+          enProceso: enProceso.length,
+          resueltos: resueltos.length,
+          conReembolso: conReembolso.length,
+          conCompensacion: conCompensacion.length,
+          totalPerdidas: totalPerdidas.toFixed(2),
+          totalCostos: totalCostos.toFixed(2),
+          incidentesHoy: incidentesHoy.length,
+          tipoMasFrecuente: tipoMasFrecuente ? tipoMasFrecuente[0] : null,
+          frecuenciaMasFrecuente: tipoMasFrecuente ? tipoMasFrecuente[1] : 0,
+          tasaResolucion: allIncidentes?.length > 0 
+            ? Math.round((resueltos.length / allIncidentes.length) * 100) 
+            : 0,
+        },
+        error: null,
+      };
+    },
+
+    getEstadisticasPorTipo: async () => {
+      const { data: allIncidentes } = await supabase
+        .from('incidentes')
+        .select('*');
+
+      const porTipo = {};
+      allIncidentes?.forEach(i => {
+        if (!i.tipo_incidente) return;
+        
+        if (!porTipo[i.tipo_incidente]) {
+          porTipo[i.tipo_incidente] = {
+            tipo: i.tipo_incidente,
+            cantidad: 0,
+            perdidas: 0,
+            costos: 0,
+            resueltos: 0,
+          };
+        }
+
+        porTipo[i.tipo_incidente].cantidad++;
+        porTipo[i.tipo_incidente].perdidas += Number(i.monto_perdida || 0);
+        porTipo[i.tipo_incidente].costos += Number(i.costo_estimado || 0);
+        if (i.estado === 'resuelto') {
+          porTipo[i.tipo_incidente].resueltos++;
+        }
+      });
+
+      const resultado = Object.values(porTipo).map(tipo => ({
+        ...tipo,
+        perdidas: tipo.perdidas.toFixed(2),
+        costos: tipo.costos.toFixed(2),
+        tasaResolucion: tipo.cantidad > 0 
+          ? Math.round((tipo.resueltos / tipo.cantidad) * 100) 
+          : 0,
+      }));
+
+      return { data: resultado, error: null };
+    },
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -3428,6 +3732,9 @@ export const db = {
       // Estadísticas de marketing comments
       const { data: statsComments } = await db.marketingComments.getEstadisticas();
 
+      // Estadísticas de incidentes
+      const { data: statsIncidentes } = await db.incidentes.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -3481,6 +3788,14 @@ export const db = {
         comentariosPendientes: statsComments?.pending || 0,
         comentariosHoy: statsComments?.comentariosHoy || 0,
         postsConComentarios: statsComments?.postsConComentarios || 0,
+        // Incidentes
+        totalIncidentes: statsIncidentes?.totalIncidentes || 0,
+        incidentesRegistrados: statsIncidentes?.registrados || 0,
+        incidentesEnProceso: statsIncidentes?.enProceso || 0,
+        incidentesResueltos: statsIncidentes?.resueltos || 0,
+        incidentesHoy: statsIncidentes?.incidentesHoy || 0,
+        totalPerdidasIncidentes: statsIncidentes?.totalPerdidas || 0,
+        tasaResolucionIncidentes: statsIncidentes?.tasaResolucion || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
