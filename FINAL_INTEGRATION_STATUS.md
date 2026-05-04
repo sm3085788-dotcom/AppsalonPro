@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 10/10 Tablas Principales ✅
+### Base de Datos: 11/11 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -16,8 +16,9 @@
 | **Notificaciones** | 18+ | - | ✅ Completo |
 | **Metas** | 20+ | GoalsScreen.js | ✅ Completo |
 | **Marketing Posts** | 25+ | MarketingPostsScreen.js | ✅ Completo |
+| **Marketing Post Likes** | 12+ | (Integrado en Posts) | ✅ Completo |
 
-**Total:** 189+ funciones CRUD implementadas
+**Total:** 201+ funciones CRUD implementadas
 
 ---
 
@@ -398,6 +399,62 @@ db.marketingPosts.getEstadisticas()
 
 ---
 
+### 1️⃣1️⃣ MARKETING POST LIKES (12+ funciones)
+
+**Tabla:** `public.marketing_post_likes`
+
+**Características:**
+- ✅ Sistema de likes/reacciones para posts
+- ✅ Primary key compuesta (post_id, client_key) para evitar likes duplicados
+- ✅ Cascade delete cuando se elimina un post
+- ✅ Tracking de fecha de like
+- ✅ Identificación de clientes por client_key
+- ✅ Estadísticas de engagement
+- ✅ Posts más populares
+- ✅ Historial de likes por cliente
+
+**Funciones principales:**
+```javascript
+db.marketingPostLikes.getLikesByPost(postId)
+db.marketingPostLikes.getLikesCount(postId)
+db.marketingPostLikes.hasLiked(postId, clientKey)
+db.marketingPostLikes.addLike(postId, clientKey)
+db.marketingPostLikes.removeLike(postId, clientKey)
+db.marketingPostLikes.toggleLike(postId, clientKey)
+db.marketingPostLikes.getPostsLikedByClient(clientKey)
+db.marketingPostLikes.getLikesWithPagination(postId, offset, limit)
+db.marketingPostLikes.deleteAllByPost(postId)
+db.marketingPostLikes.getTopLikedPosts(limit, startDate, endDate)
+db.marketingPostLikes.getRecentLikes(postId, limit)
+db.marketingPostLikes.getEstadisticas()
+```
+
+**Integración:**
+- Se integra automáticamente con `db.marketingPosts`
+- Al agregar un like, incrementa `reactions_count` del post
+- Al quitar un like, decrementa `reactions_count` del post
+- No requiere pantalla dedicada, funciona desde `MarketingPostsScreen.js`
+
+**Flujo de uso:**
+```javascript
+// Verificar si el usuario ya dio like
+const { data: hasLiked } = await db.marketingPostLikes.hasLiked(postId, userKey);
+
+// Toggle like (agregar si no existe, quitar si existe)
+const { data } = await db.marketingPostLikes.toggleLike(postId, userKey);
+// data.liked = true/false
+
+// Obtener conteo de likes
+const { data: count } = await db.marketingPostLikes.getLikesCount(postId);
+
+// Posts más populares del mes
+const startOfMonth = '2026-05-01';
+const endOfMonth = '2026-05-31';
+const { data: topPosts } = await db.marketingPostLikes.getTopLikedPosts(10, startOfMonth, endOfMonth);
+```
+
+---
+
 ## 📱 Pantallas Implementadas
 
 ### App Salón (9 pantallas funcionales)
@@ -506,6 +563,12 @@ const stats = await db.stats.getDashboard();
   totalVistasMarketing: 2450,
   totalReacciones: 380,
   
+  // Marketing Likes
+  totalLikes: 380,
+  postsConLikes: 28,
+  clientesActivosMarketing: 145,
+  likesHoy: 42,
+  
   // Total General
   ingresosTotalesMes: 14820  // Citas + E-commerce + Ventas
 }
@@ -587,7 +650,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 189+ funciones CRUD
+- `shared/config/supabaseClient.js` - 201+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -613,8 +676,8 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 10/10 | ✅ 100% |
-| Funciones CRUD | 189+ | ✅ Completo |
+| Tablas Integradas | 11/11 | ✅ 100% |
+| Funciones CRUD | 201+ | ✅ Completo |
 | Pantallas Funcionales | 9 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
@@ -646,6 +709,6 @@ npm run salon:start
 
 **Estado:** 🎉 Backend 100% Completo  
 **Fecha:** Mayo 3, 2026  
-**Funciones:** 189+ Implementadas  
+**Funciones:** 201+ Implementadas  
 **Pantallas:** 9 Funcionales  
 **Listo para:** Navegación y Producción

@@ -2615,6 +2615,177 @@ export const db = {
     },
   },
 
+  // ==================== MARKETING POST LIKES ====================
+  marketingPostLikes: {
+    getLikesByPost: async (postId) => {
+      const { data, error } = await supabase
+        .from('marketing_post_likes')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getLikesCount: async (postId) => {
+      const { count, error } = await supabase
+        .from('marketing_post_likes')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId);
+      return { data: count || 0, error };
+    },
+
+    hasLiked: async (postId, clientKey) => {
+      const { data, error } = await supabase
+        .from('marketing_post_likes')
+        .select('*')
+        .eq('post_id', postId)
+        .eq('client_key', clientKey)
+        .maybeSingle();
+      return { data: !!data, error };
+    },
+
+    addLike: async (postId, clientKey) => {
+      const { data, error } = await supabase
+        .from('marketing_post_likes')
+        .insert([{ post_id: postId, client_key: clientKey }])
+        .select()
+        .single();
+
+      if (!error) {
+        await db.marketingPosts.incrementReactions(postId);
+      }
+
+      return { data, error };
+    },
+
+    removeLike: async (postId, clientKey) => {
+      const { error } = await supabase
+        .from('marketing_post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('client_key', clientKey);
+
+      if (!error) {
+        await db.marketingPosts.decrementReactions(postId);
+      }
+
+      return { error };
+    },
+
+    toggleLike: async (postId, clientKey) => {
+      const { data: hasLiked } = await db.marketingPostLikes.hasLiked(postId, clientKey);
+
+      if (hasLiked) {
+        const { error } = await db.marketingPostLikes.removeLike(postId, clientKey);
+        return { data: { liked: false }, error };
+      } else {
+        const { data, error } = await db.marketingPostLikes.addLike(postId, clientKey);
+        return { data: { liked: true, like: data }, error };
+      }
+    },
+
+    getPostsLikedByClient: async (clientKey) => {
+      const { data, error } = await supabase
+        .from('marketing_post_likes')
+        .select('post_id, created_at, marketing_posts(*)')
+        .eq('client_key', clientKey)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getLikesWithPagination: async (postId, offset = 0, limit = 20) => {
+      const { data, error } = await supabase
+        .from('marketing_post_likes')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      return { data, error };
+    },
+
+    deleteAllByPost: async (postId) => {
+      const { error } = await supabase
+        .from('marketing_post_likes')
+        .delete()
+        .eq('post_id', postId);
+      return { error };
+    },
+
+    getTopLikedPosts: async (limit = 10, startDate = null, endDate = null) => {
+      let query = supabase
+        .from('marketing_post_likes')
+        .select('post_id, marketing_posts(*)');
+
+      if (startDate) {
+        query = query.gte('created_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('created_at', endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) return { data: null, error };
+
+      const likesCount = {};
+      data?.forEach(like => {
+        if (like.post_id) {
+          likesCount[like.post_id] = (likesCount[like.post_id] || 0) + 1;
+        }
+      });
+
+      const topPosts = Object.entries(likesCount)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, limit)
+        .map(([postId, count]) => ({
+          post_id: postId,
+          likes_count: count,
+          post: data.find(d => d.post_id === parseInt(postId))?.marketing_posts,
+        }));
+
+      return { data: topPosts, error: null };
+    },
+
+    getRecentLikes: async (postId, limit = 10) => {
+      const { data, error } = await supabase
+        .from('marketing_post_likes')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allLikes } = await supabase
+        .from('marketing_post_likes')
+        .select('*');
+
+      const uniquePosts = new Set(allLikes?.map(like => like.post_id) || []);
+      const uniqueClients = new Set(allLikes?.map(like => like.client_key) || []);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const likesToday = allLikes?.filter(like => 
+        new Date(like.created_at) >= today
+      ) || [];
+
+      return {
+        data: {
+          totalLikes: allLikes?.length || 0,
+          postsConLikes: uniquePosts.size,
+          clientesActivos: uniqueClients.size,
+          likesHoy: likesToday.length,
+          promedioLikesPorPost: uniquePosts.size > 0 
+            ? Math.round((allLikes?.length || 0) / uniquePosts.size) 
+            : 0,
+        },
+        error: null,
+      };
+    },
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -2708,6 +2879,9 @@ export const db = {
       // Estadísticas de marketing posts
       const { data: statsMarketing } = await db.marketingPosts.getEstadisticas();
 
+      // Estadísticas de marketing post likes
+      const { data: statsMarketingLikes } = await db.marketingPostLikes.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -2742,6 +2916,11 @@ export const db = {
         postsBorradores: statsMarketing?.drafts || 0,
         totalVistasMarketing: statsMarketing?.totalViews || 0,
         totalReacciones: statsMarketing?.totalReactions || 0,
+        // Marketing Likes
+        totalLikes: statsMarketingLikes?.totalLikes || 0,
+        postsConLikes: statsMarketingLikes?.postsConLikes || 0,
+        clientesActivosMarketing: statsMarketingLikes?.clientesActivos || 0,
+        likesHoy: statsMarketingLikes?.likesHoy || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
