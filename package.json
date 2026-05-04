@@ -1,0 +1,33 @@
+{
+  "name": "appsalon-pro-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ecosistema de Apps para Salon de Belleza",
+  "workspaces": [
+    "apps/*",
+    "shared/*"
+  ],
+  "scripts": {
+    "salon:start": "cd apps/salon && npm start",
+    "salon:android": "cd apps/salon && npm run android",
+    "salon:ios": "cd apps/salon && npm run ios",
+    "clientes:start": "cd apps/clientes && npm start",
+    "clientes:android": "cd apps/clientes && npm run android",
+    "clientes:ios": "cd apps/clientes && npm run ios",
+    "web:dev": "cd apps/web-catalogo && npm run dev",
+    "web:build": "cd apps/web-catalogo && npm run build",
+    "install:all": "npm install && npm run install:salon && npm run install:clientes && npm run install:web",
+    "install:salon": "cd apps/salon && npm install",
+    "install:clientes": "cd apps/clientes && npm install",
+    "install:web": "cd apps/web-catalogo && npm install",
+    "verify": "node verify-setup.js",
+    "clean": "npm run clean:salon && npm run clean:clientes && npm run clean:web",
+    "clean:salon": "cd apps/salon && rm -rf node_modules .expo",
+    "clean:clientes": "cd apps/clientes && rm -rf node_modules .expo",
+    "clean:web": "cd apps/web-catalogo && rm -rf node_modules .next"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

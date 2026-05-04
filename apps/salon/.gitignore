@@ -1,0 +1,29 @@
+# Expo specific
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Environment
+.env
+.env.local
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Dependencies
+node_modules/
+
+# Logs
+npm-debug.*
+yarn-error.*
+pnpm-debug.*
+
+# Misc
+.DS_Store
+*.pem

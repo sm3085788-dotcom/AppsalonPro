@@ -1,0 +1,9 @@
+{
+  "name": "@appsalon/shared-config",
+  "version": "1.0.0",
+  "main": "supabaseClient.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "@react-native-async-storage/async-storage": "^1.21.0"
+  }
+}
