@@ -537,6 +537,514 @@ export const db = {
     },
   },
 
+  // ==================== INVENTARIO ====================
+  inventario: {
+    // Obtener todos los productos
+    getAll: async () => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .order('nombre');
+    },
+
+    // Obtener productos visibles en tienda (para e-commerce)
+    getVisiblesEnTienda: async () => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .eq('visible_en_tienda', true)
+        .gt('stock_actual', 0)
+        .order('nombre');
+    },
+
+    // Obtener por ID
+    getById: async (id) => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .eq('id', id)
+        .single();
+    },
+
+    // Obtener por categoría
+    getByCategoria: async (categoria) => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .eq('categoria', categoria)
+        .order('nombre');
+    },
+
+    // Obtener productos con stock bajo
+    getStockBajo: async () => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .filter('stock_actual', 'lte', 'stock_minimo')
+        .order('stock_actual');
+    },
+
+    // Obtener productos sin stock
+    getSinStock: async () => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .eq('stock_actual', 0)
+        .order('nombre');
+    },
+
+    // Buscar productos
+    search: async (query) => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .or(`nombre.ilike.%${query}%,categoria.ilike.%${query}%,barcode.ilike.%${query}%`)
+        .order('nombre');
+    },
+
+    // Buscar por barcode
+    getByBarcode: async (barcode) => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .eq('barcode', barcode)
+        .single();
+    },
+
+    // Crear producto
+    create: async (data) => {
+      return await supabase
+        .from('inventario')
+        .insert({
+          nombre: data.nombre,
+          categoria: data.categoria || null,
+          stock_actual: data.stock_actual || 0,
+          stock_minimo: data.stock_minimo || 5,
+          precio_costo: data.precio_costo || null,
+          costo: data.costo || null,
+          precio_venta: data.precio_venta || null,
+          es_consumible: data.es_consumible || false,
+          barcode: data.barcode || null,
+          imagen_url: data.imagen_url || null,
+          imagenes_urls: data.imagenes_urls || [],
+          fecha_vencimiento: data.fecha_vencimiento || null,
+          ubicacion: data.ubicacion || null,
+          notas: data.notas || null,
+          visible_en_tienda: data.visible_en_tienda || false,
+          descripcion_tienda: data.descripcion_tienda || null,
+        })
+        .select()
+        .single();
+    },
+
+    // Actualizar producto
+    update: async (id, data) => {
+      return await supabase
+        .from('inventario')
+        .update({
+          ...data,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Actualizar stock
+    updateStock: async (id, nuevoStock) => {
+      return await supabase
+        .from('inventario')
+        .update({
+          stock_actual: nuevoStock,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Incrementar stock
+    incrementarStock: async (id, cantidad) => {
+      const { data: producto } = await supabase
+        .from('inventario')
+        .select('stock_actual')
+        .eq('id', id)
+        .single();
+
+      if (!producto) return { error: 'Producto no encontrado' };
+
+      return await supabase
+        .from('inventario')
+        .update({
+          stock_actual: producto.stock_actual + cantidad,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Decrementar stock
+    decrementarStock: async (id, cantidad) => {
+      const { data: producto } = await supabase
+        .from('inventario')
+        .select('stock_actual')
+        .eq('id', id)
+        .single();
+
+      if (!producto) return { error: 'Producto no encontrado' };
+
+      const nuevoStock = Math.max(0, producto.stock_actual - cantidad);
+
+      return await supabase
+        .from('inventario')
+        .update({
+          stock_actual: nuevoStock,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Cambiar visibilidad en tienda
+    setVisibilidadTienda: async (id, visible) => {
+      return await supabase
+        .from('inventario')
+        .update({
+          visible_en_tienda: visible,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Eliminar producto
+    delete: async (id) => {
+      return await supabase
+        .from('inventario')
+        .delete()
+        .eq('id', id);
+    },
+
+    // Obtener productos próximos a vencer
+    getProximosAVencer: async (dias = 30) => {
+      const fecha = new Date();
+      fecha.setDate(fecha.getDate() + dias);
+
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .not('fecha_vencimiento', 'is', null)
+        .lte('fecha_vencimiento', fecha.toISOString().split('T')[0])
+        .order('fecha_vencimiento');
+    },
+
+    // Obtener estadísticas de inventario
+    getEstadisticas: async () => {
+      const { data: productos } = await supabase
+        .from('inventario')
+        .select('*');
+
+      if (!productos) return { error: 'Error al obtener productos' };
+
+      const totalProductos = productos.length;
+      const productosBajoStock = productos.filter(p => 
+        p.stock_actual <= p.stock_minimo
+      ).length;
+      const productosSinStock = productos.filter(p => p.stock_actual === 0).length;
+      const productosVisiblesTienda = productos.filter(p => p.visible_en_tienda).length;
+      
+      const valorInventario = productos.reduce((sum, p) => {
+        const costo = Number(p.costo || p.precio_costo || 0);
+        return sum + (costo * p.stock_actual);
+      }, 0);
+
+      const valorVentaPotencial = productos.reduce((sum, p) => {
+        const precioVenta = Number(p.precio_venta || 0);
+        return sum + (precioVenta * p.stock_actual);
+      }, 0);
+
+      return {
+        data: {
+          totalProductos,
+          productosBajoStock,
+          productosSinStock,
+          productosVisiblesTienda,
+          valorInventario: valorInventario.toFixed(2),
+          valorVentaPotencial: valorVentaPotencial.toFixed(2),
+          margenPotencial: (valorVentaPotencial - valorInventario).toFixed(2),
+        },
+        error: null,
+      };
+    },
+
+    // Obtener productos por rango de precio
+    getByPrecioVenta: async (min, max) => {
+      return await supabase
+        .from('inventario')
+        .select('*')
+        .gte('precio_venta', min)
+        .lte('precio_venta', max)
+        .order('precio_venta');
+    },
+  },
+
+  // ==================== E-COMMERCE ORDERS ====================
+  orders: {
+    // Obtener todas las órdenes
+    getAll: async () => {
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+    },
+
+    // Obtener órdenes por estado
+    getByStatus: async (status) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .eq('status', status)
+        .order('created_at', { ascending: false });
+    },
+
+    // Obtener orden por ID
+    getById: async (id) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .eq('id', id)
+        .single();
+    },
+
+    // Obtener orden por tracking code
+    getByTrackingCode: async (trackingCode) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .eq('tracking_code', trackingCode)
+        .single();
+    },
+
+    // Obtener órdenes de un cliente
+    getByCliente: async (clientUserId) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .eq('client_user_id', clientUserId)
+        .order('created_at', { ascending: false });
+    },
+
+    // Buscar órdenes (por nombre, teléfono o tracking code)
+    search: async (query) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .or(`customer_name.ilike.%${query}%,customer_phone.ilike.%${query}%,tracking_code.ilike.%${query}%`)
+        .order('created_at', { ascending: false });
+    },
+
+    // Crear nueva orden
+    create: async (data) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .insert({
+          customer_name: data.customer_name,
+          customer_phone: data.customer_phone,
+          notes: data.notes || null,
+          status: data.status || 'pending',
+          total_amount: data.total_amount || 0,
+          source: data.source || 'mobile-client',
+          client_user_id: data.client_user_id || null,
+          payment_method: data.payment_method || null,
+          card_last4: data.card_last4 || null,
+          fulfillment_type: data.fulfillment_type || null,
+          delivery_address: data.delivery_address || null,
+          delivery_reference: data.delivery_reference || null,
+          checkout_snapshot: data.checkout_snapshot || null,
+        })
+        .select()
+        .single();
+    },
+
+    // Actualizar orden
+    update: async (id, data) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .update({
+          ...data,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Actualizar estado de orden
+    updateStatus: async (id, newStatus) => {
+      const updates = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Actualizar timestamps según el estado
+      switch (newStatus) {
+        case 'confirmed':
+          updates.confirmed_at = new Date().toISOString();
+          break;
+        case 'prepared':
+          updates.prepared_at = new Date().toISOString();
+          break;
+        case 'delivered':
+          updates.delivered_at = new Date().toISOString();
+          break;
+        case 'cancelled':
+          updates.cancelled_at = new Date().toISOString();
+          break;
+      }
+
+      return await supabase
+        .from('ecommerce_orders')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Confirmar orden
+    confirmar: async (id) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .update({
+          status: 'confirmed',
+          confirmed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Marcar como preparada
+    marcarPreparada: async (id) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .update({
+          status: 'prepared',
+          prepared_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Marcar como entregada
+    marcarEntregada: async (id) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .update({
+          status: 'delivered',
+          delivered_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Cancelar orden
+    cancelar: async (id, reason) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancelled_reason: reason,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Eliminar orden
+    delete: async (id) => {
+      return await supabase
+        .from('ecommerce_orders')
+        .delete()
+        .eq('id', id);
+    },
+
+    // Obtener órdenes recientes (últimos 7 días)
+    getRecientes: async (dias = 7) => {
+      const fecha = new Date();
+      fecha.setDate(fecha.getDate() - dias);
+
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .gte('created_at', fecha.toISOString())
+        .order('created_at', { ascending: false });
+    },
+
+    // Obtener órdenes de hoy
+    getHoy: async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      return await supabase
+        .from('ecommerce_orders')
+        .select('*')
+        .gte('created_at', today.toISOString())
+        .lt('created_at', tomorrow.toISOString())
+        .order('created_at', { ascending: false });
+    },
+
+    // Estadísticas de órdenes
+    getEstadisticas: async (startDate = null, endDate = null) => {
+      let query = supabase
+        .from('ecommerce_orders')
+        .select('status, total_amount, created_at');
+
+      if (startDate) {
+        query = query.gte('created_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('created_at', endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) return { error };
+
+      const totalOrdenes = data.length;
+      const ordenesEntregadas = data.filter(o => o.status === 'delivered').length;
+      const ordenesCanceladas = data.filter(o => o.status === 'cancelled').length;
+      const ventasTotales = data
+        .filter(o => o.status !== 'cancelled')
+        .reduce((sum, o) => sum + Number(o.total_amount), 0);
+      const promedioOrden = totalOrdenes > 0 ? (ventasTotales / totalOrdenes).toFixed(2) : 0;
+
+      return {
+        data: {
+          totalOrdenes,
+          ordenesEntregadas,
+          ordenesCanceladas,
+          ventasTotales,
+          promedioOrden,
+          tasaEntrega: totalOrdenes > 0 ? (ordenesEntregadas / totalOrdenes * 100).toFixed(1) : 0,
+        },
+        error: null,
+      };
+    },
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -585,12 +1093,47 @@ export const db = {
 
       const ingresosMes = citasMes?.reduce((sum, cita) => sum + Number(cita.precio), 0) || 0;
 
+      // Órdenes de e-commerce de hoy
+      const { count: ordenesHoy } = await supabase
+        .from('ecommerce_orders')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', today.toISOString())
+        .lt('created_at', tomorrow.toISOString());
+
+      // Órdenes pendientes
+      const { count: ordenesPendientes } = await supabase
+        .from('ecommerce_orders')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['pending', 'confirmed', 'prepared']);
+
+      // Ventas e-commerce del mes
+      const { data: ordenesMes } = await supabase
+        .from('ecommerce_orders')
+        .select('total_amount')
+        .neq('status', 'cancelled')
+        .gte('created_at', startOfMonth.toISOString())
+        .lte('created_at', endOfMonth.toISOString());
+
+      const ventasEcommerceMes = ordenesMes?.reduce((sum, orden) => sum + Number(orden.total_amount), 0) || 0;
+
+      // Estadísticas de inventario
+      const statsInventario = await db.inventario.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
         totalEmpleados: totalEmpleados || 0,
         citasPendientes: citasPendientes || 0,
         ingresosMes: ingresosMes,
+        ordenesHoy: ordenesHoy || 0,
+        ordenesPendientes: ordenesPendientes || 0,
+        ventasEcommerceMes: ventasEcommerceMes,
+        ingresosTotalesMes: ingresosMes + ventasEcommerceMes,
+        // Inventario
+        totalProductos: statsInventario.data?.totalProductos || 0,
+        productosBajoStock: statsInventario.data?.productosBajoStock || 0,
+        productosSinStock: statsInventario.data?.productosSinStock || 0,
+        valorInventario: statsInventario.data?.valorInventario || 0,
       };
     },
 
