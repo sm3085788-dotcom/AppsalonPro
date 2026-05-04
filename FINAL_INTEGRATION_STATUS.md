@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 16/16 Tablas Principales ✅
+### Base de Datos: 17/17 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -13,6 +13,7 @@
 | **E-commerce Order Items** | 18+ | (Integrado en Orders) | ✅ Completo |
 | **Inventario** | 25+ | InventoryScreen.js | ✅ Completo |
 | **Ventas** | 20+ | SalesScreen.js | ✅ Completo |
+| **Cambios de Productos** | 22+ | CambiosProductosScreen.js | ✅ Completo |
 | **Devoluciones** | 26+ | DevolucionesScreen.js | ✅ Completo |
 | **Profiles (Usuarios)** | 20+ | UsersScreen.js | ✅ Completo |
 | **Notificaciones** | 18+ | - | ✅ Completo |
@@ -23,7 +24,7 @@
 | **Marketing Comments** | 22+ | (Integrado en Posts) | ✅ Completo |
 | **Incidentes** | 26+ | IncidentesScreen.js | ✅ Completo |
 
-**Total:** 315+ funciones CRUD implementadas
+**Total:** 337+ funciones CRUD implementadas
 
 ---
 
@@ -339,7 +340,151 @@ db.ventas.getTopVendedores(start, end, limit)
 
 ---
 
-### 8️⃣ DEVOLUCIONES (26+ funciones)
+### 8️⃣ CAMBIOS DE PRODUCTOS (22+ funciones)
+
+**Tabla:** `public.cambios_productos`
+
+**Características:**
+- ✅ Sistema de intercambio de productos
+- ✅ Relación con venta original (FK)
+- ✅ Producto que el cliente devuelve (producto_entrada_id FK)
+- ✅ Producto que el cliente recibe (producto_salida_id FK)
+- ✅ Diferencia de precio cobrada o reembolsada
+- ✅ Relación con cajas para tracking financiero (FK)
+- ✅ Trigger automático para ajustar inventario
+- ✅ Estadísticas de productos más cambiados
+- ✅ Estadísticas de productos más solicitados
+- ✅ Tracking de diferencias cobradas
+- ✅ Análisis de patrones de cambios
+
+**Funciones principales:**
+```javascript
+db.cambiosProductos.getAll()
+db.cambiosProductos.getById(id)
+db.cambiosProductos.getByVenta(ventaId)
+db.cambiosProductos.getByProductoEntrada(productoId)
+db.cambiosProductos.getByProductoSalida(productoId)
+db.cambiosProductos.getByCaja(cajaId)
+db.cambiosProductos.getConDiferencia()
+db.cambiosProductos.getSinDiferencia()
+db.cambiosProductos.create(data)
+db.cambiosProductos.update(id, data)
+db.cambiosProductos.delete(id)
+db.cambiosProductos.getRecent(limit)
+db.cambiosProductos.getByDateRange(start, end)
+db.cambiosProductos.getHoy()
+db.cambiosProductos.getTotalDiferenciaMes()
+db.cambiosProductos.getEstadisticas()
+db.cambiosProductos.getProductosMasCambiados(limit)
+db.cambiosProductos.getProductosMasSolicitados(limit)
+```
+
+**Pantalla:** `CambiosProductosScreen.js`
+- Dashboard con estadísticas (total, con/sin diferencia, total cobrado)
+- Filtros por estado (Todos, Con Diferencia, Sin Diferencia, Hoy)
+- Búsqueda por factura o nombre de producto
+- Visualización clara del flujo: producto devuelto → producto recibido
+- Indicadores visuales de diferencia cobrada
+- Iconos diferenciados (rojo para devuelto, verde para recibido)
+- Pull to refresh
+
+**Flujo del cambio:**
+- **Producto Entrada**: Producto que el cliente devuelve/entrega
+- **Producto Salida**: Producto nuevo que el cliente recibe
+- **Diferencia Cobrada**: 
+  - Positivo (>0): Cliente paga diferencia (producto nuevo más caro)
+  - Cero (=0): Cambio directo sin diferencia (mismo precio)
+  - Negativo (<0): Se reembolsa al cliente (producto nuevo más barato)
+
+**Flujo de uso:**
+```javascript
+// Registrar un cambio de producto
+const { data: cambio } = await db.cambiosProductos.create({
+  venta_id: ventaId,
+  producto_entrada_id: productoViejoId, // Cliente devuelve
+  producto_salida_id: productoNuevoId,  // Cliente recibe
+  diferencia_cobrada: 50.00, // Cliente paga $50 extra
+  caja_id: cajaId,
+});
+// El trigger ajusta automáticamente el inventario:
+// - Incrementa stock del producto devuelto (entrada)
+// - Decrementa stock del producto nuevo (salida)
+
+// Cambio directo sin diferencia
+const { data: cambioDirecto } = await db.cambiosProductos.create({
+  venta_id: ventaId,
+  producto_entrada_id: productoAId,
+  producto_salida_id: productoBId,
+  diferencia_cobrada: 0, // Mismo precio, sin diferencia
+  caja_id: cajaId,
+});
+
+// Obtener cambios de una venta
+const { data: cambiosVenta } = await db.cambiosProductos.getByVenta(ventaId);
+
+// Productos más cambiados (devueltos frecuentemente)
+const { data: masCambiados } = await db.cambiosProductos.getProductosMasCambiados(10);
+// Retorna: [{
+//   producto_id: 'uuid',
+//   nombre: 'Shampoo Anticaspa',
+//   imagen_url: 'https://...',
+//   veces_cambiado: 25 // Devuelto 25 veces
+// }, ...]
+
+// Productos más solicitados (recibidos frecuentemente)
+const { data: masSolicitados } = await db.cambiosProductos.getProductosMasSolicitados(10);
+// Retorna: [{
+//   producto_id: 'uuid',
+//   nombre: 'Acondicionador Premium',
+//   imagen_url: 'https://...',
+//   veces_solicitado: 30 // Solicitado 30 veces en cambios
+// }, ...]
+
+// Estadísticas generales
+const { data: stats } = await db.cambiosProductos.getEstadisticas();
+// Retorna: {
+//   totalCambios: 150,
+//   conDiferencia: 90,           // 90 cambios con diferencia de precio
+//   sinDiferencia: 60,           // 60 cambios directos
+//   totalDiferenciaCobrada: "4500.00", // Total cobrado en diferencias
+//   cambiosHoy: 8,
+//   promedioDiferencia: "50.00", // Promedio de diferencia cuando la hay
+//   porcentajeConDiferencia: 60  // 60% de cambios tienen diferencia
+// }
+
+// Total de diferencias cobradas en el mes
+const { data: totalMes } = await db.cambiosProductos.getTotalDiferenciaMes();
+console.log(`Diferencias cobradas este mes: $${totalMes}`);
+
+// Cambios con diferencia (cliente pagó extra)
+const { data: conDiferencia } = await db.cambiosProductos.getConDiferencia();
+
+// Cambios sin diferencia (mismo precio)
+const { data: sinDiferencia } = await db.cambiosProductos.getSinDiferencia();
+```
+
+**Integración con otras tablas:**
+- ✅ `ventas`: Relación con la venta original
+- ✅ `inventario`: Dos FKs (entrada y salida), trigger ajusta stocks
+- ✅ `cajas`: Tracking de caja donde se procesó el cambio
+- ✅ Dashboard global: Métricas de cambios incluidas
+
+**Casos de uso comunes:**
+1. **Cliente insatisfecho**: Cambia producto por otro diferente
+2. **Error en compra**: Compró talla/color equivocado
+3. **Upgrade**: Cliente paga diferencia por producto mejor
+4. **Downgrade**: Se reembolsa diferencia por producto más económico
+5. **Cambio directo**: Productos del mismo precio
+
+**Consideraciones importantes:**
+- El trigger `trigger_stock_cambio` ajusta automáticamente ambos inventarios
+- Solo se permite cambio de productos en inventario con stock disponible
+- La diferencia puede ser positiva (cliente paga), cero (directo) o negativa (reembolso)
+- Los cambios quedan vinculados a la venta original para auditoría
+
+---
+
+### 9️⃣ DEVOLUCIONES (26+ funciones)
 
 **Tabla:** `public.devoluciones`
 
@@ -487,7 +632,7 @@ console.log(`Total devuelto este mes: $${totalMes}`);
 
 ---
 
-### 9️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
+### 🔟 PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
 
 **Tabla:** `public.profiles`
 
@@ -522,7 +667,7 @@ db.profiles.getEstadisticas()
 
 ---
 
-### 🔟 NOTIFICACIONES (18+ funciones)
+### 1️⃣1️⃣ NOTIFICACIONES (18+ funciones)
 
 **Tabla:** `public.notificaciones`
 
@@ -555,7 +700,7 @@ db.notificaciones.notificarStockBajo(empleadoIds, productoNombre, stock)
 
 ---
 
-### 1️⃣1️⃣ METAS Y OBJETIVOS (20+ funciones)
+### 1️⃣2️⃣ METAS Y OBJETIVOS (20+ funciones)
 
 **Tabla:** `public.metas`
 
@@ -601,7 +746,7 @@ db.metas.getEstadisticas()
 
 ---
 
-### 1️⃣2️⃣ MARKETING POSTS (25+ funciones)
+### 1️⃣3️⃣ MARKETING POSTS (25+ funciones)
 
 **Tabla:** `public.marketing_posts`
 
@@ -658,7 +803,7 @@ db.marketingPosts.getEstadisticas()
 
 ---
 
-### 1️⃣3️⃣ MARKETING POST LIKES (12+ funciones)
+### 1️⃣4️⃣ MARKETING POST LIKES (12+ funciones)
 
 **Tabla:** `public.marketing_post_likes`
 
@@ -714,7 +859,7 @@ const { data: topPosts } = await db.marketingPostLikes.getTopLikedPosts(10, star
 
 ---
 
-### 1️⃣4️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
+### 1️⃣5️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
 
 **Tabla:** `public.marketing_direct_messages`
 
@@ -807,7 +952,7 @@ const { data: stats } = await db.marketingDirectMessages.getCampaignStats(
 
 ---
 
-### 1️⃣5️⃣ MARKETING COMMENTS (22+ funciones)
+### 1️⃣6️⃣ MARKETING COMMENTS (22+ funciones)
 
 **Tabla:** `public.marketing_comments`
 
@@ -901,7 +1046,7 @@ const { data: stats } = await db.marketingComments.getEstadisticas();
 
 ---
 
-### 1️⃣6️⃣ INCIDENTES (26+ funciones)
+### 1️⃣7️⃣ INCIDENTES (26+ funciones)
 
 **Tabla:** `public.incidentes`
 
@@ -1133,6 +1278,15 @@ const stats = await db.stats.getDashboard();
   productosUnicosVendidos: 45,
   promedioUnidadesPorOrden: "4.12",
   
+  // Cambios de Productos
+  totalCambios: 150,
+  cambiosConDiferencia: 90,
+  cambiosSinDiferencia: 60,
+  cambiosHoy: 8,
+  totalDiferenciaCobrada: "4500.00",
+  promedioDiferenciaCambio: "50.00",
+  porcentajeCambiosConDiferencia: 60,
+  
   // Devoluciones
   totalDevoluciones: 150,
   devolucionesAprobadas: 120,
@@ -1285,7 +1439,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 315+ funciones CRUD
+- `shared/config/supabaseClient.js` - 337+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -1295,6 +1449,7 @@ Login y permisos para staff y clientes.
 - `apps/salon/src/screens/OrdersScreen.js`
 - `apps/salon/src/screens/InventoryScreen.js`
 - `apps/salon/src/screens/SalesScreen.js`
+- `apps/salon/src/screens/CambiosProductosScreen.js`
 - `apps/salon/src/screens/DevolucionesScreen.js`
 - `apps/salon/src/screens/UsersScreen.js`
 - `apps/salon/src/screens/GoalsScreen.js`
@@ -1314,9 +1469,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 16/16 | ✅ 100% |
-| Funciones CRUD | 315+ | ✅ Completo |
-| Pantallas Funcionales | 12 | ✅ Completo |
+| Tablas Integradas | 17/17 | ✅ 100% |
+| Funciones CRUD | 337+ | ✅ Completo |
+| Pantallas Funcionales | 13 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 

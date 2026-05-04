@@ -3326,6 +3326,310 @@ export const db = {
     },
   },
 
+  // ==================== CAMBIOS DE PRODUCTOS ====================
+  cambiosProductos: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura, fecha),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url, precio_venta),
+          producto_salida:producto_salida_id(id, nombre, imagen_url, precio_venta),
+          caja:cajas(id, nombre)
+        `)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura, fecha),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url, precio_venta),
+          producto_salida:producto_salida_id(id, nombre, imagen_url, precio_venta),
+          caja:cajas(id, nombre)
+        `)
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getByVenta: async (ventaId) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url),
+          producto_salida:producto_salida_id(id, nombre, imagen_url)
+        `)
+        .eq('venta_id', ventaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByProductoEntrada: async (productoId) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_salida:producto_salida_id(id, nombre)
+        `)
+        .eq('producto_entrada_id', productoId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByProductoSalida: async (productoId) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre)
+        `)
+        .eq('producto_salida_id', productoId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByCaja: async (cajaId) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre),
+          producto_salida:producto_salida_id(id, nombre)
+        `)
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getConDiferencia: async () => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url),
+          producto_salida:producto_salida_id(id, nombre, imagen_url)
+        `)
+        .gt('diferencia_cobrada', 0)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getSinDiferencia: async () => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url),
+          producto_salida:producto_salida_id(id, nombre, imagen_url)
+        `)
+        .eq('diferencia_cobrada', 0)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const cambioData = {
+        ...data,
+        fecha: new Date().toISOString(),
+      };
+
+      const { data: newCambio, error } = await supabase
+        .from('cambios_productos')
+        .insert([cambioData])
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url),
+          producto_salida:producto_salida_id(id, nombre, imagen_url)
+        `)
+        .single();
+      return { data: newCambio, error };
+    },
+
+    update: async (id, data) => {
+      const { data: updatedCambio, error } = await supabase
+        .from('cambios_productos')
+        .update(data)
+        .eq('id', id)
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url),
+          producto_salida:producto_salida_id(id, nombre, imagen_url)
+        `)
+        .single();
+      return { data: updatedCambio, error };
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('cambios_productos')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    getRecent: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url),
+          producto_salida:producto_salida_id(id, nombre, imagen_url)
+        `)
+        .order('fecha', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getByDateRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('cambios_productos')
+        .select(`
+          *,
+          venta:ventas(id, no_factura),
+          producto_entrada:producto_entrada_id(id, nombre, imagen_url),
+          producto_salida:producto_salida_id(id, nombre, imagen_url)
+        `)
+        .gte('fecha', startDate)
+        .lte('fecha', endDate)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getHoy: async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      return await db.cambiosProductos.getByDateRange(
+        today.toISOString(),
+        tomorrow.toISOString()
+      );
+    },
+
+    getTotalDiferenciaMes: async () => {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+      const { data } = await supabase
+        .from('cambios_productos')
+        .select('diferencia_cobrada')
+        .gte('fecha', startOfMonth.toISOString())
+        .lte('fecha', endOfMonth.toISOString());
+
+      const total = data?.reduce((sum, cambio) => sum + Number(cambio.diferencia_cobrada || 0), 0) || 0;
+      return { data: total, error: null };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allCambios } = await supabase
+        .from('cambios_productos')
+        .select('*');
+
+      const conDiferencia = allCambios?.filter(c => Number(c.diferencia_cobrada) > 0) || [];
+      const sinDiferencia = allCambios?.filter(c => Number(c.diferencia_cobrada) === 0) || [];
+
+      const totalDiferencia = allCambios?.reduce((sum, c) => sum + Number(c.diferencia_cobrada || 0), 0) || 0;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const cambiosHoy = allCambios?.filter(c =>
+        new Date(c.fecha) >= today
+      ) || [];
+
+      const promedioDiferencia = conDiferencia.length > 0
+        ? (conDiferencia.reduce((sum, c) => sum + Number(c.diferencia_cobrada), 0) / conDiferencia.length)
+        : 0;
+
+      return {
+        data: {
+          totalCambios: allCambios?.length || 0,
+          conDiferencia: conDiferencia.length,
+          sinDiferencia: sinDiferencia.length,
+          totalDiferenciaCobrada: totalDiferencia.toFixed(2),
+          cambiosHoy: cambiosHoy.length,
+          promedioDiferencia: promedioDiferencia.toFixed(2),
+          porcentajeConDiferencia: allCambios?.length > 0
+            ? Math.round((conDiferencia.length / allCambios.length) * 100)
+            : 0,
+        },
+        error: null,
+      };
+    },
+
+    getProductosMasCambiados: async (limit = 10) => {
+      const { data: cambiosEntrada } = await supabase
+        .from('cambios_productos')
+        .select('producto_entrada_id, inventario!cambios_productos_producto_entrada_id_fkey(nombre, imagen_url)');
+
+      if (!cambiosEntrada) return { data: [], error: null };
+
+      const productosCount = {};
+      cambiosEntrada.forEach(cambio => {
+        const id = cambio.producto_entrada_id;
+        if (!productosCount[id]) {
+          productosCount[id] = {
+            producto_id: id,
+            nombre: cambio.inventario?.nombre || 'Desconocido',
+            imagen_url: cambio.inventario?.imagen_url,
+            veces_cambiado: 0,
+          };
+        }
+        productosCount[id].veces_cambiado++;
+      });
+
+      const topProductos = Object.values(productosCount)
+        .sort((a, b) => b.veces_cambiado - a.veces_cambiado)
+        .slice(0, limit);
+
+      return { data: topProductos, error: null };
+    },
+
+    getProductosMasSolicitados: async (limit = 10) => {
+      const { data: cambiosSalida } = await supabase
+        .from('cambios_productos')
+        .select('producto_salida_id, inventario!cambios_productos_producto_salida_id_fkey(nombre, imagen_url)');
+
+      if (!cambiosSalida) return { data: [], error: null };
+
+      const productosCount = {};
+      cambiosSalida.forEach(cambio => {
+        const id = cambio.producto_salida_id;
+        if (!productosCount[id]) {
+          productosCount[id] = {
+            producto_id: id,
+            nombre: cambio.inventario?.nombre || 'Desconocido',
+            imagen_url: cambio.inventario?.imagen_url,
+            veces_solicitado: 0,
+          };
+        }
+        productosCount[id].veces_solicitado++;
+      });
+
+      const topProductos = Object.values(productosCount)
+        .sort((a, b) => b.veces_solicitado - a.veces_solicitado)
+        .slice(0, limit);
+
+      return { data: topProductos, error: null };
+    },
+  },
+
   // ==================== DEVOLUCIONES ====================
   devoluciones: {
     getAll: async () => {
@@ -4277,6 +4581,9 @@ export const db = {
       // Estadísticas de devoluciones
       const { data: statsDevoluciones } = await db.devoluciones.getEstadisticas();
 
+      // Estadísticas de cambios de productos
+      const { data: statsCambios } = await db.cambiosProductos.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -4353,6 +4660,14 @@ export const db = {
         totalDevuelto: statsDevoluciones?.totalDevuelto || 0,
         tasaAprobacionDevoluciones: statsDevoluciones?.tasaAprobacion || 0,
         promedioDevolucion: statsDevoluciones?.promedioDevolucion || 0,
+        // Cambios de Productos
+        totalCambios: statsCambios?.totalCambios || 0,
+        cambiosConDiferencia: statsCambios?.conDiferencia || 0,
+        cambiosSinDiferencia: statsCambios?.sinDiferencia || 0,
+        cambiosHoy: statsCambios?.cambiosHoy || 0,
+        totalDiferenciaCobrada: statsCambios?.totalDiferenciaCobrada || 0,
+        promedioDiferenciaCambio: statsCambios?.promedioDiferencia || 0,
+        porcentajeCambiosConDiferencia: statsCambios?.porcentajeConDiferencia || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
