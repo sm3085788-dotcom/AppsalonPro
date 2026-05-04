@@ -1,0 +1,75 @@
+{
+  "analyzed_at": "2026-05-04T03:18:44.513Z",
+  "supabase_url": "https://nqqntgvoxnnohodsmdqa.supabase.co",
+  "tables": [
+    {
+      "name": "users",
+      "count": 0
+    },
+    {
+      "name": "customers",
+      "count": 0
+    },
+    {
+      "name": "clients",
+      "count": 0
+    },
+    {
+      "name": "appointments",
+      "count": 0
+    },
+    {
+      "name": "reservas",
+      "count": 0
+    },
+    {
+      "name": "bookings",
+      "count": 0
+    },
+    {
+      "name": "servicios",
+      "count": 0
+    },
+    {
+      "name": "services",
+      "count": 0
+    },
+    {
+      "name": "productos",
+      "count": 0
+    },
+    {
+      "name": "products",
+      "count": 0
+    },
+    {
+      "name": "inventory",
+      "count": 0
+    },
+    {
+      "name": "staff",
+      "count": 0
+    },
+    {
+      "name": "employees",
+      "count": 0
+    },
+    {
+      "name": "pagos",
+      "count": 0
+    },
+    {
+      "name": "payments",
+      "count": 0
+    },
+    {
+      "name": "categorias",
+      "count": 0
+    },
+    {
+      "name": "categories",
+      "count": 0
+    }
+  ],
+  "total_tables": 17
+}

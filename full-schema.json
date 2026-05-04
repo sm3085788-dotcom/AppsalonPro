@@ -1,0 +1,90 @@
+{
+  "analyzed_at": "2026-05-04T03:19:26.187Z",
+  "schema": {
+    "users": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "customers": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "clients": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "appointments": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "reservas": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "bookings": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "servicios": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "services": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "productos": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "products": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "inventory": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "staff": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "employees": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "pagos": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "payments": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "categorias": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    },
+    "categories": {
+      "accessible": true,
+      "rls_enabled": true,
+      "columns_inferred": "Necesita datos de ejemplo o acceso a information_schema"
+    }
+  }
+}
