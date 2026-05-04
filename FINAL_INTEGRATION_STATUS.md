@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 15/15 Tablas Principales ✅
+### Base de Datos: 16/16 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -13,6 +13,7 @@
 | **E-commerce Order Items** | 18+ | (Integrado en Orders) | ✅ Completo |
 | **Inventario** | 25+ | InventoryScreen.js | ✅ Completo |
 | **Ventas** | 20+ | SalesScreen.js | ✅ Completo |
+| **Devoluciones** | 26+ | DevolucionesScreen.js | ✅ Completo |
 | **Profiles (Usuarios)** | 20+ | UsersScreen.js | ✅ Completo |
 | **Notificaciones** | 18+ | - | ✅ Completo |
 | **Metas** | 20+ | GoalsScreen.js | ✅ Completo |
@@ -22,7 +23,7 @@
 | **Marketing Comments** | 22+ | (Integrado en Posts) | ✅ Completo |
 | **Incidentes** | 26+ | IncidentesScreen.js | ✅ Completo |
 
-**Total:** 289+ funciones CRUD implementadas
+**Total:** 315+ funciones CRUD implementadas
 
 ---
 
@@ -338,7 +339,155 @@ db.ventas.getTopVendedores(start, end, limit)
 
 ---
 
-### 8️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
+### 8️⃣ DEVOLUCIONES (26+ funciones)
+
+**Tabla:** `public.devoluciones`
+
+**Características:**
+- ✅ Sistema de devoluciones de productos vendidos
+- ✅ Relación con ventas originales (FK)
+- ✅ Relación con inventario para tracking (FK)
+- ✅ Relación con cajas para reembolsos (FK)
+- ✅ Estados de aprobación (aprobada, rechazada, pendiente)
+- ✅ Constraint único por venta+producto (evita duplicados)
+- ✅ Trigger automático para reversa de stock
+- ✅ Tracking de estado del producto devuelto
+- ✅ Motivos de devolución
+- ✅ Validación de políticas
+- ✅ Responsable de autorización
+- ✅ Estadísticas por motivo y estado
+- ✅ Tasa de aprobación
+
+**Funciones principales:**
+```javascript
+db.devoluciones.getAll()
+db.devoluciones.getById(id)
+db.devoluciones.getByVenta(ventaId)
+db.devoluciones.getByProducto(productoId)
+db.devoluciones.getByCaja(cajaId)
+db.devoluciones.getAprobadas()
+db.devoluciones.getRechazadas()
+db.devoluciones.getByEstadoProducto(estado)
+db.devoluciones.search(query)
+db.devoluciones.create(data)
+db.devoluciones.update(id, data)
+db.devoluciones.aprobar(id)
+db.devoluciones.rechazar(id)
+db.devoluciones.delete(id)
+db.devoluciones.getRecent(limit)
+db.devoluciones.getByDateRange(start, end)
+db.devoluciones.getHoy()
+db.devoluciones.getTotalDevueltoMes()
+db.devoluciones.getEstadisticas()
+db.devoluciones.getEstadisticasPorMotivo()
+db.devoluciones.getEstadisticasPorEstado()
+```
+
+**Pantalla:** `DevolucionesScreen.js`
+- Dashboard con estadísticas (total, aprobadas, rechazadas, tasa de aprobación)
+- Filtros por estado (Aprobadas, Rechazadas, Pendientes, Hoy)
+- Búsqueda por factura, motivo, producto o responsable
+- Visualización de información de venta original
+- Estado del producto devuelto
+- Motivo detallado de devolución
+- Acciones rápidas (aprobar/rechazar) para pendientes
+- Tracking de monto devuelto
+- Pull to refresh
+
+**Estados de aprobación:**
+- `null` (pendiente) - Devolución registrada, esperando aprobación
+- `true` (aprobada) - Cumple políticas, reembolso autorizado
+- `false` (rechazada) - No cumple políticas, reembolso denegado
+
+**Estados del producto (ejemplos):**
+- `nuevo` - Producto sin uso, en empaque original
+- `usado_bueno` - Producto usado en buen estado
+- `usado_regular` - Producto con desgaste visible
+- `dañado` - Producto dañado o defectuoso
+- `incompleto` - Producto sin accesorios/empaque
+
+**Motivos comunes:**
+- `defecto_fabricante` - Defecto de fabricación
+- `insatisfaccion` - Cliente insatisfecho con el producto
+- `error_compra` - Compró por error
+- `cambio_opinion` - Cambió de opinión
+- `recibio_dañado` - Producto llegó dañado
+- `no_cumple_expectativas` - No cumple expectativas
+
+**Flujo de uso:**
+```javascript
+// Registrar una devolución
+const { data: devolucion } = await db.devoluciones.create({
+  venta_id: ventaId,
+  no_factura: 'FAC-12345',
+  producto_id: productoId,
+  cantidad: 1,
+  monto_devuelto: 250.00,
+  estado_producto: 'dañado',
+  motivo: 'Producto recibido con defecto de fabricación',
+  cumple_politicas: null, // Pendiente de aprobación
+  caja_id: cajaId,
+  responsable: 'María López',
+});
+
+// Aprobar devolución
+await db.devoluciones.aprobar(devolucion.id);
+// Esto actualiza cumple_politicas a true
+
+// Rechazar devolución
+await db.devoluciones.rechazar(devolucion.id);
+// Esto actualiza cumple_politicas a false
+
+// Obtener devoluciones de una venta
+const { data: devolucionesVenta } = await db.devoluciones.getByVenta(ventaId);
+// Incluye información del producto devuelto
+
+// Obtener estadísticas
+const { data: stats } = await db.devoluciones.getEstadisticas();
+// Retorna: {
+//   totalDevoluciones: 150,
+//   aprobadas: 120,
+//   rechazadas: 20,
+//   pendientes: 10,
+//   totalDevuelto: "12500.00",
+//   totalUnidades: 180,
+//   devolucionesHoy: 5,
+//   motivoMasFrecuente: "defecto_fabricante",
+//   estadoMasFrecuente: "dañado",
+//   tasaAprobacion: 80,
+//   promedioDevolucion: "83.33"
+// }
+
+// Estadísticas por motivo
+const { data: statsPorMotivo } = await db.devoluciones.getEstadisticasPorMotivo();
+// Retorna array: [{
+//   motivo: "defecto_fabricante",
+//   count: 45,
+//   totalDevuelto: "5250.00",
+//   totalUnidades: 50
+// }, ...]
+
+// Total devuelto en el mes actual
+const { data: totalMes } = await db.devoluciones.getTotalDevueltoMes();
+console.log(`Total devuelto este mes: $${totalMes}`);
+```
+
+**Integración con otras tablas:**
+- ✅ `ventas`: Relación con la venta original
+- ✅ `inventario`: Trigger automático revierte el stock al aprobar
+- ✅ `cajas`: Tracking de caja donde se procesó el reembolso
+- ✅ Dashboard global: Métricas de devoluciones incluidas
+
+**Consideraciones importantes:**
+- El constraint `unique_devolucion_producto` previene duplicados
+- El trigger `trigger_procesar_devolucion` revierte automáticamente el stock
+- Las devoluciones rechazadas NO revierten el stock
+- Solo las devoluciones aprobadas impactan el inventario
+- El campo `cumple_politicas` controla el flujo de aprobación
+
+---
+
+### 9️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
 
 **Tabla:** `public.profiles`
 
@@ -373,7 +522,7 @@ db.profiles.getEstadisticas()
 
 ---
 
-### 9️⃣ NOTIFICACIONES (18+ funciones)
+### 🔟 NOTIFICACIONES (18+ funciones)
 
 **Tabla:** `public.notificaciones`
 
@@ -406,7 +555,7 @@ db.notificaciones.notificarStockBajo(empleadoIds, productoNombre, stock)
 
 ---
 
-### 🔟 METAS Y OBJETIVOS (20+ funciones)
+### 1️⃣1️⃣ METAS Y OBJETIVOS (20+ funciones)
 
 **Tabla:** `public.metas`
 
@@ -452,7 +601,7 @@ db.metas.getEstadisticas()
 
 ---
 
-### 🔟 MARKETING POSTS (25+ funciones)
+### 1️⃣2️⃣ MARKETING POSTS (25+ funciones)
 
 **Tabla:** `public.marketing_posts`
 
@@ -509,7 +658,7 @@ db.marketingPosts.getEstadisticas()
 
 ---
 
-### 1️⃣1️⃣ MARKETING POST LIKES (12+ funciones)
+### 1️⃣3️⃣ MARKETING POST LIKES (12+ funciones)
 
 **Tabla:** `public.marketing_post_likes`
 
@@ -565,7 +714,7 @@ const { data: topPosts } = await db.marketingPostLikes.getTopLikedPosts(10, star
 
 ---
 
-### 1️⃣2️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
+### 1️⃣4️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
 
 **Tabla:** `public.marketing_direct_messages`
 
@@ -658,7 +807,7 @@ const { data: stats } = await db.marketingDirectMessages.getCampaignStats(
 
 ---
 
-### 1️⃣3️⃣ MARKETING COMMENTS (22+ funciones)
+### 1️⃣5️⃣ MARKETING COMMENTS (22+ funciones)
 
 **Tabla:** `public.marketing_comments`
 
@@ -752,7 +901,7 @@ const { data: stats } = await db.marketingComments.getEstadisticas();
 
 ---
 
-### 1️⃣4️⃣ INCIDENTES (26+ funciones)
+### 1️⃣6️⃣ INCIDENTES (26+ funciones)
 
 **Tabla:** `public.incidentes`
 
@@ -984,6 +1133,16 @@ const stats = await db.stats.getDashboard();
   productosUnicosVendidos: 45,
   promedioUnidadesPorOrden: "4.12",
   
+  // Devoluciones
+  totalDevoluciones: 150,
+  devolucionesAprobadas: 120,
+  devolucionesRechazadas: 20,
+  devolucionesPendientes: 10,
+  devolucionesHoy: 5,
+  totalDevuelto: "12500.00",
+  tasaAprobacionDevoluciones: 80,
+  promedioDevolucion: "83.33",
+  
   // Inventario
   totalProductos: 45,
   productosBajoStock: 3,
@@ -1126,7 +1285,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 289+ funciones CRUD
+- `shared/config/supabaseClient.js` - 315+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -1136,6 +1295,7 @@ Login y permisos para staff y clientes.
 - `apps/salon/src/screens/OrdersScreen.js`
 - `apps/salon/src/screens/InventoryScreen.js`
 - `apps/salon/src/screens/SalesScreen.js`
+- `apps/salon/src/screens/DevolucionesScreen.js`
 - `apps/salon/src/screens/UsersScreen.js`
 - `apps/salon/src/screens/GoalsScreen.js`
 - `apps/salon/src/screens/MarketingPostsScreen.js`
@@ -1154,9 +1314,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 15/15 | ✅ 100% |
-| Funciones CRUD | 289+ | ✅ Completo |
-| Pantallas Funcionales | 11 | ✅ Completo |
+| Tablas Integradas | 16/16 | ✅ 100% |
+| Funciones CRUD | 315+ | ✅ Completo |
+| Pantallas Funcionales | 12 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 

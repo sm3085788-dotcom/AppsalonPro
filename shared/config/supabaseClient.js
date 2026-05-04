@@ -3326,6 +3326,316 @@ export const db = {
     },
   },
 
+  // ==================== DEVOLUCIONES ====================
+  devoluciones: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura, fecha), producto:inventario(id, nombre, imagen_url), caja:cajas(id, nombre)')
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura, fecha), producto:inventario(id, nombre, imagen_url), caja:cajas(id, nombre)')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getByVenta: async (ventaId) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, producto:inventario(id, nombre, imagen_url)')
+        .eq('venta_id', ventaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByProducto: async (productoId) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura, fecha)')
+        .eq('producto_id', productoId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByCaja: async (cajaId) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre)')
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getAprobadas: async () => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .eq('cumple_politicas', true)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getRechazadas: async () => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .eq('cumple_politicas', false)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getByEstadoProducto: async (estado) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .eq('estado_producto', estado)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    search: async (query) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .or(`no_factura.ilike.%${query}%,motivo.ilike.%${query}%,responsable.ilike.%${query}%`)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const devolucionData = {
+        ...data,
+        fecha: new Date().toISOString(),
+      };
+
+      const { data: newDevolucion, error } = await supabase
+        .from('devoluciones')
+        .insert([devolucionData])
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .single();
+      return { data: newDevolucion, error };
+    },
+
+    update: async (id, data) => {
+      const { data: updatedDevolucion, error } = await supabase
+        .from('devoluciones')
+        .update(data)
+        .eq('id', id)
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .single();
+      return { data: updatedDevolucion, error };
+    },
+
+    updateCumplePoliticas: async (id, cumple) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .update({ cumple_politicas: cumple })
+        .eq('id', id)
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .single();
+      return { data, error };
+    },
+
+    aprobar: async (id) => {
+      return await db.devoluciones.updateCumplePoliticas(id, true);
+    },
+
+    rechazar: async (id) => {
+      return await db.devoluciones.updateCumplePoliticas(id, false);
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('devoluciones')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    getRecent: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .order('fecha', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getByDateRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('devoluciones')
+        .select('*, venta:ventas(id, no_factura), producto:inventario(id, nombre, imagen_url)')
+        .gte('fecha', startDate)
+        .lte('fecha', endDate)
+        .order('fecha', { ascending: false });
+      return { data, error };
+    },
+
+    getHoy: async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      return await db.devoluciones.getByDateRange(
+        today.toISOString(),
+        tomorrow.toISOString()
+      );
+    },
+
+    getTotalDevueltoMes: async () => {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+      const { data } = await supabase
+        .from('devoluciones')
+        .select('monto_devuelto')
+        .gte('fecha', startOfMonth.toISOString())
+        .lte('fecha', endOfMonth.toISOString());
+
+      const total = data?.reduce((sum, dev) => sum + Number(dev.monto_devuelto || 0), 0) || 0;
+      return { data: total, error: null };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allDevoluciones } = await supabase
+        .from('devoluciones')
+        .select('*');
+
+      const aprobadas = allDevoluciones?.filter(d => d.cumple_politicas === true) || [];
+      const rechazadas = allDevoluciones?.filter(d => d.cumple_politicas === false) || [];
+      const pendientes = allDevoluciones?.filter(d => d.cumple_politicas === null) || [];
+
+      const totalDevuelto = allDevoluciones?.reduce((sum, d) => sum + Number(d.monto_devuelto || 0), 0) || 0;
+      const totalUnidades = allDevoluciones?.reduce((sum, d) => sum + (d.cantidad || 0), 0) || 0;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const devolucionesHoy = allDevoluciones?.filter(d =>
+        new Date(d.fecha) >= today
+      ) || [];
+
+      const estadosProducto = {};
+      allDevoluciones?.forEach(d => {
+        if (d.estado_producto) {
+          estadosProducto[d.estado_producto] = (estadosProducto[d.estado_producto] || 0) + 1;
+        }
+      });
+
+      const motivos = {};
+      allDevoluciones?.forEach(d => {
+        if (d.motivo) {
+          motivos[d.motivo] = (motivos[d.motivo] || 0) + 1;
+        }
+      });
+
+      const motivoMasFrecuente = Object.entries(motivos)
+        .sort(([, a], [, b]) => b - a)[0];
+
+      const estadoMasFrecuente = Object.entries(estadosProducto)
+        .sort(([, a], [, b]) => b - a)[0];
+
+      const tasaAprobacion = allDevoluciones?.length > 0
+        ? Math.round((aprobadas.length / allDevoluciones.length) * 100)
+        : 0;
+
+      return {
+        data: {
+          totalDevoluciones: allDevoluciones?.length || 0,
+          aprobadas: aprobadas.length,
+          rechazadas: rechazadas.length,
+          pendientes: pendientes.length,
+          totalDevuelto: totalDevuelto.toFixed(2),
+          totalUnidades,
+          devolucionesHoy: devolucionesHoy.length,
+          motivoMasFrecuente: motivoMasFrecuente ? motivoMasFrecuente[0] : null,
+          frecuenciaMotivo: motivoMasFrecuente ? motivoMasFrecuente[1] : 0,
+          estadoMasFrecuente: estadoMasFrecuente ? estadoMasFrecuente[0] : null,
+          frecuenciaEstado: estadoMasFrecuente ? estadoMasFrecuente[1] : 0,
+          tasaAprobacion,
+          promedioDevolucion: allDevoluciones?.length > 0
+            ? (totalDevuelto / allDevoluciones.length).toFixed(2)
+            : 0,
+        },
+        error: null,
+      };
+    },
+
+    getEstadisticasPorMotivo: async () => {
+      const { data: allDevoluciones } = await supabase
+        .from('devoluciones')
+        .select('motivo, monto_devuelto, cantidad');
+
+      if (!allDevoluciones) return { data: [], error: null };
+
+      const motivosStats = {};
+      allDevoluciones.forEach(dev => {
+        const motivo = dev.motivo || 'Sin especificar';
+        if (!motivosStats[motivo]) {
+          motivosStats[motivo] = {
+            motivo,
+            count: 0,
+            totalDevuelto: 0,
+            totalUnidades: 0,
+          };
+        }
+        motivosStats[motivo].count++;
+        motivosStats[motivo].totalDevuelto += Number(dev.monto_devuelto || 0);
+        motivosStats[motivo].totalUnidades += dev.cantidad || 0;
+      });
+
+      const stats = Object.values(motivosStats)
+        .sort((a, b) => b.count - a.count)
+        .map(s => ({
+          ...s,
+          totalDevuelto: s.totalDevuelto.toFixed(2),
+        }));
+
+      return { data: stats, error: null };
+    },
+
+    getEstadisticasPorEstado: async () => {
+      const { data: allDevoluciones } = await supabase
+        .from('devoluciones')
+        .select('estado_producto, monto_devuelto, cantidad');
+
+      if (!allDevoluciones) return { data: [], error: null };
+
+      const estadosStats = {};
+      allDevoluciones.forEach(dev => {
+        const estado = dev.estado_producto || 'Sin especificar';
+        if (!estadosStats[estado]) {
+          estadosStats[estado] = {
+            estado,
+            count: 0,
+            totalDevuelto: 0,
+            totalUnidades: 0,
+          };
+        }
+        estadosStats[estado].count++;
+        estadosStats[estado].totalDevuelto += Number(dev.monto_devuelto || 0);
+        estadosStats[estado].totalUnidades += dev.cantidad || 0;
+      });
+
+      const stats = Object.values(estadosStats)
+        .sort((a, b) => b.count - a.count)
+        .map(s => ({
+          ...s,
+          totalDevuelto: s.totalDevuelto.toFixed(2),
+        }));
+
+      return { data: stats, error: null };
+    },
+  },
+
   // ==================== ECOMMERCE ORDER ITEMS ====================
   ecommerceOrderItems: {
     getAll: async () => {
@@ -3964,6 +4274,9 @@ export const db = {
       // Estadísticas de ecommerce order items
       const { data: statsOrderItems } = await db.ecommerceOrderItems.getEstadisticas();
 
+      // Estadísticas de devoluciones
+      const { data: statsDevoluciones } = await db.devoluciones.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -4031,6 +4344,15 @@ export const db = {
         totalVentasOrderItems: statsOrderItems?.totalVentas || 0,
         productosUnicosVendidos: statsOrderItems?.productosUnicos || 0,
         promedioUnidadesPorOrden: statsOrderItems?.promedioUnidadesPorOrden || 0,
+        // Devoluciones
+        totalDevoluciones: statsDevoluciones?.totalDevoluciones || 0,
+        devolucionesAprobadas: statsDevoluciones?.aprobadas || 0,
+        devolucionesRechazadas: statsDevoluciones?.rechazadas || 0,
+        devolucionesPendientes: statsDevoluciones?.pendientes || 0,
+        devolucionesHoy: statsDevoluciones?.devolucionesHoy || 0,
+        totalDevuelto: statsDevoluciones?.totalDevuelto || 0,
+        tasaAprobacionDevoluciones: statsDevoluciones?.tasaAprobacion || 0,
+        promedioDevolucion: statsDevoluciones?.promedioDevolucion || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
