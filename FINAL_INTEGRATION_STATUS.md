@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 9/9 Tablas Principales ✅
+### Base de Datos: 10/10 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -15,8 +15,9 @@
 | **Profiles (Usuarios)** | 20+ | UsersScreen.js | ✅ Completo |
 | **Notificaciones** | 18+ | - | ✅ Completo |
 | **Metas** | 20+ | GoalsScreen.js | ✅ Completo |
+| **Marketing Posts** | 25+ | MarketingPostsScreen.js | ✅ Completo |
 
-**Total:** 164+ funciones CRUD implementadas
+**Total:** 189+ funciones CRUD implementadas
 
 ---
 
@@ -340,9 +341,66 @@ db.metas.getEstadisticas()
 
 ---
 
+### 🔟 MARKETING POSTS (25+ funciones)
+
+**Tabla:** `public.marketing_posts`
+
+**Características:**
+- ✅ Tipos de contenido (post, announcement, promotion, event)
+- ✅ Estados (published, draft, archived)
+- ✅ Visibilidad (public, private, members)
+- ✅ Sistema de audiencia
+- ✅ Soporte para multimedia (imágenes y videos)
+- ✅ Call-to-Action (CTA) configurable
+- ✅ Sistema de vistas y reacciones
+- ✅ Autor y timestamps automáticos
+- ✅ Búsqueda avanzada
+- ✅ Estadísticas detalladas
+
+**Funciones principales:**
+```javascript
+db.marketingPosts.getAll()
+db.marketingPosts.getPublished()
+db.marketingPosts.getDrafts()
+db.marketingPosts.getByStatus(status)
+db.marketingPosts.getByVisibility(visibility)
+db.marketingPosts.getByContentType(contentType)
+db.marketingPosts.getByAudience(audience)
+db.marketingPosts.getByAuthor(authorId)
+db.marketingPosts.search(query)
+db.marketingPosts.create(data)
+db.marketingPosts.update(id, data)
+db.marketingPosts.publish(id)
+db.marketingPosts.unpublish(id)
+db.marketingPosts.archive(id)
+db.marketingPosts.delete(id)
+db.marketingPosts.incrementViews(id)
+db.marketingPosts.incrementReactions(id)
+db.marketingPosts.decrementReactions(id)
+db.marketingPosts.getMostViewed(limit)
+db.marketingPosts.getMostReacted(limit)
+db.marketingPosts.getWithMedia()
+db.marketingPosts.getRecent(limit)
+db.marketingPosts.getByDateRange(start, end)
+db.marketingPosts.getEstadisticas()
+```
+
+**Pantalla:** `MarketingPostsScreen.js`
+- Dashboard con estadísticas completas (total, publicados, borradores, vistas, reacciones)
+- Visualización de imágenes y videos
+- Filtros múltiples (estado, tipo de contenido, visibilidad)
+- Búsqueda por título, cuerpo o autor
+- Acciones rápidas (publicar, mover a borrador, archivar)
+- Sistema de CTA destacado
+- Indicadores de engagement (vistas y reacciones)
+- Iconos dinámicos por tipo de contenido y visibilidad
+- Pull to refresh
+
+---
+
 ## 📱 Pantallas Implementadas
 
-### App Salón (8 pantallas funcionales)
+### App Salón (9 pantallas funcionales)
 
 1. **AppointmentsScreen.js** ✅
    - Gestión completa de citas
@@ -387,6 +445,13 @@ db.metas.getEstadisticas()
    - Filtros múltiples (estado, tipo, alcance)
    - Barras de progreso visuales
    - Sistema de bonos
+
+9. **MarketingPostsScreen.js** ✅
+   - Gestión de contenido de marketing
+   - Dashboard de engagement
+   - Filtros por estado, tipo y visibilidad
+   - Visualización de multimedia
+   - Acciones de publicación y archivo
 
 ---
 
@@ -433,6 +498,13 @@ const stats = await db.stats.getDashboard();
   metasActivas: 7,
   metasCompletadas: 3,
   progresoPromedioMetas: 68,
+  
+  // Marketing Posts
+  totalPosts: 45,
+  postsPublicados: 32,
+  postsBorradores: 8,
+  totalVistasMarketing: 2450,
+  totalReacciones: 380,
   
   // Total General
   ingresosTotalesMes: 14820  // Citas + E-commerce + Ventas
@@ -515,7 +587,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 164+ funciones CRUD
+- `shared/config/supabaseClient.js` - 189+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -527,6 +599,7 @@ Login y permisos para staff y clientes.
 - `apps/salon/src/screens/SalesScreen.js`
 - `apps/salon/src/screens/UsersScreen.js`
 - `apps/salon/src/screens/GoalsScreen.js`
+- `apps/salon/src/screens/MarketingPostsScreen.js`
 
 ### Documentación
 - `INTEGRATION_COMPLETE.md`
@@ -540,9 +613,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 9/9 | ✅ 100% |
-| Funciones CRUD | 164+ | ✅ Completo |
-| Pantallas Funcionales | 8 | ✅ Completo |
+| Tablas Integradas | 10/10 | ✅ 100% |
+| Funciones CRUD | 189+ | ✅ Completo |
+| Pantallas Funcionales | 9 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 
@@ -573,6 +646,6 @@ npm run salon:start
 
 **Estado:** 🎉 Backend 100% Completo  
 **Fecha:** Mayo 3, 2026  
-**Funciones:** 164+ Implementadas  
-**Pantallas:** 8 Funcionales  
+**Funciones:** 189+ Implementadas  
+**Pantallas:** 9 Funcionales  
 **Listo para:** Navegación y Producción

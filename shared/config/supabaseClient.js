@@ -2307,6 +2307,314 @@ export const db = {
     },
   },
 
+  // ==================== MARKETING POSTS ====================
+  marketingPosts: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getPublished: async () => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false });
+      return { data, error };
+    },
+
+    getDrafts: async () => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'draft')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByStatus: async (status) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', status)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByVisibility: async (visibility) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('visibility', visibility)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByContentType: async (contentType) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('content_type', contentType)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByAudience: async (audience) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('audience', audience)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByAuthor: async (authorId) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('author_id', authorId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getRecent: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getWithMedia: async () => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .not('media_url', 'is', null)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    search: async (query) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .or(`title.ilike.%${query}%,body.ilike.%${query}%,author_name.ilike.%${query}%`)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const postData = {
+        ...data,
+        created_at: new Date().toISOString(),
+      };
+
+      if (data.status === 'published' && !data.published_at) {
+        postData.published_at = new Date().toISOString();
+      }
+
+      const { data: newPost, error } = await supabase
+        .from('marketing_posts')
+        .insert([postData])
+        .select()
+        .single();
+      return { data: newPost, error };
+    },
+
+    update: async (id, data) => {
+      const updateData = {
+        ...data,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: updatedPost, error } = await supabase
+        .from('marketing_posts')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data: updatedPost, error };
+    },
+
+    publish: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .update({
+          status: 'published',
+          published_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    unpublish: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .update({
+          status: 'draft',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    archive: async (id) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .update({
+          status: 'archived',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('marketing_posts')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    incrementViews: async (id) => {
+      const { data: post } = await supabase
+        .from('marketing_posts')
+        .select('views_count')
+        .eq('id', id)
+        .single();
+
+      if (!post) return { data: null, error: { message: 'Post no encontrado' } };
+
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .update({ views_count: (post.views_count || 0) + 1 })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    incrementReactions: async (id) => {
+      const { data: post } = await supabase
+        .from('marketing_posts')
+        .select('reactions_count')
+        .eq('id', id)
+        .single();
+
+      if (!post) return { data: null, error: { message: 'Post no encontrado' } };
+
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .update({ reactions_count: (post.reactions_count || 0) + 1 })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    decrementReactions: async (id) => {
+      const { data: post } = await supabase
+        .from('marketing_posts')
+        .select('reactions_count')
+        .eq('id', id)
+        .single();
+
+      if (!post) return { data: null, error: { message: 'Post no encontrado' } };
+
+      const newCount = Math.max(0, (post.reactions_count || 0) - 1);
+
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .update({ reactions_count: newCount })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    getMostViewed: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'published')
+        .order('views_count', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getMostReacted: async (limit = 10) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'published')
+        .order('reactions_count', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allPosts } = await supabase
+        .from('marketing_posts')
+        .select('*');
+
+      const published = allPosts?.filter(p => p.status === 'published') || [];
+      const drafts = allPosts?.filter(p => p.status === 'draft') || [];
+      const archived = allPosts?.filter(p => p.status === 'archived') || [];
+
+      const totalViews = allPosts?.reduce((sum, p) => sum + (p.views_count || 0), 0) || 0;
+      const totalReactions = allPosts?.reduce((sum, p) => sum + (p.reactions_count || 0), 0) || 0;
+
+      const withMedia = allPosts?.filter(p => p.media_url) || [];
+
+      return {
+        data: {
+          totalPosts: allPosts?.length || 0,
+          published: published.length,
+          drafts: drafts.length,
+          archived: archived.length,
+          totalViews,
+          totalReactions,
+          withMedia: withMedia.length,
+          avgViewsPerPost: allPosts?.length > 0 ? Math.round(totalViews / allPosts.length) : 0,
+          avgReactionsPerPost: allPosts?.length > 0 ? Math.round(totalReactions / allPosts.length) : 0,
+        },
+        error: null,
+      };
+    },
+
+    getByDateRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -2397,6 +2705,9 @@ export const db = {
       // Estadísticas de metas
       const { data: statsMetas } = await db.metas.getEstadisticas();
 
+      // Estadísticas de marketing posts
+      const { data: statsMarketing } = await db.marketingPosts.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -2425,6 +2736,12 @@ export const db = {
         metasActivas: statsMetas?.metasActivas || 0,
         metasCompletadas: statsMetas?.metasCompletadas || 0,
         progresoPromedioMetas: statsMetas?.progresoPromedio || 0,
+        // Marketing Posts
+        totalPosts: statsMarketing?.totalPosts || 0,
+        postsPublicados: statsMarketing?.published || 0,
+        postsBorradores: statsMarketing?.drafts || 0,
+        totalVistasMarketing: statsMarketing?.totalViews || 0,
+        totalReacciones: statsMarketing?.totalReactions || 0,
         // Total General
         ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
