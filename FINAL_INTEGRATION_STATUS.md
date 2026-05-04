@@ -2,7 +2,7 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 5/5 Tablas Principales ✅
+### Base de Datos: 9/9 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
@@ -11,8 +11,12 @@
 | **Empleados** | 11+ | StaffScreen.js | ✅ Completo |
 | **Órdenes E-commerce** | 20+ | OrdersScreen.js | ✅ Completo |
 | **Inventario** | 25+ | InventoryScreen.js | ✅ Completo |
+| **Ventas** | 20+ | SalesScreen.js | ✅ Completo |
+| **Profiles (Usuarios)** | 20+ | UsersScreen.js | ✅ Completo |
+| **Notificaciones** | 18+ | - | ✅ Completo |
+| **Metas** | 20+ | GoalsScreen.js | ✅ Completo |
 
-**Total:** 85+ funciones CRUD implementadas
+**Total:** 164+ funciones CRUD implementadas
 
 ---
 
@@ -186,9 +190,159 @@ db.inventario.getEstadisticas()
 
 ---
 
+### 6️⃣ VENTAS (20+ funciones)
+
+**Tabla:** `public.ventas`
+
+**Características:**
+- ✅ Sistema de facturación
+- ✅ Múltiples métodos de pago
+- ✅ Items en formato JSONB
+- ✅ Descuentos
+- ✅ Sistema de alteraciones y auditoría
+- ✅ Relación con cajas
+- ✅ Estadísticas de vendedores
+- ✅ Tracking de profesionales
+
+**Funciones principales:**
+```javascript
+db.ventas.getAll()
+db.ventas.getHoy()
+db.ventas.getByCliente(clienteId)
+db.ventas.getByVendedor(vendedorId)
+db.ventas.getByMetodoPago(metodo)
+db.ventas.create(data)
+db.ventas.marcarComoAlterada(id, motivo)
+db.ventas.getEstadisticas(start, end)
+db.ventas.getTopVendedores(start, end, limit)
+```
+
+**Pantalla:** `SalesScreen.js`
+- Dashboard con estadísticas de ventas
+- Búsqueda por cliente/factura
+- Filtros por método de pago
+- Indicadores visuales de descuentos y alteraciones
+- Pull to refresh
+
+---
+
+### 7️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
+
+**Tabla:** `public.profiles`
+
+**Características:**
+- ✅ Sistema de roles (admin, staff)
+- ✅ Permisos de marketing
+- ✅ Configuración de comunidad
+- ✅ Alcance de aplicación
+- ✅ Relación con auth.users
+- ✅ Datos de perfil completos
+
+**Funciones principales:**
+```javascript
+db.profiles.getAll()
+db.profiles.getCurrentProfile()
+db.profiles.getByRole(role)
+db.profiles.getAdmins()
+db.profiles.getStaff()
+db.profiles.changeRole(userId, role)
+db.profiles.setMarketingAccess(userId, enabled)
+db.profiles.setCommunityEnabled(userId, enabled)
+db.profiles.isAdmin(userId)
+db.profiles.getEstadisticas()
+```
+
+**Pantalla:** `UsersScreen.js`
+- Dashboard con estadísticas de usuarios
+- Filtros por rol
+- Control de permisos (marketing, community)
+- Cambio de roles (solo admin)
+- Búsqueda por nombre/teléfono
+
+---
+
+### 8️⃣ NOTIFICACIONES (18+ funciones)
+
+**Tabla:** `public.notificaciones`
+
+**Características:**
+- ✅ Sistema de notificaciones en tiempo real
+- ✅ Tipos configurables
+- ✅ Marcado leído/no leído
+- ✅ Navegación a pantallas específicas
+- ✅ Subscripciones Realtime
+- ✅ Notificaciones predefinidas (citas, stock bajo)
+- ✅ Eliminación masiva
+- ✅ Estadísticas
+
+**Funciones principales:**
+```javascript
+db.notificaciones.getAll()
+db.notificaciones.getByEmpleado(empleadoId)
+db.notificaciones.getNoLeidasByEmpleado(empleadoId)
+db.notificaciones.create(data)
+db.notificaciones.createBulk(empleadoIds, data)
+db.notificaciones.marcarLeida(id)
+db.notificaciones.marcarTodasLeidas(empleadoId)
+db.notificaciones.countNoLeidas(empleadoId)
+db.notificaciones.subscribeToEmpleado(empleadoId, callback)
+db.notificaciones.notificarNuevaCita(empleadoId, citaId, clienteNombre)
+db.notificaciones.notificarStockBajo(empleadoIds, productoNombre, stock)
+```
+
+**Nota:** No tiene pantalla dedicada. Se integra en todas las pantallas con un badge contador.
+
+---
+
+### 9️⃣ METAS Y OBJETIVOS (20+ funciones)
+
+**Tabla:** `public.metas`
+
+**Características:**
+- ✅ Tipos configurables (ventas, servicios, clientes, ingresos)
+- ✅ Períodos (diario, semanal, mensual, trimestral, anual)
+- ✅ Alcance (global, individual)
+- ✅ Tracking de progreso en tiempo real
+- ✅ Sistema de bonos
+- ✅ Asignación a empleados
+- ✅ Fechas de inicio y fin
+- ✅ Activación/desactivación
+- ✅ Detección de metas vencidas
+- ✅ Estadísticas de progreso
+
+**Funciones principales:**
+```javascript
+db.metas.getAll()
+db.metas.getActivas()
+db.metas.getByEmpleado(empleadoId)
+db.metas.getByTipo(tipo)
+db.metas.getByPeriodo(periodo)
+db.metas.getGlobales()
+db.metas.getIndividuales()
+db.metas.create(data)
+db.metas.updateProgreso(id, nuevoActual)
+db.metas.toggleActivo(id)
+db.metas.getProgreso(meta)
+db.metas.calcularProgresoEmpleado(empleadoId)
+db.metas.getMetasVencidas()
+db.metas.getMetasProximasAVencer(dias)
+db.metas.getEstadisticas()
+```
+
+**Pantalla:** `GoalsScreen.js`
+- Dashboard con estadísticas de metas
+- Barras de progreso visual
+- Filtros múltiples (estado, tipo, alcance)
+- Indicadores de metas completadas y vencidas
+- Toggle activar/desactivar
+- Sistema de bonos visible
+- Pull to refresh
+
+---
+
 ## 📱 Pantallas Implementadas
 
-### App Salón (5 pantallas funcionales)
+### App Salón (8 pantallas funcionales)
 
 1. **AppointmentsScreen.js** ✅
    - Gestión completa de citas
@@ -214,6 +368,25 @@ db.inventario.getEstadisticas()
    - Control de inventario
    - Estadísticas de valor
    - Alertas de stock
+
+6. **SalesScreen.js** ✅
+   - Gestión de ventas
+   - Dashboard de estadísticas
+   - Filtros por método de pago
+   - Indicadores de alteraciones
+
+7. **UsersScreen.js** ✅
+   - Gestión de usuarios del sistema
+   - Control de roles y permisos
+   - Dashboard de estadísticas
+   - Solo admin puede cambiar roles
+
+8. **GoalsScreen.js** ✅
+   - Gestión de metas y objetivos
+   - Dashboard de progreso
+   - Filtros múltiples (estado, tipo, alcance)
+   - Barras de progreso visuales
+   - Sistema de bonos
 
 ---
 
@@ -244,8 +417,25 @@ const stats = await db.stats.getDashboard();
   productosSinStock: 1,
   valorInventario: 12500,
   
-  // Total
-  ingresosTotalesMes: 5920  // Citas + E-commerce
+  // Ventas
+  ventasHoy: 12,
+  totalVentasHoy: "2450.00",
+  ventasMes: 45,
+  ventasTotalesMes: 8900,
+  
+  // Usuarios del Sistema
+  totalUsuarios: 8,
+  adminsCount: 2,
+  staffCount: 6,
+  
+  // Metas y Objetivos
+  totalMetas: 10,
+  metasActivas: 7,
+  metasCompletadas: 3,
+  progresoPromedioMetas: 68,
+  
+  // Total General
+  ingresosTotalesMes: 14820  // Citas + E-commerce + Ventas
 }
 ```
 
@@ -325,7 +515,7 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 85+ funciones CRUD
+- `shared/config/supabaseClient.js` - 164+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
@@ -334,6 +524,9 @@ Login y permisos para staff y clientes.
 - `apps/salon/src/screens/StaffScreen.js`
 - `apps/salon/src/screens/OrdersScreen.js`
 - `apps/salon/src/screens/InventoryScreen.js`
+- `apps/salon/src/screens/SalesScreen.js`
+- `apps/salon/src/screens/UsersScreen.js`
+- `apps/salon/src/screens/GoalsScreen.js`
 
 ### Documentación
 - `INTEGRATION_COMPLETE.md`
@@ -347,9 +540,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 5/5 | ✅ 100% |
-| Funciones CRUD | 85+ | ✅ Completo |
-| Pantallas Funcionales | 5 | ✅ Completo |
+| Tablas Integradas | 9/9 | ✅ 100% |
+| Funciones CRUD | 164+ | ✅ Completo |
+| Pantallas Funcionales | 8 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 
@@ -380,6 +573,6 @@ npm run salon:start
 
 **Estado:** 🎉 Backend 100% Completo  
 **Fecha:** Mayo 3, 2026  
-**Funciones:** 85+ Implementadas  
-**Pantallas:** 5 Funcionales  
+**Funciones:** 164+ Implementadas  
+**Pantallas:** 8 Funcionales  
 **Listo para:** Navegación y Producción

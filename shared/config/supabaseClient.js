@@ -537,6 +537,1043 @@ export const db = {
     },
   },
 
+  // ==================== MOVIMIENTOS DE CAJA ====================
+  movimientosCaja: {
+    // Obtener todos los movimientos
+    getAll: async () => {
+      return await supabase
+        .from('movimientos_caja')
+        .select('*')
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener movimientos de una caja
+    getByCaja: async (cajaId) => {
+      return await supabase
+        .from('movimientos_caja')
+        .select('*')
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener movimiento por ID
+    getById: async (id) => {
+      return await supabase
+        .from('movimientos_caja')
+        .select('*')
+        .eq('id', id)
+        .single();
+    },
+
+    // Obtener movimientos por tipo
+    getByTipo: async (tipo, cajaId = null) => {
+      let query = supabase
+        .from('movimientos_caja')
+        .select('*')
+        .eq('tipo', tipo)
+        .order('fecha', { ascending: false });
+
+      if (cajaId) {
+        query = query.eq('caja_id', cajaId);
+      }
+
+      return await query;
+    },
+
+    // Obtener movimientos por fecha
+    getByFecha: async (fecha, cajaId = null) => {
+      const startOfDay = new Date(fecha);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(fecha);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      let query = supabase
+        .from('movimientos_caja')
+        .select('*')
+        .gte('fecha', startOfDay.toISOString())
+        .lte('fecha', endOfDay.toISOString())
+        .order('fecha', { ascending: false });
+
+      if (cajaId) {
+        query = query.eq('caja_id', cajaId);
+      }
+
+      return await query;
+    },
+
+    // Obtener movimientos por rango de fechas
+    getByRangoFechas: async (startDate, endDate, cajaId = null) => {
+      let query = supabase
+        .from('movimientos_caja')
+        .select('*')
+        .gte('fecha', startDate)
+        .lte('fecha', endDate)
+        .order('fecha', { ascending: false });
+
+      if (cajaId) {
+        query = query.eq('caja_id', cajaId);
+      }
+
+      return await query;
+    },
+
+    // Crear movimiento
+    create: async (data) => {
+      return await supabase
+        .from('movimientos_caja')
+        .insert({
+          caja_id: data.caja_id,
+          tipo: data.tipo, // 'ingreso', 'egreso', 'apertura', 'cierre', 'retiro'
+          monto: data.monto,
+          descripcion: data.descripcion || null,
+        })
+        .select()
+        .single();
+    },
+
+    // Registrar ingreso
+    registrarIngreso: async (cajaId, monto, descripcion) => {
+      return await supabase
+        .from('movimientos_caja')
+        .insert({
+          caja_id: cajaId,
+          tipo: 'ingreso',
+          monto: monto,
+          descripcion: descripcion,
+        })
+        .select()
+        .single();
+    },
+
+    // Registrar egreso
+    registrarEgreso: async (cajaId, monto, descripcion) => {
+      return await supabase
+        .from('movimientos_caja')
+        .insert({
+          caja_id: cajaId,
+          tipo: 'egreso',
+          monto: monto,
+          descripcion: descripcion,
+        })
+        .select()
+        .single();
+    },
+
+    // Registrar apertura de caja
+    registrarApertura: async (cajaId, montoInicial, descripcion) => {
+      return await supabase
+        .from('movimientos_caja')
+        .insert({
+          caja_id: cajaId,
+          tipo: 'apertura',
+          monto: montoInicial,
+          descripcion: descripcion || 'Apertura de caja',
+        })
+        .select()
+        .single();
+    },
+
+    // Registrar cierre de caja
+    registrarCierre: async (cajaId, montoFinal, descripcion) => {
+      return await supabase
+        .from('movimientos_caja')
+        .insert({
+          caja_id: cajaId,
+          tipo: 'cierre',
+          monto: montoFinal,
+          descripcion: descripcion || 'Cierre de caja',
+        })
+        .select()
+        .single();
+    },
+
+    // Actualizar movimiento
+    update: async (id, data) => {
+      return await supabase
+        .from('movimientos_caja')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Eliminar movimiento
+    delete: async (id) => {
+      return await supabase
+        .from('movimientos_caja')
+        .delete()
+        .eq('id', id);
+    },
+
+    // Obtener movimientos de hoy
+    getHoy: async (cajaId = null) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      let query = supabase
+        .from('movimientos_caja')
+        .select('*')
+        .gte('fecha', today.toISOString())
+        .lt('fecha', tomorrow.toISOString())
+        .order('fecha', { ascending: false });
+
+      if (cajaId) {
+        query = query.eq('caja_id', cajaId);
+      }
+
+      return await query;
+    },
+
+    // Calcular balance de una caja
+    calcularBalance: async (cajaId, startDate = null, endDate = null) => {
+      let query = supabase
+        .from('movimientos_caja')
+        .select('tipo, monto')
+        .eq('caja_id', cajaId);
+
+      if (startDate) {
+        query = query.gte('fecha', startDate);
+      }
+      if (endDate) {
+        query = query.lte('fecha', endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) return { error };
+
+      const ingresos = data
+        .filter(m => ['ingreso', 'apertura'].includes(m.tipo))
+        .reduce((sum, m) => sum + Number(m.monto), 0);
+
+      const egresos = data
+        .filter(m => ['egreso', 'retiro', 'cierre'].includes(m.tipo))
+        .reduce((sum, m) => sum + Number(m.monto), 0);
+
+      const balance = ingresos - egresos;
+
+      return {
+        data: {
+          ingresos: ingresos.toFixed(2),
+          egresos: egresos.toFixed(2),
+          balance: balance.toFixed(2),
+          totalMovimientos: data.length,
+        },
+        error: null,
+      };
+    },
+
+    // Estadísticas de movimientos
+    getEstadisticas: async (cajaId, startDate = null, endDate = null) => {
+      let query = supabase
+        .from('movimientos_caja')
+        .select('tipo, monto')
+        .eq('caja_id', cajaId);
+
+      if (startDate) {
+        query = query.gte('fecha', startDate);
+      }
+      if (endDate) {
+        query = query.lte('fecha', endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) return { error };
+
+      const porTipo = data.reduce((acc, m) => {
+        const tipo = m.tipo || 'otros';
+        if (!acc[tipo]) {
+          acc[tipo] = { cantidad: 0, total: 0 };
+        }
+        acc[tipo].cantidad++;
+        acc[tipo].total += Number(m.monto);
+        return acc;
+      }, {});
+
+      return {
+        data: porTipo,
+        error: null,
+      };
+    },
+  },
+
+  // ==================== NOTIFICACIONES ====================
+  notificaciones: {
+    // Obtener todas las notificaciones
+    getAll: async () => {
+      return await supabase
+        .from('notificaciones')
+        .select(`
+          *,
+          empleado:empleados(id, nombre)
+        `)
+        .order('created_at', { ascending: false });
+    },
+
+    // Obtener notificaciones de un empleado
+    getByEmpleado: async (empleadoId) => {
+      return await supabase
+        .from('notificaciones')
+        .select('*')
+        .eq('empleado_id', empleadoId)
+        .order('created_at', { ascending: false });
+    },
+
+    // Obtener notificaciones no leídas de un empleado
+    getNoLeidasByEmpleado: async (empleadoId) => {
+      return await supabase
+        .from('notificaciones')
+        .select('*')
+        .eq('empleado_id', empleadoId)
+        .eq('leida', false)
+        .order('created_at', { ascending: false });
+    },
+
+    // Obtener notificaciones por tipo
+    getByTipo: async (tipo, empleadoId = null) => {
+      let query = supabase
+        .from('notificaciones')
+        .select('*')
+        .eq('tipo', tipo)
+        .order('created_at', { ascending: false });
+
+      if (empleadoId) {
+        query = query.eq('empleado_id', empleadoId);
+      }
+
+      return await query;
+    },
+
+    // Obtener notificación por ID
+    getById: async (id) => {
+      return await supabase
+        .from('notificaciones')
+        .select(`
+          *,
+          empleado:empleados(id, nombre)
+        `)
+        .eq('id', id)
+        .single();
+    },
+
+    // Crear notificación
+    create: async (data) => {
+      return await supabase
+        .from('notificaciones')
+        .insert({
+          empleado_id: data.empleado_id,
+          titulo: data.titulo || null,
+          mensaje: data.mensaje || null,
+          tipo: data.tipo || null,
+          target_screen: data.target_screen || null,
+          target_id: data.target_id || null,
+          leida: false,
+        })
+        .select()
+        .single();
+    },
+
+    // Crear notificación masiva (para múltiples empleados)
+    createBulk: async (empleadoIds, data) => {
+      const notifications = empleadoIds.map(empleadoId => ({
+        empleado_id: empleadoId,
+        titulo: data.titulo,
+        mensaje: data.mensaje,
+        tipo: data.tipo || null,
+        target_screen: data.target_screen || null,
+        target_id: data.target_id || null,
+        leida: false,
+      }));
+
+      return await supabase
+        .from('notificaciones')
+        .insert(notifications)
+        .select();
+    },
+
+    // Marcar como leída
+    marcarLeida: async (id) => {
+      return await supabase
+        .from('notificaciones')
+        .update({ leida: true })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Marcar todas como leídas para un empleado
+    marcarTodasLeidas: async (empleadoId) => {
+      return await supabase
+        .from('notificaciones')
+        .update({ leida: true })
+        .eq('empleado_id', empleadoId)
+        .eq('leida', false);
+    },
+
+    // Marcar como no leída
+    marcarNoLeida: async (id) => {
+      return await supabase
+        .from('notificaciones')
+        .update({ leida: false })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Eliminar notificación
+    delete: async (id) => {
+      return await supabase
+        .from('notificaciones')
+        .delete()
+        .eq('id', id);
+    },
+
+    // Eliminar todas las notificaciones de un empleado
+    deleteAllByEmpleado: async (empleadoId) => {
+      return await supabase
+        .from('notificaciones')
+        .delete()
+        .eq('empleado_id', empleadoId);
+    },
+
+    // Eliminar notificaciones leídas antiguas (cleanup)
+    deleteOldLeidas: async (dias = 30) => {
+      const fecha = new Date();
+      fecha.setDate(fecha.getDate() - dias);
+
+      return await supabase
+        .from('notificaciones')
+        .delete()
+        .eq('leida', true)
+        .lt('created_at', fecha.toISOString());
+    },
+
+    // Contar notificaciones no leídas de un empleado
+    countNoLeidas: async (empleadoId) => {
+      const { count, error } = await supabase
+        .from('notificaciones')
+        .select('*', { count: 'exact', head: true })
+        .eq('empleado_id', empleadoId)
+        .eq('leida', false);
+
+      return { count: count || 0, error };
+    },
+
+    // Obtener notificaciones recientes (últimos N días)
+    getRecientes: async (empleadoId, dias = 7) => {
+      const fecha = new Date();
+      fecha.setDate(fecha.getDate() - dias);
+
+      return await supabase
+        .from('notificaciones')
+        .select('*')
+        .eq('empleado_id', empleadoId)
+        .gte('created_at', fecha.toISOString())
+        .order('created_at', { ascending: false });
+    },
+
+    // Suscribirse a cambios en tiempo real
+    subscribeToEmpleado: (empleadoId, callback) => {
+      return supabase
+        .channel(`notificaciones:${empleadoId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notificaciones',
+            filter: `empleado_id=eq.${empleadoId}`,
+          },
+          callback
+        )
+        .subscribe();
+    },
+
+    // Enviar notificación de nueva cita
+    notificarNuevaCita: async (empleadoId, citaId, clienteNombre) => {
+      return await supabase
+        .from('notificaciones')
+        .insert({
+          empleado_id: empleadoId,
+          titulo: 'Nueva Cita Asignada',
+          mensaje: `Se te ha asignado una cita con ${clienteNombre}`,
+          tipo: 'cita',
+          target_screen: 'Citas',
+          target_id: citaId,
+          leida: false,
+        })
+        .select()
+        .single();
+    },
+
+    // Enviar notificación de stock bajo
+    notificarStockBajo: async (empleadoIds, productoNombre, stockActual) => {
+      const notifications = empleadoIds.map(empleadoId => ({
+        empleado_id: empleadoId,
+        titulo: 'Alerta de Stock Bajo',
+        mensaje: `El producto "${productoNombre}" tiene stock bajo (${stockActual} unidades)`,
+        tipo: 'inventario',
+        target_screen: 'Inventario',
+        leida: false,
+      }));
+
+      return await supabase
+        .from('notificaciones')
+        .insert(notifications)
+        .select();
+    },
+
+    // Estadísticas de notificaciones
+    getEstadisticas: async (empleadoId) => {
+      const { data } = await supabase
+        .from('notificaciones')
+        .select('leida, tipo')
+        .eq('empleado_id', empleadoId);
+
+      if (!data) return { error: 'Error al obtener notificaciones' };
+
+      const total = data.length;
+      const noLeidas = data.filter(n => !n.leida).length;
+      const leidas = data.filter(n => n.leida).length;
+      
+      const porTipo = data.reduce((acc, n) => {
+        const tipo = n.tipo || 'general';
+        acc[tipo] = (acc[tipo] || 0) + 1;
+        return acc;
+      }, {});
+
+      return {
+        data: {
+          total,
+          noLeidas,
+          leidas,
+          porTipo,
+        },
+        error: null,
+      };
+    },
+  },
+
+  // ==================== PROFILES (Usuarios del Sistema) ====================
+  profiles: {
+    // Obtener todos los perfiles
+    getAll: async () => {
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+    },
+
+    // Obtener perfil por ID (user_id de auth.users)
+    getById: async (id) => {
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single();
+    },
+
+    // Obtener perfil del usuario actual
+    getCurrentProfile: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) return { data: null, error: { message: 'No user logged in' } };
+
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+    },
+
+    // Obtener perfiles por rol
+    getByRole: async (role) => {
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', role)
+        .order('full_name');
+    },
+
+    // Obtener todos los admins
+    getAdmins: async () => {
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'admin')
+        .order('full_name');
+    },
+
+    // Obtener todo el staff
+    getStaff: async () => {
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'staff')
+        .order('full_name');
+    },
+
+    // Buscar perfiles
+    search: async (query) => {
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .or(`full_name.ilike.%${query}%,phone.ilike.%${query}%`)
+        .order('full_name');
+    },
+
+    // Crear perfil (normalmente se hace automáticamente con trigger)
+    create: async (data) => {
+      return await supabase
+        .from('profiles')
+        .insert({
+          id: data.id, // UUID del auth.users
+          full_name: data.full_name || null,
+          role: data.role || 'staff',
+          phone: data.phone || null,
+          address: data.address || null,
+          birthday: data.birthday || null,
+          age: data.age || null,
+          photo_url: data.photo_url || null,
+          marketing_access: data.marketing_access || false,
+          app_scope: data.app_scope || 'staff',
+          community_enabled: data.community_enabled !== undefined ? data.community_enabled : true,
+        })
+        .select()
+        .single();
+    },
+
+    // Actualizar perfil
+    update: async (id, data) => {
+      return await supabase
+        .from('profiles')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Actualizar perfil actual
+    updateCurrent: async (data) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) return { data: null, error: { message: 'No user logged in' } };
+
+      return await supabase
+        .from('profiles')
+        .update(data)
+        .eq('id', user.id)
+        .select()
+        .single();
+    },
+
+    // Cambiar rol
+    changeRole: async (userId, newRole) => {
+      // Validar que el rol sea válido
+      if (!['admin', 'staff'].includes(newRole)) {
+        return { error: { message: 'Invalid role. Must be admin or staff' } };
+      }
+
+      return await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId)
+        .select()
+        .single();
+    },
+
+    // Actualizar acceso a marketing
+    setMarketingAccess: async (userId, enabled) => {
+      return await supabase
+        .from('profiles')
+        .update({ marketing_access: enabled })
+        .eq('id', userId)
+        .select()
+        .single();
+    },
+
+    // Actualizar acceso a comunidad
+    setCommunityEnabled: async (userId, enabled) => {
+      return await supabase
+        .from('profiles')
+        .update({ community_enabled: enabled })
+        .eq('id', userId)
+        .select()
+        .single();
+    },
+
+    // Eliminar perfil
+    delete: async (id) => {
+      return await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', id);
+    },
+
+    // Verificar si el usuario es admin
+    isAdmin: async (userId = null) => {
+      let id = userId;
+      
+      if (!id) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return false;
+        id = user.id;
+      }
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', id)
+        .single();
+
+      return data?.role === 'admin';
+    },
+
+    // Obtener perfiles con marketing habilitado
+    getWithMarketingAccess: async () => {
+      return await supabase
+        .from('profiles')
+        .select('*')
+        .eq('marketing_access', true)
+        .order('full_name');
+    },
+
+    // Estadísticas de usuarios
+    getEstadisticas: async () => {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('role, marketing_access, app_scope');
+
+      if (!profiles) return { error: 'Error al obtener perfiles' };
+
+      const totalUsuarios = profiles.length;
+      const admins = profiles.filter(p => p.role === 'admin').length;
+      const staff = profiles.filter(p => p.role === 'staff').length;
+      const conMarketingAccess = profiles.filter(p => p.marketing_access).length;
+
+      return {
+        data: {
+          totalUsuarios,
+          admins,
+          staff,
+          conMarketingAccess,
+        },
+        error: null,
+      };
+    },
+  },
+
+  // ==================== VENTAS ====================
+  ventas: {
+    // Obtener todas las ventas
+    getAll: async () => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre, telefono, email),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener venta por ID
+    getById: async (id) => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre, telefono, email, categoria),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre, rol)
+        `)
+        .eq('id', id)
+        .single();
+    },
+
+    // Obtener ventas por fecha
+    getByFecha: async (fecha) => {
+      const startOfDay = new Date(fecha);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(fecha);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .gte('fecha', startOfDay.toISOString())
+        .lte('fecha', endOfDay.toISOString())
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener ventas por rango de fechas
+    getByRangoFechas: async (startDate, endDate) => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .gte('fecha', startDate)
+        .lte('fecha', endDate)
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener ventas de un cliente
+    getByCliente: async (clienteId) => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .eq('cliente_id', clienteId)
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener ventas de un vendedor
+    getByVendedor: async (vendedorId) => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre)
+        `)
+        .eq('vendedor_id', vendedorId)
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener ventas de una caja
+    getByCaja: async (cajaId) => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .eq('caja_id', cajaId)
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener ventas por método de pago
+    getByMetodoPago: async (metodoPago) => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .eq('metodo_pago', metodoPago)
+        .order('fecha', { ascending: false });
+    },
+
+    // Buscar ventas por número de factura
+    getByFactura: async (noFactura) => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre, telefono),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .eq('no_factura', noFactura)
+        .single();
+    },
+
+    // Crear venta
+    create: async (data) => {
+      return await supabase
+        .from('ventas')
+        .insert({
+          cliente_id: data.cliente_id || null,
+          cliente_nombre: data.cliente_nombre || null,
+          profesional: data.profesional || null,
+          total: data.total || 0,
+          monto: data.monto || data.total || 0,
+          metodo_pago: data.metodo_pago || null,
+          items: data.items || null, // JSONB
+          notas: data.notas || null,
+          detalles_pago: data.detalles_pago || null,
+          no_factura: data.no_factura || null,
+          descuento: data.descuento || 0,
+          vendedor_id: data.vendedor_id || null,
+          caja_id: data.caja_id || null,
+        })
+        .select(`
+          *,
+          cliente:clientes(id, nombre, telefono),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .single();
+    },
+
+    // Actualizar venta
+    update: async (id, data) => {
+      return await supabase
+        .from('ventas')
+        .update(data)
+        .eq('id', id)
+        .select(`
+          *,
+          cliente:clientes(id, nombre),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .single();
+    },
+
+    // Marcar venta como alterada (para auditoría)
+    marcarAlterada: async (id, motivo) => {
+      return await supabase
+        .from('ventas')
+        .update({
+          fue_alterada: true,
+          motivo_alteracion: motivo,
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    },
+
+    // Eliminar venta
+    delete: async (id) => {
+      // Primero marcar como alterada antes de eliminar (para auditoría)
+      await supabase
+        .from('ventas')
+        .update({
+          fue_alterada: true,
+          motivo_alteracion: 'Venta eliminada',
+        })
+        .eq('id', id);
+
+      return await supabase
+        .from('ventas')
+        .delete()
+        .eq('id', id);
+    },
+
+    // Obtener ventas de hoy
+    getHoy: async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .gte('fecha', today.toISOString())
+        .lt('fecha', tomorrow.toISOString())
+        .order('fecha', { ascending: false });
+    },
+
+    // Obtener ventas alteradas (auditoría)
+    getAlteradas: async () => {
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .eq('fue_alterada', true)
+        .order('fecha', { ascending: false });
+    },
+
+    // Estadísticas de ventas
+    getEstadisticas: async (startDate = null, endDate = null) => {
+      let query = supabase
+        .from('ventas')
+        .select('total, monto, descuento, metodo_pago, fecha, vendedor_id');
+
+      if (startDate) {
+        query = query.gte('fecha', startDate);
+      }
+      if (endDate) {
+        query = query.lte('fecha', endDate);
+      }
+
+      const { data, error } = await query;
+
+      if (error) return { error };
+
+      const totalVentas = data.length;
+      const ventasTotales = data.reduce((sum, v) => sum + Number(v.total || v.monto || 0), 0);
+      const descuentosTotales = data.reduce((sum, v) => sum + Number(v.descuento || 0), 0);
+      const promedioVenta = totalVentas > 0 ? (ventasTotales / totalVentas).toFixed(2) : 0;
+
+      // Ventas por método de pago
+      const porMetodoPago = data.reduce((acc, v) => {
+        const metodo = v.metodo_pago || 'Sin especificar';
+        acc[metodo] = (acc[metodo] || 0) + Number(v.total || v.monto || 0);
+        return acc;
+      }, {});
+
+      // Top vendedores
+      const porVendedor = data.reduce((acc, v) => {
+        if (v.vendedor_id) {
+          acc[v.vendedor_id] = (acc[v.vendedor_id] || 0) + Number(v.total || v.monto || 0);
+        }
+        return acc;
+      }, {});
+
+      return {
+        data: {
+          totalVentas,
+          ventasTotales: ventasTotales.toFixed(2),
+          descuentosTotales: descuentosTotales.toFixed(2),
+          ventasNetas: (ventasTotales - descuentosTotales).toFixed(2),
+          promedioVenta,
+          porMetodoPago,
+          porVendedor,
+        },
+        error: null,
+      };
+    },
+
+    // Obtener ticket de venta (con formato)
+    getTicket: async (id) => {
+      const { data, error } = await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre, telefono, email),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .eq('id', id)
+        .single();
+
+      if (error) return { error };
+
+      // Parsear items del JSONB
+      const items = data.items || [];
+
+      return {
+        data: {
+          ...data,
+          items_detalle: items,
+        },
+        error: null,
+      };
+    },
+  },
+
   // ==================== INVENTARIO ====================
   inventario: {
     // Obtener todos los productos
@@ -1045,6 +2082,231 @@ export const db = {
     },
   },
 
+  // ==================== METAS (OBJETIVOS) ====================
+  metas: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getActivas: async () => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('activo', true)
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getByEmpleado: async (empleadoId) => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('asignado_a', empleadoId)
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getByTipo: async (tipo) => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('tipo', tipo)
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getByPeriodo: async (periodo) => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('periodo', periodo)
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getGlobales: async () => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('alcance', 'global')
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    getIndividuales: async () => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('alcance', 'individual')
+        .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const { data: nuevaMeta, error } = await supabase
+        .from('metas')
+        .insert([data])
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .single();
+      return { data: nuevaMeta, error };
+    },
+
+    update: async (id, data) => {
+      const { data: metaActualizada, error } = await supabase
+        .from('metas')
+        .update(data)
+        .eq('id', id)
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .single();
+      return { data: metaActualizada, error };
+    },
+
+    updateProgreso: async (id, nuevoActual) => {
+      const { data, error } = await supabase
+        .from('metas')
+        .update({ actual: nuevoActual })
+        .eq('id', id)
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .single();
+      return { data, error };
+    },
+
+    toggleActivo: async (id) => {
+      const { data: meta } = await supabase
+        .from('metas')
+        .select('activo')
+        .eq('id', id)
+        .single();
+
+      if (!meta) return { data: null, error: { message: 'Meta no encontrada' } };
+
+      const { data, error } = await supabase
+        .from('metas')
+        .update({ activo: !meta.activo })
+        .eq('id', id)
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .single();
+      return { data, error };
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('metas')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    getProgreso: (meta) => {
+      if (!meta || !meta.valor_objetivo || meta.valor_objetivo === 0) return 0;
+      const progreso = (Number(meta.actual || 0) / Number(meta.valor_objetivo)) * 100;
+      return Math.min(Math.round(progreso), 100);
+    },
+
+    calcularProgresoEmpleado: async (empleadoId) => {
+      const { data: metas } = await supabase
+        .from('metas')
+        .select('*')
+        .eq('asignado_a', empleadoId)
+        .eq('activo', true);
+
+      if (!metas || metas.length === 0) {
+        return { data: { progresoPromedio: 0, metasActivas: 0, metasCompletadas: 0 }, error: null };
+      }
+
+      let totalProgreso = 0;
+      let metasCompletadas = 0;
+
+      metas.forEach(meta => {
+        const progreso = db.metas.getProgreso(meta);
+        totalProgreso += progreso;
+        if (progreso >= 100) metasCompletadas++;
+      });
+
+      return {
+        data: {
+          progresoPromedio: Math.round(totalProgreso / metas.length),
+          metasActivas: metas.length,
+          metasCompletadas,
+        },
+        error: null,
+      };
+    },
+
+    getMetasVencidas: async () => {
+      const hoy = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('activo', true)
+        .lt('fecha_fin', hoy)
+        .order('fecha_fin', { ascending: true });
+      return { data, error };
+    },
+
+    getMetasProximasAVencer: async (dias = 7) => {
+      const hoy = new Date();
+      const futuro = new Date();
+      futuro.setDate(futuro.getDate() + dias);
+
+      const hoyISO = hoy.toISOString().split('T')[0];
+      const futuroISO = futuro.toISOString().split('T')[0];
+
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .eq('activo', true)
+        .gte('fecha_fin', hoyISO)
+        .lte('fecha_fin', futuroISO)
+        .order('fecha_fin', { ascending: true });
+      return { data, error };
+    },
+
+    getEstadisticas: async () => {
+      const { data: todasLasMetas } = await supabase
+        .from('metas')
+        .select('*');
+
+      const metasActivas = todasLasMetas?.filter(m => m.activo) || [];
+      const metasGlobales = metasActivas.filter(m => m.alcance === 'global');
+      const metasIndividuales = metasActivas.filter(m => m.alcance === 'individual');
+
+      let metasCompletadas = 0;
+      let progresoPromedio = 0;
+
+      metasActivas.forEach(meta => {
+        const progreso = db.metas.getProgreso(meta);
+        progresoPromedio += progreso;
+        if (progreso >= 100) metasCompletadas++;
+      });
+
+      return {
+        data: {
+          totalMetas: todasLasMetas?.length || 0,
+          metasActivas: metasActivas.length,
+          metasGlobales: metasGlobales.length,
+          metasIndividuales: metasIndividuales.length,
+          metasCompletadas,
+          progresoPromedio: metasActivas.length > 0 ? Math.round(progresoPromedio / metasActivas.length) : 0,
+        },
+        error: null,
+      };
+    },
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -1119,6 +2381,22 @@ export const db = {
       // Estadísticas de inventario
       const statsInventario = await db.inventario.getEstadisticas();
 
+      // Ventas del mes
+      const { data: statsVentas } = await db.ventas.getEstadisticas(
+        startOfMonth.toISOString(),
+        endOfMonth.toISOString()
+      );
+
+      // Ventas de hoy
+      const { data: ventasHoy } = await db.ventas.getHoy();
+      const totalVentasHoy = ventasHoy?.reduce((sum, v) => sum + Number(v.total || v.monto || 0), 0) || 0;
+
+      // Estadísticas de usuarios del sistema
+      const { data: statsProfiles } = await db.profiles.getEstadisticas();
+
+      // Estadísticas de metas
+      const { data: statsMetas } = await db.metas.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -1128,12 +2406,27 @@ export const db = {
         ordenesHoy: ordenesHoy || 0,
         ordenesPendientes: ordenesPendientes || 0,
         ventasEcommerceMes: ventasEcommerceMes,
-        ingresosTotalesMes: ingresosMes + ventasEcommerceMes,
         // Inventario
         totalProductos: statsInventario.data?.totalProductos || 0,
         productosBajoStock: statsInventario.data?.productosBajoStock || 0,
         productosSinStock: statsInventario.data?.productosSinStock || 0,
         valorInventario: statsInventario.data?.valorInventario || 0,
+        // Ventas
+        ventasHoy: ventasHoy?.length || 0,
+        totalVentasHoy: totalVentasHoy.toFixed(2),
+        ventasMes: statsVentas?.totalVentas || 0,
+        ventasTotalesMes: statsVentas?.ventasTotales || 0,
+        // Usuarios del Sistema
+        totalUsuarios: statsProfiles?.totalUsuarios || 0,
+        adminsCount: statsProfiles?.admins || 0,
+        staffCount: statsProfiles?.staff || 0,
+        // Metas y Objetivos
+        totalMetas: statsMetas?.totalMetas || 0,
+        metasActivas: statsMetas?.metasActivas || 0,
+        metasCompletadas: statsMetas?.metasCompletadas || 0,
+        progresoPromedioMetas: statsMetas?.progresoPromedio || 0,
+        // Total General
+        ingresosTotalesMes: ingresosMes + ventasEcommerceMes + Number(statsVentas?.ventasTotales || 0),
       };
     },
 
