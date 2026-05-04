@@ -14,7 +14,19 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.appsalon.pro.clientes"
+      "deploymentTarget": "15.1",
+      "bundleIdentifier": "com.appsalon.pro.clientes",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Esta app necesita acceso a la cámara para tomar fotos de tus looks y compartirlos.",
+        "NSMicrophoneUsageDescription": "Esta app necesita acceso al micrófono para grabar notas de voz.",
+        "NSPhotoLibraryUsageDescription": "Esta app necesita acceso a la galería para seleccionar fotos.",
+        "NSPhotoLibraryAddUsageDescription": "Esta app necesita permiso para guardar fotos en tu galería.",
+        "NSLocationWhenInUseUsageDescription": "Esta app necesita tu ubicación para mostrarte el salón más cercano.",
+        "NSLocationAlwaysUsageDescription": "Esta app necesita tu ubicación para funciones de geolocalización.",
+        "NSCalendarsUsageDescription": "Esta app necesita acceso al calendario para agendar tus citas.",
+        "NSRemindersUsageDescription": "Esta app necesita acceso a recordatorios para notificaciones de citas.",
+        "NSMotionUsageDescription": "Esta app usa datos de movimiento para mejorar la experiencia."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +34,19 @@
         "backgroundColor": "#FDFBF7"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.appsalon.pro.clientes"
+      "package": "com.appsalon.pro.clientes",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR",
+        "VIBRATE",
+        "NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -42,10 +66,20 @@
             "buildToolsVersion": "34.0.0"
           },
           "ios": {
-            "deploymentTarget": "13.4"
+            "deploymentTarget": "15.1"
           }
         }
-      ]
+      ],
+      "expo-barcode-scanner",
+      "expo-camera",
+      "expo-notifications",
+      "expo-image-picker",
+      "expo-document-picker",
+      "expo-calendar",
+      "expo-location",
+      "expo-av",
+      "expo-media-library",
+      "react-native-reanimated"
     ]
   }
 }

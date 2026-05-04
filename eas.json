@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 5.9.0"
+    "version": ">= 13.2.1"
   },
   "build": {
     "development": {
@@ -8,6 +8,9 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
       }
     },
     "preview": {
@@ -18,7 +21,10 @@
     },
     "production": {
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "autoIncrement": true
       }
     }
   },
