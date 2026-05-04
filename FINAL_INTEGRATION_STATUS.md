@@ -2,10 +2,11 @@
 
 ## 🎊 Estado: 100% Funcional
 
-### Base de Datos: 18/18 Tablas Principales ✅
+### Base de Datos: 19/19 Tablas Principales ✅
 
 | Tabla | Funciones | Pantalla | Estado |
 |-------|-----------|----------|--------|
+| **Admin Audit Logs** | 22+ | AdminAuditLogsScreen.js | ✅ Completo |
 | **Clientes** | 15+ | ClientsScreen.js | ✅ Completo |
 | **Citas** | 15+ | AppointmentsScreen.js | ✅ Completo |
 | **Empleados** | 11+ | StaffScreen.js | ✅ Completo |
@@ -25,13 +26,190 @@
 | **Marketing Comments** | 22+ | (Integrado en Posts) | ✅ Completo |
 | **Incidentes** | 26+ | IncidentesScreen.js | ✅ Completo |
 
-**Total:** 362+ funciones CRUD implementadas
+**Total:** 384+ funciones CRUD implementadas
 
 ---
 
 ## 📊 Detalle de Implementación
 
-### 1️⃣ CLIENTES (15+ funciones)
+### 1️⃣ ADMIN AUDIT LOGS (22+ funciones)
+
+**Tabla:** `public.admin_audit_logs`
+
+**Características:**
+- ✅ Sistema completo de auditoría administrativa
+- ✅ Tracking de todas las acciones de administradores
+- ✅ Relación con auth.users (FK con cascade delete)
+- ✅ Registro de acción, tabla objetivo y descripción
+- ✅ Conteo de registros eliminados
+- ✅ Detección automática de actividad sospechosa
+- ✅ Estadísticas por admin, acción y tabla
+- ✅ Alertas de eliminaciones masivas (50+)
+- ✅ Índices optimizados para búsquedas rápidas
+- ✅ Timestamp preciso de cada acción
+- ✅ Sistema de retención de logs
+
+**Funciones principales:**
+```javascript
+db.adminAuditLogs.getAll()
+db.adminAuditLogs.getById(id)
+db.adminAuditLogs.getByAdmin(adminId)
+db.adminAuditLogs.getByAction(actionKey)
+db.adminAuditLogs.getByTable(targetTable)
+db.adminAuditLogs.search(query)
+db.adminAuditLogs.create(data)
+db.adminAuditLogs.delete(id)
+db.adminAuditLogs.deleteOlderThan(days)
+db.adminAuditLogs.getRecent(limit)
+db.adminAuditLogs.getByDateRange(start, end)
+db.adminAuditLogs.getHoy()
+db.adminAuditLogs.getEliminacionesMasivas(threshold)
+db.adminAuditLogs.getAccionesSospechosas()
+db.adminAuditLogs.getEstadisticas()
+db.adminAuditLogs.getEstadisticasPorAdmin()
+db.adminAuditLogs.getEstadisticasPorAccion()
+db.adminAuditLogs.getEstadisticasPorTabla()
+```
+
+**Pantalla:** `AdminAuditLogsScreen.js`
+- **Dashboard con estadísticas**:
+  - Total de registros de auditoría
+  - Logs de hoy y últimos 7 días
+  - Total de eliminaciones rastreadas
+  - Admins activos
+  - Promedio de logs por día
+  - Acción más frecuente
+  - Tabla más modificada
+- **Alerta de seguridad**:
+  - Banner rojo para acciones sospechosas
+  - Detección de eliminaciones masivas (50+ registros)
+  - Identificación de admins con actividad inusual (100+ acciones/hora)
+- **Filtros inteligentes**: Todos, Hoy, Últimos 7 días, Eliminaciones, Sospechosas
+- **Búsqueda avanzada**: por acción, tabla, admin, descripción
+- **Visualización detallada**:
+  - Acción realizada con color codificado
+  - Tabla objetivo
+  - Descripción/Label
+  - Admin responsable (nombre y email)
+  - Conteo de eliminaciones
+  - Timestamp preciso (con segundos)
+  - Borde rojo para logs sospechosos
+- **Pull to refresh**
+
+**Tipos de acciones comunes:**
+- `create_*` - Creación de registros (verde)
+- `update_*` - Actualización de registros (azul)
+- `delete_*` - Eliminación de registros (rojo)
+- `bulk_delete_*` - Eliminación masiva (rojo alerta)
+- `export_*` - Exportación de datos
+- `import_*` - Importación de datos
+- `login_admin` - Inicio de sesión admin
+- `change_permissions` - Cambio de permisos
+- `reset_password` - Reseteo de contraseña
+
+**Flujo de uso:**
+```javascript
+// Registrar una acción administrativa
+const { data: log } = await db.adminAuditLogs.create({
+  admin_id: userId,
+  action_key: 'delete_cliente',
+  target_table: 'clientes',
+  label: 'Eliminó cliente Juan Pérez por solicitud GDPR',
+  removed_count: 1,
+});
+
+// Registrar eliminación masiva
+await db.adminAuditLogs.create({
+  admin_id: userId,
+  action_key: 'bulk_delete_ventas',
+  target_table: 'ventas',
+  label: 'Eliminó ventas antiguas del año 2020',
+  removed_count: 150,
+});
+
+// Obtener logs de un admin específico
+const { data: logsAdmin } = await db.adminAuditLogs.getByAdmin(adminId);
+// Historial completo de acciones del admin
+
+// Obtener logs por tabla
+const { data: logsClientes } = await db.adminAuditLogs.getByTable('clientes');
+// Todas las acciones sobre la tabla clientes
+
+// Detectar acciones sospechosas
+const { data: sospechosas } = await db.adminAuditLogs.getAccionesSospechosas();
+// Retorna: {
+//   eliminacionesMasivas: [
+//     { admin_id, action_key, removed_count: 75, created_at, ... },
+//     ...
+//   ],
+//   adminsSospechosos: ['uuid-admin-1', 'uuid-admin-2'],
+//   totalSospechosas: 5
+// }
+
+// Obtener estadísticas generales
+const { data: stats } = await db.adminAuditLogs.getEstadisticas();
+// Retorna: {
+//   totalLogs: 1250,
+//   logsHoy: 45,
+//   logsUltimos7Dias: 320,
+//   totalEliminaciones: 450,
+//   accionMasFrecuente: 'update_inventario',
+//   frecuenciaAccion: 230,
+//   tablaMasModificada: 'inventario',
+//   frecuenciaTabla: 340,
+//   adminsActivos: 5,
+//   promedioLogsPorDia: 46
+// }
+
+// Estadísticas por admin
+const { data: statsPorAdmin } = await db.adminAuditLogs.getEstadisticasPorAdmin();
+// Retorna: [{
+//   admin_id: 'uuid',
+//   admin_email: 'admin@salon.com',
+//   admin_name: 'María López',
+//   totalAcciones: 450,
+//   totalEliminaciones: 23
+// }, ...]
+
+// Estadísticas por acción
+const { data: statsPorAccion } = await db.adminAuditLogs.getEstadisticasPorAccion();
+// Ranking de acciones más frecuentes
+
+// Estadísticas por tabla
+const { data: statsPorTabla } = await db.adminAuditLogs.getEstadisticasPorTabla();
+// Tablas más modificadas
+
+// Limpiar logs antiguos (GDPR/Retention policy)
+await db.adminAuditLogs.deleteOlderThan(365); // Elimina logs >1 año
+```
+
+**Integración con el sistema:**
+- ✅ Se puede integrar con cualquier acción administrativa
+- ✅ Dashboard global incluye métricas de auditoría
+- ✅ Útil para compliance (GDPR, SOC2, ISO27001)
+- ✅ Detección de amenazas internas
+- ✅ Investigación de incidentes
+- ✅ Reporting para auditorías externas
+
+**Casos de uso:**
+1. **Compliance/Legal**: Rastreo de accesos y modificaciones de datos sensibles
+2. **Seguridad**: Detección de comportamiento anómalo o malicioso
+3. **Debugging**: Investigar cambios inesperados en el sistema
+4. **Auditoría interna**: Revisión de actividad administrativa
+5. **GDPR**: Demostrar controles de acceso y modificación de datos personales
+6. **Forensics**: Investigación post-incidente
+
+**Consideraciones importantes:**
+- Los logs se vinculan a `auth.users` con cascade delete
+- Si se elimina un admin, sus logs también se eliminan
+- Para retención permanente, considerar copiar logs antes de eliminar usuarios
+- Los índices en `created_at` y `admin_id` optimizan búsquedas
+- La detección de actividad sospechosa es configurable (thresholds)
+- Recomendado: política de retención de logs (ej. 1-2 años)
+
+---
+
+### 2️⃣ CLIENTES (15+ funciones)
 
 **Tabla:** `public.clientes`
 
@@ -61,7 +239,7 @@ db.clientes.getReferidos(userId)
 
 ---
 
-### 2️⃣ CITAS (15+ funciones)
+### 3️⃣ CITAS (15+ funciones)
 
 **Tabla:** `public.citas`
 
@@ -92,7 +270,7 @@ db.citas.cancelar(id, motivo)
 
 ---
 
-### 3️⃣ EMPLEADOS (11+ funciones)
+### 4️⃣ EMPLEADOS (11+ funciones)
 
 **Tabla:** `public.empleados`
 
@@ -122,7 +300,7 @@ db.empleados.getEstadisticas(empleadoId)
 
 ---
 
-### 4️⃣ ÓRDENES E-COMMERCE (20+ funciones)
+### 5️⃣ ÓRDENES E-COMMERCE (20+ funciones)
 
 **Tabla:** `public.ecommerce_orders`
 
@@ -156,7 +334,7 @@ db.orders.getEstadisticas(start, end)
 
 ---
 
-### 5️⃣ E-COMMERCE ORDER ITEMS (18+ funciones)
+### 6️⃣ E-COMMERCE ORDER ITEMS (18+ funciones)
 
 **Tabla:** `public.ecommerce_order_items`
 
@@ -262,7 +440,7 @@ const { data: stats } = await db.ecommerceOrderItems.getEstadisticas();
 
 ---
 
-### 6️⃣ INVENTARIO (25+ funciones)
+### 7️⃣ INVENTARIO (25+ funciones)
 
 **Tabla:** `public.inventario`
 
@@ -305,7 +483,7 @@ db.inventario.getEstadisticas()
 
 ---
 
-### 7️⃣ VENTAS (20+ funciones)
+### 8️⃣ VENTAS (20+ funciones)
 
 **Tabla:** `public.ventas`
 
@@ -341,7 +519,7 @@ db.ventas.getTopVendedores(start, end, limit)
 
 ---
 
-### 8️⃣ CAJAS (25+ funciones)
+### 9️⃣ CAJAS (25+ funciones)
 
 **Tabla:** `public.cajas`
 
@@ -531,7 +709,7 @@ Estado:
 
 ---
 
-### 9️⃣ CAMBIOS DE PRODUCTOS (22+ funciones)
+### 🔟 CAMBIOS DE PRODUCTOS (22+ funciones)
 
 **Tabla:** `public.cambios_productos`
 
@@ -823,7 +1001,7 @@ console.log(`Total devuelto este mes: $${totalMes}`);
 
 ---
 
-### 1️⃣1️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
+### 1️⃣2️⃣ PROFILES - USUARIOS DEL SISTEMA (20+ funciones)
 
 **Tabla:** `public.profiles`
 
@@ -858,7 +1036,7 @@ db.profiles.getEstadisticas()
 
 ---
 
-### 1️⃣2️⃣ NOTIFICACIONES (18+ funciones)
+### 1️⃣3️⃣ NOTIFICACIONES (18+ funciones)
 
 **Tabla:** `public.notificaciones`
 
@@ -891,7 +1069,7 @@ db.notificaciones.notificarStockBajo(empleadoIds, productoNombre, stock)
 
 ---
 
-### 1️⃣3️⃣ METAS Y OBJETIVOS (20+ funciones)
+### 1️⃣4️⃣ METAS Y OBJETIVOS (20+ funciones)
 
 **Tabla:** `public.metas`
 
@@ -937,7 +1115,7 @@ db.metas.getEstadisticas()
 
 ---
 
-### 1️⃣4️⃣ MARKETING POSTS (25+ funciones)
+### 1️⃣5️⃣ MARKETING POSTS (25+ funciones)
 
 **Tabla:** `public.marketing_posts`
 
@@ -994,7 +1172,7 @@ db.marketingPosts.getEstadisticas()
 
 ---
 
-### 1️⃣5️⃣ MARKETING POST LIKES (12+ funciones)
+### 1️⃣6️⃣ MARKETING POST LIKES (12+ funciones)
 
 **Tabla:** `public.marketing_post_likes`
 
@@ -1050,7 +1228,7 @@ const { data: topPosts } = await db.marketingPostLikes.getTopLikedPosts(10, star
 
 ---
 
-### 1️⃣6️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
+### 1️⃣7️⃣ MARKETING DIRECT MESSAGES (22+ funciones)
 
 **Tabla:** `public.marketing_direct_messages`
 
@@ -1143,7 +1321,7 @@ const { data: stats } = await db.marketingDirectMessages.getCampaignStats(
 
 ---
 
-### 1️⃣7️⃣ MARKETING COMMENTS (22+ funciones)
+### 1️⃣8️⃣ MARKETING COMMENTS (22+ funciones)
 
 **Tabla:** `public.marketing_comments`
 
@@ -1237,7 +1415,7 @@ const { data: stats } = await db.marketingComments.getEstadisticas();
 
 ---
 
-### 1️⃣8️⃣ INCIDENTES (26+ funciones)
+### 1️⃣9️⃣ INCIDENTES (26+ funciones)
 
 **Tabla:** `public.incidentes`
 
@@ -1557,6 +1735,14 @@ const stats = await db.stats.getDashboard();
   totalPerdidasIncidentes: "2450.00",
   tasaResolucionIncidentes: 85,
   
+  // Admin Audit Logs
+  totalAuditLogs: 1250,
+  auditLogsHoy: 45,
+  auditLogsUltimos7Dias: 320,
+  totalEliminacionesAudit: 450,
+  adminsActivos: 5,
+  promedioLogsPorDia: 46,
+  
   // Total General
   ingresosTotalesMes: 14820  // Citas + E-commerce + Ventas
 }
@@ -1638,10 +1824,11 @@ Login y permisos para staff y clientes.
 ## 📦 Archivos Clave
 
 ### Configuración
-- `shared/config/supabaseClient.js` - 362+ funciones CRUD
+- `shared/config/supabaseClient.js` - 384+ funciones CRUD
 - `.env` files - Credenciales configuradas
 
 ### Pantallas
+- `apps/salon/src/screens/AdminAuditLogsScreen.js`
 - `apps/salon/src/screens/AppointmentsScreen.js`
 - `apps/salon/src/screens/ClientsScreen.js`
 - `apps/salon/src/screens/StaffScreen.js`
@@ -1669,9 +1856,9 @@ Login y permisos para staff y clientes.
 
 | Concepto | Cantidad | Estado |
 |----------|----------|--------|
-| Tablas Integradas | 18/18 | ✅ 100% |
-| Funciones CRUD | 362+ | ✅ Completo |
-| Pantallas Funcionales | 14 | ✅ Completo |
+| Tablas Integradas | 19/19 | ✅ 100% |
+| Funciones CRUD | 384+ | ✅ Completo |
+| Pantallas Funcionales | 15 | ✅ Completo |
 | Apps Configuradas | 3 | ✅ Listo |
 | Documentación | Completa | ✅ 100% |
 

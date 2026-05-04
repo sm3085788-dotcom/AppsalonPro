@@ -3326,6 +3326,313 @@ export const db = {
     },
   },
 
+  // ==================== ADMIN AUDIT LOGS ====================
+  adminAuditLogs: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getById: async (id) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
+    getByAdmin: async (adminId) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*')
+        .eq('admin_id', adminId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByAction: async (actionKey) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .eq('action_key', actionKey)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getByTable: async (targetTable) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .eq('target_table', targetTable)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    search: async (query) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .or(`action_key.ilike.%${query}%,target_table.ilike.%${query}%,label.ilike.%${query}%`)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    create: async (data) => {
+      const logData = {
+        ...data,
+        created_at: new Date().toISOString(),
+      };
+
+      const { data: newLog, error } = await supabase
+        .from('admin_audit_logs')
+        .insert([logData])
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .single();
+      return { data: newLog, error };
+    },
+
+    delete: async (id) => {
+      const { error } = await supabase
+        .from('admin_audit_logs')
+        .delete()
+        .eq('id', id);
+      return { error };
+    },
+
+    deleteOlderThan: async (days) => {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+
+      const { error } = await supabase
+        .from('admin_audit_logs')
+        .delete()
+        .lt('created_at', cutoffDate.toISOString());
+      return { error };
+    },
+
+    getRecent: async (limit = 50) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    getByDateRange: async (startDate, endDate) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getHoy: async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      return await db.adminAuditLogs.getByDateRange(
+        today.toISOString(),
+        tomorrow.toISOString()
+      );
+    },
+
+    getEliminacionesMasivas: async (threshold = 10) => {
+      const { data, error } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .gte('removed_count', threshold)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+
+    getAccionesSospechosas: async () => {
+      const { data: eliminacionesMasivas } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))')
+        .gte('removed_count', 50)
+        .order('created_at', { ascending: false });
+
+      const oneHourAgo = new Date();
+      oneHourAgo.setHours(oneHourAgo.getHours() - 1);
+
+      const { data: accionesRecientes } = await supabase
+        .from('admin_audit_logs')
+        .select('admin_id')
+        .gte('created_at', oneHourAgo.toISOString());
+
+      const actividadPorAdmin = {};
+      accionesRecientes?.forEach(log => {
+        actividadPorAdmin[log.admin_id] = (actividadPorAdmin[log.admin_id] || 0) + 1;
+      });
+
+      const adminsSospechosos = Object.entries(actividadPorAdmin)
+        .filter(([_, count]) => count > 100)
+        .map(([adminId]) => adminId);
+
+      return {
+        data: {
+          eliminacionesMasivas: eliminacionesMasivas || [],
+          adminsSospechosos,
+          totalSospechosas: (eliminacionesMasivas?.length || 0) + adminsSospechosos.length,
+        },
+        error: null,
+      };
+    },
+
+    getEstadisticas: async () => {
+      const { data: allLogs } = await supabase
+        .from('admin_audit_logs')
+        .select('*');
+
+      const totalLogs = allLogs?.length || 0;
+      const totalEliminaciones = allLogs?.reduce((sum, log) => sum + (log.removed_count || 0), 0) || 0;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const logsHoy = allLogs?.filter(log =>
+        new Date(log.created_at) >= today
+      ) || [];
+
+      const last7Days = new Date();
+      last7Days.setDate(last7Days.getDate() - 7);
+
+      const logsUltimos7Dias = allLogs?.filter(log =>
+        new Date(log.created_at) >= last7Days
+      ) || [];
+
+      const accionesPorKey = {};
+      allLogs?.forEach(log => {
+        if (log.action_key) {
+          accionesPorKey[log.action_key] = (accionesPorKey[log.action_key] || 0) + 1;
+        }
+      });
+
+      const accionMasFrecuente = Object.entries(accionesPorKey)
+        .sort(([, a], [, b]) => b - a)[0];
+
+      const tablasPorTarget = {};
+      allLogs?.forEach(log => {
+        if (log.target_table) {
+          tablasPorTarget[log.target_table] = (tablasPorTarget[log.target_table] || 0) + 1;
+        }
+      });
+
+      const tablaMasModificada = Object.entries(tablasPorTarget)
+        .sort(([, a], [, b]) => b - a)[0];
+
+      const adminsUnicos = new Set(allLogs?.map(log => log.admin_id) || []);
+
+      return {
+        data: {
+          totalLogs,
+          logsHoy: logsHoy.length,
+          logsUltimos7Dias: logsUltimos7Dias.length,
+          totalEliminaciones,
+          accionMasFrecuente: accionMasFrecuente ? accionMasFrecuente[0] : null,
+          frecuenciaAccion: accionMasFrecuente ? accionMasFrecuente[1] : 0,
+          tablaMasModificada: tablaMasModificada ? tablaMasModificada[0] : null,
+          frecuenciaTabla: tablaMasModificada ? tablaMasModificada[1] : 0,
+          adminsActivos: adminsUnicos.size,
+          promedioLogsPorDia: logsUltimos7Dias.length > 0 ? Math.round(logsUltimos7Dias.length / 7) : 0,
+        },
+        error: null,
+      };
+    },
+
+    getEstadisticasPorAdmin: async () => {
+      const { data: allLogs } = await supabase
+        .from('admin_audit_logs')
+        .select('*, admin:admin_id(id, email, profiles(full_name))');
+
+      if (!allLogs) return { data: [], error: null };
+
+      const adminStats = {};
+      allLogs.forEach(log => {
+        const adminId = log.admin_id;
+        if (!adminStats[adminId]) {
+          adminStats[adminId] = {
+            admin_id: adminId,
+            admin_email: log.admin?.email || 'Desconocido',
+            admin_name: log.admin?.profiles?.full_name || 'N/A',
+            totalAcciones: 0,
+            totalEliminaciones: 0,
+          };
+        }
+        adminStats[adminId].totalAcciones++;
+        adminStats[adminId].totalEliminaciones += log.removed_count || 0;
+      });
+
+      const stats = Object.values(adminStats)
+        .sort((a, b) => b.totalAcciones - a.totalAcciones);
+
+      return { data: stats, error: null };
+    },
+
+    getEstadisticasPorAccion: async () => {
+      const { data: allLogs } = await supabase
+        .from('admin_audit_logs')
+        .select('*');
+
+      if (!allLogs) return { data: [], error: null };
+
+      const accionStats = {};
+      allLogs.forEach(log => {
+        const action = log.action_key || 'Sin especificar';
+        if (!accionStats[action]) {
+          accionStats[action] = {
+            action_key: action,
+            count: 0,
+            totalEliminaciones: 0,
+          };
+        }
+        accionStats[action].count++;
+        accionStats[action].totalEliminaciones += log.removed_count || 0;
+      });
+
+      const stats = Object.values(accionStats)
+        .sort((a, b) => b.count - a.count);
+
+      return { data: stats, error: null };
+    },
+
+    getEstadisticasPorTabla: async () => {
+      const { data: allLogs } = await supabase
+        .from('admin_audit_logs')
+        .select('*');
+
+      if (!allLogs) return { data: [], error: null };
+
+      const tablaStats = {};
+      allLogs.forEach(log => {
+        const table = log.target_table || 'Sin especificar';
+        if (!tablaStats[table]) {
+          tablaStats[table] = {
+            target_table: table,
+            count: 0,
+            totalEliminaciones: 0,
+          };
+        }
+        tablaStats[table].count++;
+        tablaStats[table].totalEliminaciones += log.removed_count || 0;
+      });
+
+      const stats = Object.values(tablaStats)
+        .sort((a, b) => b.count - a.count);
+
+      return { data: stats, error: null };
+    },
+  },
+
   // ==================== CAJAS ====================
   cajas: {
     getAll: async () => {
@@ -4910,6 +5217,9 @@ export const db = {
       // Estadísticas de cajas
       const { data: statsCajas } = await db.cajas.getEstadisticas();
 
+      // Estadísticas de admin audit logs
+      const { data: statsAuditLogs } = await db.adminAuditLogs.getEstadisticas();
+
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -4971,6 +5281,13 @@ export const db = {
         incidentesHoy: statsIncidentes?.incidentesHoy || 0,
         totalPerdidasIncidentes: statsIncidentes?.totalPerdidas || 0,
         tasaResolucionIncidentes: statsIncidentes?.tasaResolucion || 0,
+        // Admin Audit Logs
+        totalAuditLogs: statsAuditLogs?.totalLogs || 0,
+        auditLogsHoy: statsAuditLogs?.logsHoy || 0,
+        auditLogsUltimos7Dias: statsAuditLogs?.logsUltimos7Dias || 0,
+        totalEliminacionesAudit: statsAuditLogs?.totalEliminaciones || 0,
+        adminsActivos: statsAuditLogs?.adminsActivos || 0,
+        promedioLogsPorDia: statsAuditLogs?.promedioLogsPorDia || 0,
         // E-commerce Order Items
         totalOrderItems: statsOrderItems?.totalItems || 0,
         totalUnidadesVendidas: statsOrderItems?.totalUnidades || 0,
