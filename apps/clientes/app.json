@@ -4,17 +4,14 @@
     "slug": "salon-andreas-client",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#FDFBF7"
     },
     "ios": {
       "supportsTablet": true,
-      "deploymentTarget": "15.1",
       "bundleIdentifier": "com.appsalon.pro.clientes",
       "infoPlist": {
         "NSCameraUsageDescription": "Esta app necesita acceso a la cámara para tomar fotos de tus looks y compartirlos.",
@@ -29,10 +26,6 @@
       }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FDFBF7"
-      },
       "edgeToEdgeEnabled": true,
       "package": "com.appsalon.pro.clientes",
       "permissions": [
@@ -49,7 +42,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro"
     },
     "extra": {
       "eas": {
@@ -61,9 +54,9 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 34,
-            "targetSdkVersion": 34,
-            "buildToolsVersion": "34.0.0"
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0"
           },
           "ios": {
             "deploymentTarget": "15.1"
