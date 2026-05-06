@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "AppSalon Pro - Clientes",
-    "slug": "appsalon-pro-clientes",
+    "slug": "salon-andreas-client",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -53,7 +53,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "e31d2b97-b173-4f57-a466-d35fc3c8cc4e"
       }
     },
     "plugins": [
@@ -70,7 +70,6 @@
           }
         }
       ],
-      "expo-barcode-scanner",
       "expo-camera",
       "expo-notifications",
       "expo-image-picker",
@@ -78,8 +77,7 @@
       "expo-calendar",
       "expo-location",
       "expo-av",
-      "expo-media-library",
-      "react-native-reanimated"
+      "expo-media-library"
     ]
   }
 }

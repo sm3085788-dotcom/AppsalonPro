@@ -3,10 +3,11 @@
 ## ✅ Todas las librerías instaladas en ambas apps (Salon y Clientes)
 
 ### 📸 **Cámara y Medios**
-- ✅ `expo-camera` - Acceso a cámara para fotos y videos
+- ✅ `expo-camera` - Acceso a cámara para fotos, videos y **escaneo de códigos de barras/QR**
 - ✅ `expo-image-picker` - Seleccionar fotos/videos de galería
 - ✅ `expo-media-library` - Acceso a galería de medios
-- ✅ `expo-barcode-scanner` - Escanear códigos de barras y QR
+
+> **Nota:** `expo-barcode-scanner` fue removido (deprecado en SDK 51+). Ahora se usa `expo-camera` para escaneo.
 
 ### 🔔 **Notificaciones**
 - ✅ `expo-notifications` - Push notifications locales y remotas
@@ -126,34 +127,47 @@ eas init
 
 ## 🎯 Uso de las Librerías (Ejemplos)
 
-### Scanner de Códigos
+### Scanner de Códigos (con expo-camera)
 ```javascript
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
-const [hasPermission, setHasPermission] = useState(null);
-
-useEffect(() => {
-  const getPermissions = async () => {
-    const { status } = await BarCodeScanner.requestPermissionsAsync();
-    setHasPermission(status === 'granted');
-  };
-  getPermissions();
-}, []);
-
-const handleBarCodeScanned = ({ type, data }) => {
-  console.log(`Código escaneado: ${data}`);
-};
-```
-
-### Cámara
-```javascript
-import { Camera } from 'expo-camera';
-
-const [permission, requestPermission] = Camera.useCameraPermissions();
+const [permission, requestPermission] = useCameraPermissions();
+const [scanned, setScanned] = useState(false);
 
 if (!permission?.granted) {
   return <Button title="Permitir Cámara" onPress={requestPermission} />;
 }
+
+const handleBarCodeScanned = ({ type, data }) => {
+  setScanned(true);
+  console.log(`Código ${type} escaneado: ${data}`);
+};
+
+<CameraView
+  style={{ flex: 1 }}
+  facing="back"
+  onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+  barcodeScannerSettings={{
+    barcodeTypes: ["qr", "ean13", "code128"],
+  }}
+/>
+```
+
+### Cámara (Tomar fotos)
+```javascript
+import { CameraView, useCameraPermissions } from 'expo-camera';
+
+const [permission, requestPermission] = useCameraPermissions();
+const cameraRef = useRef(null);
+
+const takePicture = async () => {
+  if (cameraRef.current) {
+    const photo = await cameraRef.current.takePictureAsync();
+    console.log('Foto guardada en:', photo.uri);
+  }
+};
+
+<CameraView ref={cameraRef} style={{ flex: 1 }} />
 ```
 
 ### Imprimir PDF

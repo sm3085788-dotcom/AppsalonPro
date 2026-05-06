@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "AppSalon Pro - Gestión",
-    "slug": "appsalon-pro-salon",
+    "slug": "salon-andreas-salon",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -52,7 +52,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "e9ee6409-4ce6-4c64-ac76-032d9f3acd67"
       }
     },
     "plugins": [
@@ -69,7 +69,6 @@
           }
         }
       ],
-      "expo-barcode-scanner",
       "expo-camera",
       "expo-notifications",
       "expo-image-picker",
@@ -77,8 +76,7 @@
       "expo-calendar",
       "expo-location",
       "expo-av",
-      "expo-media-library",
-      "react-native-reanimated"
+      "expo-media-library"
     ]
   }
 }
