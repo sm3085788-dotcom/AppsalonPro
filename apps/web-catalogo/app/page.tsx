@@ -1,4 +1,5 @@
-import { Calendar, Sparkles, Clock, Star } from 'lucide-react';
+import Link from "next/link";
+import { Calendar, Sparkles, Clock, Star } from "lucide-react";
 
 export default function Home() {
   return (
@@ -134,6 +135,14 @@ export default function Home() {
           </div>
           <p className="text-[#C0C0C0] font-light text-sm">
             © 2026 AppSalon Pro. Todos los derechos reservados.
+          </p>
+          <p className="text-[#C0C0C0] font-light text-xs mt-3">
+            <Link
+              href="/privacidad"
+              className="text-[#D4AF37] hover:underline underline-offset-4"
+            >
+              Política de privacidad
+            </Link>
           </p>
           <p className="text-[#C0C0C0] font-light text-xs mt-2">
             Powered by Supabase • Built with Next.js
