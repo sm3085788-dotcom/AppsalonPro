@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet,
@@ -7,12 +7,21 @@ import {
   TouchableOpacity,
   ScrollView,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
+import { supabase } from '@appsalon/shared-config';
 
 const PRIVACY_URL =
   process.env.EXPO_PUBLIC_PRIVACY_URL ??
   'https://appsalon-pro-web-catalogo.vercel.app/privacidad';
+
+const hasSupabaseEnv =
+  Boolean(
+    process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim(),
+  );
 
 const SCREENS = {
   HOME: 'home',
@@ -24,6 +33,61 @@ const SCREENS = {
 
 export default function App() {
   const [screen, setScreen] = useState(SCREENS.HOME);
+  const [session, setSession] = useState(null);
+  const [clienteRow, setClienteRow] = useState(null);
+  const [perfilLoading, setPerfilLoading] = useState(false);
+  const [perfilMeta, setPerfilMeta] = useState({ error: null });
+
+  useEffect(() => {
+    if (!hasSupabaseEnv) return undefined;
+
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s ?? null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const refreshClienteFicha = useCallback(async (userId) => {
+    if (!hasSupabaseEnv || !userId) {
+      setClienteRow(null);
+      return;
+    }
+    setPerfilLoading(true);
+    setPerfilMeta({ error: null });
+    const { data, error } = await supabase
+      .from('clientes')
+      .select('nombre,email')
+      .eq('user_id', userId)
+      .maybeSingle();
+    setPerfilLoading(false);
+    if (error) {
+      setClienteRow(null);
+      setPerfilMeta({ error: error.message });
+      return;
+    }
+    setClienteRow(data ?? null);
+    setPerfilMeta({ error: null });
+  }, []);
+
+  useEffect(() => {
+    if (screen !== SCREENS.PERFIL || !session?.user?.id) {
+      setClienteRow(null);
+      setPerfilMeta({ error: null });
+      setPerfilLoading(false);
+      return;
+    }
+    refreshClienteFicha(session.user.id);
+  }, [screen, session?.user?.id, refreshClienteFicha]);
+
+  const appVersion =
+    Constants.expoConfig?.version ?? Constants.manifest2?.extra?.expoClient?.version ?? '—';
 
   const Header = ({ showBack }) => (
     <View style={styles.header}>
@@ -128,21 +192,90 @@ export default function App() {
       );
       break;
     case SCREENS.PERFIL:
-      main = renderPlaceholder(
-        'Perfil',
-        'Gestiona tus datos de contacto y preferencias cuando la app esté vinculada a tu cuenta.',
-        {
-          extra: (
+      main = (
+        <>
+          <Header showBack />
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollInner}
+          >
+            <Text style={styles.pageTitle}>Perfil</Text>
+            <Text style={styles.pageBody}>
+              Gestiona tus datos de contacto y preferencias cuando la app esté
+              vinculada a tu cuenta.
+            </Text>
+
+            <View style={styles.connCard}>
+              <Text style={styles.connCardTitle}>Conexión</Text>
+              {!hasSupabaseEnv ? (
+                <Text style={styles.connCardBody}>
+                  Falta configurar EXPO_PUBLIC_SUPABASE_URL y
+                  EXPO_PUBLIC_SUPABASE_ANON_KEY en el archivo .env de esta app.
+                </Text>
+              ) : (
+                <>
+                  <Text style={styles.connCardOk}>
+                    Variables de Supabase cargadas.
+                  </Text>
+                  {!session?.user ? (
+                    <Text style={styles.connCardBody}>
+                      Sesión: no has iniciado sesión todavía (flujo de login se
+                      puede añadir después). La base responde cuando haya
+                      sesión y RLS lo permita.
+                    </Text>
+                  ) : (
+                    <>
+                      <Text style={styles.connCardBody}>
+                        Sesión activa:{' '}
+                        <Text style={styles.connStrong}>
+                          {session.user.email ?? session.user.id.slice(0, 8) + '…'}
+                        </Text>
+                      </Text>
+                      {perfilLoading ? (
+                        <ActivityIndicator
+                          style={styles.connSpinner}
+                          color="#D4AF37"
+                        />
+                      ) : perfilMeta.error ? (
+                        <Text style={styles.connError}>
+                          Tabla clientes: {perfilMeta.error}
+                        </Text>
+                      ) : clienteRow ? (
+                        <View style={styles.clienteBox}>
+                          <Text style={styles.connCardBody}>
+                            Ficha en tabla clientes:{' '}
+                            <Text style={styles.connStrong}>
+                              {clienteRow.nombre}
+                            </Text>
+                            {clienteRow.email ? (
+                              <Text style={styles.connCardMuted}>
+                                {' \n'}
+                                {clienteRow.email}
+                              </Text>
+                            ) : null}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.connCardBody}>
+                          No hay fila en la tabla clientes con tu user_id, o RLS
+                          permite leerla (revisa en Supabase y el mapeo Auth →
+                          cliente).
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </View>
+
             <TouchableOpacity
               style={styles.linkBtn}
-              onPress={() =>
-                Linking.openURL(PRIVACY_URL).catch(() => {})
-              }
+              onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
             >
               <Text style={styles.linkBtnText}>Política de privacidad</Text>
             </TouchableOpacity>
-          ),
-        },
+          </ScrollView>
+        </>
       );
       break;
     default:
@@ -156,7 +289,7 @@ export default function App() {
         {main}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Versión 1.0.0 • Tu salón de confianza
+            Versión {appVersion} • Tu salón de confianza
           </Text>
         </View>
       </View>
@@ -303,5 +436,52 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#D4AF37',
     textDecorationLine: 'underline',
+  },
+  connCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E8E4DC',
+  },
+  connCardTitle: {
+    fontSize: 16,
+    fontWeight: '300',
+    color: '#2C2C2C',
+    marginBottom: 10,
+  },
+  connCardBody: {
+    fontSize: 14,
+    fontWeight: '300',
+    color: '#505050',
+    lineHeight: 20,
+  },
+  connCardOk: {
+    fontSize: 14,
+    fontWeight: '300',
+    color: '#2E7D32',
+    marginBottom: 8,
+  },
+  connCardMuted: {
+    fontSize: 13,
+    fontWeight: '300',
+    color: '#888888',
+  },
+  connStrong: {
+    fontWeight: '500',
+    color: '#2C2C2C',
+  },
+  connSpinner: {
+    marginTop: 12,
+  },
+  connError: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#B00020',
+    fontWeight: '300',
+  },
+  clienteBox: {
+    marginTop: 4,
   },
 });

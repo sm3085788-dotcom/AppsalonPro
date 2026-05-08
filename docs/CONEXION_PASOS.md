@@ -84,24 +84,29 @@ Inventario en `docs/supabase/`:
 
 ---
 
-## Paso 5 — Usar Supabase desde UI (siguiente fase)
+## Paso 5 — Usar Supabase desde UI
 
 - **Salón:** varias pantallas importan ya `../../../../shared/config/supabaseClient` y `db.*`.  
-- **Clientes:** `App.js` aún es navegación mínima; aquí enlazaremos `supabase` / `db` según pantalla (ej. ecoommerce, perfil cliente) respetando RLS.
+- **Clientes:** `App.js` importa **`@appsalon/shared-config`** (mismo archivo que `shared/config/supabaseClient.js`). En **Perfil** se muestra: si faltan variables `.env`, si hay sesión Auth, y la fila **`clientes`** (`nombre`, `email`) cuando exista y RLS lo permita.
+
+`apps/clientes/metro.config.js` amplía `watchFolders` con la raíz del monorepo para resolver bien el workspace.
 
 ---
 
 ## Paso 6 — Verificación rápida (opcional manual)
 
-Desde código temporal o consola después de iniciar sesión:
+Con `.env` listo y la app ejecutándose, abre **Perfil**.
+
+Ejemplo en código:
 
 ```javascript
-const { supabase } = await import('../../shared/config/supabaseClient'); // ajustar ruta
-const { data: { session } } = await supabase.auth.getSession();
+import { supabase } from '@appsalon/shared-config';
+
+const {
+  data: { session },
+} = await supabase.auth.getSession();
 console.log('session?', !!session);
 ```
-
-*(Ruta depende del archivo dentro de la app.)*
 
 ---
 
