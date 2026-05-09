@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, Building2 } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, Building2, QrCode } from 'lucide-react-native';
 import { colors, spacing, typography, radii } from '@appsalon/design-tokens';
 import { SalonButton } from '../luxury/SalonButton';
 import { ss as subStyles } from '../luxury/SubScreenChrome';
@@ -67,11 +67,17 @@ export function TiendaFlow({ onClose }) {
   const [selected, setSelected] = useState(null);
   const [qty, setQty] = useState(1);
   const [cartHint, setCartHint] = useState(false);
+  const [cartItems, setCartItems] = useState([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewType, setReviewType] = useState('compra_verificada');
+  const [reviewPublished, setReviewPublished] = useState(false);
+  const [specsExpanded, setSpecsExpanded] = useState(false);
   const [shipId, setShipId] = useState('ship-home');
+  const [homeAddressType, setHomeAddressType] = useState('casa');
+  const [homeSaved, setHomeSaved] = useState(false);
+  const [pickupQrIssued, setPickupQrIssued] = useState(false);
   const [payId, setPayId] = useState('pay-card');
-
-  const unitPrice = selected?.priceAmount ?? 0;
-  const lineTotal = useMemo(() => unitPrice * qty, [unitPrice, qty]);
 
   const specsAndCopy = useMemo(() => {
     if (selected?.id === 'demo-keratin-kit') {
@@ -79,6 +85,10 @@ export function TiendaFlow({ onClose }) {
     }
     return { specs: [], longCopy: '' };
   }, [selected]);
+  const cartSubtotal = useMemo(
+    () => cartItems.reduce((acc, item) => acc + item.priceAmount * item.qty, 0),
+    [cartItems],
+  );
 
   const goCatalog = () => {
     setPhase('catalog');
@@ -91,11 +101,48 @@ export function TiendaFlow({ onClose }) {
     setSelected(product);
     setQty(1);
     setCartHint(false);
+    setReviewOpen(false);
+    setReviewPublished(false);
+    setReviewRating(5);
+    setReviewType('compra_verificada');
+    setSpecsExpanded(false);
     setPhase('detail');
   };
 
   const bumpQty = (delta) => {
     setQty((q) => Math.min(9, Math.max(1, q + delta)));
+  };
+
+  const addToCart = (product, quantity = 1) => {
+    if (!product || quantity < 1) return;
+    setCartItems((prev) => {
+      const idx = prev.findIndex((i) => i.id === product.id);
+      if (idx >= 0) {
+        return prev.map((item, i) =>
+          i === idx ? { ...item, qty: Math.min(99, item.qty + quantity) } : item,
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: product.id,
+          title: product.title,
+          priceAmount: product.priceAmount ?? 0,
+          priceLabel: product.priceLabel ?? 'Q 0.00',
+          qty: quantity,
+        },
+      ];
+    });
+  };
+
+  const updateCartQty = (id, delta) => {
+    setCartItems((prev) =>
+      prev
+        .map((item) =>
+          item.id === id ? { ...item, qty: Math.max(0, Math.min(99, item.qty + delta)) } : item,
+        )
+        .filter((item) => item.qty > 0),
+    );
   };
 
   const shipOptions = [
@@ -108,6 +155,8 @@ export function TiendaFlow({ onClose }) {
     { id: 'pay-cash', label: 'Efectivo al retirar', sub: 'Pagas cuando recoges en salón', Icon: Wallet },
     { id: 'pay-wire', label: 'Transferencia', sub: 'Banco Industrial · referencia en siguiente paso', Icon: Building2 },
   ];
+  const homeShippingEligible = cartSubtotal >= 350;
+  const shippingReady = shipId === 'ship-home' ? homeSaved : pickupQrIssued;
 
   return (
     <View style={styles.wrap}>
@@ -138,10 +187,100 @@ export function TiendaFlow({ onClose }) {
           <Text style={styles.detailTitle}>{selected.title}</Text>
 
           <View style={styles.ratingBlock}>
-            <RatingStars rating={selected.rating} />
-            <Text style={styles.ratingNum}>{selected.rating.toFixed(1)}</Text>
-            <Text style={styles.ratingCount}>({selected.reviewCount} opiniones)</Text>
+            <TouchableOpacity
+              style={styles.ratingAction}
+              onPress={() => setReviewOpen(true)}
+              activeOpacity={0.86}
+              accessibilityRole="button"
+              accessibilityLabel="Calificar con estrellas"
+            >
+              <RatingStars rating={selected.rating} />
+              <Text style={styles.ratingNum}>{selected.rating.toFixed(1)}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setReviewOpen(true)}
+              activeOpacity={0.86}
+              accessibilityRole="button"
+              accessibilityLabel="Ver y escribir opiniones"
+            >
+              <Text style={styles.ratingCount}>({selected.reviewCount} opiniones)</Text>
+            </TouchableOpacity>
           </View>
+
+          {reviewOpen ? (
+            <View style={[subStyles.card, styles.reviewCard]}>
+              <Text style={subStyles.rowLabel}>Dejar reseña (demo)</Text>
+              <Text style={styles.reviewLead}>
+                Flujo sugerido: compras verificadas primero, luego reseña libre. Aquí solo UI.
+              </Text>
+
+              <Text style={styles.reviewStep}>1) Tu calificación</Text>
+              <View style={styles.ratePickerRow}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={() => setReviewRating(star)}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${star} estrellas`}
+                  >
+                    <Star
+                      size={20}
+                      color={star <= reviewRating ? STAR_GOLD : STAR_EMPTY}
+                      fill={star <= reviewRating ? STAR_GOLD : STAR_EMPTY}
+                      strokeWidth={0}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.reviewStep}>2) Tipo de reseña</Text>
+              <View style={styles.reviewTypeRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.reviewTypeChip,
+                    reviewType === 'compra_verificada' && styles.reviewTypeChipOn,
+                  ]}
+                  onPress={() => setReviewType('compra_verificada')}
+                  activeOpacity={0.86}
+                >
+                  <Text style={styles.reviewTypeText}>Compra verificada</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.reviewTypeChip,
+                    reviewType === 'opinion_general' && styles.reviewTypeChipOn,
+                  ]}
+                  onPress={() => setReviewType('opinion_general')}
+                  activeOpacity={0.86}
+                >
+                  <Text style={styles.reviewTypeText}>Opinión general</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.reviewStep}>3) Comentario y fotos (demo)</Text>
+              <View style={subStyles.fauxInput} />
+              <View style={[subStyles.fauxInput, { height: 90 }]} />
+
+              {reviewPublished ? (
+                <Text style={styles.reviewOk}>Reseña enviada (demo). Gracias por tu opinión.</Text>
+              ) : null}
+
+              <SalonButton
+                title="Publicar reseña · demo"
+                variant="heroGold"
+                fullWidth
+                onPress={() => setReviewPublished(true)}
+              />
+              <SalonButton
+                title="Cerrar reseñas"
+                variant="outlineGray"
+                fullWidth
+                style={{ marginTop: spacing.sm }}
+                onPress={() => setReviewOpen(false)}
+              />
+            </View>
+          ) : null}
 
           <View style={styles.priceBlock}>
             {selected.compareAtLabel ? (
@@ -166,10 +305,21 @@ export function TiendaFlow({ onClose }) {
 
           {specsAndCopy.specs.length > 0 ? (
             <View style={[subStyles.card, styles.specCard]}>
-              <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Especificaciones</Text>
-              {specsAndCopy.specs.map((row) => (
-                <SpecRow key={row.label} label={row.label} value={row.value} />
-              ))}
+              <TouchableOpacity
+                style={styles.specHead}
+                onPress={() => setSpecsExpanded((v) => !v)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Mostrar u ocultar especificaciones"
+              >
+                <Text style={subStyles.rowLabel}>Especificaciones</Text>
+                <Text style={styles.specToggleTxt}>{specsExpanded ? 'Ocultar' : 'Ver'}</Text>
+              </TouchableOpacity>
+              {specsExpanded
+                ? specsAndCopy.specs.map((row) => (
+                    <SpecRow key={row.label} label={row.label} value={row.value} />
+                  ))
+                : null}
             </View>
           ) : null}
 
@@ -203,43 +353,109 @@ export function TiendaFlow({ onClose }) {
             variant="outlineGray"
             fullWidth
             style={{ marginTop: spacing.md }}
-            onPress={() => setCartHint(true)}
+            onPress={() => {
+              addToCart(selected, qty);
+              setCartHint(true);
+            }}
           />
           <SalonButton
             title="Comprar ahora"
             variant="heroGold"
             fullWidth
             style={{ marginTop: spacing.sm }}
-            onPress={() => setPhase('summary')}
+            onPress={() => {
+              addToCart(selected, qty);
+              setPhase('cart');
+            }}
           />
         </View>
       ) : null}
 
-      {phase === 'summary' && selected ? (
+      {phase === 'cart' ? (
         <View style={styles.section}>
-          <PhaseBack label="Producto" onPress={() => setPhase('detail')} />
+          <PhaseBack label="Catálogo" onPress={goCatalog} />
+
+          <Text style={styles.stepHead}>Carrito</Text>
+          <Text style={styles.stepSub}>Todo el checkout se construye desde lo que tengas aquí.</Text>
+
+          {cartItems.length === 0 ? (
+            <View style={subStyles.card}>
+              <Text style={subStyles.rowLabel}>Tu carrito está vacío</Text>
+              <Text style={subStyles.bullets}>
+                Agrega productos desde el catálogo para continuar con el flujo de compra.
+              </Text>
+            </View>
+          ) : (
+            <View style={subStyles.card}>
+              {cartItems.map((item) => (
+                <View key={item.id} style={styles.cartRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sumTitle} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.sumMeta}>{item.priceLabel}</Text>
+                    <View style={styles.cartQtyRow}>
+                      <TouchableOpacity
+                        style={styles.qtyMiniBtn}
+                        onPress={() => updateCartQty(item.id, -1)}
+                      >
+                        <Text style={styles.qtyMiniTxt}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.qtyMiniVal}>{item.qty}</Text>
+                      <TouchableOpacity
+                        style={styles.qtyMiniBtn}
+                        onPress={() => updateCartQty(item.id, 1)}
+                      >
+                        <Text style={styles.qtyMiniTxt}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <Text style={styles.sumPrice}>{formatQ(item.priceAmount * item.qty)}</Text>
+                </View>
+              ))}
+              <View style={subStyles.divider} />
+              <RowAmt label="Subtotal carrito" value={formatQ(cartSubtotal)} bold />
+            </View>
+          )}
+
+          <SalonButton
+            title="Continuar con carrito · resumen"
+            variant="heroGold"
+            fullWidth
+            style={{ marginTop: spacing.md }}
+            onPress={() => setPhase('summary')}
+            disabled={cartItems.length === 0}
+          />
+        </View>
+      ) : null}
+
+      {phase === 'summary' ? (
+        <View style={styles.section}>
+          <PhaseBack label="Carrito" onPress={() => setPhase('cart')} />
 
           <Text style={styles.stepHead}>Resumen del pedido</Text>
           <Text style={styles.stepSub}>Revisa importes antes de envío y pago (solo maquetación).</Text>
 
           <View style={subStyles.card}>
-            <View style={styles.summaryTop}>
-              <Package size={40} color={colors.foregroundMuted} strokeWidth={1.25} />
-              <View style={{ flex: 1, marginLeft: spacing.md }}>
-                <Text style={styles.sumTitle} numberOfLines={2}>
-                  {selected.title}
-                </Text>
-                <Text style={styles.sumMeta}>
-                  {qty} × {formatQ(unitPrice)}
-                </Text>
+            {cartItems.map((item) => (
+              <View key={item.id} style={styles.summaryTop}>
+                <Package size={40} color={colors.foregroundMuted} strokeWidth={1.25} />
+                <View style={{ flex: 1, marginLeft: spacing.md }}>
+                  <Text style={styles.sumTitle} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.sumMeta}>
+                    {item.qty} × {formatQ(item.priceAmount)}
+                  </Text>
+                </View>
+                <Text style={styles.sumPrice}>{formatQ(item.priceAmount * item.qty)}</Text>
               </View>
-              <Text style={styles.sumPrice}>{formatQ(lineTotal)}</Text>
-            </View>
+            ))}
             <View style={subStyles.divider} />
-            <RowAmt label="Subtotal" value={formatQ(lineTotal)} />
+            <RowAmt label="Subtotal" value={formatQ(cartSubtotal)} />
             <RowAmt label="Envío (demo)" value="Q 0.00" muted />
             <View style={subStyles.divider} />
-            <RowAmt label="Total estimado" value={formatQ(lineTotal)} bold />
+            <RowAmt label="Total estimado" value={formatQ(cartSubtotal)} bold />
           </View>
 
           <SalonButton
@@ -262,14 +478,108 @@ export function TiendaFlow({ onClose }) {
           {shipOptions.map((o) => (
             <TouchableOpacity
               key={o.id}
-              style={[styles.choiceCard, shipId === o.id && styles.choiceCardOn]}
-              onPress={() => setShipId(o.id)}
+              style={[
+                styles.choiceCard,
+                shipId === o.id && styles.choiceCardOn,
+                o.id === 'ship-home' && !homeShippingEligible && styles.choiceCardDisabled,
+              ]}
+              onPress={() => {
+                if (o.id === 'ship-home' && !homeShippingEligible) return;
+                setShipId(o.id);
+                if (o.id === 'ship-home') {
+                  setPickupQrIssued(false);
+                }
+                if (o.id === 'ship-salon') {
+                  setHomeSaved(false);
+                  setPickupQrIssued(true);
+                }
+              }}
               activeOpacity={0.88}
             >
               <Text style={styles.choiceTitle}>{o.label}</Text>
-              <Text style={styles.choiceSub}>{o.sub}</Text>
+              <Text style={styles.choiceSub}>
+                {o.id === 'ship-home' && !homeShippingEligible
+                  ? 'Disponible para compras mayores a Q 350.00'
+                  : o.sub}
+              </Text>
             </TouchableOpacity>
           ))}
+
+          {shipId === 'ship-home' ? (
+            <View style={[subStyles.card, styles.shipScenarioCard]}>
+              <Text style={subStyles.rowLabel}>Dirección de entrega</Text>
+              <Text style={styles.choiceSub}>
+                Completa estos datos para cotizar ruta y confirmar envío (demo).
+              </Text>
+
+              <View style={styles.shipChipRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.shipChip,
+                    homeAddressType === 'casa' && styles.shipChipOn,
+                  ]}
+                  onPress={() => setHomeAddressType('casa')}
+                  activeOpacity={0.86}
+                >
+                  <Text style={styles.shipChipText}>Casa</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.shipChip,
+                    homeAddressType === 'trabajo' && styles.shipChipOn,
+                  ]}
+                  onPress={() => setHomeAddressType('trabajo')}
+                  activeOpacity={0.86}
+                >
+                  <Text style={styles.shipChipText}>Trabajo</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.formLabel}>Nombre de contacto</Text>
+              <View style={subStyles.fauxInput} />
+              <Text style={styles.formLabel}>Teléfono</Text>
+              <View style={subStyles.fauxInput} />
+              <Text style={styles.formLabel}>Dirección completa</Text>
+              <View style={[subStyles.fauxInput, { height: 96, justifyContent: 'center' }]}>
+                <Text style={styles.inlineHintText}>
+                  Ejemplo: casa blanca de dos niveles, portón negro, perro en el patio, timbrar dos veces.
+                </Text>
+              </View>
+
+              <Text style={styles.shipContactMsg}>
+                La persona asignada para tu envío se comunicará contigo para coordinar la hora exacta de
+                entrega.
+              </Text>
+
+              {homeSaved ? (
+                <Text style={styles.shipOkMsg}>Dirección guardada · lista para pasar a pago.</Text>
+              ) : null}
+              <SalonButton
+                title="Guardar dirección de envío · demo"
+                variant="outlineGold"
+                fullWidth
+                onPress={() => setHomeSaved(true)}
+                style={{ marginTop: spacing.sm }}
+              />
+            </View>
+          ) : (
+            <View style={[subStyles.card, styles.shipScenarioCard]}>
+              <Text style={subStyles.rowLabel}>QR de retiro en salón</Text>
+              <Text style={styles.choiceSub}>
+                Muéstralo al recoger. Puede retirarlo cualquier persona que presente este QR.
+              </Text>
+
+              <View style={styles.qrCard}>
+                <View style={styles.qrSquare}>
+                  <QrCode size={78} color={colors.foreground} strokeWidth={1.8} />
+                </View>
+                <Text style={styles.qrCodeText}>APS-RET-2026-882041</Text>
+                <Text style={styles.qrMeta}>Pedido listo · válido por 24 horas (demo)</Text>
+              </View>
+
+              <Text style={styles.shipOkMsg}>QR generado · listo para pasar a pago.</Text>
+            </View>
+          )}
 
           <SalonButton
             title="Continuar · pago"
@@ -277,6 +587,7 @@ export function TiendaFlow({ onClose }) {
             fullWidth
             style={{ marginTop: spacing.md }}
             onPress={() => setPhase('pay')}
+            disabled={!shippingReady}
           />
         </View>
       ) : null}
@@ -308,7 +619,10 @@ export function TiendaFlow({ onClose }) {
             variant="heroGold"
             fullWidth
             style={{ marginTop: spacing.lg }}
-            onPress={() => setPhase('success')}
+            onPress={() => {
+              setPhase('success');
+              setCartItems([]);
+            }}
           />
         </View>
       ) : null}
@@ -409,6 +723,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     flexWrap: 'wrap',
   },
+  ratingAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   starRow: { flexDirection: 'row', gap: 2 },
   ratingNum: {
     fontFamily: typography.fontSansMedium,
@@ -419,6 +738,58 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontSans,
     fontSize: 13,
     color: colors.foregroundMuted,
+    textDecorationLine: 'underline',
+  },
+  reviewCard: {
+    marginBottom: spacing.md,
+  },
+  reviewLead: {
+    fontFamily: typography.fontSans,
+    fontSize: 13,
+    color: colors.foregroundMuted,
+    lineHeight: 19,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  reviewStep: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 13,
+    color: colors.foreground,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  ratePickerRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  reviewTypeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  reviewTypeChip: {
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.card,
+  },
+  reviewTypeChipOn: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
+  },
+  reviewTypeText: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.foreground,
+  },
+  reviewOk: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.success,
+    marginBottom: spacing.sm,
   },
   priceBlock: {
     marginBottom: spacing.sm,
@@ -465,6 +836,17 @@ const styles = StyleSheet.create({
   },
   specCard: {
     marginTop: spacing.md,
+  },
+  specHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  specToggleTxt: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 12,
+    color: colors.primary,
   },
   specRow: {
     paddingVertical: spacing.sm,
@@ -553,6 +935,39 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     marginLeft: spacing.sm,
   },
+  cartRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+  },
+  cartQtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  qtyMiniBtn: {
+    minWidth: 30,
+    minHeight: 30,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyMiniTxt: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 16,
+    color: colors.foreground,
+  },
+  qtyMiniVal: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 14,
+    minWidth: 20,
+    textAlign: 'center',
+    color: colors.foreground,
+  },
   amtRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -582,6 +997,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     backgroundColor: colors.surfaceMuted,
   },
+  choiceCardDisabled: {
+    opacity: 0.55,
+  },
   choiceTitle: {
     fontFamily: typography.fontSansMedium,
     fontSize: 15,
@@ -593,6 +1011,90 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.foregroundMuted,
     lineHeight: 18,
+  },
+  shipScenarioCard: {
+    marginTop: spacing.xs,
+  },
+  formLabel: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 12,
+    color: colors.foregroundMuted,
+    marginTop: spacing.sm,
+    marginBottom: 4,
+  },
+  inlineHintText: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.foregroundSubtle,
+    lineHeight: 18,
+    paddingHorizontal: spacing.sm,
+  },
+  shipContactMsg: {
+    marginTop: spacing.sm,
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.foregroundMuted,
+    lineHeight: 18,
+  },
+  shipChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  shipChip: {
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.card,
+  },
+  shipChipOn: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
+  },
+  shipChipText: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.foreground,
+  },
+  shipOkMsg: {
+    marginTop: spacing.sm,
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.success,
+  },
+  qrCard: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  qrSquare: {
+    width: 150,
+    height: 150,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrCodeText: {
+    marginTop: spacing.sm,
+    fontFamily: typography.fontSansMedium,
+    fontSize: 13,
+    color: colors.foreground,
+  },
+  qrMeta: {
+    marginTop: spacing.xs,
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.foregroundMuted,
   },
   payRow: {
     flexDirection: 'row',

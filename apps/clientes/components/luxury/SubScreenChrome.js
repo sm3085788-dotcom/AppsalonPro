@@ -23,6 +23,7 @@ export function SubScreenChrome({
   onBack,
   children,
   bottomPadding,
+  rightAction,
 }) {
   const insets = useSafeAreaInsets();
   const padBottom =
@@ -31,16 +32,19 @@ export function SubScreenChrome({
   return (
     <View style={styles.root}>
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
-        <TouchableOpacity
-          style={styles.backRow}
-          onPress={onBack}
-          accessibilityRole="button"
-          accessibilityLabel="Volver"
-          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-        >
-          <ChevronLeft size={24} color={colors.foreground} strokeWidth={2} />
-          <Text style={styles.backTxt}>Volver</Text>
-        </TouchableOpacity>
+        <View style={styles.topRow}>
+          <TouchableOpacity
+            style={styles.backRow}
+            onPress={onBack}
+            accessibilityRole="button"
+            accessibilityLabel="Volver"
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+          >
+            <ChevronLeft size={24} color={colors.foreground} strokeWidth={2} />
+            <Text style={styles.backTxt}>Volver</Text>
+          </TouchableOpacity>
+          {rightAction ? <View style={styles.rightActionWrap}>{rightAction}</View> : null}
+        </View>
         <Text style={styles.display}>{title}</Text>
         {subtitle ? <Text style={styles.lead}>{subtitle}</Text> : null}
       </View>
@@ -70,11 +74,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
   },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
   backRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: spacing.md,
+  },
+  rightActionWrap: {
+    alignItems: 'flex-end',
   },
   backTxt: {
     fontFamily: typography.fontSansMedium,

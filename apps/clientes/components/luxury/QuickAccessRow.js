@@ -17,10 +17,13 @@ export function QuickAccessRow({
   onPress,
   /** Solo para «Tienda» en Inicio: fondo con foto de compras en marca de agua */
   shoppingWatermark,
+  /** Marca de agua personalizada para cualquier fila. */
+  watermarkUri,
 }) {
+  const rowWatermark = watermarkUri ?? (shoppingWatermark ? SHOPPING_WATERMARK_URI : null);
   const rowBody = (
     <>
-      <View style={[styles.iconBubble, shoppingWatermark && styles.iconBubbleWm]}>
+      <View style={[styles.iconBubble, rowWatermark && styles.iconBubbleWm]}>
         {Icon ? <Icon size={20} color={colors.foreground} strokeWidth={1.7} /> : null}
       </View>
       <View style={styles.mid}>
@@ -31,7 +34,7 @@ export function QuickAccessRow({
     </>
   );
 
-  if (shoppingWatermark) {
+  if (rowWatermark) {
     return (
       <TouchableOpacity
         onPress={onPress}
@@ -41,7 +44,7 @@ export function QuickAccessRow({
         style={styles.wrapWm}
       >
         <ImageBackground
-          source={{ uri: SHOPPING_WATERMARK_URI }}
+          source={{ uri: rowWatermark }}
           style={styles.rowWm}
           imageStyle={styles.wmImage}
           resizeMode="cover"

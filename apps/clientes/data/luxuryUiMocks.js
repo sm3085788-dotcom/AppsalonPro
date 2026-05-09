@@ -11,6 +11,7 @@ export const QUICK_ACCESS = {
   tiendaSubtitle: 'Productos profesionales y kits',
   tendenciasSubtitle: 'Looks destacados esta temporada',
   premiosSubtitle: 'Canjea tus puntos · demo',
+  pedidosSubtitle: 'QR y domicilio',
 };
 
 /** Próxima cita única (pantalla Mis citas) */

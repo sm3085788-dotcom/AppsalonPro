@@ -22,12 +22,14 @@ import {
   Clock,
   User,
   Bell,
+  Phone,
   CreditCard,
   Settings,
   LogOut,
   Store,
   Flame,
   Award,
+  Package,
 } from 'lucide-react-native';
 import { supabase } from '@appsalon/shared-config';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
@@ -64,7 +66,12 @@ import {
   MOCK_HISTORIAL,
   FEATURED_SERVICE,
 } from './data/luxuryUiMocks';
-import { FEATURED_BALAYAGE_SLIDES } from './data/remoteHeroImages';
+import {
+  FEATURED_BALAYAGE_SLIDES,
+  TRENDS_WATERMARK_URI,
+  REWARDS_WATERMARK_URI,
+  ORDERS_WATERMARK_URI,
+} from './data/remoteHeroImages';
 
 const PRIVACY_URL =
   process.env.EXPO_PUBLIC_PRIVACY_URL ??
@@ -288,12 +295,21 @@ function AppMain() {
           title="Tendencias"
           subtitle={QUICK_ACCESS.tendenciasSubtitle}
           onPress={() => openSub(CLIENT_SUB.TENDENCIAS)}
+          watermarkUri={TRENDS_WATERMARK_URI}
         />
         <QuickAccessRow
           icon={Award}
           title="Premios"
           subtitle={QUICK_ACCESS.premiosSubtitle}
           onPress={() => openSub(CLIENT_SUB.PREMIOS)}
+          watermarkUri={REWARDS_WATERMARK_URI}
+        />
+        <QuickAccessRow
+          icon={Package}
+          title="Pedidos"
+          subtitle={QUICK_ACCESS.pedidosSubtitle}
+          onPress={() => openSub(CLIENT_SUB.CARRITO)}
+          watermarkUri={ORDERS_WATERMARK_URI}
         />
       </View>
 
@@ -469,6 +485,12 @@ function AppMain() {
           icon={Bell}
           label="Notificaciones"
           onPress={() => openSub(CLIENT_SUB.NOTIFICACIONES)}
+        />
+        <View style={styles.menuHairline} />
+        <ProfileMenuRow
+          icon={Phone}
+          label="Contacto"
+          onPress={() => openSub(CLIENT_SUB.CONTACTO)}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
@@ -835,7 +857,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.foreground,
   },
-
   linkBtn: {
     alignSelf: 'center',
     paddingVertical: spacing.sm,

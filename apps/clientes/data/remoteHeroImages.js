@@ -34,6 +34,14 @@ export const HOME_HERO_SLIDES = [
 export const SHOPPING_WATERMARK_URI =
   'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=800&q=85&auto=format&fit=crop';
 
+/** Marcas de agua para accesos rápidos en Inicio */
+export const TRENDS_WATERMARK_URI =
+  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800&q=85&auto=format&fit=crop';
+export const REWARDS_WATERMARK_URI =
+  'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&q=85&auto=format&fit=crop';
+export const ORDERS_WATERMARK_URI =
+  'https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=85&auto=format&fit=crop';
+
 /**
  * Carrusel «Servicios destacados» — balayage / coloración (distintas del hero principal).
  */

@@ -7,6 +7,7 @@ export const CLIENT_SUB = {
   REPROGRAMAR_CITA: 'reprogramar_cita',
   CONFIRMAR_CITA: 'confirmar_cita',
   EDITAR_PERFIL: 'editar_perfil',
+  CONTACTO: 'contacto',
   NOTIFICACIONES: 'notificaciones',
   METODOS_PAGO: 'metodos_pago',
   CONFIGURACION: 'configuracion',

@@ -20,6 +20,8 @@ export function getSubScreenTitles(id) {
       return { title: 'Confirmación', subtitle: subReprogramar() };
     case CLIENT_SUB.EDITAR_PERFIL:
       return { title: 'Editar perfil', subtitle: 'Tus datos (solo vista previa).' };
+    case CLIENT_SUB.CONTACTO:
+      return { title: 'Contacto', subtitle: 'Canales directos del salón.' };
     case CLIENT_SUB.NOTIFICACIONES:
       return { title: 'Notificaciones', subtitle: 'Preferencias de avisos.' };
     case CLIENT_SUB.METODOS_PAGO:

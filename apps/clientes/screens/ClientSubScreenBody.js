@@ -51,6 +51,80 @@ function NotificationsBody() {
   );
 }
 
+function ContactoBody() {
+  const openUrl = (url) => Linking.openURL(url).catch(() => {});
+
+  return (
+    <>
+      <View style={[subStyles.card, padTop]}>
+        <Text style={subStyles.rowLabel}>Canales disponibles</Text>
+        <Text style={subStyles.rowSub}>
+          Elige cómo comunicarte con el salón. Acciones directas en tu dispositivo (demo).
+        </Text>
+        <View style={subStyles.divider} />
+
+        <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('https://wa.me/50257199107')}>
+          <View style={{ flex: 1 }}>
+            <Text style={subStyles.rowLabel}>WhatsApp</Text>
+            <Text style={subStyles.rowSub}>Chat directo con recepción</Text>
+          </View>
+          <Text style={chipStyle}>Abrir</Text>
+        </TouchableOpacity>
+        <View style={subStyles.divider} />
+
+        <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('tel:+50257199107')}>
+          <View style={{ flex: 1 }}>
+            <Text style={subStyles.rowLabel}>Llamada telefónica</Text>
+            <Text style={subStyles.rowSub}>+502 5719-9107</Text>
+          </View>
+          <Text style={chipStyle}>Llamar</Text>
+        </TouchableOpacity>
+        <View style={subStyles.divider} />
+
+        <TouchableOpacity
+          style={subStyles.rowTouch}
+          onPress={() =>
+            openUrl('https://www.google.com/maps/search/?api=1&query=Aura+Salon+Guatemala')
+          }
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={subStyles.rowLabel}>Ubicación GPS</Text>
+            <Text style={subStyles.rowSub}>Abrir en mapas y navegar</Text>
+          </View>
+          <Text style={chipStyle}>Ir</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={subStyles.card}>
+        <Text style={subStyles.rowLabel}>Redes sociales</Text>
+        <View style={subStyles.divider} />
+        <TouchableOpacity
+          style={subStyles.rowTouch}
+          onPress={() => openUrl('https://instagram.com/appsalonpro')}
+        >
+          <Text style={subStyles.rowLabel}>Instagram</Text>
+          <Text style={chipStyle}>Abrir</Text>
+        </TouchableOpacity>
+        <View style={subStyles.divider} />
+        <TouchableOpacity
+          style={subStyles.rowTouch}
+          onPress={() => openUrl('https://facebook.com/appsalonpro')}
+        >
+          <Text style={subStyles.rowLabel}>Facebook</Text>
+          <Text style={chipStyle}>Abrir</Text>
+        </TouchableOpacity>
+      </View>
+
+      <SalonButton
+        title="Visitar página web"
+        variant="heroGold"
+        fullWidth
+        onPress={() => openUrl('https://appsalon-pro-web-catalogo.vercel.app')}
+      />
+    </>
+  );
+}
+
 const chipStyle = {
   fontFamily: typography.fontSansMedium,
   fontSize: 12,
@@ -204,6 +278,8 @@ export function ClientSubScreenBody({
 
     case CLIENT_SUB.EDITAR_PERFIL:
       return <ProfileEditForm onClose={onClose} />;
+    case CLIENT_SUB.CONTACTO:
+      return <ContactoBody />;
     case CLIENT_SUB.NOTIFICACIONES:
       return <NotificationsBody />;
 
