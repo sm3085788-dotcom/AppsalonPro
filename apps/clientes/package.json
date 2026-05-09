@@ -11,8 +11,12 @@
     "update:production": "eas update --channel production"
   },
   "dependencies": {
+    "@appsalon/design-tokens": "*",
     "@appsalon/shared-config": "*",
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/playfair-display": "^0.4.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "8.4.4",
     "@supabase/supabase-js": "^2.105.1",
     "expo": "~54.0.33",
     "expo-av": "~16.0.8",
@@ -22,6 +26,7 @@
     "expo-camera": "~17.0.10",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.22",
+    "expo-font": "~14.0.11",
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.8",
     "expo-location": "~19.0.8",

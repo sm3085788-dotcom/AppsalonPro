@@ -1,0 +1,149 @@
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { Database } from 'lucide-react-native';
+import {
+  colors,
+  radii,
+  spacing,
+  typography,
+} from '@appsalon/design-tokens';
+
+function estadoLine(hasSupabaseEnv, session, perfilLoading, perfilMeta, clienteRow) {
+  if (!hasSupabaseEnv) {
+    return 'Estado: pendiente configuración';
+  }
+  if (!session?.user) {
+    return 'Estado: sin sesión iniciada';
+  }
+  if (perfilLoading) {
+    return 'Estado: comprobando…';
+  }
+  if (perfilMeta?.error) {
+    return 'Estado: error al leer ficha';
+  }
+  if (clienteRow) {
+    return 'Estado: ficha cliente sincronizada';
+  }
+  return 'Estado: pendiente vínculo con perfil';
+}
+
+/**
+ * Solo presentación; misma información que antes, estilo tipo capturas.
+ */
+export function ProfileConnectionCard({
+  hasSupabaseEnv,
+  session,
+  perfilLoading,
+  perfilMeta,
+  clienteRow,
+}) {
+  const status = estadoLine(
+    hasSupabaseEnv,
+    session,
+    perfilLoading,
+    perfilMeta,
+    clienteRow,
+  );
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.mainRow}>
+        <View style={styles.iconBubble}>
+          <Database size={22} color={colors.foregroundMuted} strokeWidth={1.75} />
+        </View>
+        <View style={styles.textCol}>
+          <Text style={styles.title}>Conexión Supabase</Text>
+          <Text style={styles.status}>{status}</Text>
+          {hasSupabaseEnv && session?.user && perfilLoading ? (
+            <ActivityIndicator
+              style={styles.spinner}
+              color={colors.primary}
+              size="small"
+            />
+          ) : (
+            <>
+              {!hasSupabaseEnv ? (
+                <Text style={styles.hint}>
+                  Configura EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY en
+                  .env
+                </Text>
+              ) : null}
+              {hasSupabaseEnv && session?.user && !perfilLoading && perfilMeta?.error ? (
+                <Text style={styles.err}>Detalle: {perfilMeta.error}</Text>
+              ) : null}
+              {hasSupabaseEnv &&
+              session?.user &&
+              !perfilLoading &&
+              !perfilMeta?.error &&
+              clienteRow ? (
+                <Text style={styles.hint}>
+                  {clienteRow.nombre}
+                  {clienteRow.email ? ` · ${clienteRow.email}` : ''}
+                </Text>
+              ) : null}
+            </>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#CFC9BE',
+    overflow: 'hidden',
+  },
+  mainRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  iconBubble: {
+    marginTop: 2,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textCol: {
+    flex: 1,
+  },
+  title: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 15,
+    color: colors.foreground,
+    marginBottom: 4,
+  },
+  status: {
+    fontFamily: typography.fontSans,
+    fontSize: 13,
+    color: colors.foregroundMuted,
+    lineHeight: 19,
+  },
+  hint: {
+    marginTop: spacing.sm,
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.foregroundSubtle,
+    lineHeight: 17,
+  },
+  err: {
+    marginTop: spacing.sm,
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: colors.error,
+    lineHeight: 17,
+  },
+  spinner: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+  },
+});

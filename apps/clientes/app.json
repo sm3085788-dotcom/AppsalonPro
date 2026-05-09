@@ -22,7 +22,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.appsalon.pro.clientes",
       "infoPlist": {
-        "NSCameraUsageDescription": "Esta app necesita acceso a la cámara para tomar fotos de tus looks y compartirlos.",
+        "NSCameraUsageDescription": "Usamos la cámara para tomar tu foto de perfil y compartir looks con el salón.",
         "NSMicrophoneUsageDescription": "Esta app necesita acceso al micrófono para grabar notas de voz.",
         "NSPhotoLibraryUsageDescription": "Esta app necesita acceso a la galería para seleccionar fotos.",
         "NSPhotoLibraryAddUsageDescription": "Esta app necesita permiso para guardar fotos en tu galería.",
@@ -98,7 +98,9 @@
       "expo-calendar",
       "expo-location",
       "expo-av",
-      "expo-media-library"
+      "expo-media-library",
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ]
   }
 }
