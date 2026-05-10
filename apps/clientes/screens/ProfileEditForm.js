@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SalonButton } from '../components/luxury/SalonButton';
-import { colors, spacing, typography, radii } from '@appsalon/design-tokens';
+import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { useTheme } from '../theme/ThemeProvider';
 
 function computeAge(birth) {
   if (!birth) return null;
@@ -21,7 +22,51 @@ function computeAge(birth) {
   return Math.max(0, a);
 }
 
+function Field({ label, value, onChange, placeholder, keyboardType, autoCapitalize }) {
+  const { colors: c } = useTheme();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        fieldLabel: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 13,
+          color: c.foreground,
+          marginBottom: spacing.xs,
+        },
+        input: {
+          fontFamily: typography.fontSans,
+          fontSize: 15,
+          color: c.foreground,
+          borderWidth: 1,
+          borderColor: c.cardBorder,
+          borderRadius: radii.sm,
+          paddingHorizontal: spacing.md,
+          paddingVertical: 12,
+          backgroundColor: c.card,
+          minHeight: 48,
+        },
+      }),
+    [c],
+  );
+
+  return (
+    <View style={{ marginBottom: spacing.md }}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={styles.input}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={c.foregroundSubtle}
+        keyboardType={keyboardType ?? 'default'}
+        autoCapitalize={autoCapitalize ?? 'sentences'}
+      />
+    </View>
+  );
+}
+
 export function ProfileEditForm({ onClose }) {
+  const { colors: c } = useTheme();
   const [nombre, setNombre] = useState('');
   const [telLocal, setTelLocal] = useState('');
   const [correo, setCorreo] = useState('');
@@ -36,6 +81,91 @@ export function ProfileEditForm({ onClose }) {
       month: 'long',
       year: 'numeric',
     }) ?? '';
+
+  const st = useMemo(
+    () =>
+      StyleSheet.create({
+        phoneRow: {
+          flexDirection: 'row',
+          alignItems: 'stretch',
+          gap: spacing.sm,
+          marginBottom: spacing.md,
+        },
+        prefixBox: {
+          justifyContent: 'center',
+          paddingHorizontal: spacing.md,
+          borderRadius: radii.sm,
+          borderWidth: 1,
+          borderColor: c.cardBorder,
+          backgroundColor: c.iconCircleBg,
+        },
+        prefixText: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 15,
+          color: c.foreground,
+        },
+        hintSmall: {
+          fontFamily: typography.fontSans,
+          fontSize: 12,
+          color: c.foregroundMuted,
+          lineHeight: 17,
+          marginBottom: spacing.sm,
+        },
+        dateTrigger: {
+          borderWidth: 1,
+          borderColor: c.cardBorder,
+          borderRadius: radii.sm,
+          padding: spacing.md,
+          backgroundColor: c.card,
+        },
+        dateTriggerText: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 15,
+          color: c.foreground,
+        },
+        dateTriggerHint: {
+          fontFamily: typography.fontSans,
+          fontSize: 12,
+          color: c.foregroundSubtle,
+          marginTop: 4,
+        },
+        ageLine: {
+          marginTop: spacing.sm,
+          fontFamily: typography.fontSans,
+          fontSize: 13,
+          color: c.primary,
+        },
+        footnote: {
+          marginTop: spacing.md,
+          fontFamily: typography.fontSans,
+          fontSize: 12,
+          color: c.foregroundSubtle,
+          lineHeight: 18,
+        },
+        card: {
+          backgroundColor: c.card,
+          borderRadius: radii.lg,
+          borderWidth: 1,
+          borderColor: c.cardBorder,
+          padding: spacing.lg,
+          marginBottom: spacing.md,
+        },
+        modalBackdrop: {
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.35)',
+          justifyContent: 'flex-end',
+        },
+        modalCard: {
+          backgroundColor: c.card,
+          padding: spacing.lg,
+          paddingBottom: spacing.xl,
+          borderTopLeftRadius: radii.xl,
+          borderTopRightRadius: radii.xl,
+        },
+        inputFlex: { flex: 1 },
+      }),
+    [c],
+  );
 
   const onBirthChange = (event, selected) => {
     if (Platform.OS === 'android') {
@@ -56,20 +186,40 @@ export function ProfileEditForm({ onClose }) {
 
   return (
     <>
-      <View style={card}>
+      <View style={st.card}>
         <Field label="Nombre" value={nombre} onChange={setNombre} placeholder="Tu nombre" />
 
-        <Text style={fieldLabel}>Teléfono (Guatemala)</Text>
-        <View style={phoneRow}>
-          <View style={prefixBox}>
-            <Text style={prefixText}>+502</Text>
+        <Text
+          style={{
+            fontFamily: typography.fontSansMedium,
+            fontSize: 13,
+            color: c.foreground,
+            marginBottom: spacing.xs,
+          }}
+        >
+          Teléfono (Guatemala)
+        </Text>
+        <View style={st.phoneRow}>
+          <View style={st.prefixBox}>
+            <Text style={st.prefixText}>+502</Text>
           </View>
           <TextInput
-            style={[input, inputFlex]}
+            style={[st.inputFlex, {
+              fontFamily: typography.fontSans,
+              fontSize: 15,
+              color: c.foreground,
+              borderWidth: 1,
+              borderColor: c.cardBorder,
+              borderRadius: radii.sm,
+              paddingHorizontal: spacing.md,
+              paddingVertical: 12,
+              backgroundColor: c.card,
+              minHeight: 48,
+            }]}
             value={telLocal}
             onChangeText={setTelLocal}
             placeholder="1234 5678"
-            placeholderTextColor={colors.foregroundSubtle}
+            placeholderTextColor={c.foregroundSubtle}
             keyboardType="phone-pad"
           />
         </View>
@@ -90,34 +240,37 @@ export function ProfileEditForm({ onClose }) {
           placeholder="Zona, calle, ciudad"
         />
 
-        <Text style={fieldLabel}>Fecha de nacimiento · edad</Text>
-        <Text style={hintSmall}>
+        <Text
+          style={{
+            fontFamily: typography.fontSansMedium,
+            fontSize: 13,
+            color: c.foreground,
+            marginBottom: spacing.xs,
+          }}
+        >
+          Fecha de nacimiento · edad
+        </Text>
+        <Text style={st.hintSmall}>
           Calculamos tu edad desde la fecha; el calendario es nativo en iOS y Android.
         </Text>
         {Platform.OS === 'web' ? (
-          <Text style={[hintSmall, { marginTop: spacing.sm }]}>
+          <Text style={[st.hintSmall, { marginTop: spacing.sm }]}>
             El selector de calendario está disponible en la app en dispositivos móviles.
           </Text>
         ) : (
           <>
-            <TouchableOpacity
-              style={dateTrigger}
-              onPress={openBirth}
-              activeOpacity={0.85}
-            >
-              <Text style={dateTriggerText}>{birthLabel}</Text>
-              <Text style={dateTriggerHint}>Toca para cambiar</Text>
+            <TouchableOpacity style={st.dateTrigger} onPress={openBirth} activeOpacity={0.85}>
+              <Text style={st.dateTriggerText}>{birthLabel}</Text>
+              <Text style={st.dateTriggerHint}>Toca para cambiar</Text>
             </TouchableOpacity>
-            {age != null ? (
-              <Text style={ageLine}>Edad: {age} años</Text>
-            ) : null}
+            {age != null ? <Text style={st.ageLine}>Edad: {age} años</Text> : null}
           </>
         )}
 
         {Platform.OS === 'ios' && showBirthPicker ? (
           <Modal transparent animationType="fade" visible={showBirthPicker}>
-            <View style={modalBackdrop}>
-              <View style={modalCard}>
+            <View style={st.modalBackdrop}>
+              <View style={st.modalCard}>
                 <DateTimePicker
                   value={birth}
                   mode="date"
@@ -147,7 +300,7 @@ export function ProfileEditForm({ onClose }) {
           />
         ) : null}
 
-        <Text style={footnote}>
+        <Text style={st.footnote}>
           Solo maquetación; guardar y validación se conectarán después.
         </Text>
       </View>
@@ -155,131 +308,3 @@ export function ProfileEditForm({ onClose }) {
     </>
   );
 }
-
-const fieldLabel = {
-  fontFamily: typography.fontSansMedium,
-  fontSize: 13,
-  color: colors.foreground,
-  marginBottom: spacing.xs,
-};
-
-function Field({ label, value, onChange, placeholder, keyboardType, autoCapitalize }) {
-  return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={fieldLabel}>{label}</Text>
-      <TextInput
-        style={input}
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={colors.foregroundSubtle}
-        keyboardType={keyboardType ?? 'default'}
-        autoCapitalize={autoCapitalize ?? 'sentences'}
-      />
-    </View>
-  );
-}
-
-const input = {
-  fontFamily: typography.fontSans,
-  fontSize: 15,
-  color: colors.foreground,
-  borderWidth: 1,
-  borderColor: colors.cardBorder,
-  borderRadius: radii.sm,
-  paddingHorizontal: spacing.md,
-  paddingVertical: 12,
-  backgroundColor: colors.card,
-  minHeight: 48,
-};
-
-const inputFlex = { flex: 1 };
-
-const phoneRow = {
-  flexDirection: 'row',
-  alignItems: 'stretch',
-  gap: spacing.sm,
-  marginBottom: spacing.md,
-};
-
-const prefixBox = {
-  justifyContent: 'center',
-  paddingHorizontal: spacing.md,
-  borderRadius: radii.sm,
-  borderWidth: 1,
-  borderColor: colors.cardBorder,
-  backgroundColor: colors.iconCircleBg,
-};
-
-const prefixText = {
-  fontFamily: typography.fontSansMedium,
-  fontSize: 15,
-  color: colors.foreground,
-};
-
-const hintSmall = {
-  fontFamily: typography.fontSans,
-  fontSize: 12,
-  color: colors.foregroundMuted,
-  lineHeight: 17,
-  marginBottom: spacing.sm,
-};
-
-const dateTrigger = {
-  borderWidth: 1,
-  borderColor: colors.cardBorder,
-  borderRadius: radii.sm,
-  padding: spacing.md,
-  backgroundColor: colors.card,
-};
-
-const dateTriggerText = {
-  fontFamily: typography.fontSansMedium,
-  fontSize: 15,
-  color: colors.foreground,
-};
-
-const dateTriggerHint = {
-  fontFamily: typography.fontSans,
-  fontSize: 12,
-  color: colors.foregroundSubtle,
-  marginTop: 4,
-};
-
-const ageLine = {
-  marginTop: spacing.sm,
-  fontFamily: typography.fontSans,
-  fontSize: 13,
-  color: colors.primary,
-};
-
-const footnote = {
-  marginTop: spacing.md,
-  fontFamily: typography.fontSans,
-  fontSize: 12,
-  color: colors.foregroundSubtle,
-  lineHeight: 18,
-};
-
-const card = {
-  backgroundColor: colors.card,
-  borderRadius: radii.lg,
-  borderWidth: 1,
-  borderColor: colors.cardBorder,
-  padding: spacing.lg,
-  marginBottom: spacing.md,
-};
-
-const modalBackdrop = {
-  flex: 1,
-  backgroundColor: 'rgba(0,0,0,0.35)',
-  justifyContent: 'flex-end',
-};
-
-const modalCard = {
-  backgroundColor: colors.card,
-  padding: spacing.lg,
-  paddingBottom: spacing.xl,
-  borderTopLeftRadius: radii.xl,
-  borderTopRightRadius: radii.xl,
-};

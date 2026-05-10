@@ -1,18 +1,36 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ProfileEditForm } from './ProfileEditForm';
-import { View, Text, TouchableOpacity, Linking, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Linking, StyleSheet, Switch } from 'react-native';
 import { SalonButton } from '../components/luxury/SalonButton';
-import { ss as subStyles } from '../components/luxury/SubScreenChrome';
-import { colors, spacing, typography, radii } from '@appsalon/design-tokens';
+import { useSubStyles } from '../components/luxury/SubScreenChrome';
+import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   FEATURED_SERVICE,
   MOCK_HISTORIAL_COMPLETO,
   MOCK_PROXIMA_CITA,
 } from '../data/luxuryUiMocks';
 import { TiendaFlow } from '../components/tienda/TiendaFlow';
+import { TendenciasFeed } from '../components/tendencias/TendenciasFeed';
+import { PremiosDashboard } from '../components/premios/PremiosDashboard';
+import { MembresiasBody } from '../components/membresias/MembresiasBody';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
+import { useTheme } from '../theme/ThemeProvider';
+
+function useAccentChipStyle() {
+  const { colors: tc } = useTheme();
+  return useMemo(
+    () => ({
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      color: tc.primary,
+    }),
+    [tc],
+  );
+}
 
 function NotificationsBody() {
+  const subStyles = useSubStyles();
+  const chipText = useAccentChipStyle();
   const [prefs, setPrefs] = useState({
     recordatorios: true,
     promociones: false,
@@ -34,7 +52,7 @@ function NotificationsBody() {
         <Text style={subStyles.rowLabel}>{label}</Text>
         <Text style={subStyles.rowSub}>{sub}</Text>
       </View>
-      <Text style={chipStyle}>{prefs[k] ? 'Activo' : 'Inactivo'}</Text>
+      <Text style={chipText}>{prefs[k] ? 'Activo' : 'Inactivo'}</Text>
     </TouchableOpacity>
   );
 
@@ -51,7 +69,11 @@ function NotificationsBody() {
   );
 }
 
+const WEB_APP_URL = 'https://appsalon-pro-web-catalogo.vercel.app';
+
 function ContactoBody() {
+  const subStyles = useSubStyles();
+  const chipText = useAccentChipStyle();
   const openUrl = (url) => Linking.openURL(url).catch(() => {});
 
   return (
@@ -68,7 +90,7 @@ function ContactoBody() {
             <Text style={subStyles.rowLabel}>WhatsApp</Text>
             <Text style={subStyles.rowSub}>Chat directo con recepción</Text>
           </View>
-          <Text style={chipStyle}>Abrir</Text>
+          <Text style={chipText}>Abrir</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
 
@@ -77,7 +99,7 @@ function ContactoBody() {
             <Text style={subStyles.rowLabel}>Llamada telefónica</Text>
             <Text style={subStyles.rowSub}>+502 5719-9107</Text>
           </View>
-          <Text style={chipStyle}>Llamar</Text>
+          <Text style={chipText}>Llamar</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
 
@@ -91,7 +113,7 @@ function ContactoBody() {
             <Text style={subStyles.rowLabel}>Ubicación GPS</Text>
             <Text style={subStyles.rowSub}>Abrir en mapas y navegar</Text>
           </View>
-          <Text style={chipStyle}>Ir</Text>
+          <Text style={chipText}>Ir</Text>
         </TouchableOpacity>
       </View>
 
@@ -103,7 +125,7 @@ function ContactoBody() {
           onPress={() => openUrl('https://instagram.com/appsalonpro')}
         >
           <Text style={subStyles.rowLabel}>Instagram</Text>
-          <Text style={chipStyle}>Abrir</Text>
+          <Text style={chipText}>Abrir</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
         <TouchableOpacity
@@ -111,7 +133,15 @@ function ContactoBody() {
           onPress={() => openUrl('https://facebook.com/appsalonpro')}
         >
           <Text style={subStyles.rowLabel}>Facebook</Text>
-          <Text style={chipStyle}>Abrir</Text>
+          <Text style={chipText}>Abrir</Text>
+        </TouchableOpacity>
+        <View style={subStyles.divider} />
+        <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl(WEB_APP_URL)}>
+          <View style={{ flex: 1 }}>
+            <Text style={subStyles.rowLabel}>App web</Text>
+            <Text style={subStyles.rowSub}>{WEB_APP_URL.replace(/^https?:\/\//, '')}</Text>
+          </View>
+          <Text style={chipText}>Abrir</Text>
         </TouchableOpacity>
       </View>
 
@@ -119,19 +149,76 @@ function ContactoBody() {
         title="Visitar página web"
         variant="heroGold"
         fullWidth
-        onPress={() => openUrl('https://appsalon-pro-web-catalogo.vercel.app')}
+        onPress={() => openUrl(WEB_APP_URL)}
       />
     </>
   );
 }
 
-const chipStyle = {
-  fontFamily: typography.fontSansMedium,
-  fontSize: 12,
-  color: colors.primary,
-};
+const configStyles = StyleSheet.create({
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.md,
+  },
+  col: {
+    flex: 1,
+    minWidth: 0,
+  },
+  vDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+    gap: spacing.sm,
+  },
+});
 
 const padTop = { paddingTop: 2 };
+
+function ConfiguracionBody({ onClose }) {
+  const subStyles = useSubStyles();
+  const { isDark, setScheme, colors: tc } = useTheme();
+
+  return (
+    <>
+      <View style={[subStyles.card, padTop]}>
+        <View style={configStyles.splitRow}>
+          <View style={configStyles.col}>
+            <Text style={subStyles.rowLabel}>Idioma</Text>
+            <Text style={subStyles.rowSub}>Español (Latinoamérica)</Text>
+          </View>
+          <View style={[configStyles.vDivider, { backgroundColor: tc.cardBorder }]} />
+          <View style={configStyles.col}>
+            <Text style={subStyles.rowLabel}>Modo oscuro</Text>
+            <View style={configStyles.switchRow}>
+              <Text style={subStyles.rowSub}>{isDark ? 'Activado' : 'Desactivado'}</Text>
+              <Switch
+                value={isDark}
+                onValueChange={(on) => setScheme(on ? 'dark' : 'light')}
+                trackColor={{ false: tc.cardBorder, true: tc.primary }}
+                thumbColor={tc.card}
+                ios_backgroundColor={tc.cardBorder}
+                accessibilityRole="switch"
+                accessibilityLabel="Modo oscuro"
+                accessibilityState={{ checked: isDark }}
+              />
+            </View>
+          </View>
+        </View>
+        <View style={subStyles.divider} />
+        <RowStatic label="Zona horaria" value="Ciudad de México (GMT−6)" />
+        <View style={subStyles.divider} />
+        <RowStatic label="Versión cliente" value="Sin lógica aún · UI" />
+      </View>
+      <SalonButton variant="outlineGray" title="Listo" fullWidth onPress={onClose} />
+    </>
+  );
+}
 
 export function ClientSubScreenBody({
   screenId,
@@ -139,6 +226,69 @@ export function ClientSubScreenBody({
   onGoTab,
   privacyUrl,
 }) {
+  const subStyles = useSubStyles();
+  const { colors: tc } = useTheme();
+
+  const priceAccent = useMemo(
+    () => ({
+      fontFamily: typography.fontDisplay,
+      fontSize: 28,
+      color: tc.foreground,
+      marginBottom: spacing.sm,
+    }),
+    [tc],
+  );
+
+  const checkLine = useMemo(
+    () => ({
+      fontFamily: typography.fontSans,
+      fontSize: 14,
+      color: tc.foregroundMuted,
+      lineHeight: 22,
+    }),
+    [tc],
+  );
+
+  const hist = useMemo(
+    () =>
+      StyleSheet.create({
+        card: {
+          backgroundColor: tc.card,
+          borderRadius: radii.xl,
+          borderWidth: 1,
+          borderColor: tc.cardBorder,
+          paddingVertical: spacing.md,
+          paddingHorizontal: spacing.lg,
+          marginBottom: spacing.md,
+        },
+        top: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: spacing.md,
+        },
+        name: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 15,
+          color: tc.foreground,
+          flex: 1,
+        },
+        price: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 15,
+          color: tc.foreground,
+        },
+        meta: {
+          marginTop: spacing.sm,
+          fontFamily: typography.fontSans,
+          fontSize: 13,
+          color: tc.foregroundMuted,
+          lineHeight: 18,
+        },
+      }),
+    [tc],
+  );
+
   switch (screenId) {
     case CLIENT_SUB.DETALLE_SERVICIO:
       return (
@@ -301,28 +451,22 @@ export function ClientSubScreenBody({
       return <TiendaFlow onClose={onClose} />;
 
     case CLIENT_SUB.TENDENCIAS:
-      return (
-        <>
-          <View style={subStyles.card}>
-            <Text style={subStyles.rowLabel}>Lookbook</Text>
-            <Text style={subStyles.bullets}>
-              Filtros por color, texto y temporada: todo maquetación. El contenido real vendrá desde tu equipo de marketing.
-            </Text>
-          </View>
-          <SalonButton variant="outlineGray" title="Cerrar" fullWidth onPress={onClose} />
-        </>
-      );
+      return <TendenciasFeed onBack={onClose} />;
 
     case CLIENT_SUB.PREMIOS:
+      return <PremiosDashboard onClose={onClose} />;
+
+    case CLIENT_SUB.MEMBRESIAS:
       return (
         <>
-          <View style={subStyles.card}>
-            <Text style={subStyles.rowLabel}>Programa de lealtad</Text>
-            <Text style={subStyles.bullets}>
-              Puntos por visitas, nivel Gold y beneficios aparecerán aquí. Esta vista es solo navegación.
-            </Text>
-          </View>
-          <SalonButton variant="solidGold" title="Registrar visita demo" fullWidth onPress={onClose} />
+          <MembresiasBody />
+          <SalonButton
+            variant="outlineGray"
+            title="Cerrar"
+            fullWidth
+            style={{ marginTop: spacing.md }}
+            onPress={onClose}
+          />
         </>
       );
 
@@ -341,18 +485,7 @@ export function ClientSubScreenBody({
       );
 
     case CLIENT_SUB.CONFIGURACION:
-      return (
-        <>
-          <View style={[subStyles.card, padTop]}>
-            <RowStatic label="Idioma" value="Español (Latinoamérica)" />
-            <View style={subStyles.divider} />
-            <RowStatic label="Zona horaria" value="Ciudad de México (GMT−6)" />
-            <View style={subStyles.divider} />
-            <RowStatic label="Versión cliente" value="Sin lógica aún · UI" />
-          </View>
-          <SalonButton variant="outlineGray" title="Listo" fullWidth onPress={onClose} />
-        </>
-      );
+      return <ConfiguracionBody onClose={onClose} />;
 
     case CLIENT_SUB.CERRAR_SESION:
       return (
@@ -407,6 +540,7 @@ export function ClientSubScreenBody({
 }
 
 function RowStatic({ label, value }) {
+  const subStyles = useSubStyles();
   return (
     <TouchableOpacity activeOpacity={0.9} accessibilityRole="text">
       <Text style={subStyles.rowLabel}>{label}</Text>
@@ -416,6 +550,7 @@ function RowStatic({ label, value }) {
 }
 
 function FieldStub() {
+  const subStyles = useSubStyles();
   return (
     <TouchableOpacity activeOpacity={0.85}>
       <View style={[subStyles.fauxInput, { marginBottom: spacing.xs }]} />
@@ -424,6 +559,7 @@ function FieldStub() {
 }
 
 function Steps() {
+  const subStyles = useSubStyles();
   const bullets = ['Elige categoría del servicio', 'Selecciona bloque disponible', 'Confirma y recibe correo demo'];
   return (
     <View style={[subStyles.card, padTop]}>
@@ -435,53 +571,3 @@ function Steps() {
     </View>
   );
 }
-
-const priceAccent = {
-  fontFamily: typography.fontDisplay,
-  fontSize: 28,
-  color: colors.foreground,
-  marginBottom: spacing.sm,
-};
-
-const checkLine = {
-  fontFamily: typography.fontSans,
-  fontSize: 14,
-  color: colors.foregroundMuted,
-  lineHeight: 22,
-};
-
-const hist = StyleSheet.create({
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  top: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  name: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 15,
-    color: colors.foreground,
-    flex: 1,
-  },
-  price: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 15,
-    color: colors.foreground,
-  },
-  meta: {
-    marginTop: spacing.sm,
-    fontFamily: typography.fontSans,
-    fontSize: 13,
-    color: colors.foregroundMuted,
-    lineHeight: 18,
-  },
-});

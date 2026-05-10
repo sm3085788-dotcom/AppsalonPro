@@ -1,5 +1,6 @@
 import { TouchableOpacity, Text, ActivityIndicator, StyleSheet } from 'react-native';
-import { colors, radii, typography } from '@appsalon/design-tokens';
+import { radii, typography } from '@appsalon/design-tokens';
+import { useTheme } from '../../theme/ThemeProvider';
 
 /**
  * @param {'heroGold'|'solidGold'|'outlineGray'|'outlineGold'|'mutedFill'} variant
@@ -15,6 +16,7 @@ export function SalonButton({
   textStyle,
   fullWidth,
 }) {
+  const { colors } = useTheme();
   const base = {
     paddingVertical: 14,
     paddingHorizontal: 22,
@@ -46,7 +48,7 @@ export function SalonButton({
     case 'outlineGray':
       bg = colors.card;
       borderW = 1;
-      borderC = '#D8D8D8';
+      borderC = colors.cardBorder;
       labelColor = colors.foreground;
       break;
     case 'outlineGold':
@@ -56,9 +58,9 @@ export function SalonButton({
       labelColor = colors.heroCtaText;
       break;
     case 'mutedFill':
-      bg = '#EEEEEE';
+      bg = colors.surfaceMuted;
       borderW = 0;
-      labelColor = colors.foregroundMuted;
+      labelColor = colors.foreground;
       break;
     default:
       break;

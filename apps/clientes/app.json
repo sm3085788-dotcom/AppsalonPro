@@ -100,7 +100,8 @@
       "expo-av",
       "expo-media-library",
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-video"
     ]
   }
 }

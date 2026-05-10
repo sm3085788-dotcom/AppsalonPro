@@ -1,5 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
-import { colors, spacing, typography, radii } from '@appsalon/design-tokens';
+import { useMemo } from 'react';
+import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { useTheme } from '../../theme/ThemeProvider';
 import { TIENDA_PRODUCT_SLOTS } from '../../data/tiendaPlaceholders';
 import { ProductCardPlaceholder } from './ProductCardPlaceholder';
 
@@ -12,10 +14,63 @@ const GAP = 10;
  * @param {(product: object) => void} [onProductPress] — Solo para huecos con `product` definido.
  */
 export function TiendaCatalogGrid({ onProductPress }) {
+  const { colors: c } = useTheme();
   const { width: winW } = useWindowDimensions();
   const outerPad = spacing.lg * 2;
   const innerW = winW - outerPad;
   const cardW = (innerW - GAP) / 2;
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        page: {
+          paddingBottom: spacing.xl,
+        },
+        searchFake: {
+          backgroundColor: c.card,
+          borderRadius: radii.sm,
+          borderWidth: 1,
+          borderColor: c.cardBorder,
+          paddingVertical: 12,
+          paddingHorizontal: spacing.md,
+          marginBottom: spacing.md,
+        },
+        searchFakeTxt: {
+          fontFamily: typography.fontSans,
+          fontSize: 15,
+          color: c.foregroundSubtle,
+        },
+        toolbar: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: spacing.md,
+        },
+        resultMeta: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 13,
+          color: c.foregroundMuted,
+        },
+        sortLink: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 13,
+          color: c.primary,
+        },
+        grid: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+        },
+        footnote: {
+          marginTop: spacing.md,
+          fontFamily: typography.fontSans,
+          fontSize: 11,
+          color: c.foregroundSubtle,
+          lineHeight: 16,
+        },
+      }),
+    [c],
+  );
 
   return (
     <View style={styles.page}>
@@ -53,51 +108,3 @@ export function TiendaCatalogGrid({ onProductPress }) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  page: {
-    paddingBottom: spacing.xl,
-  },
-  searchFake: {
-    backgroundColor: colors.card,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  searchFakeTxt: {
-    fontFamily: typography.fontSans,
-    fontSize: 15,
-    color: colors.foregroundSubtle,
-  },
-  toolbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  resultMeta: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 13,
-    color: colors.foregroundMuted,
-  },
-  sortLink: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 13,
-    color: colors.primary,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  footnote: {
-    marginTop: spacing.md,
-    fontFamily: typography.fontSans,
-    fontSize: 11,
-    color: colors.foregroundSubtle,
-    lineHeight: 16,
-  },
-});

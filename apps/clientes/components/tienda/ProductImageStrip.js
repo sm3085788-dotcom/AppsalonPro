@@ -7,15 +7,57 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
-import { colors, typography } from '@appsalon/design-tokens';
+import { typography } from '@appsalon/design-tokens';
+import { useTheme } from '../../theme/ThemeProvider';
 
 /**
  * Galería horizontal manual (sin auto-carrusel). Ancho medido para paging estable.
  * Varios ítems: puntos superpuestos abajo (no restan altura a la imagen).
  */
 export function ProductImageStrip({ uris, badgeText, style }) {
+  const { colors: c, isDark } = useTheme();
   const [stripW, setStripW] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  const stripStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        wrap: {
+          width: '100%',
+          backgroundColor: isDark ? c.iconCircleBg : '#F4F4F4',
+          overflow: 'hidden',
+        },
+        measurePlaceholder: {
+          width: '100%',
+          aspectRatio: 1,
+          backgroundColor: isDark ? c.iconCircleBg : '#F4F4F4',
+        },
+        dotsRow: {
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 8,
+          flexDirection: 'row',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 5,
+          zIndex: 3,
+        },
+        dot: {
+          width: 5,
+          height: 5,
+          borderRadius: 2.5,
+          backgroundColor: 'rgba(255,255,255,0.45)',
+        },
+        dotActive: {
+          backgroundColor: c.primary,
+          width: 6,
+          height: 6,
+          borderRadius: 3,
+        },
+      }),
+    [c, isDark],
+  );
 
   const urisKey = useMemo(
     () => (Array.isArray(uris) ? uris.filter(Boolean).join('|') : ''),
@@ -85,7 +127,7 @@ export function ProductImageStrip({ uris, badgeText, style }) {
   const showPager = data.length > 1;
 
   return (
-    <View style={[styles.wrap, style]} onLayout={onLayout}>
+    <View style={[stripStyles.wrap, style]} onLayout={onLayout}>
       {!showPager && stripW > 0 ? (
         <Image
           source={{ uri: data[0] }}
@@ -128,11 +170,11 @@ export function ProductImageStrip({ uris, badgeText, style }) {
             overScrollMode="never"
             accessibilityLabel={`Galería, ${data.length} fotos. Desliza horizontalmente.`}
           />
-          <View style={styles.dotsRow} pointerEvents="none">
+          <View style={stripStyles.dotsRow} pointerEvents="none">
             {data.map((_, i) => (
               <View
                 key={i}
-                style={[styles.dot, i === activeIndex && styles.dotActive]}
+                style={[stripStyles.dot, i === activeIndex && stripStyles.dotActive]}
               />
             ))}
           </View>
@@ -140,7 +182,7 @@ export function ProductImageStrip({ uris, badgeText, style }) {
       ) : null}
 
       {showPager && stripW === 0 ? (
-        <View style={styles.measurePlaceholder} />
+        <View style={stripStyles.measurePlaceholder} />
       ) : null}
 
       {badgeText ? (
@@ -155,16 +197,6 @@ export function ProductImageStrip({ uris, badgeText, style }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    width: '100%',
-    backgroundColor: '#F4F4F4',
-    overflow: 'hidden',
-  },
-  measurePlaceholder: {
-    width: '100%',
-    aspectRatio: 1,
-    backgroundColor: '#F4F4F4',
-  },
   badge: {
     position: 'absolute',
     top: Platform.select({ ios: 10, default: 8 }),
@@ -181,28 +213,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#FFF',
     letterSpacing: 0.3,
-  },
-  dotsRow: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 5,
-    zIndex: 3,
-  },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-  },
-  dotActive: {
-    backgroundColor: colors.primary,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
   },
 });

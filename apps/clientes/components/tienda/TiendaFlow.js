@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, Building2, QrCode } from 'lucide-react-native';
-import { colors, spacing, typography, radii } from '@appsalon/design-tokens';
+import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SalonButton } from '../luxury/SalonButton';
-import { ss as subStyles } from '../luxury/SubScreenChrome';
+import { createSubStyles } from '../luxury/SubScreenChrome';
+import { useTheme } from '../../theme/ThemeProvider';
 import { TiendaCatalogGrid } from './TiendaCatalogGrid';
 import { ProductImageStrip } from './ProductImageStrip';
 import {
@@ -19,6 +20,9 @@ function formatQ(amount) {
 }
 
 function RatingStars({ rating }) {
+  const styles = useTiendaStyles();
+  const { isDark } = useTheme();
+  const starEmpty = isDark ? '#525252' : STAR_EMPTY;
   const full = Math.floor(Math.min(5, Math.max(0, rating)));
   return (
     <View style={styles.starRow}>
@@ -26,8 +30,8 @@ function RatingStars({ rating }) {
         <Star
           key={s}
           size={14}
-          color={s <= full ? STAR_GOLD : STAR_EMPTY}
-          fill={s <= full ? STAR_GOLD : STAR_EMPTY}
+          color={s <= full ? STAR_GOLD : starEmpty}
+          fill={s <= full ? STAR_GOLD : starEmpty}
           strokeWidth={0}
         />
       ))}
@@ -36,6 +40,8 @@ function RatingStars({ rating }) {
 }
 
 function PhaseBack({ label, onPress }) {
+  const styles = useTiendaStyles();
+  const { colors: tc } = useTheme();
   return (
     <TouchableOpacity
       style={styles.phaseBack}
@@ -44,13 +50,14 @@ function PhaseBack({ label, onPress }) {
       accessibilityLabel={label}
       hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
     >
-      <ChevronLeft size={22} color={colors.foreground} strokeWidth={2} />
+      <ChevronLeft size={22} color={tc.foreground} strokeWidth={2} />
       <Text style={styles.phaseBackTxt}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 function SpecRow({ label, value }) {
+  const styles = useTiendaStyles();
   return (
     <View style={styles.specRow}>
       <Text style={styles.specLabel}>{label}</Text>
@@ -63,6 +70,10 @@ function SpecRow({ label, value }) {
  * Catálogo → ficha → resumen → envío → pago → venta cerrada. Solo UI y botones (sin integración real).
  */
 export function TiendaFlow({ onClose }) {
+  const { colors: tc, isDark } = useTheme();
+  const styles = useTiendaStyles();
+  const subStyles = useMemo(() => createSubStyles(tc), [tc]);
+  const reviewStarEmpty = isDark ? '#525252' : STAR_EMPTY;
   const [phase, setPhase] = useState('catalog');
   const [selected, setSelected] = useState(null);
   const [qty, setQty] = useState(1);
@@ -78,6 +89,11 @@ export function TiendaFlow({ onClose }) {
   const [homeSaved, setHomeSaved] = useState(false);
   const [pickupQrIssued, setPickupQrIssued] = useState(false);
   const [payId, setPayId] = useState('pay-card');
+  const [wireTransferConfirmed, setWireTransferConfirmed] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState('card-4242');
+  const [showAddCardForm, setShowAddCardForm] = useState(false);
+  const [cardSavedToast, setCardSavedToast] = useState(false);
+  const [lastOrder, setLastOrder] = useState(null);
 
   const specsAndCopy = useMemo(() => {
     if (selected?.id === 'demo-keratin-kit') {
@@ -155,6 +171,12 @@ export function TiendaFlow({ onClose }) {
     { id: 'pay-cash', label: 'Efectivo al retirar', sub: 'Pagas cuando recoges en salón', Icon: Wallet },
     { id: 'pay-wire', label: 'Transferencia', sub: 'Banco Industrial · referencia en siguiente paso', Icon: Building2 },
   ];
+  const savedCards = [
+    { id: 'card-4242', label: 'Visa ··· 4242', sub: 'Predeterminada · vence 08/29' },
+    { id: 'card-1189', label: 'Mastercard ··· 1189', sub: 'Personal · vence 11/28' },
+  ];
+  const selectedCard = savedCards.find((c) => c.id === selectedCardId) ?? savedCards[0];
+  const canConfirmPurchase = payId === 'pay-wire' ? wireTransferConfirmed : true;
   const homeShippingEligible = cartSubtotal >= 350;
   const shippingReady = shipId === 'ship-home' ? homeSaved : pickupQrIssued;
 
@@ -226,8 +248,8 @@ export function TiendaFlow({ onClose }) {
                   >
                     <Star
                       size={20}
-                      color={star <= reviewRating ? STAR_GOLD : STAR_EMPTY}
-                      fill={star <= reviewRating ? STAR_GOLD : STAR_EMPTY}
+                      color={star <= reviewRating ? STAR_GOLD : reviewStarEmpty}
+                      fill={star <= reviewRating ? STAR_GOLD : reviewStarEmpty}
                       strokeWidth={0}
                     />
                   </TouchableOpacity>
@@ -291,7 +313,7 @@ export function TiendaFlow({ onClose }) {
           </View>
 
           <View style={styles.shipInline}>
-            <Truck size={16} color={colors.foregroundMuted} strokeWidth={2} />
+            <Truck size={16} color={tc.foregroundMuted} strokeWidth={2} />
             <Text style={styles.shipInlineTxt}>{selected.shippingLabel}</Text>
           </View>
           {selected.stockHint ? (
@@ -439,7 +461,7 @@ export function TiendaFlow({ onClose }) {
           <View style={subStyles.card}>
             {cartItems.map((item) => (
               <View key={item.id} style={styles.summaryTop}>
-                <Package size={40} color={colors.foregroundMuted} strokeWidth={1.25} />
+                <Package size={40} color={tc.foregroundMuted} strokeWidth={1.25} />
                 <View style={{ flex: 1, marginLeft: spacing.md }}>
                   <Text style={styles.sumTitle} numberOfLines={2}>
                     {item.title}
@@ -542,7 +564,7 @@ export function TiendaFlow({ onClose }) {
               <Text style={styles.formLabel}>Dirección completa</Text>
               <View style={[subStyles.fauxInput, { height: 96, justifyContent: 'center' }]}>
                 <Text style={styles.inlineHintText}>
-                  Ejemplo: casa blanca de dos niveles, portón negro, perro en el patio, timbrar dos veces.
+                  Escribe tu dirección de forma clara para ubicarte rápido y sin errores.
                 </Text>
               </View>
 
@@ -571,7 +593,7 @@ export function TiendaFlow({ onClose }) {
 
               <View style={styles.qrCard}>
                 <View style={styles.qrSquare}>
-                  <QrCode size={78} color={colors.foreground} strokeWidth={1.8} />
+                  <QrCode size={78} color={tc.foreground} strokeWidth={1.8} />
                 </View>
                 <Text style={styles.qrCodeText}>APS-RET-2026-882041</Text>
                 <Text style={styles.qrMeta}>Pedido listo · válido por 24 horas (demo)</Text>
@@ -603,10 +625,19 @@ export function TiendaFlow({ onClose }) {
             <TouchableOpacity
               key={id}
               style={[styles.payRow, payId === id && styles.payRowOn]}
-              onPress={() => setPayId(id)}
+              onPress={() => {
+                setPayId(id);
+                if (id !== 'pay-card') {
+                  setShowAddCardForm(false);
+                  setCardSavedToast(false);
+                }
+                if (id !== 'pay-wire') {
+                  setWireTransferConfirmed(false);
+                }
+              }}
               activeOpacity={0.88}
             >
-              <Icon size={22} color={colors.foreground} strokeWidth={1.6} />
+              <Icon size={22} color={tc.foreground} strokeWidth={1.6} />
               <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <Text style={styles.choiceTitle}>{label}</Text>
                 <Text style={styles.choiceSub}>{sub}</Text>
@@ -614,15 +645,144 @@ export function TiendaFlow({ onClose }) {
             </TouchableOpacity>
           ))}
 
+          {payId === 'pay-card' ? (
+            <View style={[subStyles.card, styles.cardManager]}>
+              <Text style={subStyles.rowLabel}>Tus tarjetas guardadas</Text>
+              <Text style={styles.choiceSub}>Selecciona una o agrega una nueva (demo).</Text>
+
+              {savedCards.map((card) => (
+                <TouchableOpacity
+                  key={card.id}
+                  style={[styles.savedCardRow, selectedCardId === card.id && styles.savedCardRowOn]}
+                  onPress={() => {
+                    setSelectedCardId(card.id);
+                    setShowAddCardForm(false);
+                  }}
+                  activeOpacity={0.86}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.choiceTitle}>{card.label}</Text>
+                    <Text style={styles.choiceSub}>{card.sub}</Text>
+                  </View>
+                  <Text style={styles.cardPickText}>
+                    {selectedCardId === card.id ? 'Seleccionada' : 'Seleccionar'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              <SalonButton
+                title={showAddCardForm ? 'Ocultar formulario' : 'Agregar nueva tarjeta'}
+                variant="outlineGold"
+                fullWidth
+                style={{ marginTop: spacing.sm }}
+                onPress={() => {
+                  setShowAddCardForm((v) => !v);
+                  setCardSavedToast(false);
+                }}
+              />
+
+              {showAddCardForm ? (
+                <View style={styles.newCardForm}>
+                  <Text style={styles.formLabel}>Nombre del titular</Text>
+                  <View style={subStyles.fauxInput} />
+                  <Text style={styles.formLabel}>Número de tarjeta</Text>
+                  <View style={subStyles.fauxInput} />
+                  <View style={styles.duoFormRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.formLabel}>MM/AA</Text>
+                      <View style={subStyles.fauxInput} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.formLabel}>CVV</Text>
+                      <View style={subStyles.fauxInput} />
+                    </View>
+                  </View>
+                  <SalonButton
+                    title="Guardar tarjeta · demo"
+                    variant="heroGold"
+                    fullWidth
+                    onPress={() => {
+                      setCardSavedToast(true);
+                      setShowAddCardForm(false);
+                      setSelectedCardId('card-1189');
+                    }}
+                  />
+                </View>
+              ) : null}
+
+              {cardSavedToast ? (
+                <Text style={styles.shipOkMsg}>Tarjeta guardada y lista para usar (demo).</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {payId === 'pay-wire' ? (
+            <View style={[subStyles.card, styles.cardManager]}>
+              <Text style={subStyles.rowLabel}>Confirmación de transferencia</Text>
+              <Text style={styles.choiceSub}>
+                Debes comunicarte con el salón y confirmar la transferencia para proseguir con la compra.
+              </Text>
+              <TouchableOpacity
+                style={styles.savedCardRow}
+                onPress={() => Linking.openURL('tel:+50257199107').catch(() => {})}
+                activeOpacity={0.86}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.choiceTitle}>Llamar al salón</Text>
+                  <Text style={styles.choiceSub}>+502 5719-9107</Text>
+                </View>
+                <Text style={styles.cardPickText}>Llamar</Text>
+              </TouchableOpacity>
+
+              {wireTransferConfirmed ? (
+                <Text style={styles.shipOkMsg}>Transferencia confirmada · puedes finalizar tu compra.</Text>
+              ) : (
+                <Text style={styles.choiceSub}>
+                  Si no se confirma la transferencia, el botón final permanecerá deshabilitado.
+                </Text>
+              )}
+
+              <SalonButton
+                title="Ya confirmé la transferencia · demo"
+                variant="outlineGold"
+                fullWidth
+                style={{ marginTop: spacing.sm }}
+                onPress={() => setWireTransferConfirmed(true)}
+              />
+            </View>
+          ) : null}
+
           <SalonButton
             title="Confirmar pedido y cerrar venta · demo"
             variant="heroGold"
             fullWidth
             style={{ marginTop: spacing.lg }}
             onPress={() => {
+              const orderCode = `APS-${String(Date.now()).slice(-6)}`;
+              const paymentSummary =
+                payId === 'pay-card'
+                  ? `Tarjeta guardada · ${selectedCard.label}`
+                  : payId === 'pay-wire'
+                    ? 'Transferencia confirmada por llamada'
+                    : 'Efectivo al retirar';
+              const shippingSummary =
+                shipId === 'ship-home'
+                  ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
+                  : 'Retiro en salón con QR';
+
+              setLastOrder({
+                code: orderCode,
+                items: cartItems,
+                subtotal: cartSubtotal,
+                total: cartSubtotal,
+                paymentSummary,
+                shippingSummary,
+                qrCode: shipId === 'ship-salon' ? 'APS-RET-2026-882041' : null,
+              });
               setPhase('success');
               setCartItems([]);
             }}
+            disabled={!canConfirmPurchase}
           />
         </View>
       ) : null}
@@ -632,10 +792,35 @@ export function TiendaFlow({ onClose }) {
           <View style={[subStyles.card, styles.successCard]}>
             <Text style={styles.successTitle}>Venta cerrada</Text>
             <Text style={subStyles.bullets}>
-              Pedido demo #882041 · El salón vería este pedido en su panel cuando conectemos inventario y
-              pagos. No se ha cobrado nada.
+              Pedido demo #{lastOrder?.code ?? '—'} · El salón vería este pedido en su panel cuando
+              conectemos inventario y pagos. No se ha cobrado nada.
             </Text>
           </View>
+
+          {lastOrder ? (
+            <View style={subStyles.card}>
+              <Text style={subStyles.rowLabel}>Detalle de compra</Text>
+              <View style={subStyles.divider} />
+
+              {lastOrder.items.map((item) => (
+                <View key={item.id} style={styles.orderLine}>
+                  <Text style={styles.orderItemTitle}>
+                    {item.title} x{item.qty}
+                  </Text>
+                  <Text style={styles.orderItemPrice}>{formatQ(item.priceAmount * item.qty)}</Text>
+                </View>
+              ))}
+
+              <View style={subStyles.divider} />
+              <RowAmt label="Envío" value={lastOrder.shippingSummary} muted />
+              <RowAmt label="Pago" value={lastOrder.paymentSummary} muted />
+              {lastOrder.qrCode ? (
+                <RowAmt label="QR retiro" value={lastOrder.qrCode} muted />
+              ) : null}
+              <View style={subStyles.divider} />
+              <RowAmt label="Total" value={formatQ(lastOrder.total)} bold />
+            </View>
+          ) : null}
 
           <SalonButton
             title="Seguir comprando"
@@ -657,15 +842,17 @@ export function TiendaFlow({ onClose }) {
 }
 
 function RowAmt({ label, value, muted, bold }) {
+  const styles = useTiendaStyles();
+  const { colors: tc } = useTheme();
   return (
     <View style={styles.amtRow}>
-      <Text style={[styles.amtLabel, muted && { color: colors.foregroundMuted }]}>
+      <Text style={[styles.amtLabel, muted && { color: tc.foregroundMuted }]}>
         {label}
       </Text>
       <Text
         style={[
           styles.amtVal,
-          muted && { color: colors.foregroundMuted },
+          muted && { color: tc.foregroundMuted },
           bold && { fontFamily: typography.fontSansMedium, fontSize: 16 },
         ]}
       >
@@ -675,7 +862,8 @@ function RowAmt({ label, value, muted, bold }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createTiendaStyles(c) {
+  return StyleSheet.create({
   wrap: {
     flexGrow: 1,
   },
@@ -691,20 +879,20 @@ const styles = StyleSheet.create({
   phaseBackTxt: {
     fontFamily: typography.fontSansMedium,
     fontSize: 15,
-    color: colors.foreground,
+    color: c.foreground,
   },
   heroCard: {
     borderRadius: radii.lg,
     overflow: 'hidden',
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.card,
+    borderColor: c.cardBorder,
+    backgroundColor: c.card,
   },
   brandLine: {
     fontFamily: typography.fontSans,
     fontSize: 11,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     letterSpacing: 0.7,
     textTransform: 'uppercase',
     marginBottom: 6,
@@ -713,7 +901,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontDisplay,
     fontSize: 24,
     lineHeight: 30,
-    color: colors.foreground,
+    color: c.foreground,
     marginBottom: spacing.sm,
   },
   ratingBlock: {
@@ -732,12 +920,12 @@ const styles = StyleSheet.create({
   ratingNum: {
     fontFamily: typography.fontSansMedium,
     fontSize: 14,
-    color: colors.foreground,
+    color: c.foreground,
   },
   ratingCount: {
     fontFamily: typography.fontSans,
     fontSize: 13,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     textDecorationLine: 'underline',
   },
   reviewCard: {
@@ -746,7 +934,7 @@ const styles = StyleSheet.create({
   reviewLead: {
     fontFamily: typography.fontSans,
     fontSize: 13,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     lineHeight: 19,
     marginTop: spacing.xs,
     marginBottom: spacing.sm,
@@ -754,7 +942,7 @@ const styles = StyleSheet.create({
   reviewStep: {
     fontFamily: typography.fontSansMedium,
     fontSize: 13,
-    color: colors.foreground,
+    color: c.foreground,
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },
@@ -770,25 +958,25 @@ const styles = StyleSheet.create({
   },
   reviewTypeChip: {
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    backgroundColor: colors.card,
+    backgroundColor: c.card,
   },
   reviewTypeChipOn: {
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceMuted,
+    borderColor: c.primary,
+    backgroundColor: c.surfaceMuted,
   },
   reviewTypeText: {
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.foreground,
+    color: c.foreground,
   },
   reviewOk: {
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.success,
+    color: c.success,
     marginBottom: spacing.sm,
   },
   priceBlock: {
@@ -797,20 +985,20 @@ const styles = StyleSheet.create({
   compareAt: {
     fontFamily: typography.fontSans,
     fontSize: 15,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     textDecorationLine: 'line-through',
     marginBottom: 4,
   },
   priceBig: {
     fontFamily: typography.fontSansMedium,
     fontSize: 28,
-    color: colors.foreground,
+    color: c.foreground,
   },
   sku: {
     marginTop: 6,
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
   },
   shipInline: {
     flexDirection: 'row',
@@ -822,13 +1010,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: typography.fontSans,
     fontSize: 13,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     lineHeight: 19,
   },
   stockHint: {
     fontFamily: typography.fontSansMedium,
     fontSize: 13,
-    color: colors.primary,
+    color: c.primary,
     marginBottom: spacing.md,
   },
   copyCard: {
@@ -846,23 +1034,23 @@ const styles = StyleSheet.create({
   specToggleTxt: {
     fontFamily: typography.fontSansMedium,
     fontSize: 12,
-    color: colors.primary,
+    color: c.primary,
   },
   specRow: {
     paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.cardBorder,
+    borderBottomColor: c.cardBorder,
   },
   specLabel: {
     fontFamily: typography.fontSansMedium,
     fontSize: 12,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     marginBottom: 4,
   },
   specValue: {
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foreground,
+    color: c.foreground,
     lineHeight: 20,
   },
   qtyRow: {
@@ -877,39 +1065,39 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.card,
+    borderColor: c.cardBorder,
+    backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   qtyBtnTxt: {
     fontFamily: typography.fontSansMedium,
     fontSize: 20,
-    color: colors.foreground,
+    color: c.foreground,
   },
   qtyVal: {
     fontFamily: typography.fontSansMedium,
     fontSize: 18,
     minWidth: 28,
     textAlign: 'center',
-    color: colors.foreground,
+    color: c.foreground,
   },
   cartBanner: {
     marginTop: spacing.sm,
     fontFamily: typography.fontSans,
     fontSize: 13,
-    color: colors.success,
+    color: c.success,
   },
   stepHead: {
     fontFamily: typography.fontDisplay,
     fontSize: 22,
-    color: colors.foreground,
+    color: c.foreground,
     marginBottom: spacing.xs,
   },
   stepSub: {
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     lineHeight: 21,
     marginBottom: spacing.md,
   },
@@ -920,19 +1108,19 @@ const styles = StyleSheet.create({
   sumTitle: {
     fontFamily: typography.fontSansMedium,
     fontSize: 15,
-    color: colors.foreground,
+    color: c.foreground,
     lineHeight: 21,
   },
   sumMeta: {
     marginTop: 6,
     fontFamily: typography.fontSans,
     fontSize: 13,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
   },
   sumPrice: {
     fontFamily: typography.fontSansMedium,
     fontSize: 16,
-    color: colors.foreground,
+    color: c.foreground,
     marginLeft: spacing.sm,
   },
   cartRow: {
@@ -951,22 +1139,22 @@ const styles = StyleSheet.create({
     minHeight: 30,
     borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.card,
+    borderColor: c.cardBorder,
+    backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   qtyMiniTxt: {
     fontFamily: typography.fontSansMedium,
     fontSize: 16,
-    color: colors.foreground,
+    color: c.foreground,
   },
   qtyMiniVal: {
     fontFamily: typography.fontSansMedium,
     fontSize: 14,
     minWidth: 20,
     textAlign: 'center',
-    color: colors.foreground,
+    color: c.foreground,
   },
   amtRow: {
     flexDirection: 'row',
@@ -977,25 +1165,47 @@ const styles = StyleSheet.create({
   amtLabel: {
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foreground,
+    color: c.foreground,
   },
   amtVal: {
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foreground,
+    color: c.foreground,
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: spacing.md,
+  },
+  orderLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  orderItemTitle: {
+    flex: 1,
+    fontFamily: typography.fontSans,
+    fontSize: 13,
+    color: c.foreground,
+    lineHeight: 18,
+  },
+  orderItemPrice: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 13,
+    color: c.foreground,
   },
   choiceCard: {
-    backgroundColor: colors.card,
+    backgroundColor: c.card,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
   choiceCardOn: {
-    borderColor: colors.primary,
+    borderColor: c.primary,
     borderWidth: 2,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: c.surfaceMuted,
   },
   choiceCardDisabled: {
     opacity: 0.55,
@@ -1003,13 +1213,13 @@ const styles = StyleSheet.create({
   choiceTitle: {
     fontFamily: typography.fontSansMedium,
     fontSize: 15,
-    color: colors.foreground,
+    color: c.foreground,
     marginBottom: 4,
   },
   choiceSub: {
     fontFamily: typography.fontSans,
     fontSize: 13,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     lineHeight: 18,
   },
   shipScenarioCard: {
@@ -1018,14 +1228,14 @@ const styles = StyleSheet.create({
   formLabel: {
     fontFamily: typography.fontSansMedium,
     fontSize: 12,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     marginTop: spacing.sm,
     marginBottom: 4,
   },
   inlineHintText: {
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.foregroundSubtle,
+    color: c.foregroundSubtle,
     lineHeight: 18,
     paddingHorizontal: spacing.sm,
   },
@@ -1033,7 +1243,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     lineHeight: 18,
   },
   shipChipRow: {
@@ -1044,33 +1254,33 @@ const styles = StyleSheet.create({
   },
   shipChip: {
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    backgroundColor: colors.card,
+    backgroundColor: c.card,
   },
   shipChipOn: {
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceMuted,
+    borderColor: c.primary,
+    backgroundColor: c.surfaceMuted,
   },
   shipChipText: {
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.foreground,
+    color: c.foreground,
   },
   shipOkMsg: {
     marginTop: spacing.sm,
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.success,
+    color: c.success,
   },
   qrCard: {
     marginTop: spacing.md,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     borderRadius: radii.md,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: c.surfaceMuted,
     padding: spacing.md,
     alignItems: 'center',
   },
@@ -1079,8 +1289,8 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.card,
+    borderColor: c.cardBorder,
+    backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1088,28 +1298,59 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     fontFamily: typography.fontSansMedium,
     fontSize: 13,
-    color: colors.foreground,
+    color: c.foreground,
   },
   qrMeta: {
     marginTop: spacing.xs,
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
+  },
+  cardManager: {
+    marginTop: spacing.sm,
+  },
+  savedCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.cardBorder,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  savedCardRowOn: {
+    borderColor: c.primary,
+    backgroundColor: c.surfaceMuted,
+    borderWidth: 2,
+  },
+  cardPickText: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 12,
+    color: c.primary,
+    marginLeft: spacing.sm,
+  },
+  newCardForm: {
+    marginTop: spacing.sm,
+  },
+  duoFormRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   payRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: c.card,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
   payRowOn: {
-    borderColor: colors.primary,
+    borderColor: c.primary,
     borderWidth: 2,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: c.surfaceMuted,
   },
   successCard: {
     marginBottom: spacing.lg,
@@ -1117,7 +1358,14 @@ const styles = StyleSheet.create({
   successTitle: {
     fontFamily: typography.fontDisplay,
     fontSize: 26,
-    color: colors.foreground,
+    color: c.foreground,
     marginBottom: spacing.sm,
   },
 });
+}
+
+function useTiendaStyles() {
+  const { colors } = useTheme();
+  return useMemo(() => createTiendaStyles(colors), [colors]);
+}
+

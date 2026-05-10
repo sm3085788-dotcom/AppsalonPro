@@ -1,11 +1,12 @@
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { useMemo } from 'react';
 import { Database } from 'lucide-react-native';
 import {
-  colors,
   radii,
   spacing,
   typography,
 } from '@appsalon/design-tokens';
+import { useTheme } from '../../theme/ThemeProvider';
 
 function estadoLine(hasSupabaseEnv, session, perfilLoading, perfilMeta, clienteRow) {
   if (!hasSupabaseEnv) {
@@ -36,6 +37,71 @@ export function ProfileConnectionCard({
   perfilMeta,
   clienteRow,
 }) {
+  const { colors: c } = useTheme();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        card: {
+          backgroundColor: c.surfaceMuted,
+          borderRadius: radii.md,
+          padding: spacing.md,
+          marginBottom: spacing.md,
+          borderWidth: 1,
+          borderStyle: 'dashed',
+          borderColor: c.cardBorder,
+          overflow: 'hidden',
+        },
+        mainRow: {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: spacing.md,
+        },
+        iconBubble: {
+          marginTop: 2,
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: c.card,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        textCol: {
+          flex: 1,
+        },
+        title: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 15,
+          color: c.foreground,
+          marginBottom: 4,
+        },
+        status: {
+          fontFamily: typography.fontSans,
+          fontSize: 13,
+          color: c.foregroundMuted,
+          lineHeight: 19,
+        },
+        hint: {
+          marginTop: spacing.sm,
+          fontFamily: typography.fontSans,
+          fontSize: 12,
+          color: c.foregroundSubtle,
+          lineHeight: 17,
+        },
+        err: {
+          marginTop: spacing.sm,
+          fontFamily: typography.fontSans,
+          fontSize: 12,
+          color: c.error,
+          lineHeight: 17,
+        },
+        spinner: {
+          marginTop: spacing.sm,
+          alignSelf: 'flex-start',
+        },
+      }),
+    [c],
+  );
+
   const status = estadoLine(
     hasSupabaseEnv,
     session,
@@ -48,7 +114,7 @@ export function ProfileConnectionCard({
     <View style={styles.card}>
       <View style={styles.mainRow}>
         <View style={styles.iconBubble}>
-          <Database size={22} color={colors.foregroundMuted} strokeWidth={1.75} />
+          <Database size={22} color={c.foregroundMuted} strokeWidth={1.75} />
         </View>
         <View style={styles.textCol}>
           <Text style={styles.title}>Conexión Supabase</Text>
@@ -56,7 +122,7 @@ export function ProfileConnectionCard({
           {hasSupabaseEnv && session?.user && perfilLoading ? (
             <ActivityIndicator
               style={styles.spinner}
-              color={colors.primary}
+              color={c.primary}
               size="small"
             />
           ) : (
@@ -87,63 +153,3 @@ export function ProfileConnectionCard({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#CFC9BE',
-    overflow: 'hidden',
-  },
-  mainRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  iconBubble: {
-    marginTop: 2,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  textCol: {
-    flex: 1,
-  },
-  title: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 15,
-    color: colors.foreground,
-    marginBottom: 4,
-  },
-  status: {
-    fontFamily: typography.fontSans,
-    fontSize: 13,
-    color: colors.foregroundMuted,
-    lineHeight: 19,
-  },
-  hint: {
-    marginTop: spacing.sm,
-    fontFamily: typography.fontSans,
-    fontSize: 12,
-    color: colors.foregroundSubtle,
-    lineHeight: 17,
-  },
-  err: {
-    marginTop: spacing.sm,
-    fontFamily: typography.fontSans,
-    fontSize: 12,
-    color: colors.error,
-    lineHeight: 17,
-  },
-  spinner: {
-    marginTop: spacing.sm,
-    alignSelf: 'flex-start',
-  },
-});

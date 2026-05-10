@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet,
@@ -30,6 +30,7 @@ import {
   Flame,
   Award,
   Package,
+  Gem,
 } from 'lucide-react-native';
 import { supabase } from '@appsalon/shared-config';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
@@ -52,25 +53,21 @@ import { CLIENT_SUB } from './navigation/clientSubScreens';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
 import {
-  colors,
   spacing,
   typography,
   radii,
   tabBarLayout,
 } from '@appsalon/design-tokens';
+import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import {
   DEMO_PROFILE,
   DEMO_FIRST_NAME,
   QUICK_ACCESS,
   MOCK_PROXIMA_CITA,
   MOCK_HISTORIAL,
-  FEATURED_SERVICE,
 } from './data/luxuryUiMocks';
 import {
-  FEATURED_BALAYAGE_SLIDES,
-  TRENDS_WATERMARK_URI,
-  REWARDS_WATERMARK_URI,
-  ORDERS_WATERMARK_URI,
+  PUBLICIDAD_SLIDES,
 } from './data/remoteHeroImages';
 
 const PRIVACY_URL =
@@ -101,15 +98,36 @@ function paddingForTabBar(insets) {
 }
 
 function ProfileMenuRow({ icon: Icon, label, onPress }) {
+  const { colors: c } = useTheme();
+  const rowStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        row: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          paddingVertical: spacing.md,
+          paddingHorizontal: spacing.xs,
+        },
+        label: {
+          flex: 1,
+          fontFamily: typography.fontSansMedium,
+          fontSize: 15,
+          color: c.foreground,
+        },
+      }),
+    [c],
+  );
+
   return (
     <TouchableOpacity
-      style={styles.profileMenuRow}
+      style={rowStyles.row}
       onPress={onPress ?? (() => {})}
       activeOpacity={0.75}
       accessibilityRole="button"
     >
-      <Icon size={20} color={colors.foreground} strokeWidth={1.75} />
-      <Text style={styles.profileMenuLabel}>{label}</Text>
+      <Icon size={20} color={c.foreground} strokeWidth={1.75} />
+      <Text style={rowStyles.label}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -135,6 +153,9 @@ function AppMain() {
     else if (slug === 'perfil') setTab(TABS.PERFIL);
     setOpenedSub(null);
   }, []);
+
+  const { colors: c, isDark } = useTheme();
+  const styles = useMemo(() => buildAppStyles(c), [c]);
 
   const pickAvatar = useCallback(async (source) => {
     try {
@@ -265,69 +286,85 @@ function AppMain() {
   );
 
   const renderInicio = () => (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[
-        styles.scrollInner,
-        {
-          paddingBottom: scrollBottom,
-          paddingTop: insets.top + spacing.sm,
-          paddingHorizontal: spacing.lg,
-        },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      {primaryHeader}
-
-      <HeroImageCarousel onAgendar={() => setTab(TABS.CITAS)} />
-
-      <View style={styles.sectionBlock}>
-        <Text style={styles.sectionKickerGold}>Acceso rápido</Text>
-        <QuickAccessRow
-          icon={Store}
-          title="Tienda"
-          subtitle={QUICK_ACCESS.tiendaSubtitle}
-          onPress={() => openSub(CLIENT_SUB.TIENDA)}
-          shoppingWatermark
-        />
-        <QuickAccessRow
-          icon={Flame}
-          title="Tendencias"
-          subtitle={QUICK_ACCESS.tendenciasSubtitle}
-          onPress={() => openSub(CLIENT_SUB.TENDENCIAS)}
-          watermarkUri={TRENDS_WATERMARK_URI}
-        />
-        <QuickAccessRow
-          icon={Award}
-          title="Premios"
-          subtitle={QUICK_ACCESS.premiosSubtitle}
-          onPress={() => openSub(CLIENT_SUB.PREMIOS)}
-          watermarkUri={REWARDS_WATERMARK_URI}
-        />
-        <QuickAccessRow
-          icon={Package}
-          title="Pedidos"
-          subtitle={QUICK_ACCESS.pedidosSubtitle}
-          onPress={() => openSub(CLIENT_SUB.CARRITO)}
-          watermarkUri={ORDERS_WATERMARK_URI}
+    <View style={styles.inicioShell}>
+      <View
+        style={[
+          styles.inicioHeaderSticky,
+          {
+            paddingTop: insets.top + spacing.sm,
+          },
+        ]}
+      >
+        <ScreenHeader
+          showHomeBar
+          searchValue={headerSearch}
+          onSearchChange={setHeaderSearch}
+          onCartPress={() => openSub(CLIENT_SUB.CARRITO)}
+          wrapStyle={styles.inicioHeaderWrapTight}
         />
       </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollInner,
+          {
+            paddingBottom: scrollBottom,
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <HeroImageCarousel onAgendar={() => setTab(TABS.CITAS)} />
 
-      <View style={styles.featuredWrap}>
-        <LuxuryImageCarousel
-          slides={FEATURED_BALAYAGE_SLIDES}
-          overlayKicker="Servicios destacados"
-          headline={FEATURED_SERVICE.titulo}
-          body={FEATURED_SERVICE.descripcion}
-          priceLabel={FEATURED_SERVICE.precio}
-          buttonTitle="Ver detalles"
-          buttonVariant="outlineGray"
-          fullWidthButton
-          onButtonPress={() => openSub(CLIENT_SUB.DETALLE_SERVICIO)}
-          containerStyle={{ marginTop: 0 }}
-        />
-      </View>
-    </ScrollView>
+        <View style={styles.inicioBelowHero}>
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionKickerGold}>Acceso rápido</Text>
+            <QuickAccessRow
+              icon={Store}
+              title="Tienda"
+              subtitle={QUICK_ACCESS.tiendaSubtitle}
+              onPress={() => openSub(CLIENT_SUB.TIENDA)}
+            />
+            <QuickAccessRow
+              icon={Flame}
+              title="Tendencias"
+              subtitle={QUICK_ACCESS.tendenciasSubtitle}
+              onPress={() => openSub(CLIENT_SUB.TENDENCIAS)}
+            />
+            <QuickAccessRow
+              icon={Award}
+              title="Premios"
+              subtitle={QUICK_ACCESS.premiosSubtitle}
+              onPress={() => openSub(CLIENT_SUB.PREMIOS)}
+            />
+            <QuickAccessRow
+              icon={Package}
+              title="Pedidos"
+              subtitle={QUICK_ACCESS.pedidosSubtitle}
+              onPress={() => openSub(CLIENT_SUB.CARRITO)}
+            />
+          </View>
+        </View>
+
+        <View style={styles.featuredWrap}>
+          <LuxuryImageCarousel
+            slides={PUBLICIDAD_SLIDES}
+            perSlideOverlay
+            overlayKicker="Publicidad"
+            headline="Promociones"
+            body=""
+            buttonTitle="Ver más"
+            buttonVariant="heroGold"
+            fullWidthButton
+            onButtonPress={() => openSub(CLIENT_SUB.TIENDA)}
+            edgeToEdge
+            squareCorners
+            autoAdvance={false}
+            height={240}
+            containerStyle={{ marginTop: 0 }}
+          />
+        </View>
+      </ScrollView>
+    </View>
   );
 
   const renderCitas = () => (
@@ -357,11 +394,11 @@ function AppMain() {
         </Text>
         <View style={styles.citaIconsRow}>
           <View style={styles.citaIconCell}>
-            <Calendar size={18} color={colors.foreground} strokeWidth={1.7} />
+            <Calendar size={18} color={c.foreground} strokeWidth={1.7} />
             <Text style={styles.citaIconText}>{MOCK_PROXIMA_CITA.fechaLabel}</Text>
           </View>
           <View style={styles.citaIconCell}>
-            <Clock size={18} color={colors.foreground} strokeWidth={1.7} />
+            <Clock size={18} color={c.foreground} strokeWidth={1.7} />
             <Text style={styles.citaIconText}>{MOCK_PROXIMA_CITA.horaLabel}</Text>
           </View>
         </View>
@@ -386,7 +423,7 @@ function AppMain() {
 
       <View style={styles.emptyCitas}>
         <View style={styles.emptyOrb}>
-          <Calendar size={28} color={colors.foregroundSubtle} strokeWidth={1.5} />
+          <Calendar size={28} color={c.foregroundSubtle} strokeWidth={1.5} />
         </View>
         <Text style={styles.emptyTitulo}>No tienes más citas programadas</Text>
         <SalonButton
@@ -464,7 +501,7 @@ function AppMain() {
             {avatarUri ? (
               <Image source={{ uri: avatarUri }} style={styles.avatarImage} resizeMode="cover" />
             ) : (
-              <User size={34} color={colors.foregroundMuted} strokeWidth={1.7} />
+              <User size={34} color={c.foregroundMuted} strokeWidth={1.7} />
             )}
           </View>
         </TouchableOpacity>
@@ -485,6 +522,12 @@ function AppMain() {
           icon={Bell}
           label="Notificaciones"
           onPress={() => openSub(CLIENT_SUB.NOTIFICACIONES)}
+        />
+        <View style={styles.menuHairline} />
+        <ProfileMenuRow
+          icon={Gem}
+          label="Membresías"
+          onPress={() => openSub(CLIENT_SUB.MEMBRESIAS)}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
@@ -511,7 +554,7 @@ function AppMain() {
         onPress={() => openSub(CLIENT_SUB.CERRAR_SESION)}
         activeOpacity={0.85}
       >
-        <LogOut size={18} color={colors.foreground} strokeWidth={1.75} />
+        <LogOut size={18} color={c.foreground} strokeWidth={1.75} />
         <Text style={styles.logoutText}>Cerrar sesión</Text>
       </TouchableOpacity>
 
@@ -555,20 +598,33 @@ function AppMain() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar
+        style={
+          isDark || openedSub === CLIENT_SUB.TENDENCIAS ? 'light' : 'dark'
+        }
+      />
       {openedSub && subTitles ? (
-        <SubScreenChrome
-          title={subTitles.title}
-          subtitle={subTitles.subtitle}
-          onBack={closeSub}
-        >
+        openedSub === CLIENT_SUB.TENDENCIAS ? (
           <ClientSubScreenBody
             screenId={openedSub}
             onClose={closeSub}
             onGoTab={goTabFromSub}
             privacyUrl={PRIVACY_URL}
           />
-        </SubScreenChrome>
+        ) : (
+          <SubScreenChrome
+            title={subTitles.title}
+            subtitle={subTitles.subtitle}
+            onBack={closeSub}
+          >
+            <ClientSubScreenBody
+              screenId={openedSub}
+              onClose={closeSub}
+              onGoTab={goTabFromSub}
+              privacyUrl={PRIVACY_URL}
+            />
+          </SubScreenChrome>
+        )
       ) : (
         <>
           {body}
@@ -593,31 +649,40 @@ export default function App() {
     PlayfairDisplay_600SemiBold,
   });
 
-  if (!fontsLoaded) {
-    return (
-      <View style={styles.boot}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
-  }
-
   return (
     <SafeAreaProvider>
-      <AppMain />
+      <ThemeProvider>
+        {!fontsLoaded ? (
+          <ThemeBoot />
+        ) : (
+          <AppMain />
+        )}
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  boot: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+function ThemeBoot() {
+  const { colors: themeColors } = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: themeColors.background,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    >
+      <ActivityIndicator color={themeColors.primary} size="large" />
+    </View>
+  );
+}
+
+function buildAppStyles(c) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: c.background,
   },
   tabDock: {
     position: 'absolute',
@@ -628,10 +693,28 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: c.background,
   },
   scrollInner: {
     flexGrow: 1,
+  },
+
+  inicioShell: {
+    flex: 1,
+    backgroundColor: c.background,
+  },
+  inicioHeaderSticky: {
+    paddingHorizontal: spacing.lg,
+    backgroundColor: c.background,
+    zIndex: 2,
+    elevation: 4,
+  },
+  inicioHeaderWrapTight: {
+    marginBottom: 0,
+  },
+
+  inicioBelowHero: {
+    paddingHorizontal: spacing.lg,
   },
 
   sectionBlock: {
@@ -642,7 +725,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontSansMedium,
     fontSize: 11,
     letterSpacing: 2,
-    color: colors.primary,
+    color: c.primary,
     marginBottom: spacing.md,
     textTransform: 'uppercase',
   },
@@ -651,32 +734,32 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   featureCard: {
-    backgroundColor: colors.card,
+    backgroundColor: c.card,
     borderRadius: radii.xl,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     padding: spacing.lg,
   },
 
   pageDisplay: {
     fontFamily: typography.fontDisplay,
     fontSize: 27,
-    color: colors.foreground,
+    color: c.foreground,
     marginBottom: spacing.xs,
   },
   pageLead: {
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     lineHeight: 21,
     marginBottom: spacing.lg,
   },
 
   detailCard: {
-    backgroundColor: colors.card,
+    backgroundColor: c.card,
     borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     padding: spacing.lg,
   },
   citaRibbon: {
@@ -684,19 +767,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.6,
     textTransform: 'uppercase',
-    color: colors.primary,
+    color: c.primary,
     marginBottom: spacing.sm,
   },
   citaTitulo: {
     fontFamily: typography.fontSansMedium,
     fontSize: 17,
-    color: colors.foreground,
+    color: c.foreground,
   },
   citaStaff: {
     marginTop: 6,
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
   },
   citaIconsRow: {
     flexDirection: 'row',
@@ -713,7 +796,7 @@ const styles = StyleSheet.create({
   citaIconText: {
     fontFamily: typography.fontSansMedium,
     fontSize: 14,
-    color: colors.foreground,
+    color: c.foreground,
   },
 
   duoBtns: {
@@ -731,7 +814,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#EFEFEF',
+    backgroundColor: c.iconCircleBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
@@ -739,15 +822,15 @@ const styles = StyleSheet.create({
   emptyTitulo: {
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     textAlign: 'center',
   },
 
   historyCard: {
-    backgroundColor: colors.card,
+    backgroundColor: c.card,
     borderRadius: radii.xl,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: c.cardBorder,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
@@ -761,19 +844,19 @@ const styles = StyleSheet.create({
   historyService: {
     fontFamily: typography.fontSansMedium,
     fontSize: 15,
-    color: colors.foreground,
+    color: c.foreground,
     flex: 1,
   },
   historyPrice: {
     fontFamily: typography.fontSansMedium,
     fontSize: 15,
-    color: colors.foreground,
+    color: c.foreground,
   },
   historyMeta: {
     marginTop: spacing.sm,
     fontFamily: typography.fontSans,
     fontSize: 13,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     lineHeight: 18,
   },
 
@@ -787,7 +870,7 @@ const styles = StyleSheet.create({
     width: 74,
     height: 74,
     borderRadius: 37,
-    backgroundColor: '#E8DDD0',
+    backgroundColor: c.avatarCircleBg,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -804,13 +887,13 @@ const styles = StyleSheet.create({
   identityName: {
     fontFamily: typography.fontSansMedium,
     fontSize: 18,
-    color: colors.foreground,
+    color: c.foreground,
     marginBottom: 4,
   },
   identityEmail: {
     fontFamily: typography.fontSans,
     fontSize: 14,
-    color: colors.foregroundSubtle,
+    color: c.foregroundSubtle,
   },
 
   profileMenuShell: {
@@ -819,22 +902,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     borderRadius: 26,
   },
-  profileMenuRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xs,
-  },
-  profileMenuLabel: {
-    flex: 1,
-    fontFamily: typography.fontSansMedium,
-    fontSize: 15,
-    color: colors.foreground,
-  },
   menuHairline: {
     height: 1,
-    backgroundColor: colors.cardBorder,
+    backgroundColor: c.cardBorder,
     marginHorizontal: spacing.xs + 26,
   },
 
@@ -848,14 +918,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: '#CCCCCC',
-    backgroundColor: colors.card,
+    borderColor: c.cardBorder,
+    backgroundColor: c.card,
     marginBottom: spacing.lg,
   },
   logoutText: {
     fontFamily: typography.fontSansMedium,
     fontSize: 14,
-    color: colors.foreground,
+    color: c.foreground,
   },
   linkBtn: {
     alignSelf: 'center',
@@ -865,14 +935,15 @@ const styles = StyleSheet.create({
   linkBtnText: {
     fontFamily: typography.fontSansMedium,
     fontSize: 14,
-    color: colors.foregroundMuted,
+    color: c.foregroundMuted,
     textDecorationLine: 'underline',
   },
   versionFoot: {
     fontFamily: typography.fontSans,
     fontSize: 12,
-    color: colors.foregroundSubtle,
+    color: c.foregroundSubtle,
     textAlign: 'center',
     marginBottom: spacing.md,
   },
 });
+}

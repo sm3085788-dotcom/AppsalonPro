@@ -4,23 +4,37 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
+import { useMemo } from 'react';
 import { Image as ImageIcon, Star, Truck } from 'lucide-react-native';
-import { colors, spacing, typography, radii } from '@appsalon/design-tokens';
+import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { useTheme } from '../../theme/ThemeProvider';
 import { ProductImageStrip } from './ProductImageStrip';
 
 const STAR_GOLD = '#FFB800';
-const STAR_EMPTY = '#E3E3E3';
 
 function RatingStars({ rating }) {
+  const { isDark } = useTheme();
+  const starEmpty = isDark ? '#525252' : '#E3E3E3';
   const full = Math.floor(Math.min(5, Math.max(0, rating)));
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        stars: {
+          flexDirection: 'row',
+          gap: 2,
+        },
+      }),
+    [],
+  );
+
   return (
     <View style={styles.stars}>
       {[1, 2, 3, 4, 5].map((s) => (
         <Star
           key={s}
           size={12}
-          color={s <= full ? STAR_GOLD : STAR_EMPTY}
-          fill={s <= full ? STAR_GOLD : STAR_EMPTY}
+          color={s <= full ? STAR_GOLD : starEmpty}
+          fill={s <= full ? STAR_GOLD : starEmpty}
           strokeWidth={0}
         />
       ))}
@@ -29,7 +43,136 @@ function RatingStars({ rating }) {
 }
 
 export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
+  const { colors: c, isDark } = useTheme();
   const hasProduct = product != null;
+  const skelColor = isDark ? '#3A3A3A' : '#EDEDED';
+  const imageZoneBg = isDark ? c.iconCircleBg : '#F4F4F4';
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        card: {
+          backgroundColor: c.card,
+          borderRadius: radii.sm,
+          borderWidth: 1,
+          borderColor: c.cardBorder,
+          marginBottom: 10,
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.08,
+          shadowRadius: 3,
+          elevation: 2,
+        },
+        imageZone: {
+          aspectRatio: 1,
+          width: '100%',
+          backgroundColor: imageZoneBg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderBottomWidth: 1,
+          borderBottomColor: c.cardBorder,
+          overflow: 'hidden',
+        },
+        imageHint: {
+          marginTop: 6,
+          fontFamily: typography.fontSans,
+          fontSize: 11,
+          color: c.foregroundSubtle,
+        },
+        body: {
+          padding: spacing.sm,
+        },
+        brandLine: {
+          fontFamily: typography.fontSans,
+          fontSize: 10,
+          color: c.foregroundMuted,
+          marginBottom: 4,
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+        },
+        productTitle: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 13,
+          lineHeight: 17,
+          color: c.foreground,
+          marginBottom: spacing.sm,
+          minHeight: 34,
+        },
+        titleSkeleton: {
+          marginBottom: spacing.sm,
+        },
+        skLine: {
+          height: 10,
+          borderRadius: 4,
+          backgroundColor: skelColor,
+        },
+        priceRow: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          alignItems: 'baseline',
+          gap: 8,
+          marginBottom: 6,
+        },
+        compareAt: {
+          fontFamily: typography.fontSans,
+          fontSize: 12,
+          color: c.foregroundMuted,
+          textDecorationLine: 'line-through',
+        },
+        priceLive: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 16,
+          color: c.foreground,
+        },
+        priceSlot: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 16,
+          color: c.foreground,
+          marginBottom: 6,
+        },
+        ratingRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: 6,
+          flexWrap: 'wrap',
+        },
+        starsRow: {
+          flexDirection: 'row',
+          gap: 2,
+        },
+        ratingNum: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 11,
+          color: c.foreground,
+        },
+        ratingTxt: {
+          fontFamily: typography.fontSans,
+          fontSize: 11,
+          color: c.foregroundMuted,
+        },
+        shipRow: {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: 4,
+        },
+        shipTxt: {
+          flex: 1,
+          fontFamily: typography.fontSans,
+          fontSize: 10,
+          color: c.foregroundMuted,
+          lineHeight: 14,
+        },
+        stockHint: {
+          marginTop: 6,
+          fontFamily: typography.fontSans,
+          fontSize: 10,
+          color: c.primary,
+        },
+      }),
+    [c, imageZoneBg, skelColor],
+  );
 
   const galleryUris = hasProduct
     ? product.imageUris?.length
@@ -43,6 +186,8 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
     ? `${product.title}, ${product.priceLabel}. ${product.rating} estrellas, ${product.reviewCount} opiniones. ${product.shippingLabel}`
     : `Producto ${slotIndex}, pendiente de datos`;
 
+  const emptyStar = isDark ? '#525252' : '#E3E3E3';
+
   return (
     <View style={[styles.card, { width }]}>
       <View style={styles.imageZone}>
@@ -50,7 +195,7 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
           <ProductImageStrip uris={galleryUris} badgeText={product.badge} />
         ) : hasProduct ? null : (
           <>
-            <ImageIcon size={36} color={colors.foregroundSubtle} strokeWidth={1.4} />
+            <ImageIcon size={36} color={c.foregroundSubtle} strokeWidth={1.4} />
             <Text style={styles.imageHint}>Imagen</Text>
           </>
         )}
@@ -88,7 +233,7 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
             </View>
 
             <View style={styles.shipRow}>
-              <Truck size={12} color={colors.foregroundMuted} strokeWidth={2} />
+              <Truck size={12} color={c.foregroundMuted} strokeWidth={2} />
               <Text style={styles.shipTxt} numberOfLines={2}>
                 {product.shippingLabel}
               </Text>
@@ -110,13 +255,13 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
             <Text style={styles.priceSlot}>Q —.——</Text>
 
             <View style={styles.ratingRow}>
-              <View style={styles.stars}>
+              <View style={styles.starsRow}>
                 {[1, 2, 3, 4, 5].map((s) => (
                   <Star
                     key={s}
                     size={12}
-                    color="#E3E3E3"
-                    fill="#E3E3E3"
+                    color={emptyStar}
+                    fill={emptyStar}
                     strokeWidth={0}
                   />
                 ))}
@@ -125,7 +270,7 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
             </View>
 
             <View style={styles.shipRow}>
-              <Truck size={12} color={colors.foregroundMuted} strokeWidth={2} />
+              <Truck size={12} color={c.foregroundMuted} strokeWidth={2} />
               <Text style={styles.shipTxt}>Envío / retiro · datos después</Text>
             </View>
           </>
@@ -134,125 +279,3 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    marginBottom: 10,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  imageZone: {
-    aspectRatio: 1,
-    width: '100%',
-    backgroundColor: '#F4F4F4',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
-    overflow: 'hidden',
-  },
-  imageHint: {
-    marginTop: 6,
-    fontFamily: typography.fontSans,
-    fontSize: 11,
-    color: colors.foregroundSubtle,
-  },
-  body: {
-    padding: spacing.sm,
-  },
-  brandLine: {
-    fontFamily: typography.fontSans,
-    fontSize: 10,
-    color: colors.foregroundMuted,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  productTitle: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 13,
-    lineHeight: 17,
-    color: colors.foreground,
-    marginBottom: spacing.sm,
-    minHeight: 34,
-  },
-  titleSkeleton: {
-    marginBottom: spacing.sm,
-  },
-  skLine: {
-    height: 10,
-    borderRadius: 4,
-    backgroundColor: '#EDEDED',
-  },
-  priceRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'baseline',
-    gap: 8,
-    marginBottom: 6,
-  },
-  compareAt: {
-    fontFamily: typography.fontSans,
-    fontSize: 12,
-    color: colors.foregroundMuted,
-    textDecorationLine: 'line-through',
-  },
-  priceLive: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  priceSlot: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 16,
-    color: colors.foreground,
-    marginBottom: 6,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-    flexWrap: 'wrap',
-  },
-  stars: {
-    flexDirection: 'row',
-    gap: 2,
-  },
-  ratingNum: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 11,
-    color: colors.foreground,
-  },
-  ratingTxt: {
-    fontFamily: typography.fontSans,
-    fontSize: 11,
-    color: colors.foregroundMuted,
-  },
-  shipRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 4,
-  },
-  shipTxt: {
-    flex: 1,
-    fontFamily: typography.fontSans,
-    fontSize: 10,
-    color: colors.foregroundMuted,
-    lineHeight: 14,
-  },
-  stockHint: {
-    marginTop: 6,
-    fontFamily: typography.fontSans,
-    fontSize: 10,
-    color: colors.primary,
-  },
-});

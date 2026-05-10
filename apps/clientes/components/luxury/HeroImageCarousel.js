@@ -14,6 +14,9 @@ export function HeroImageCarousel({ onAgendar }) {
       buttonTitle="Agendar ahora"
       buttonVariant="heroGold"
       onButtonPress={onAgendar}
+      edgeToEdge
+      dockTop
+      squareCorners
     />
   );
 }

@@ -10,7 +10,7 @@ export const DEMO_PROFILE = {
 export const QUICK_ACCESS = {
   tiendaSubtitle: 'Productos profesionales y kits',
   tendenciasSubtitle: 'Looks destacados esta temporada',
-  premiosSubtitle: 'Canjea tus puntos · demo',
+  premiosSubtitle: 'Referidos, puntos y canjes · demo',
   pedidosSubtitle: 'QR y domicilio',
 };
 

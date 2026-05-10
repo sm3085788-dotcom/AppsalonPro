@@ -17,4 +17,5 @@ export const CLIENT_SUB = {
   TENDENCIAS: 'tendencias',
   PREMIOS: 'premios',
   CARRITO: 'carrito',
+  MEMBRESIAS: 'membresias',
 };

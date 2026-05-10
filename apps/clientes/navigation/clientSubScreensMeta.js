@@ -37,9 +37,11 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.TENDENCIAS:
       return { title: 'Tendencias', subtitle: 'Looks e inspiración (demo).' };
     case CLIENT_SUB.PREMIOS:
-      return { title: 'Premios', subtitle: 'Tu programa de recompensas (demo).' };
+      return { title: 'Premios', subtitle: 'Puntos, referidos y recompensas Aura (demo).' };
     case CLIENT_SUB.CARRITO:
       return { title: 'Carrito', subtitle: 'Productos seleccionados (demo).' };
+    case CLIENT_SUB.MEMBRESIAS:
+      return { title: 'Membresías', subtitle: 'Bronce, Plata y VIP · beneficios por nivel (demo).' };
     default:
       return { title: 'Pantalla', subtitle: '' };
   }
