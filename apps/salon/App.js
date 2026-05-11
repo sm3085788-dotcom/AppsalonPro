@@ -28,6 +28,11 @@ import {
 } from './navigation/salonRoutes';
 import { SalonModulePlaceholder } from './screens/SalonModulePlaceholder';
 import { AppointmentsScreen } from './screens/AppointmentsScreen';
+import { CajaScreen } from './screens/CajaScreen';
+import { ClientesScreen } from './screens/ClientesScreen';
+import { EmpleadosScreen } from './screens/EmpleadosScreen';
+import { MetasScreen } from './screens/MetasScreen';
+import { ReportesScreen } from './screens/ReportesScreen';
 
 const MAX_CONTENT_WIDTH = 1120;
 const ROW_ACCENTS = [
@@ -95,6 +100,26 @@ function SalonAdminShell() {
 
   if (openedModuleId === 'agenda') {
     return <AppointmentsScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'cajas') {
+    return <CajaScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'clients') {
+    return <ClientesScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'staff') {
+    return <EmpleadosScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'goals') {
+    return <MetasScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'reportes') {
+    return <ReportesScreen onBack={closeModule} />;
   }
 
   if (openedModule) {

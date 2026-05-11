@@ -210,25 +210,44 @@ export function AppointmentsScreen({ onBack }) {
     );
   };
 
+  const addPersonIconColor = isDark ? '#141414' : c.foreground;
+
   const rightAction = (
     <TouchableOpacity
-      style={styles.addPersonCircle}
+      style={[styles.addPersonCircle, isDark && styles.addPersonCircleDark]}
       onPress={() => setComposerOpen(true)}
       accessibilityRole="button"
       accessibilityLabel="Nueva cita"
       activeOpacity={0.85}
     >
-      <UserPlus size={22} color={c.foreground} strokeWidth={2} />
+      <UserPlus size={22} color={addPersonIconColor} strokeWidth={2.2} />
     </TouchableOpacity>
   );
 
-  const modalPadBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
+  const modalContentPadBottom = insets.bottom + spacing.sm;
 
   return (
     <View style={[styles.shell, { backgroundColor: c.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome onBack={onBack} disableBodyScroll rightAction={rightAction}>
-        <View style={styles.emptyBody} />
+        <View style={styles.listShell}>
+          <View style={styles.agendaToolbar}>
+            <Text style={styles.agendaToolbarMeta}>Citas del salón</Text>
+            <TouchableOpacity hitSlop={12} accessibilityRole="button" accessibilityLabel="Ordenar y filtros">
+              <Text style={styles.agendaToolbarLink}>Ordenar · filtros</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.listPlaceholder}>
+            <Calendar size={48} color={c.foregroundSubtle} strokeWidth={1.5} />
+            <Text style={[subStyles.muted, styles.listPlaceholderTxt]}>
+              Aquí aparecerán las citas cuando exista lógica de datos.
+            </Text>
+            <Text style={styles.agendaFootnote}>
+              Pendiente, confirmado y rechazado; orden por fecha más reciente (referencia, sin acción aún).
+            </Text>
+          </View>
+        </View>
       </SubScreenChrome>
 
       <Modal
@@ -237,10 +256,15 @@ export function AppointmentsScreen({ onBack }) {
         presentationStyle="fullScreen"
         onRequestClose={resetComposer}
       >
-        <View style={[styles.modalRoot, { backgroundColor: c.background, paddingTop: insets.top }]}>
+        <View style={[styles.modalRoot, { backgroundColor: c.background }]}>
           <StatusBar style={isDark ? 'light' : 'dark'} />
           <ScrollView
-            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: modalPadBottom }}
+            style={styles.modalScroll}
+            contentContainerStyle={{
+              paddingHorizontal: spacing.lg,
+              paddingTop: insets.top,
+              paddingBottom: modalContentPadBottom,
+            }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -537,6 +561,48 @@ function createStyles(c) {
     emptyBody: {
       flex: 1,
     },
+    listShell: {
+      flex: 1,
+      paddingTop: spacing.xs,
+    },
+    agendaToolbar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.md,
+    },
+    agendaToolbarMeta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      color: c.foregroundMuted,
+    },
+    agendaToolbarLink: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      color: c.primary,
+    },
+    listPlaceholder: {
+      flex: 1,
+      minHeight: 200,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.xl,
+      paddingHorizontal: spacing.md,
+      gap: spacing.md,
+    },
+    listPlaceholderTxt: {
+      textAlign: 'center',
+      maxWidth: 280,
+    },
+    agendaFootnote: {
+      marginTop: spacing.sm,
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      color: c.foregroundSubtle,
+      lineHeight: 16,
+      textAlign: 'center',
+      maxWidth: 300,
+    },
     addPersonCircle: {
       width: 44,
       height: 44,
@@ -552,7 +618,13 @@ function createStyles(c) {
       shadowOpacity: 0.12,
       shadowRadius: 4,
     },
+    addPersonCircleDark: {
+      borderColor: 'rgba(255,255,255,0.35)',
+    },
     modalRoot: {
+      flex: 1,
+    },
+    modalScroll: {
       flex: 1,
     },
     formTitle: {

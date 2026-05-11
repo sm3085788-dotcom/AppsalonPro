@@ -41,7 +41,7 @@ export const SALON_MODULES = [
   {
     id: 'clients',
     title: 'Clientes',
-    subtitle: 'Fichas, historial y segmentación',
+    subtitle: 'Perfiles App Clientes y fichas manuales',
     Icon: Users,
   },
   {
