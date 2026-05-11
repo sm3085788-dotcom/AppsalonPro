@@ -60,6 +60,18 @@ import {
 } from '@appsalon/design-tokens';
 import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import {
+  setDemoSession,
+  setIntroDone,
+  setTourDone,
+  clearDemoOnboarding,
+  getDemoSession,
+  getIntroDone,
+  getTourDone,
+} from './onboarding/demoStorage';
+import { DemoAuthScreen } from './onboarding/DemoAuthScreen';
+import { PostLoginIntroScreen } from './onboarding/PostLoginIntroScreen';
+import { AppTourScreen } from './onboarding/AppTourScreen';
+import {
   DEMO_PROFILE,
   DEMO_FIRST_NAME,
   QUICK_ACCESS,
@@ -132,7 +144,7 @@ function ProfileMenuRow({ icon: Icon, label, onPress }) {
   );
 }
 
-function AppMain() {
+function AppMain({ demoProfile, onDemoLogout }) {
   const insets = useSafeAreaInsets();
   const scrollBottom = paddingForTabBar(insets);
   const [tab, setTab] = useState(TABS.INICIO);
@@ -267,11 +279,17 @@ function AppMain() {
     Constants.manifest2?.extra?.expoClient?.version ??
     '—';
 
-  const profileFullName = clienteRow?.nombre ?? DEMO_PROFILE.fullName;
+  const profileFullName =
+    demoProfile?.name ?? clienteRow?.nombre ?? DEMO_PROFILE.fullName;
   const profileGreetingFirst =
-    clienteRow?.nombre?.trim()?.split(/\s+/)[0] ?? DEMO_FIRST_NAME;
+    demoProfile?.name?.trim()?.split(/\s+/)[0] ??
+    clienteRow?.nombre?.trim()?.split(/\s+/)[0] ??
+    DEMO_FIRST_NAME;
   const profileEmail =
-    session?.user?.email ?? clienteRow?.email ?? DEMO_PROFILE.emailPlaceholder;
+    session?.user?.email ??
+    clienteRow?.email ??
+    demoProfile?.email ??
+    DEMO_PROFILE.emailPlaceholder;
 
   const primaryHeader = (
     <ScreenHeader
@@ -610,6 +628,7 @@ function AppMain() {
             onClose={closeSub}
             onGoTab={goTabFromSub}
             privacyUrl={PRIVACY_URL}
+            onLogoutDemo={onDemoLogout}
           />
         ) : (
           <SubScreenChrome
@@ -622,6 +641,7 @@ function AppMain() {
               onClose={closeSub}
               onGoTab={goTabFromSub}
               privacyUrl={PRIVACY_URL}
+              onLogoutDemo={onDemoLogout}
             />
           </SubScreenChrome>
         )
@@ -649,13 +669,89 @@ export default function App() {
     PlayfairDisplay_600SemiBold,
   });
 
+  const [gate, setGate] = useState({
+    ready: false,
+    phase: 'main',
+    profile: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const session = await getDemoSession();
+        const intro = await getIntroDone();
+        const tour = await getTourDone();
+        if (cancelled) return;
+        if (!session) {
+          setGate({ ready: true, phase: 'auth', profile: null });
+          return;
+        }
+        if (!intro) {
+          setGate({ ready: true, phase: 'intro', profile: session });
+          return;
+        }
+        if (!tour) {
+          setGate({ ready: true, phase: 'tour', profile: session });
+          return;
+        }
+        setGate({ ready: true, phase: 'main', profile: session });
+      } catch (e) {
+        if (__DEV__) console.warn('[demo gate]', e);
+        if (!cancelled) {
+          setGate({ ready: true, phase: 'auth', profile: null });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleAuthSuccess = async (profile) => {
+    await setDemoSession(profile);
+    setGate({ ready: true, phase: 'intro', profile });
+  };
+
+  const handleIntroContinue = async () => {
+    await setIntroDone();
+    const tour = await getTourDone();
+    setGate((g) => ({
+      ...g,
+      phase: tour ? 'main' : 'tour',
+    }));
+  };
+
+  const handleTourDone = async () => {
+    await setTourDone();
+    const profile = await getDemoSession();
+    setGate({ ready: true, phase: 'main', profile });
+  };
+
+  const handleDemoLogout = async () => {
+    await clearDemoOnboarding();
+    setGate({ ready: true, phase: 'auth', profile: null });
+  };
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        {!fontsLoaded ? (
+        {!fontsLoaded || !gate.ready ? (
           <ThemeBoot />
+        ) : gate.phase === 'auth' ? (
+          <DemoAuthScreen onAuthSuccess={handleAuthSuccess} />
+        ) : gate.phase === 'intro' ? (
+          <PostLoginIntroScreen
+            profile={gate.profile}
+            onContinue={handleIntroContinue}
+          />
+        ) : gate.phase === 'tour' ? (
+          <AppTourScreen onDone={handleTourDone} />
         ) : (
-          <AppMain />
+          <AppMain
+            demoProfile={gate.profile}
+            onDemoLogout={handleDemoLogout}
+          />
         )}
       </ThemeProvider>
     </SafeAreaProvider>

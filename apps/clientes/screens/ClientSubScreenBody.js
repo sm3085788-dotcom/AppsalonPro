@@ -225,6 +225,7 @@ export function ClientSubScreenBody({
   onClose,
   onGoTab,
   privacyUrl,
+  onLogoutDemo,
 }) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
@@ -491,7 +492,8 @@ export function ClientSubScreenBody({
       return (
         <>
           <Text style={[subStyles.bullets, { marginBottom: spacing.md }]}>
-            Esto es sólo navegación. El cierre real de sesión se implementará después con Auth.
+            En modo demo esto borra tu sesión local en el dispositivo y te devuelve al inicio de sesión.
+            El cierre real con servidor llegará después.
           </Text>
           <SalonButton variant="outlineGray" title="Cancelar" fullWidth onPress={onClose} />
           <SalonButton
@@ -499,7 +501,10 @@ export function ClientSubScreenBody({
             title="Salir · demo"
             fullWidth
             style={{ marginTop: spacing.sm }}
-            onPress={onClose}
+            onPress={async () => {
+              await onLogoutDemo?.();
+              onClose();
+            }}
           />
         </>
       );

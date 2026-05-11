@@ -177,6 +177,26 @@ export const db = {
     },
   },
 
+  // ==================== SERVICIOS ====================
+  servicios: {
+    /**
+     * Catálogo `servicios`: sin texto devuelve los primeros `limit` por nombre;
+     * con texto filtra por nombre (ilike).
+     */
+    search: async (query = '', limit = 60) => {
+      const q = String(query || '').trim();
+      let req = supabase
+        .from('servicios')
+        .select('id, nombre, precio, duracion_minutos')
+        .order('nombre', { ascending: true })
+        .limit(limit);
+      if (q.length > 0) {
+        req = req.ilike('nombre', `%${q}%`);
+      }
+      return await req;
+    },
+  },
+
   // ==================== CITAS ====================
   citas: {
     // Obtener todas las citas
