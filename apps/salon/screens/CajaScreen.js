@@ -44,12 +44,6 @@ const EGRESO_TIPOS = [
   { id: 'e4', label: 'Faltante en arqueo parcial' },
 ];
 
-const DEMO_VENTA_LABELS = [
-  { kind: 'venta_producto', label: 'Venta producto — Shampoo reparación' },
-  { kind: 'venta_servicio', label: 'Venta servicio — Corte + peinado' },
-  { kind: 'venta_app', label: 'Venta app clientes — Reserva Aura' },
-];
-
 function parseAmount(str) {
   const n = Number(String(str || '').replace(',', '.').replace(/[^\d.]/g, ''));
   return Number.isFinite(n) ? n : 0;
@@ -78,7 +72,7 @@ function nowLabel() {
 }
 
 /**
- * Caja: maqueta profesional (apertura → dashboard → cierre + PDF). Sin backend.
+ * Caja: apertura, movimientos locales del turno y cierre con PDF.
  */
 export function CajaScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
@@ -125,22 +119,6 @@ export function CajaScreen({ onBack }) {
     },
     [makeTxId],
   );
-
-  useEffect(() => {
-    if (view !== 'dash') return undefined;
-    const t = setInterval(() => {
-      const pick = DEMO_VENTA_LABELS[Math.floor(Math.random() * DEMO_VENTA_LABELS.length)];
-      const amt = 45 + Math.floor(Math.random() * 180);
-      pushTx({
-        kind: pick.kind,
-        titulo: pick.label,
-        detalle: 'Demo tiempo real',
-        monto: amt,
-        signo: 1,
-      });
-    }, 12000);
-    return () => clearInterval(t);
-  }, [view, pushTx]);
 
   useEffect(() => {
     if (view === 'gate') setFeedExpanded(false);
@@ -240,7 +218,7 @@ export function CajaScreen({ onBack }) {
     pushTx({
       kind: 'devolucion',
       titulo: 'Devolución',
-      detalle: `Factura ${f}${qrDev ? ' · QR verificado (demo)' : ''}`,
+      detalle: `Factura ${f}${qrDev ? ' · QR verificado' : ''}`,
       monto: 0,
       signo: 0,
     });
@@ -258,7 +236,7 @@ export function CajaScreen({ onBack }) {
     pushTx({
       kind: 'cambio',
       titulo: 'Cambio de producto',
-      detalle: `Factura ${f}${qrCambio ? ' · QR verificado (demo)' : ''}`,
+      detalle: `Factura ${f}${qrCambio ? ' · QR verificado' : ''}`,
       monto: 0,
       signo: 0,
     });
@@ -327,7 +305,7 @@ export function CajaScreen({ onBack }) {
   <p><strong>Apertura de turno:</strong> ${apNombre} · ${apAbierto}</p>
   <p><strong>Monto inicial en caja:</strong> ${formatQ(metaApertura.monto)}</p>
   <p><strong>Cierre registrado:</strong> ${escHtml(nowLabel())}</p>
-  <p><strong>Saldo final (demo):</strong> <span class="tot">${formatQ(totalEntrante)}</span></p>
+  <p><strong>Saldo final:</strong> <span class="tot">${formatQ(totalEntrante)}</span></p>
   <h2>Movimientos</h2>
   <table class="movimientos">
     <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Detalle</th><th>Monto</th></tr></thead>
@@ -348,7 +326,7 @@ export function CajaScreen({ onBack }) {
       </div>
     </div>
   </div>
-  <p style="margin-top:24px;font-size:11px;color:#666;">Documento generado en modo demostración (sin servidor).</p>
+  <p style="margin-top:24px;font-size:11px;color:#666;">Documento generado desde la app del salón.</p>
 </body></html>`;
 
     try {
@@ -370,7 +348,7 @@ export function CajaScreen({ onBack }) {
       setMontoApertura('');
       setGerenteCierre('');
       setAdministradorCierre('');
-      Alert.alert('Caja cerrada', 'PDF generado (demo). Sesión reiniciada; podés abrir una nueva caja.');
+      Alert.alert('Caja cerrada', 'PDF generado. Sesión reiniciada; podés abrir una nueva caja.');
     } catch (e) {
       Alert.alert('PDF', 'No se pudo generar el PDF en este dispositivo.');
       if (__DEV__) console.warn(e);
@@ -419,7 +397,7 @@ export function CajaScreen({ onBack }) {
                 <Text style={styles.gateTitle}>Abrir caja</Text>
               </View>
               <Text style={subStyles.muted}>
-                Antes del dashboard, registrá quién abre y con cuánto efectivo inicia el turno (solo maqueta).
+                Antes del dashboard, registrá quién abre y con cuánto efectivo inicia el turno.
               </Text>
               <Text style={styles.label}>Administrador responsable</Text>
               <TextInput
@@ -463,7 +441,7 @@ export function CajaScreen({ onBack }) {
             <Text style={styles.incomingLabel}>Dinero entrante (efectivo estimado)</Text>
             <Text style={[styles.incomingAmt, { color: c.primary }]}>{formatQ(totalEntrante)}</Text>
             <Text style={[subStyles.muted, { marginTop: spacing.xs }]}>
-              Incluye apertura, ingresos y ventas demo; descuenta egresos.
+              Incluye apertura, ingresos y ventas registradas en el turno; descuenta egresos.
             </Text>
           </View>
 
@@ -526,8 +504,8 @@ export function CajaScreen({ onBack }) {
               <Text style={styles.feedTitle}>Transacciones en tiempo real</Text>
             </View>
             <Text style={subStyles.muted}>
-              Demo: ventas producto, servicio y app clientes aparecen automáticamente. El resto lo agregás con los
-              botones. Se listan las {TX_FEED_VISIBLE} más recientes; podés desplegar el historial completo.
+              Los movimientos del turno se registran con los botones de ingreso, egreso y ventas. Se listan las{' '}
+              {TX_FEED_VISIBLE} más recientes; podés desplegar el historial completo.
             </Text>
             {txs.length === 0 ? (
               <Text style={[subStyles.muted, { marginTop: spacing.md }]}>Sin movimientos.</Text>
@@ -745,7 +723,7 @@ export function CajaScreen({ onBack }) {
           <View style={styles.modalBackdrop}>
             <View style={[styles.modalCard, { backgroundColor: c.card }]}>
               <Text style={styles.modalTitle}>Devoluciones</Text>
-              <Text style={subStyles.muted}>Ingresá factura y activá el lector QR (demo).</Text>
+              <Text style={subStyles.muted}>Ingresá factura y activá el lector QR.</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Número de factura / folio"
@@ -758,7 +736,7 @@ export function CajaScreen({ onBack }) {
                 <Text style={styles.switchLabel}>Habilitar lector QR</Text>
                 <Switch value={qrDev} onValueChange={setQrDev} trackColor={{ false: c.cardBorder, true: c.primary }} />
               </View>
-              <TouchableOpacity style={styles.simQr} onPress={() => setFacturaDev('FAC-DEMO-QR-88421')}>
+              <TouchableOpacity style={styles.simQr} onPress={() => setFacturaDev('FAC-QR-88421')}>
                 <Text style={styles.simQrTxt}>Simular escaneo QR</Text>
               </TouchableOpacity>
               <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
@@ -775,7 +753,7 @@ export function CajaScreen({ onBack }) {
           <View style={styles.modalBackdrop}>
             <View style={[styles.modalCard, { backgroundColor: c.card }]}>
               <Text style={styles.modalTitle}>Cambio</Text>
-              <Text style={subStyles.muted}>Ingresá factura y activá el lector QR (demo).</Text>
+              <Text style={subStyles.muted}>Ingresá factura y activá el lector QR.</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Número de factura / folio"
@@ -792,7 +770,7 @@ export function CajaScreen({ onBack }) {
                   trackColor={{ false: c.cardBorder, true: c.primary }}
                 />
               </View>
-              <TouchableOpacity style={styles.simQr} onPress={() => setFacturaCambio('FAC-DEMO-QR-88421')}>
+              <TouchableOpacity style={styles.simQr} onPress={() => setFacturaCambio('FAC-QR-88421')}>
                 <Text style={styles.simQrTxt}>Simular escaneo QR</Text>
               </TouchableOpacity>
               <View style={{ gap: spacing.sm, marginTop: spacing.md }}>

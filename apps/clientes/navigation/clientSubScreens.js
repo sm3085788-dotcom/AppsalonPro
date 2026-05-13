@@ -18,4 +18,6 @@ export const CLIENT_SUB = {
   PREMIOS: 'premios',
   CARRITO: 'carrito',
   MEMBRESIAS: 'membresias',
+  /** Compras/servicios facturados (misma fila `ventas` que Papelería en App Salón). */
+  MIS_FACTURAS: 'mis_facturas',
 };

@@ -1,11 +1,11 @@
 /**
  * Huecos de producto solo UI — enlazar después con API / Supabase.
- * El primer hueco incluye un producto demo completo para revisar maquetación.
+ * El primer hueco incluye un producto de ejemplo completo para revisar la maquetación.
  */
 
-/** Producto de muestra con todos los campos que usa la tarjeta (GTQ, envío, valoraciones). */
-export const TIENDA_DEMO_PRODUCT = {
-  id: 'demo-keratin-kit',
+/** Producto de ejemplo con los campos que usa la tarjeta (GTQ, envío, valoraciones). */
+export const TIENDA_SAMPLE_PRODUCT = {
+  id: 'sample-keratin-kit',
   /** Marca / línea (texto pequeño sobre el título). */
   brandLine: 'Keraplús · Profesional',
   /** Título comercial (2 líneas en rejilla). */
@@ -32,13 +32,13 @@ export const TIENDA_DEMO_PRODUCT = {
   shippingLabel: 'Envío gratis Ciudad de Guatemala · Retiro en salón el mismo día',
   /** Nota de inventario (opcional). */
   stockHint: 'En stock · 14 unidades',
-  /** Valor numérico para totales de checkout (demo). */
+  /** Valor numérico para totales de checkout (referencia de UI). */
   priceAmount: 189,
   sku: 'KERA-KIT-250-GL',
 };
 
 /** Especificaciones para la ficha ampliada (solo texto). */
-export const TIENDA_DEMO_SPECS = [
+export const TIENDA_SAMPLE_SPECS = [
   { label: 'Presentación', value: 'Frasco 250 ml + guante y brochita' },
   { label: 'Tipo de cabello', value: 'Dañado, teñido, con frizz o poroso' },
   { label: 'Resultado', value: 'Brillo, sedosidad y sellado de puntas hasta 8 semanas (referencia)' },
@@ -48,11 +48,11 @@ export const TIENDA_DEMO_SPECS = [
 ];
 
 /** Descripción larga para scroll en detalle. */
-export const TIENDA_DEMO_LONG_COPY =
-  'Kit demo para maquetación: fórmula con queratina vegetal y aminoácidos de referencia. La versión final mostrará ingredientes INCI, caducidad y lote desde tu inventario del salón.';
+export const TIENDA_SAMPLE_LONG_COPY =
+  'Texto de referencia para la ficha: fórmula con queratina vegetal y aminoácidos. La versión final mostrará ingredientes INCI, caducidad y lote desde el inventario del salón.';
 
 export const TIENDA_PRODUCT_SLOTS = Array.from({ length: 12 }, (_, i) => ({
   id: `prod-slot-${i + 1}`,
   index: i + 1,
-  ...(i === 0 ? { product: TIENDA_DEMO_PRODUCT } : {}),
+  ...(i === 0 ? { product: TIENDA_SAMPLE_PRODUCT } : {}),
 }));

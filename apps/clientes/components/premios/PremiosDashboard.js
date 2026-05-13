@@ -35,17 +35,17 @@ const MOCK = {
   codigoReferido: 'AURA-SM308-482',
   invitadosActivos: 3,
   puntosPorReferidos: 900,
-  /** Demo: metas de referido */
+  /** Metas de referido (valores de UI hasta conectar programa). */
   metaInvitados: 5,
-  /** Paquete que se activa en la cuenta del nuevo cliente al ingresar el código (demo). */
+  /** Paquete que se activa en la cuenta del nuevo cliente al ingresar el código. */
   bienvenidaCitasPrivilegio: 5,
   bienvenidaDescuentoPct: 20,
-  /** Premio para quien recomienda, al confirmarse la primera visita del referido (demo). */
+  /** Premio para quien recomienda, al confirmarse la primera visita del referido. */
   premioReferidorVisitas: 1,
   premioReferidorDescuentoPct: 60,
 };
 
-const CANJES_DEMO = [
+const CANJES_EJEMPLO_UI = [
   {
     id: 'c1',
     titulo: 'Q25 en tienda',
@@ -98,15 +98,15 @@ export function PremiosDashboard({ onClose }) {
       await Clipboard.setStringAsync(MOCK.codigoReferido);
       Alert.alert('Listo', 'Código copiado al portapapeles.');
     } catch {
-      Alert.alert('Demo', MOCK.codigoReferido);
+      Alert.alert('Código', MOCK.codigoReferido);
     }
   };
 
-  const onCanjeDemo = (id) => {
+  const onCanjePendiente = (id) => {
     setCanjeTap(id);
     Alert.alert(
-      'Canje · demo',
-      'Cuando conectemos el programa real, aquí confirmaremos el canje y descontaremos tus puntos.',
+      'Canje',
+      'Cuando el programa de puntos esté activo, aquí confirmaremos el canje y descontaremos tus puntos.',
       [{ text: 'OK', onPress: () => setCanjeTap(null) }],
     );
   };
@@ -223,13 +223,13 @@ export function PremiosDashboard({ onClose }) {
           <Text style={styles.cardTitleFlush}>Canjes con puntos</Text>
         </View>
         <Text style={styles.cardLead}>
-          Canjeá puntos por dinero en tienda, porcentajes en servicios o upgrades exclusivos (demo).
+          Canjeá puntos por dinero en tienda, porcentajes en servicios o upgrades exclusivos.
         </Text>
-        {CANJES_DEMO.map((c) => (
+        {CANJES_EJEMPLO_UI.map((c) => (
           <TouchableOpacity
             key={c.id}
             style={[styles.canjeRow, canjeTap === c.id && styles.canjeRowActive]}
-            onPress={() => onCanjeDemo(c.id)}
+            onPress={() => onCanjePendiente(c.id)}
             activeOpacity={0.88}
           >
             <View style={{ flex: 1 }}>

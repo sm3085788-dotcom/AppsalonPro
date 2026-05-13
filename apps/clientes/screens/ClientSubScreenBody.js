@@ -1,20 +1,32 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ProfileEditForm } from './ProfileEditForm';
-import { View, Text, TouchableOpacity, Linking, StyleSheet, Switch } from 'react-native';
+import { AgendarCitaForm } from './AgendarCitaForm';
+import { View, Text, TouchableOpacity, Linking, StyleSheet, Switch, ActivityIndicator } from 'react-native';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import {
-  FEATURED_SERVICE,
-  MOCK_HISTORIAL_COMPLETO,
-  MOCK_PROXIMA_CITA,
-} from '../data/luxuryUiMocks';
+import { FEATURED_SERVICE } from '../data/luxuryUiMocks';
+import { db } from '@appsalon/shared-config';
 import { TiendaFlow } from '../components/tienda/TiendaFlow';
 import { TendenciasFeed } from '../components/tendencias/TendenciasFeed';
 import { PremiosDashboard } from '../components/premios/PremiosDashboard';
 import { MembresiasBody } from '../components/membresias/MembresiasBody';
+import { MisFacturasBody } from './MisFacturasBody';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
 import { useTheme } from '../theme/ThemeProvider';
+
+function formatGtq(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return '—';
+  return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+/** Textos neutros para subpantallas de flujo que aún no leen la cita real. */
+const FLUJO_CITA_PLACEHOLDER = {
+  servicio: 'Tu próxima cita',
+  fechaLabel: 'Fecha por confirmar',
+  horaLabel: 'Hora por confirmar',
+};
 
 function useAccentChipStyle() {
   const { colors: tc } = useTheme();
@@ -64,7 +76,7 @@ function NotificationsBody() {
       <View style={subStyles.divider} />
       <Row k="cambiosAgenda" label="Cambios en tu agenda" sub="Reposiciones y cancelaciones." />
       <View style={subStyles.divider} />
-      <Row k="mensajes" label="Mensajes" sub="Chats del salón y tu estilista (demo)." />
+      <Row k="mensajes" label="Mensajes" sub="Chats del salón y tu estilista." />
     </View>
   );
 }
@@ -81,7 +93,7 @@ function ContactoBody() {
       <View style={[subStyles.card, padTop]}>
         <Text style={subStyles.rowLabel}>Canales disponibles</Text>
         <Text style={subStyles.rowSub}>
-          Elige cómo comunicarte con el salón. Acciones directas en tu dispositivo (demo).
+          Elige cómo comunicarte con el salón. Acciones directas en tu dispositivo.
         </Text>
         <View style={subStyles.divider} />
 
@@ -213,7 +225,7 @@ function ConfiguracionBody({ onClose }) {
         <View style={subStyles.divider} />
         <RowStatic label="Zona horaria" value="Ciudad de México (GMT−6)" />
         <View style={subStyles.divider} />
-        <RowStatic label="Versión cliente" value="Sin lógica aún · UI" />
+        <RowStatic label="Versión cliente" value="Aura Clientes" />
       </View>
       <SalonButton variant="outlineGray" title="Listo" fullWidth onPress={onClose} />
     </>
@@ -225,10 +237,45 @@ export function ClientSubScreenBody({
   onClose,
   onGoTab,
   privacyUrl,
-  onLogoutDemo,
+  onLogout,
+  clienteRow,
+  onCitasChanged,
+  sessionUser,
+  onClienteUpdated,
 }) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
+
+  const [histRows, setHistRows] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  useEffect(() => {
+    if (screenId !== CLIENT_SUB.HISTORIAL_COMPLETO) return;
+    if (!clienteRow?.id) {
+      setHistRows([]);
+      setHistLoading(false);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      setHistLoading(true);
+      const { data, error } = await db.citas.getByCliente(clienteRow.id);
+      if (!alive) return;
+      setHistLoading(false);
+      if (error || !Array.isArray(data)) {
+        setHistRows([]);
+        return;
+      }
+      const now = Date.now();
+      const past = data
+        .filter((c) => new Date(c.fecha_hora).getTime() < now)
+        .sort((a, b) => new Date(b.fecha_hora) - new Date(a.fecha_hora));
+      setHistRows(past);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [screenId, clienteRow?.id]);
 
   const priceAccent = useMemo(
     () => ({
@@ -303,7 +350,7 @@ export function ClientSubScreenBody({
             <Text style={subStyles.bullets}>{FEATURED_SERVICE.incluye}</Text>
           </View>
           <Text style={subStyles.muted}>
-            Esta pantalla muestra contenido ficticio hasta conectar catálogo y precios del salón.
+            Los precios y disponibilidad salen del catálogo del salón cuando esté enlazado.
           </Text>
           <SalonButton
             title="Ir a Mis citas"
@@ -326,30 +373,11 @@ export function ClientSubScreenBody({
       return (
         <>
           <Steps />
-          <View style={[subStyles.card, padTop]}>
-            <Text style={subStyles.rowLabel}>1. Servicio</Text>
-            <Text style={subStyles.rowSub}>Corte, coloración, tratamiento…</Text>
-            <FieldStub />
-            <Text style={[subStyles.rowLabel, { marginTop: spacing.sm }]}>2. Fecha y hora</Text>
-            <Text style={subStyles.rowSub}>Disponibilidad del salón (demo).</Text>
-            <FieldStub />
-            <Text style={[subStyles.rowLabel, { marginTop: spacing.sm }]}>3. Estilista preferido</Text>
-            <Text style={subStyles.rowSub}>Opcional en una versión final.</Text>
-            <FieldStub />
-          </View>
-          <SalonButton
-            title="Ir a Mis citas (demo)"
-            variant="solidGold"
-            fullWidth
-            style={{ marginTop: spacing.md }}
-            onPress={() => onGoTab('citas')}
-          />
-          <SalonButton
-            title="Guardar borrador · demo"
-            variant="outlineGray"
-            fullWidth
-            style={{ marginTop: spacing.sm }}
-            onPress={onClose}
+          <AgendarCitaForm
+            clienteRow={clienteRow}
+            onClose={onClose}
+            onGoTab={onGoTab}
+            onCitasChanged={onCitasChanged}
           />
         </>
       );
@@ -357,15 +385,32 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.HISTORIAL_COMPLETO:
       return (
         <>
-          {MOCK_HISTORIAL_COMPLETO.map((h) => (
-            <View key={h.id} style={hist.card}>
-              <View style={hist.top}>
-                <Text style={hist.name}>{h.servicio}</Text>
-                <Text style={hist.price}>{h.precio}</Text>
+          {histLoading ? (
+            <ActivityIndicator style={{ marginVertical: spacing.lg }} color={tc.primary} />
+          ) : histRows.length > 0 ? (
+            histRows.map((h) => (
+              <View key={h.id} style={hist.card}>
+                <View style={hist.top}>
+                  <Text style={hist.name}>{h.servicio}</Text>
+                  <Text style={hist.price}>{formatGtq(h.precio)}</Text>
+                </View>
+                <Text style={hist.meta}>
+                  {new Date(h.fecha_hora).toLocaleDateString('es-GT', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                  {h.empleado?.nombre ? ` · ${h.empleado.nombre}` : ''}
+                </Text>
               </View>
-              <Text style={hist.meta}>{h.detalle}</Text>
-            </View>
-          ))}
+            ))
+          ) : (
+            <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>
+              {!clienteRow?.id
+                ? 'Necesitamos tu ficha de cliente enlazada al salón para listar visitas.'
+                : 'No hay visitas anteriores registradas.'}
+            </Text>
+          )}
           <SalonButton variant="outlineGray" title="Cerrar" fullWidth onPress={onClose} />
         </>
       );
@@ -374,9 +419,9 @@ export function ClientSubScreenBody({
       return (
         <>
           <View style={subStyles.card}>
-            <Text style={subStyles.rowLabel}>{MOCK_PROXIMA_CITA.servicio}</Text>
+            <Text style={subStyles.rowLabel}>{FLUJO_CITA_PLACEHOLDER.servicio}</Text>
             <Text style={subStyles.rowSub}>
-              {MOCK_PROXIMA_CITA.fechaLabel} · {MOCK_PROXIMA_CITA.horaLabel}
+              {FLUJO_CITA_PLACEHOLDER.fechaLabel} · {FLUJO_CITA_PLACEHOLDER.horaLabel}
             </Text>
             <View style={{ height: spacing.md }} />
             <Text style={subStyles.bullets}>
@@ -386,7 +431,7 @@ export function ClientSubScreenBody({
           </View>
           <SalonButton
             variant="outlineGray"
-            title="Ver calendario (demo)"
+            title="Ver calendario"
             fullWidth
             onPress={() => {}}
           />
@@ -411,7 +456,7 @@ export function ClientSubScreenBody({
       return (
         <>
           <View style={subStyles.card}>
-            <Text style={checkLine}>Tu cita {MOCK_PROXIMA_CITA.servicio} quedará confirmada.</Text>
+            <Text style={checkLine}>Tu cita {FLUJO_CITA_PLACEHOLDER.servicio} quedará confirmada.</Text>
             <Text style={checkLine}>
               ✓ Recordatorio 24 h antes{'\n'}✓ Puedes cambiar fecha desde Mis citas
             </Text>
@@ -419,7 +464,7 @@ export function ClientSubScreenBody({
           <SalonButton variant="outlineGray" title="Volver" fullWidth onPress={onClose} />
           <SalonButton
             variant="solidGold"
-            title="Confirmar · demo"
+            title="Confirmar"
             fullWidth
             style={{ marginTop: spacing.sm }}
             onPress={onClose}
@@ -428,7 +473,14 @@ export function ClientSubScreenBody({
       );
 
     case CLIENT_SUB.EDITAR_PERFIL:
-      return <ProfileEditForm onClose={onClose} />;
+      return (
+        <ProfileEditForm
+          clienteRow={clienteRow}
+          sessionUser={sessionUser}
+          onClose={onClose}
+          onSaved={onClienteUpdated}
+        />
+      );
     case CLIENT_SUB.CONTACTO:
       return <ContactoBody />;
     case CLIENT_SUB.NOTIFICACIONES:
@@ -444,7 +496,7 @@ export function ClientSubScreenBody({
             <Text style={subStyles.rowLabel}>Efectivo en salón</Text>
             <Text style={subStyles.rowSub}>Sin cargos guardados.</Text>
           </View>
-          <SalonButton variant="outlineGold" title="Agregar método · demo" fullWidth onPress={onClose} />
+          <SalonButton variant="outlineGold" title="Agregar método" fullWidth onPress={onClose} />
         </>
       );
 
@@ -471,11 +523,14 @@ export function ClientSubScreenBody({
         </>
       );
 
+    case CLIENT_SUB.MIS_FACTURAS:
+      return <MisFacturasBody clienteId={clienteRow?.id} onClose={onClose} />;
+
     case CLIENT_SUB.CARRITO:
       return (
         <>
           <View style={subStyles.card}>
-            <Text style={subStyles.rowLabel}>Tu carrito está vacío (demo)</Text>
+            <Text style={subStyles.rowLabel}>Tu carrito está vacío</Text>
             <Text style={subStyles.bullets}>
               Aquí listaremos shampoo, tratamientos y complementos antes de pasar por caja. Por ahora
               es solo navegación.
@@ -492,17 +547,16 @@ export function ClientSubScreenBody({
       return (
         <>
           <Text style={[subStyles.bullets, { marginBottom: spacing.md }]}>
-            En modo demo esto borra tu sesión local en el dispositivo y te devuelve al inicio de sesión.
-            El cierre real con servidor llegará después.
+            Cerrarás la sesión en este dispositivo. Podés volver a entrar cuando quieras.
           </Text>
           <SalonButton variant="outlineGray" title="Cancelar" fullWidth onPress={onClose} />
           <SalonButton
             variant="solidGold"
-            title="Salir · demo"
+            title="Salir"
             fullWidth
             style={{ marginTop: spacing.sm }}
             onPress={async () => {
-              await onLogoutDemo?.();
+              await onLogout?.();
               onClose();
             }}
           />
@@ -539,7 +593,7 @@ export function ClientSubScreenBody({
 
     default:
       return (
-        <Text style={subStyles.muted}>Pantalla sin maqueta definida ({String(screenId)}).</Text>
+        <Text style={subStyles.muted}>Pantalla en preparación ({String(screenId)}).</Text>
       );
   }
 }
@@ -565,7 +619,11 @@ function FieldStub() {
 
 function Steps() {
   const subStyles = useSubStyles();
-  const bullets = ['Elige categoría del servicio', 'Selecciona bloque disponible', 'Confirma y recibe correo demo'];
+  const bullets = [
+    'Elige categoría del servicio',
+    'Selecciona bloque disponible',
+    'Confirma y recibe la confirmación por correo',
+  ];
   return (
     <View style={[subStyles.card, padTop]}>
       {bullets.map((b, i) => (

@@ -25,7 +25,7 @@ export function SalonModulePlaceholder({ module: mod, onBack }) {
             .
           </Text>
         </View>
-        <SalonButton title="Acción principal (demo)" variant="heroGold" fullWidth onPress={() => {}} />
+        <SalonButton title="Continuar" variant="heroGold" fullWidth onPress={() => {}} />
         <SalonButton title="Secundaria" variant="outlineGray" fullWidth onPress={() => {}} />
       </SubScreenChrome>
     </>

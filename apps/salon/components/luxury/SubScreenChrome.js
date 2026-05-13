@@ -89,6 +89,9 @@ function createChromeStyles(c) {
       justifyContent: 'space-between',
       marginBottom: spacing.md,
     },
+    topRowDense: {
+      marginBottom: spacing.xs,
+    },
     backRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -124,6 +127,9 @@ function createChromeStyles(c) {
       flexGrow: 1,
       paddingTop: spacing.sm,
     },
+    scrollInnerTightTop: {
+      paddingTop: 0,
+    },
     scrollInnerNoScroll: {
       flex: 1,
       paddingTop: spacing.sm,
@@ -142,17 +148,22 @@ export function SubScreenChrome({
   bottomPadding,
   rightAction,
   disableBodyScroll,
+  /** Oculta título y subtítulo (solo barra Volver). */
+  hideTitles = false,
+  /** Sin padding horizontal en el cuerpo (pantalla completa al ancho). */
+  edgeToEdge = false,
 }) {
   const { colors: c } = useTheme();
   const styles = useMemo(() => createChromeStyles(c), [c]);
   const insets = useSafeAreaInsets();
   const padBottom =
     bottomPadding ?? Math.max(insets.bottom + spacing.md, spacing.xl);
+  const padH = edgeToEdge ? 0 : spacing.lg;
 
   return (
     <View style={styles.root}>
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
-        <View style={styles.topRow}>
+        <View style={[styles.topRow, hideTitles && styles.topRowDense]}>
           <TouchableOpacity
             style={styles.backRow}
             onPress={onBack}
@@ -165,15 +176,15 @@ export function SubScreenChrome({
           </TouchableOpacity>
           {rightAction ? <View style={styles.rightActionWrap}>{rightAction}</View> : null}
         </View>
-        {title ? <Text style={styles.display}>{title}</Text> : null}
-        {subtitle ? <Text style={styles.lead}>{subtitle}</Text> : null}
+        {!hideTitles && title ? <Text style={styles.display}>{title}</Text> : null}
+        {!hideTitles && subtitle ? <Text style={styles.lead}>{subtitle}</Text> : null}
       </View>
 
       {disableBodyScroll ? (
         <View
           style={[
             styles.scrollInnerNoScroll,
-            { paddingHorizontal: spacing.lg, paddingBottom: padBottom },
+            { paddingHorizontal: padH, paddingBottom: padBottom },
           ]}
         >
           {children}
@@ -183,7 +194,8 @@ export function SubScreenChrome({
           style={styles.scroll}
           contentContainerStyle={[
             styles.scrollInner,
-            { paddingHorizontal: spacing.lg, paddingBottom: padBottom },
+            hideTitles ? styles.scrollInnerTightTop : null,
+            { paddingHorizontal: padH, paddingBottom: padBottom },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}

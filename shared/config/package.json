@@ -4,6 +4,7 @@
   "main": "supabaseClient.js",
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
-    "@react-native-async-storage/async-storage": "2.2.0"
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo-file-system": "~19.0.22"
   }
 }

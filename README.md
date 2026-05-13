@@ -182,6 +182,17 @@ eas build --platform ios --profile preview
 
 ## 🗄️ Conexión con Supabase
 
+### Documentación de esquema y RLS (fuente de verdad)
+
+El inventario auditable de **tablas, columnas, FK y políticas RLS** está en:
+
+- **[`docs/supabase/README.md`](docs/supabase/README.md)** — índice y enlaces
+- Columnas `public` → [`docs/supabase/schema-columns-public.md`](docs/supabase/schema-columns-public.md)
+- Políticas RLS → [`docs/supabase/rls-policies-public.md`](docs/supabase/rls-policies-public.md)
+- Notas y funciones (`is_staff_or_admin`, etc.) → [`docs/supabase/notes.md`](docs/supabase/notes.md)
+
+La guía general de integración (env, flujos) sigue en **[`SUPABASE_INTEGRATION.md`](SUPABASE_INTEGRATION.md)** en la raíz del monorepo.
+
 ### IMPORTANTE
 - **NO se crearán tablas nuevas** - La configuración asume que tu base de datos ya está lista
 - El archivo `shared/config/supabaseClient.js` contiene el cliente compartido

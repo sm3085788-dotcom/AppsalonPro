@@ -6,8 +6,11 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors as colorsLight, colorsDark } from '@appsalon/design-tokens';
+import * as NavigationBar from 'expo-navigation-bar';
+import * as SystemUI from 'expo-system-ui';
 
 const STORAGE_KEY = '@appsalon/salon/colorScheme';
 
@@ -46,6 +49,20 @@ export function ThemeProvider({ children }) {
       /* ignore */
     }
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const isDark = scheme === 'dark';
+    const bg = isDark ? colorsDark.background : colorsLight.background;
+    void SystemUI.setBackgroundColorAsync(bg);
+    if (Platform.OS === 'android') {
+      try {
+        NavigationBar.setStyle(isDark ? 'dark' : 'light');
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [ready, scheme]);
 
   const value = useMemo(() => {
     const isDark = scheme === 'dark';

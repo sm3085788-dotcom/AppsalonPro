@@ -88,8 +88,8 @@
       "expo-document-picker",
       "expo-calendar",
       "expo-location",
-      "expo-av",
-      "expo-media-library"
+      "expo-media-library",
+      "expo-video"
     ]
   }
 }

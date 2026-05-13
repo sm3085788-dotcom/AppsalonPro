@@ -9,17 +9,27 @@ import {
   Platform,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { supabase, db } from '@appsalon/shared-config';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { AuraLogoMark } from '../components/AuraLogoMark';
+import { setLocalProfile } from './onboardingStorage';
+
+const hasSupabaseEnv = Boolean(
+  process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim(),
+);
+
+const MIN_PASSWORD = hasSupabaseEnv ? 6 : 4;
 
 /**
- * Login + registro solo demo (sin API). Guarda perfil vía `onAuthSuccess`.
+ * Inicio de sesión y registro: Supabase cuando hay URL y anon key; si no, perfil solo en el dispositivo.
  */
-export function DemoAuthScreen({ onAuthSuccess }) {
+export function ClientAuthScreen({ onAuthSuccess }) {
   const { colors: c } = useTheme();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('login'); // 'login' | 'register'
@@ -29,6 +39,7 @@ export function DemoAuthScreen({ onAuthSuccess }) {
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [referralCode, setReferralCode] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -132,48 +143,145 @@ export function DemoAuthScreen({ onAuthSuccess }) {
 
   const validateEmail = (v) => /\S+@\S+\.\S+/.test(v.trim());
 
-  const submitLogin = () => {
+  const linkClienteFicha = async (user, displayName, referralCode) => {
+    if (!user?.id) return;
+    const { error } = await db.clientes.ensureFromAuth({
+      userId: user.id,
+      nombre: displayName,
+      email: user.email,
+      referralCode,
+    });
+    if (error && __DEV__) {
+      console.warn('[clientes.ensureFromAuth]', error.message);
+    }
+  };
+
+  const submitLogin = async () => {
     const em = email.trim();
     const pw = password;
     if (!validateEmail(em)) {
-      Alert.alert('Demo', 'Ingresá un correo con formato válido.');
+      Alert.alert('Correo', 'Ingresá un correo con formato válido.');
       return;
     }
-    if (pw.length < 4) {
-      Alert.alert('Demo', 'La contraseña debe tener al menos 4 caracteres.');
+    if (pw.length < MIN_PASSWORD) {
+      Alert.alert(
+        'Contraseña',
+        `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.`,
+      );
       return;
     }
-    const displayName = em.split('@')[0] || 'Cliente';
-    onAuthSuccess({ name: displayName, email: em });
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (hasSupabaseEnv) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: em,
+          password: pw,
+        });
+        if (error) {
+          Alert.alert('Inicio de sesión', error.message || 'No se pudo iniciar sesión.');
+          return;
+        }
+        const u = data.user;
+        const name =
+          (u?.user_metadata?.full_name && String(u.user_metadata.full_name).trim()) ||
+          u?.email?.split('@')[0] ||
+          'Cliente';
+        await linkClienteFicha(u, name);
+        onAuthSuccess({ name, email: u?.email || em });
+        return;
+      }
+      const displayName = em.split('@')[0] || 'Cliente';
+      const profile = { name: displayName, email: em };
+      await setLocalProfile(profile);
+      onAuthSuccess(profile);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const submitRegister = () => {
+  const submitRegister = async () => {
     const n = nombre.trim();
     const em = email.trim();
     const pw = password;
     if (n.length < 2) {
-      Alert.alert('Demo', 'Ingresá tu nombre (mínimo 2 caracteres).');
+      Alert.alert('Nombre', 'Ingresá tu nombre (mínimo 2 caracteres).');
       return;
     }
     if (!validateEmail(em)) {
-      Alert.alert('Demo', 'Ingresá un correo válido.');
+      Alert.alert('Correo', 'Ingresá un correo válido.');
       return;
     }
-    if (pw.length < 4) {
-      Alert.alert('Demo', 'La contraseña debe tener al menos 4 caracteres.');
+    if (pw.length < MIN_PASSWORD) {
+      Alert.alert(
+        'Contraseña',
+        `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.`,
+      );
       return;
     }
     if (pw !== password2) {
-      Alert.alert('Demo', 'Las contraseñas no coinciden.');
+      Alert.alert('Contraseña', 'Las contraseñas no coinciden.');
       return;
     }
     const ref = referralCode.trim();
-    onAuthSuccess(
-      ref
-        ? { name: n, email: em, referralCode: ref }
-        : { name: n, email: em },
-    );
+    const profile = ref ? { name: n, email: em, referralCode: ref } : { name: n, email: em };
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (hasSupabaseEnv) {
+        const { data, error } = await supabase.auth.signUp({
+          email: em,
+          password: pw,
+          options: {
+            data: { full_name: n },
+          },
+        });
+        if (error) {
+          Alert.alert('Registro', error.message || 'No se pudo crear la cuenta.');
+          return;
+        }
+        if (!data.session && data.user) {
+          Alert.alert(
+            'Confirmá tu correo',
+            'Si tu salón exige verificación por email, revisá la bandeja de entrada para activar la cuenta.',
+          );
+        }
+        const u = data.session?.user ?? data.user;
+        if (u) {
+          await linkClienteFicha(u, n, ref || undefined);
+          onAuthSuccess({
+            name: n,
+            email: u.email || em,
+            ...(ref ? { referralCode: ref } : {}),
+          });
+        }
+        return;
+      }
+      await setLocalProfile(profile);
+      onAuthSuccess(profile);
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const enterDemoLocal = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const profile = {
+        name: 'Cliente demo',
+        email: 'demo-local@appsalon.invalid',
+      };
+      await setLocalProfile(profile);
+      onAuthSuccess(profile);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const subtitle = hasSupabaseEnv
+    ? 'Iniciá sesión con la cuenta que te dio el salón o creá una nueva.'
+    : 'Sin conexión a Supabase en esta compilación: el perfil se guarda solo en este dispositivo.';
 
   return (
     <KeyboardAvoidingView
@@ -190,9 +298,7 @@ export function DemoAuthScreen({ onAuthSuccess }) {
             <AuraLogoMark diameter={124} />
           </View>
           <Text style={styles.title}>Aura Salón</Text>
-          <Text style={styles.subtitle}>
-            Accedé en modo demo: sin servidor ni cuenta real todavía.
-          </Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
 
         <View style={styles.segment}>
@@ -237,7 +343,7 @@ export function DemoAuthScreen({ onAuthSuccess }) {
           style={styles.input}
           value={email}
           onChangeText={setEmail}
-          placeholder="correo@ejemplo.com"
+          placeholder="tu@correo.com"
           placeholderTextColor={c.foregroundSubtle}
           keyboardType="email-address"
           autoCapitalize="none"
@@ -249,7 +355,7 @@ export function DemoAuthScreen({ onAuthSuccess }) {
           style={styles.input}
           value={password}
           onChangeText={setPassword}
-          placeholder="Mínimo 4 caracteres"
+          placeholder={`Mínimo ${MIN_PASSWORD} caracteres`}
           placeholderTextColor={c.foregroundSubtle}
           secureTextEntry
         />
@@ -284,25 +390,29 @@ export function DemoAuthScreen({ onAuthSuccess }) {
           </>
         ) : null}
 
-        {mode === 'login' ? (
-          <SalonButton
-            title="Ingresar · demo"
-            variant="heroGold"
-            fullWidth
-            onPress={submitLogin}
-          />
+        {busy ? (
+          <ActivityIndicator style={{ marginVertical: spacing.md }} color={c.primary} />
+        ) : mode === 'login' ? (
+          <SalonButton title="Ingresar" variant="heroGold" fullWidth onPress={submitLogin} />
         ) : (
-          <SalonButton
-            title="Crear cuenta · demo"
-            variant="heroGold"
-            fullWidth
-            onPress={submitRegister}
-          />
+          <SalonButton title="Crear cuenta" variant="heroGold" fullWidth onPress={submitRegister} />
         )}
 
+        <SalonButton
+          title="Entrar en modo demo (sin cuenta)"
+          variant="outlineGray"
+          fullWidth
+          style={{ marginTop: spacing.md }}
+          onPress={enterDemoLocal}
+          disabled={busy}
+        />
+        <Text style={[styles.hint, { marginTop: spacing.sm, fontSize: 11 }]}>
+          Solo en esta pantalla: no usa Supabase ni contraseña. Sirve para revisar la app; los datos no se
+          sincronizan con el salón.
+        </Text>
+
         <Text style={styles.hint}>
-          Modo demostración: los datos no se envían a ningún servidor. Más adelante conectaremos
-          autenticación real con el salón.
+          Al continuar aceptás las prácticas descritas en la política de privacidad del salón.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

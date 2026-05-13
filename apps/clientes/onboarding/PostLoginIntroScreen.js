@@ -7,7 +7,7 @@ import { SalonButton } from '../components/luxury/SalonButton';
 import { AuraLogoMark } from '../components/AuraLogoMark';
 
 /**
- * Pantalla breve tras login/registro demo: logo + bienvenida antes del tour.
+ * Pantalla breve tras iniciar sesión: logo + bienvenida antes del tour.
  */
 export function PostLoginIntroScreen({ profile, onContinue }) {
   const { colors: c } = useTheme();
@@ -83,7 +83,7 @@ export function PostLoginIntroScreen({ profile, onContinue }) {
         <Text style={styles.name}>{firstName}</Text>
         <Text style={styles.lead}>
           En un momento te mostramos un recorrido corto por la app: citas, tienda, tendencias y tu
-          perfil. Todo es demo hasta conectar el backend.
+          perfil. Los datos de tu cuenta se sincronizan con el salón cuando esté configurado.
         </Text>
         {profile?.referralCode ? (
           <Text style={styles.refNote}>

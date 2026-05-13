@@ -41,7 +41,7 @@ const TIERS = [
       'Puntos Aura x2 en visitas confirmadas con tu código de cliente.',
       'Canal preferente con recepción / WhatsApp del salón para agendar.',
       'Acceso anticipado a promociones, lanzamientos y eventos cerrados.',
-      'Un upgrade de servicio al año sujeto a disponibilidad (demo).',
+      'Un upgrade de servicio al año sujeto a disponibilidad.',
     ],
   },
 ];
@@ -129,7 +129,7 @@ export function MembresiasBody() {
   return (
     <>
       <Text style={styles.intro}>
-        Elegí tu camino de membresía (demo). El salón define en App Salón cómo se sube de nivel y
+        Elegí tu camino de membresía. El salón define en App Salón cómo se sube de nivel y
         vigencia de cada beneficio.
       </Text>
 

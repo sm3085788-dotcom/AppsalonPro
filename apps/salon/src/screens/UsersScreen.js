@@ -9,7 +9,7 @@ export default function UsersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState('todos'); // 'todos', 'admin', 'staff'
+  const [filter, setFilter] = useState('todos'); // 'todos' | 'admin'
   const [currentUser, setCurrentUser] = useState(null);
   const [stats, setStats] = useState(null);
 
@@ -32,9 +32,6 @@ export default function UsersScreen() {
       switch (filter) {
         case 'admin':
           result = await db.profiles.getAdmins();
-          break;
-        case 'staff':
-          result = await db.profiles.getStaff();
           break;
         default:
           result = await db.profiles.getAll();
@@ -115,30 +112,13 @@ export default function UsersScreen() {
     }
   };
 
-  const changeUserRole = async (userId, currentRole) => {
-    const newRole = currentRole === 'admin' ? 'staff' : 'admin';
-    
-    try {
-      const { error } = await db.profiles.changeRole(userId, newRole);
-      
-      if (error) {
-        console.error('Error al cambiar rol:', error);
-        return;
-      }
-
-      loadUsers();
-      loadStats();
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  };
-
   const getRoleColor = (role) => {
     return role === 'admin' ? '#D4AF37' : '#2196F3';
   };
 
   const getRoleIcon = (role) => {
-    return role === 'admin' ? Crown : UserCheck;
+    if (role === 'admin') return Crown;
+    return UserCheck;
   };
 
   const isCurrentUserAdmin = currentUser?.role === 'admin';
@@ -179,9 +159,16 @@ export default function UsersScreen() {
             </View>
 
             <View className="bg-white rounded-2xl p-4 shadow-sm min-w-[120px]">
-              <Text className="text-xs text-[#C0C0C0] font-light mb-1">Staff</Text>
-              <Text className="text-2xl font-light text-[#2196F3]">{stats.staff}</Text>
+              <Text className="text-xs text-[#C0C0C0] font-light mb-1">Otros perfiles</Text>
+              <Text className="text-2xl font-light text-[#2196F3]">{stats.otrosPerfiles}</Text>
             </View>
+
+            {stats.legacyStaff > 0 ? (
+              <View className="bg-white rounded-2xl p-4 shadow-sm min-w-[120px]">
+                <Text className="text-xs text-[#C0C0C0] font-light mb-1">Staff legacy</Text>
+                <Text className="text-2xl font-light text-[#90A4AE]">{stats.legacyStaff}</Text>
+              </View>
+            ) : null}
 
             <View className="bg-white rounded-2xl p-4 shadow-sm min-w-[140px]">
               <Text className="text-xs text-[#C0C0C0] font-light mb-1">Con Marketing</Text>
@@ -223,15 +210,6 @@ export default function UsersScreen() {
           >
             <Text className={`font-light ${filter === 'admin' ? 'text-white' : 'text-[#2C2C2C]'}`}>
               Admins
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            onPress={() => setFilter('staff')}
-            className={`px-4 py-2 rounded-full ${filter === 'staff' ? 'bg-[#2196F3]' : 'bg-white'}`}
-          >
-            <Text className={`font-light ${filter === 'staff' ? 'text-white' : 'text-[#2C2C2C]'}`}>
-              Staff
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -283,18 +261,6 @@ export default function UsersScreen() {
                         </Text>
                       </View>
                     </View>
-
-                    {/* Cambiar rol (solo para admins) */}
-                    {isCurrentUserAdmin && !isCurrentUser && (
-                      <TouchableOpacity 
-                        onPress={() => changeUserRole(user.id, user.role)}
-                        className="px-3 py-1 rounded-full bg-[#F0F0F0]"
-                      >
-                        <Text className="text-xs font-light text-[#2C2C2C]">
-                          Cambiar rol
-                        </Text>
-                      </TouchableOpacity>
-                    )}
                   </View>
 
                   {/* Información de Contacto */}

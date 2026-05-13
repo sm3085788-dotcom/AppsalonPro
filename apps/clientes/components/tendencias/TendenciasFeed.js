@@ -14,20 +14,24 @@ import {
   Share,
   Linking,
   Platform,
+  Image,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Heart, MessageCircle, Share2, CircleHelp, ChevronLeft, Send } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { db, supabase } from '@appsalon/shared-config';
 
 const APPSALON_PHONE = '+50257199107';
 
 const TREND_VIDEOS = [
   {
     id: 'trend-1',
+    mediaType: 'video',
     videoUri:
       'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    imageUri: null,
     title: 'Balayage caramelo en capas',
     caption: 'Técnica de luz natural para morenas · App Salón',
     likes: 245,
@@ -35,8 +39,10 @@ const TREND_VIDEOS = [
   },
   {
     id: 'trend-2',
+    mediaType: 'video',
     videoUri:
       'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    imageUri: null,
     title: 'Glow treatment anti-frizz',
     caption: 'Acabado espejo para cabello poroso · App Salón',
     likes: 198,
@@ -44,8 +50,10 @@ const TREND_VIDEOS = [
   },
   {
     id: 'trend-3',
+    mediaType: 'video',
     videoUri:
       'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    imageUri: null,
     title: 'Bob texturizado 2026',
     caption: 'Corte con movimiento y secado rápido · App Salón',
     likes: 322,
@@ -54,10 +62,10 @@ const TREND_VIDEOS = [
 ];
 
 /**
- * Comentarios demo (simulan usuarios de App Clientes). Los nombres son solo texto;
- * en producción vendrían del API y no llevarían acción a perfil ajeno.
+ * Comentarios locales para videos de ejemplo (sin `postId` en Supabase).
+ * Cuando el post existe, los comentarios salen de `db.marketingComments`.
  */
-const DEMO_COMMENTS_BY_VIDEO = {
+const OFFLINE_PLACEHOLDER_COMMENTS = {
   'trend-1': [
     {
       id: 'c1',
@@ -135,10 +143,72 @@ function initialsFromDisplayName(name) {
   return '??';
 }
 
-function CommentsPanel({ videoId, onClose }) {
+function formatRelativeAgo(iso) {
+  if (!iso) return '';
+  try {
+    const t = new Date(iso).getTime();
+    const diff = Date.now() - t;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'ahora';
+    if (mins < 60) return `hace ${mins} min`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `hace ${hrs} h`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `hace ${days} d`;
+    return new Date(iso).toLocaleDateString('es-GT', { dateStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+function CommentsPanel({ videoId, postId, onClose }) {
   const { colors: c } = useTheme();
-  const rows = DEMO_COMMENTS_BY_VIDEO[videoId] ?? [];
+  const offlinePlaceholderRows = OFFLINE_PLACEHOLDER_COMMENTS[videoId] ?? [];
+  const [apiRows, setApiRows] = useState([]);
+  const [apiLoading, setApiLoading] = useState(false);
   const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const useRemote = postId != null;
+
+  useEffect(() => {
+    if (!useRemote) {
+      setApiRows([]);
+      return undefined;
+    }
+    let alive = true;
+    (async () => {
+      setApiLoading(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? null;
+      const { data, error } = await db.marketingComments.getByPost(postId);
+      if (!alive) return;
+      setApiLoading(false);
+      if (error || !data) {
+        setApiRows([]);
+        return;
+      }
+      const filtered = data.filter(
+        (row) =>
+          row.moderation_status === 'visible' ||
+          (row.moderation_status === 'pending' && uid && row.author_id === uid),
+      );
+      setApiRows(
+        filtered.map((row) => ({
+          id: String(row.id),
+          displayName: row.author_name || 'Cliente',
+          body: row.content || '',
+          ago: formatRelativeAgo(row.created_at),
+          pending: row.moderation_status === 'pending',
+        })),
+      );
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [postId, useRemote]);
+
+  const rows = useRemote ? apiRows : offlinePlaceholderRows;
 
   const styles = useMemo(
     () =>
@@ -278,11 +348,68 @@ function CommentsPanel({ videoId, onClose }) {
     [c],
   );
 
-  const handleSendDemo = () => {
+  const reloadRemote = async () => {
+    if (!useRemote) return;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const uid = sessionData?.session?.user?.id ?? null;
+    const { data, error } = await db.marketingComments.getByPost(postId);
+    if (error || !data) return;
+    const filtered = data.filter(
+      (row) =>
+        row.moderation_status === 'visible' ||
+        (row.moderation_status === 'pending' && uid && row.author_id === uid),
+    );
+    setApiRows(
+      filtered.map((row) => ({
+        id: String(row.id),
+        displayName: row.author_name || 'Cliente',
+        body: row.content || '',
+        ago: formatRelativeAgo(row.created_at),
+        pending: row.moderation_status === 'pending',
+      })),
+    );
+  };
+
+  const handleSend = async () => {
     const text = draft.trim();
     if (!text) return;
-    Alert.alert('Demo', 'Los comentarios se guardarán cuando conectes el backend.');
-    setDraft('');
+    if (!useRemote) {
+      Alert.alert(
+        'Comentarios',
+        'Este clip es de ejemplo. Los comentarios reales aparecen en las publicaciones del salón.',
+      );
+      setDraft('');
+      return;
+    }
+    setSending(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData?.session;
+      const authorName =
+        session?.user?.user_metadata?.full_name ||
+        session?.user?.email?.split('@')[0] ||
+        'Cliente';
+      const { error } = await db.marketingComments.create({
+        post_id: postId,
+        content: text,
+        author_id: session?.user?.id ?? null,
+        author_name: authorName,
+        moderation_status: 'pending',
+      });
+      if (error) {
+        Alert.alert(
+          'No se pudo enviar',
+          error.message ||
+            'Si ves error de permisos, en Supabase hay que permitir INSERT de clientes autenticados en marketing_comments.',
+        );
+        return;
+      }
+      setDraft('');
+      await reloadRemote();
+      Alert.alert('Enviado', 'El salón verá tu mensaje en Pedidos. Cuando lo apruebe, aparecerá aquí para todos.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -300,8 +427,9 @@ function CommentsPanel({ videoId, onClose }) {
         </TouchableOpacity>
       </View>
       <Text style={styles.commentHint}>
-        Podés leer lo que publicó la comunidad. Los nombres son solo referencia: no se pueden abrir
-        perfiles ajenos desde aquí.
+        {useRemote
+          ? 'Consultas y comentarios sobre esta publicación. El salón puede moderar antes de mostrarlos a todos.'
+          : 'Video de ejemplo. Los comentarios reales están en las publicaciones del salón.'}
       </Text>
 
       <ScrollView
@@ -311,8 +439,12 @@ function CommentsPanel({ videoId, onClose }) {
         showsVerticalScrollIndicator={rows.length > 3}
         keyboardShouldPersistTaps="handled"
       >
-        {rows.length === 0 ? (
-          <Text style={styles.commentEmpty}>Aún no hay comentarios en este video.</Text>
+        {apiLoading && useRemote ? (
+          <Text style={styles.commentEmpty}>Cargando comentarios…</Text>
+        ) : rows.length === 0 ? (
+          <Text style={styles.commentEmpty}>
+            {useRemote ? 'Aún no hay comentarios visibles en esta publicación.' : 'Aún no hay comentarios en este video.'}
+          </Text>
         ) : (
           rows.map((row) => (
             <View key={row.id} style={styles.commentRow}>
@@ -322,6 +454,9 @@ function CommentsPanel({ videoId, onClose }) {
               <View style={styles.commentBodyCol}>
                 <Text style={styles.commentAuthor} selectable={false}>
                   {row.displayName}
+                  {row.pending ? (
+                    <Text style={{ color: c.foregroundMuted, fontSize: 11 }}> · pendiente</Text>
+                  ) : null}
                 </Text>
                 <Text style={styles.commentMsg}>{row.body}</Text>
                 <Text style={styles.commentAgo}>{row.ago}</Text>
@@ -342,13 +477,15 @@ function CommentsPanel({ videoId, onClose }) {
           maxLength={500}
           textAlignVertical="center"
           accessibilityLabel="Escribir comentario"
+          editable={!sending}
         />
         <TouchableOpacity
           style={styles.commentSendIconBtn}
-          onPress={handleSendDemo}
+          onPress={handleSend}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel="Enviar comentario"
+          disabled={sending}
         >
           <Send size={22} color={c.primary} strokeWidth={2.2} />
         </TouchableOpacity>
@@ -361,12 +498,60 @@ function shareTo(url) {
   return Linking.openURL(url).catch(() => {});
 }
 
+function mapPostToTrendItem(post) {
+  const url = post.media_url;
+  if (!url || typeof url !== 'string') return null;
+  let mediaType = String(post.content_type || '').toLowerCase();
+  if (mediaType !== 'image' && mediaType !== 'video') {
+    mediaType = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) ? 'image' : 'video';
+  }
+  return {
+    id: `post-${post.id}`,
+    postId: post.id,
+    mediaType,
+    videoUri: mediaType === 'video' ? url : null,
+    imageUri: mediaType === 'image' ? url : null,
+    title: post.title || 'Tendencia',
+    caption: post.body || '',
+    likes: Number(post.reactions_count ?? post.reactions ?? post.views_count ?? 0) || 0,
+    comments: Number(post.comments_count ?? 0) || 0,
+  };
+}
+
 export function TendenciasFeed({ onBack }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const [activeId, setActiveId] = useState(TREND_VIDEOS[0].id);
+  const [remoteFeed, setRemoteFeed] = useState(null);
+  const [activeId, setActiveId] = useState(null);
   const [liked, setLiked] = useState({});
   const [commentOpen, setCommentOpen] = useState({});
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error } = await db.marketingPosts.getPublishedTendenciasFeed(40);
+      if (!alive) return;
+      if (error || !data?.length) {
+        setRemoteFeed([]);
+        return;
+      }
+      const mapped = data.map(mapPostToTrendItem).filter(Boolean);
+      setRemoteFeed(mapped);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const feedVideos = useMemo(() => {
+    if (remoteFeed && remoteFeed.length > 0) return remoteFeed;
+    return TREND_VIDEOS;
+  }, [remoteFeed]);
+
+  useEffect(() => {
+    if (!feedVideos.length) return;
+    setActiveId((cur) => (cur && feedVideos.some((x) => x.id === cur) ? cur : feedVideos[0].id));
+  }, [feedVideos]);
 
   const onViewRef = useRef(({ viewableItems }) => {
     const visible = viewableItems?.[0]?.item?.id;
@@ -377,11 +562,11 @@ export function TendenciasFeed({ onBack }) {
 
   const toggledLikes = useMemo(
     () =>
-      TREND_VIDEOS.reduce((acc, v) => {
+      feedVideos.reduce((acc, v) => {
         acc[v.id] = v.likes + (liked[v.id] ? 1 : 0);
         return acc;
       }, {}),
-    [liked],
+    [liked, feedVideos],
   );
 
   /** Con panel de comentarios abierto, el feed vertical no debe cambiar de video. */
@@ -395,13 +580,19 @@ export function TendenciasFeed({ onBack }) {
     return hit ? hit[0] : null;
   }, [commentOpen]);
 
+  const openCommentsPostId = useMemo(() => {
+    if (!openCommentsVideoId) return null;
+    const item = feedVideos.find((x) => x.id === openCommentsVideoId);
+    return item?.postId != null ? item.postId : null;
+  }, [feedVideos, openCommentsVideoId]);
+
   const closeCommentsModal = () => {
     if (!openCommentsVideoId) return;
     setCommentOpen((prev) => ({ ...prev, [openCommentsVideoId]: false }));
   };
 
   const onShare = async (video) => {
-    const text = `${video.title} · ${video.caption}\nVideo de App Salón`;
+    const text = `${video.title} · ${video.caption}\n${video.mediaType === 'image' ? 'Imagen' : 'Video'} · App Salón`;
     try {
       await Share.share({
         message: text,
@@ -453,7 +644,11 @@ export function TendenciasFeed({ onBack }) {
             ]}
           >
             {openCommentsVideoId ? (
-              <CommentsPanel videoId={openCommentsVideoId} onClose={closeCommentsModal} />
+              <CommentsPanel
+                videoId={openCommentsVideoId}
+                postId={openCommentsPostId}
+                onClose={closeCommentsModal}
+              />
             ) : null}
           </View>
           <TouchableOpacity
@@ -469,7 +664,7 @@ export function TendenciasFeed({ onBack }) {
       </Modal>
 
       <FlatList
-        data={TREND_VIDEOS}
+        data={feedVideos}
         keyExtractor={(item) => item.id}
         pagingEnabled
         bounces={false}
@@ -489,7 +684,7 @@ export function TendenciasFeed({ onBack }) {
         viewabilityConfig={viewConfigRef.current}
         renderItem={({ item }) => {
           return (
-            <TrendVideoCard
+            <TrendMediaCard
               item={item}
               width={width}
               height={height}
@@ -511,6 +706,84 @@ export function TendenciasFeed({ onBack }) {
   );
 }
 
+function TrendSlideCopy({ item }) {
+  return (
+    <View style={styles.bottomCopy} pointerEvents="none">
+      <Text style={styles.slideTitle} numberOfLines={2}>
+        {item.title}
+      </Text>
+      <Text style={styles.slideCaption} numberOfLines={3}>
+        {item.caption}
+      </Text>
+    </View>
+  );
+}
+
+function TrendMediaCard(props) {
+  const isImage = Boolean(props.item.imageUri) || props.item.mediaType === 'image';
+  if (isImage) {
+    return <TrendImageCard {...props} />;
+  }
+  return <TrendVideoCard {...props} />;
+}
+
+function TrendImageCard({
+  item,
+  width,
+  height,
+  isActive: _isActive,
+  isLiked,
+  isCommentOpen,
+  likes,
+  onToggleLike,
+  onToggleComments,
+  onShare,
+  onInterest,
+}) {
+  const { colors: tc } = useTheme();
+  const uri = item.imageUri || item.videoUri;
+  return (
+    <View style={[styles.videoCard, { width, height }]} collapsable={false}>
+      {uri ? (
+        <Image source={{ uri }} style={[styles.video, { width, height }]} resizeMode="cover" />
+      ) : null}
+      <View style={styles.overlay}>
+        <TrendSlideCopy item={item} />
+        <View style={styles.actions}>
+          <TouchableOpacity style={styles.actionBtn} onPress={onToggleLike}>
+            <Heart
+              size={22}
+              color={isLiked ? '#FF4D6D' : '#FFFFFF'}
+              fill={isLiked ? '#FF4D6D' : 'transparent'}
+              strokeWidth={2}
+            />
+            <Text style={styles.actionTxt}>{likes}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={onToggleComments}>
+            <MessageCircle
+              size={22}
+              color={isCommentOpen ? tc.primary : '#FFF'}
+              strokeWidth={2}
+            />
+            <Text style={styles.actionTxt}>{item.comments}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={onShare}>
+            <Share2 size={22} color="#FFF" strokeWidth={2} />
+            <Text style={styles.actionTxt}>Compartir</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={onInterest}>
+            <CircleHelp size={22} color="#FFF" strokeWidth={2} />
+            <Text style={styles.actionTxt}>Me interesa</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function TrendVideoCard({
   item,
   width,
@@ -525,7 +798,7 @@ function TrendVideoCard({
   onInterest,
 }) {
   const { colors: tc } = useTheme();
-  const player = useVideoPlayer(item.videoUri, (p) => {
+  const player = useVideoPlayer(item.videoUri || '', (p) => {
     p.loop = true;
     p.muted = true;
   });
@@ -562,6 +835,7 @@ function TrendVideoCard({
         surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
       />
       <View style={styles.overlay}>
+        <TrendSlideCopy item={item} />
         <View style={styles.actions}>
           <TouchableOpacity style={styles.actionBtn} onPress={onToggleLike}>
             <Heart
@@ -642,6 +916,31 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: 'rgba(0,0,0,0.28)',
     zIndex: 1,
+  },
+  bottomCopy: {
+    position: 'absolute',
+    left: spacing.md,
+    right: 80,
+    bottom: spacing.xl + 12,
+    zIndex: 2,
+  },
+  slideTitle: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 17,
+    color: '#FFF',
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  slideCaption: {
+    fontFamily: typography.fontSans,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.92)',
+    marginTop: 4,
+    lineHeight: 18,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   actions: {
     position: 'absolute',

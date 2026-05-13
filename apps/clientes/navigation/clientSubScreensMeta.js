@@ -1,8 +1,8 @@
-import { FEATURED_SERVICE, MOCK_PROXIMA_CITA } from '../data/luxuryUiMocks';
+import { FEATURED_SERVICE } from '../data/luxuryUiMocks';
 import { CLIENT_SUB } from './clientSubScreens';
 
 function subReprogramar() {
-  return `${MOCK_PROXIMA_CITA.servicio} · ${MOCK_PROXIMA_CITA.fechaLabel}`;
+  return 'Tu cita · fecha y hora al enlazar la agenda';
 }
 
 /** Título y línea ayuda del encabezado de cada subpantalla */
@@ -11,9 +11,9 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.DETALLE_SERVICIO:
       return { title: FEATURED_SERVICE.titulo, subtitle: 'Detalle del servicio' };
     case CLIENT_SUB.AGENDAR_FLUJO:
-      return { title: 'Agendar cita', subtitle: 'Flujo de ejemplo (sin reserva real).' };
+      return { title: 'Agendar cita', subtitle: 'La solicitud llega al salón en pendiente hasta que la confirmen.' };
     case CLIENT_SUB.HISTORIAL_COMPLETO:
-      return { title: 'Historial completo', subtitle: 'Todas tus visitas registradas (demo).' };
+      return { title: 'Historial completo', subtitle: 'Todas tus visitas registradas.' };
     case CLIENT_SUB.REPROGRAMAR_CITA:
       return { title: 'Reprogramar', subtitle: subReprogramar() };
     case CLIENT_SUB.CONFIRMAR_CITA:
@@ -25,7 +25,7 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.NOTIFICACIONES:
       return { title: 'Notificaciones', subtitle: 'Preferencias de avisos.' };
     case CLIENT_SUB.METODOS_PAGO:
-      return { title: 'Métodos de pago', subtitle: 'Formas de pago guardadas (demo).' };
+      return { title: 'Métodos de pago', subtitle: 'Formas de pago guardadas.' };
     case CLIENT_SUB.CONFIGURACION:
       return { title: 'Configuración', subtitle: 'Ajustes generales de la app.' };
     case CLIENT_SUB.CERRAR_SESION:
@@ -35,13 +35,18 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.TIENDA:
       return { title: 'Tienda', subtitle: 'Catálogo del salón · rejilla de productos' };
     case CLIENT_SUB.TENDENCIAS:
-      return { title: 'Tendencias', subtitle: 'Looks e inspiración (demo).' };
+      return { title: 'Tendencias', subtitle: 'Looks e inspiración del salón.' };
     case CLIENT_SUB.PREMIOS:
-      return { title: 'Premios', subtitle: 'Puntos, referidos y recompensas Aura (demo).' };
+      return { title: 'Premios', subtitle: 'Puntos, referidos y recompensas Aura.' };
     case CLIENT_SUB.CARRITO:
-      return { title: 'Carrito', subtitle: 'Productos seleccionados (demo).' };
+      return { title: 'Carrito', subtitle: 'Productos seleccionados.' };
     case CLIENT_SUB.MEMBRESIAS:
-      return { title: 'Membresías', subtitle: 'Bronce, Plata y VIP · beneficios por nivel (demo).' };
+      return { title: 'Membresías', subtitle: 'Bronce, Plata y VIP · beneficios por nivel.' };
+    case CLIENT_SUB.MIS_FACTURAS:
+      return {
+        title: 'Mis facturas',
+        subtitle: 'Compras y servicios completados a tu nombre (mismo registro que en salón).',
+      };
     default:
       return { title: 'Pantalla', subtitle: '' };
   }

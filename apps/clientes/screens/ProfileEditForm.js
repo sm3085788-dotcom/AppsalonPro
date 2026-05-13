@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,15 @@ import {
   Platform,
   StyleSheet,
   Modal,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../theme/ThemeProvider';
+import { db } from '@appsalon/shared-config';
+import { shareClienteFicha } from '../utils/shareClienteFicha';
 
 function computeAge(birth) {
   if (!birth) return null;
@@ -20,6 +24,12 @@ function computeAge(birth) {
   const m = t.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && t.getDate() < birth.getDate())) a -= 1;
   return Math.max(0, a);
+}
+
+function parseBirth(iso) {
+  if (!iso) return new Date(1995, 0, 15);
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? new Date(1995, 0, 15) : d;
 }
 
 function Field({ label, value, onChange, placeholder, keyboardType, autoCapitalize }) {
@@ -65,7 +75,7 @@ function Field({ label, value, onChange, placeholder, keyboardType, autoCapitali
   );
 }
 
-export function ProfileEditForm({ onClose }) {
+export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
   const { colors: c } = useTheme();
   const [nombre, setNombre] = useState('');
   const [telLocal, setTelLocal] = useState('');
@@ -73,6 +83,23 @@ export function ProfileEditForm({ onClose }) {
   const [direccion, setDireccion] = useState('');
   const [birth, setBirth] = useState(() => new Date(1995, 0, 15));
   const [showBirthPicker, setShowBirthPicker] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    const row = clienteRow || {};
+    const metaName =
+      sessionUser?.user_metadata?.full_name != null
+        ? String(sessionUser.user_metadata.full_name).trim()
+        : '';
+    setNombre(row.nombre || metaName || '');
+    setCorreo(row.email || sessionUser?.email || '');
+    setDireccion(row.direccion || '');
+    setBirth(parseBirth(row.cumpleanos));
+    const tel = String(row.telefono || '').replace(/\D/g, '');
+    if (tel.startsWith('502')) setTelLocal(tel.slice(3, 11));
+    else setTelLocal(tel.slice(0, 8));
+  }, [clienteRow, sessionUser]);
 
   const age = useMemo(() => computeAge(birth), [birth]);
   const birthLabel =
@@ -135,13 +162,6 @@ export function ProfileEditForm({ onClose }) {
           fontSize: 13,
           color: c.primary,
         },
-        footnote: {
-          marginTop: spacing.md,
-          fontFamily: typography.fontSans,
-          fontSize: 12,
-          color: c.foregroundSubtle,
-          lineHeight: 18,
-        },
         card: {
           backgroundColor: c.card,
           borderRadius: radii.lg,
@@ -168,20 +188,69 @@ export function ProfileEditForm({ onClose }) {
   );
 
   const onBirthChange = (event, selected) => {
-    if (Platform.OS === 'android') {
-      setShowBirthPicker(false);
-    }
-    if (event.type === 'dismissed') {
-      return;
-    }
-    if (selected) {
-      setBirth(selected);
-    }
+    if (Platform.OS === 'android') setShowBirthPicker(false);
+    if (event.type === 'dismissed') return;
+    if (selected) setBirth(selected);
   };
 
   const openBirth = () => {
     if (Platform.OS === 'web') return;
     setShowBirthPicker(true);
+  };
+
+  const guardar = async () => {
+    const nom = nombre.trim();
+    if (nom.length < 2) {
+      Alert.alert('Nombre', 'Ingresá tu nombre (mínimo 2 caracteres).');
+      return;
+    }
+    if (!clienteRow?.id) {
+      Alert.alert(
+        'Sin ficha en el salón',
+        'Tu cuenta aún no está enlazada en clientes. Cerrá sesión y volvé a entrar, o pedí ayuda en recepción.',
+      );
+      return;
+    }
+    const digits = telLocal.replace(/\D/g, '').slice(0, 8);
+    const telefono = digits ? `+502${digits}` : null;
+    setSaving(true);
+    try {
+      const { error } = await db.clientes.update(clienteRow.id, {
+        nombre: nom,
+        telefono,
+        email: correo.trim() || null,
+        direccion: direccion.trim() || null,
+        cumpleanos: birth.toISOString().split('T')[0],
+      });
+      if (error) {
+        Alert.alert('No se guardó', error.message || 'Intentá de nuevo.');
+        return;
+      }
+      onSaved?.();
+      Alert.alert('Listo', 'Tu perfil quedó actualizado en el salón.');
+      onClose?.();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportar = async () => {
+    const payload = {
+      ...(clienteRow || {}),
+      nombre: nombre.trim() || clienteRow?.nombre,
+      telefono: telLocal ? `+502${telLocal.replace(/\D/g, '').slice(0, 8)}` : clienteRow?.telefono,
+      email: correo.trim() || clienteRow?.email,
+      direccion: direccion.trim() || clienteRow?.direccion,
+      cumpleanos: birth.toISOString().split('T')[0],
+    };
+    setExporting(true);
+    try {
+      await shareClienteFicha(payload);
+    } catch (e) {
+      Alert.alert('Exportar', e?.message || 'No se pudo compartir la ficha.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -204,18 +273,21 @@ export function ProfileEditForm({ onClose }) {
             <Text style={st.prefixText}>+502</Text>
           </View>
           <TextInput
-            style={[st.inputFlex, {
-              fontFamily: typography.fontSans,
-              fontSize: 15,
-              color: c.foreground,
-              borderWidth: 1,
-              borderColor: c.cardBorder,
-              borderRadius: radii.sm,
-              paddingHorizontal: spacing.md,
-              paddingVertical: 12,
-              backgroundColor: c.card,
-              minHeight: 48,
-            }]}
+            style={[
+              st.inputFlex,
+              {
+                fontFamily: typography.fontSans,
+                fontSize: 15,
+                color: c.foreground,
+                borderWidth: 1,
+                borderColor: c.cardBorder,
+                borderRadius: radii.sm,
+                paddingHorizontal: spacing.md,
+                paddingVertical: 12,
+                backgroundColor: c.card,
+                minHeight: 48,
+              },
+            ]}
             value={telLocal}
             onChangeText={setTelLocal}
             placeholder="1234 5678"
@@ -250,9 +322,7 @@ export function ProfileEditForm({ onClose }) {
         >
           Fecha de nacimiento · edad
         </Text>
-        <Text style={st.hintSmall}>
-          Calculamos tu edad desde la fecha; el calendario es nativo en iOS y Android.
-        </Text>
+        <Text style={st.hintSmall}>Se guarda en tu ficha del salón.</Text>
         {Platform.OS === 'web' ? (
           <Text style={[st.hintSmall, { marginTop: spacing.sm }]}>
             El selector de calendario está disponible en la app en dispositivos móviles.
@@ -299,12 +369,22 @@ export function ProfileEditForm({ onClose }) {
             maximumDate={new Date()}
           />
         ) : null}
-
-        <Text style={st.footnote}>
-          Solo maquetación; guardar y validación se conectarán después.
-        </Text>
       </View>
-      <SalonButton variant="heroGold" title="Guardar · demo" fullWidth onPress={onClose} />
+      <SalonButton
+        variant="heroGold"
+        title={saving ? 'Guardando…' : 'Guardar'}
+        fullWidth
+        disabled={saving}
+        onPress={guardar}
+      />
+      <SalonButton
+        variant="outlineGray"
+        title={exporting ? 'Exportando…' : 'Exportar mis datos y foto'}
+        fullWidth
+        disabled={exporting}
+        onPress={exportar}
+        style={{ marginTop: spacing.sm }}
+      />
     </>
   );
 }

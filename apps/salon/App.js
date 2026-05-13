@@ -15,7 +15,7 @@ import {
   PlayfairDisplay_400Regular,
   PlayfairDisplay_600SemiBold,
 } from '@expo-google-fonts/playfair-display';
-import { Moon, Sun } from 'lucide-react-native';
+import { Moon, Sun, Store, LogOut } from 'lucide-react-native';
 
 import { ScreenHeader } from './components/luxury';
 import { AdminModuleTile } from './components/AdminModuleTile';
@@ -26,13 +26,25 @@ import {
   getModuleById,
   filterModulesBySearch,
 } from './navigation/salonRoutes';
-import { SalonModulePlaceholder } from './screens/SalonModulePlaceholder';
+import { VenderScreen } from './screens/VenderScreen';
 import { AppointmentsScreen } from './screens/AppointmentsScreen';
 import { CajaScreen } from './screens/CajaScreen';
 import { ClientesScreen } from './screens/ClientesScreen';
 import { EmpleadosScreen } from './screens/EmpleadosScreen';
 import { MetasScreen } from './screens/MetasScreen';
 import { ReportesScreen } from './screens/ReportesScreen';
+import { MarketingScreen } from './screens/MarketingScreen';
+import { MensajesScreen } from './screens/MensajesScreen';
+import { IncidentesScreen } from './screens/IncidentesScreen';
+import { InventarioScreen } from './screens/InventarioScreen';
+import { BasureroScreen } from './screens/BasureroScreen';
+import { PapeleriaScreen } from './screens/PapeleriaScreen';
+import { ProveedoresScreen } from './screens/ProveedoresScreen';
+import { PedidosScreen } from './screens/PedidosScreen';
+import { SalonModulePlaceholder } from './screens/SalonModulePlaceholder';
+import { ControlPanelScreen } from './screens/ControlPanelScreen';
+import { SalonAdminSignInScreen } from './screens/SalonAdminSignInScreen';
+import { db, supabase, isSalonAdminRole } from '@appsalon/shared-config';
 
 const MAX_CONTENT_WIDTH = 1120;
 const ROW_ACCENTS = [
@@ -47,20 +59,20 @@ const BROWN_MODULE_IDS = new Set(['incidentes', 'inventory', 'basurero']);
 
 /** Modulos con badge de notificaciones (contador rojo). Sustituir por API cuando exista. */
 const BADGE_MODULE_IDS = ['agenda', 'cajas', 'clients', 'mensajes', 'inventory'];
-const INITIAL_BADGE_COUNTS = {
-  agenda: 3,
-  cajas: 2,
-  clients: 2,
-  mensajes: 5,
-  inventory: 1,
-};
 
-function SalonAdminShell() {
+function SalonAdminShell({ onSignOut }) {
   const insets = useSafeAreaInsets();
   const { width: winW } = useWindowDimensions();
   const [openedModuleId, setOpenedModuleId] = useState(null);
   const [search, setSearch] = useState('');
-  const [badgeCounts, setBadgeCounts] = useState(INITIAL_BADGE_COUNTS);
+  const badgeCounts = useMemo(
+    () =>
+      BADGE_MODULE_IDS.reduce((acc, id) => {
+        acc[id] = 0;
+        return acc;
+      }, {}),
+    [],
+  );
   const { colors: c, isDark, setScheme } = useTheme();
 
   const cols = 3;
@@ -85,18 +97,9 @@ function SalonAdminShell() {
     setScheme(isDark ? 'light' : 'dark');
   }, [isDark, setScheme]);
 
-  /** Demo: sube el contador cada 30s en uno de los modulos con badge (quitar o sustituir por datos reales). */
-  useEffect(() => {
-    const t = setInterval(() => {
-      setBadgeCounts((prev) => {
-        const pick =
-          BADGE_MODULE_IDS[Math.floor(Math.random() * BADGE_MODULE_IDS.length)];
-        const cur = prev[pick] ?? 0;
-        return { ...prev, [pick]: Math.min(cur + 1, 99) };
-      });
-    }, 30000);
-    return () => clearInterval(t);
-  }, []);
+  if (openedModuleId === 'vender') {
+    return <VenderScreen onBack={closeModule} />;
+  }
 
   if (openedModuleId === 'agenda') {
     return <AppointmentsScreen onBack={closeModule} />;
@@ -110,7 +113,7 @@ function SalonAdminShell() {
     return <ClientesScreen onBack={closeModule} />;
   }
 
-  if (openedModuleId === 'staff') {
+  if (openedModuleId === 'empleados') {
     return <EmpleadosScreen onBack={closeModule} />;
   }
 
@@ -120,6 +123,42 @@ function SalonAdminShell() {
 
   if (openedModuleId === 'reportes') {
     return <ReportesScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'marketing') {
+    return <MarketingScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'mensajes') {
+    return <MensajesScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'incidentes') {
+    return <IncidentesScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'inventory') {
+    return <InventarioScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'basurero') {
+    return <BasureroScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'papeleria') {
+    return <PapeleriaScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'proveedores') {
+    return <ProveedoresScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'pedidos') {
+    return <PedidosScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'panel') {
+    return <ControlPanelScreen onBack={closeModule} />;
   }
 
   if (openedModule) {
@@ -132,7 +171,7 @@ function SalonAdminShell() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={c.background} />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: scrollBottom }}
@@ -144,19 +183,41 @@ function SalonAdminShell() {
               <Text style={styles.brand}>App Andrea Control</Text>
               <Text style={styles.brandLead}>Administracion</Text>
             </View>
-            <TouchableOpacity
-              style={styles.themeToggle}
-              onPress={toggleTheme}
-              accessibilityRole="button"
-              accessibilityLabel={isDark ? 'Activar modo claro' : 'Activar modo oscuro'}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              {isDark ? (
-                <Sun size={22} color={c.primary} strokeWidth={2} />
-              ) : (
-                <Moon size={22} color={c.foreground} strokeWidth={2} />
-              )}
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.themeToggle}
+                onPress={() => openModule('vender')}
+                accessibilityRole="button"
+                accessibilityLabel="Vender"
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Store size={22} color={c.foreground} strokeWidth={2} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.themeToggle}
+                onPress={toggleTheme}
+                accessibilityRole="button"
+                accessibilityLabel={isDark ? 'Activar modo claro' : 'Activar modo oscuro'}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                {isDark ? (
+                  <Sun size={22} color={c.primary} strokeWidth={2} />
+                ) : (
+                  <Moon size={22} color={c.foreground} strokeWidth={2} />
+                )}
+              </TouchableOpacity>
+              {typeof onSignOut === 'function' ? (
+                <TouchableOpacity
+                  style={styles.themeToggle}
+                  onPress={onSignOut}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cerrar sesión"
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <LogOut size={22} color={c.foreground} strokeWidth={2} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
 
           <ScreenHeader
@@ -238,6 +299,12 @@ function buildStyles(c) {
       color: c.primary,
       marginTop: 6,
     },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+      marginTop: 2,
+    },
     themeToggle: {
       width: 44,
       height: 44,
@@ -247,7 +314,6 @@ function buildStyles(c) {
       backgroundColor: c.card,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 2,
     },
     searchWrap: {
       marginBottom: spacing.md,
@@ -277,6 +343,90 @@ function buildStyles(c) {
   });
 }
 
+async function resolveSalonAuthPhase() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user?.id) return { phase: 'signin' };
+  const { data: profile, error } = await db.profiles.getById(session.user.id);
+  if (error || !profile) {
+    await db.auth.signOut();
+    return {
+      phase: 'signin',
+      message: `No hay perfil con id = ${session.user.id}. Creá o enlazá la fila en profiles con ese UUID (Authentication → Users).`,
+    };
+  }
+  if (!isSalonAdminRole(profile.role)) {
+    await db.auth.signOut();
+    return {
+      phase: 'signin',
+      message: 'Tu cuenta no tiene role = admin en profiles (check_rol_types: admin o staff; la app salón exige admin).',
+    };
+  }
+  return { phase: 'ready' };
+}
+
+function SalonAppWithAuth() {
+  const { colors: c } = useTheme();
+  const [phase, setPhase] = useState('checking');
+  const [signInError, setSignInError] = useState(null);
+
+  const refreshPhase = useCallback(async () => {
+    setPhase('checking');
+    try {
+      const result = await resolveSalonAuthPhase();
+      setSignInError(result.message ?? null);
+      setPhase(result.phase);
+    } catch {
+      setSignInError(null);
+      setPhase('signin');
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshPhase();
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setPhase('signin');
+        return;
+      }
+      resolveSalonAuthPhase()
+        .then((result) => {
+          setSignInError(result.message ?? null);
+          setPhase(result.phase);
+        })
+        .catch(() => setPhase('signin'));
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [refreshPhase]);
+
+  const handleSignOut = useCallback(async () => {
+    await db.auth.signOut();
+    setSignInError(null);
+    setPhase('signin');
+  }, []);
+
+  if (phase === 'checking') {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: c.background }}>
+        <ActivityIndicator color={c.primary} size="large" />
+      </View>
+    );
+  }
+
+  if (phase === 'signin') {
+    return (
+      <SalonAdminSignInScreen
+        initialError={signInError}
+        onSignedIn={() => {
+          setSignInError(null);
+          setPhase('ready');
+        }}
+      />
+    );
+  }
+
+  return <SalonAdminShell onSignOut={handleSignOut} />;
+}
+
 export default function App() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -303,7 +453,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <SalonAdminShell />
+        <SalonAppWithAuth />
       </ThemeProvider>
     </SafeAreaProvider>
   );

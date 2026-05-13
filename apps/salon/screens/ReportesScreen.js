@@ -33,6 +33,7 @@ const REPORT_TYPES = [
   { id: 'ventas_cliente', label: 'Ventas por cliente' },
   { id: 'empleado_ventas', label: 'Ventas por empleado' },
   { id: 'inventario', label: 'Inventario' },
+  { id: 'incidentes', label: 'Incidentes' },
   { id: 'empleados', label: 'Empleados' },
   { id: 'convertor', label: 'Convertor' },
 ];
@@ -121,6 +122,8 @@ function buildClienteFichaRows(cli) {
     ['Tipo registro', cli.tipo_registro],
     ['Referido por', cli.referido_por],
     ['Cumpleaños', cli.cumpleanos],
+    ['Foto (URL)', cli.photo_url],
+    ['ID usuario app', cli.user_id],
     ['Contacto emergencia', cli.contacto_emergencia],
     ['Tel. emergencia', cli.tel_emergencia],
   ];
@@ -311,6 +314,20 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
         summary = `Item "${options.itemNombre || 'N/A'}" vendido en rango: ${vendido}`;
       }
       return { rows, error: invErr, summary };
+    }
+    case 'incidentes': {
+      const { data, error } = await db.incidentes.getByDateRange(startIso, endIso);
+      const rows = (data || []).map((r) => ({
+        ...r,
+        nombre: `${r.folio || r.id} · ${r.tipo_incidente || '—'}`,
+        descripcion: `${r.estado || '—'} · ${r.empleado_nombre || '—'} · Pérdida Q${Number(r.monto_perdida || 0).toFixed(2)}`,
+        fecha: r.fecha,
+      }));
+      return {
+        rows,
+        error,
+        summary: `Incidentes en rango: ${rows.length} (fecha de registro)`,
+      };
     }
     case 'empleados': {
       const { data, error } = await db.empleados.getAll();
@@ -743,6 +760,12 @@ export function ReportesScreen({ onBack }) {
                 editable={false}
                 value={`Fuente: base de datos (${selected?.label || ''})`}
               />
+
+              {typeId === 'incidentes' ? (
+                <Text style={[subStyles.muted, { marginBottom: spacing.md, fontSize: 12 }]}>
+                  Listado de protocolos de accidente por fecha del incidente (folio, tipo, estado y montos).
+                </Text>
+              ) : null}
 
               {typeId === 'inventario' ? (
                 <>

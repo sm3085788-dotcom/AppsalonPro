@@ -9,7 +9,7 @@ const GAP = 10;
 
 /**
  * Catálogo tipo rejilla (referencia estilo Amazon): búsqueda fake, ordenar, tarjetas en 2 columnas.
- * Solo maquetación en cliente; App Salón puede reutilizar la misma interfaz.
+ * Referencia de UI para el catálogo; App Salón puede reutilizar la misma interfaz.
  *
  * @param {(product: object) => void} [onProductPress] — Solo para huecos con `product` definido.
  */

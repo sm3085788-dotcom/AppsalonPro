@@ -8,8 +8,8 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { TiendaCatalogGrid } from './TiendaCatalogGrid';
 import { ProductImageStrip } from './ProductImageStrip';
 import {
-  TIENDA_DEMO_SPECS,
-  TIENDA_DEMO_LONG_COPY,
+  TIENDA_SAMPLE_SPECS,
+  TIENDA_SAMPLE_LONG_COPY,
 } from '../../data/tiendaPlaceholders';
 
 const STAR_GOLD = '#FFB800';
@@ -96,8 +96,8 @@ export function TiendaFlow({ onClose }) {
   const [lastOrder, setLastOrder] = useState(null);
 
   const specsAndCopy = useMemo(() => {
-    if (selected?.id === 'demo-keratin-kit') {
-      return { specs: TIENDA_DEMO_SPECS, longCopy: TIENDA_DEMO_LONG_COPY };
+    if (selected?.id === 'sample-keratin-kit') {
+      return { specs: TIENDA_SAMPLE_SPECS, longCopy: TIENDA_SAMPLE_LONG_COPY };
     }
     return { specs: [], longCopy: '' };
   }, [selected]);
@@ -162,12 +162,12 @@ export function TiendaFlow({ onClose }) {
   };
 
   const shipOptions = [
-    { id: 'ship-home', label: 'Envío a domicilio', sub: 'Zona metropolitana · 2–4 días hábiles (demo)' },
-    { id: 'ship-salon', label: 'Retiro en salón', sub: 'Aura Salón · listo en 24 h (demo)' },
+    { id: 'ship-home', label: 'Envío a domicilio', sub: 'Zona metropolitana · 2–4 días hábiles' },
+    { id: 'ship-salon', label: 'Retiro en salón', sub: 'Aura Salón · listo en 24 h' },
   ];
 
   const payOptions = [
-    { id: 'pay-card', label: 'Tarjeta guardada', sub: 'Visa ··· 4242 · demo', Icon: CreditCard },
+    { id: 'pay-card', label: 'Tarjeta guardada', sub: 'Visa terminada en 4242', Icon: CreditCard },
     { id: 'pay-cash', label: 'Efectivo al retirar', sub: 'Pagas cuando recoges en salón', Icon: Wallet },
     { id: 'pay-wire', label: 'Transferencia', sub: 'Banco Industrial · referencia en siguiente paso', Icon: Building2 },
   ];
@@ -231,7 +231,7 @@ export function TiendaFlow({ onClose }) {
 
           {reviewOpen ? (
             <View style={[subStyles.card, styles.reviewCard]}>
-              <Text style={subStyles.rowLabel}>Dejar reseña (demo)</Text>
+              <Text style={subStyles.rowLabel}>Dejar reseña</Text>
               <Text style={styles.reviewLead}>
                 Flujo sugerido: compras verificadas primero, luego reseña libre. Aquí solo UI.
               </Text>
@@ -280,16 +280,16 @@ export function TiendaFlow({ onClose }) {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.reviewStep}>3) Comentario y fotos (demo)</Text>
+              <Text style={styles.reviewStep}>3) Comentario y fotos</Text>
               <View style={subStyles.fauxInput} />
               <View style={[subStyles.fauxInput, { height: 90 }]} />
 
               {reviewPublished ? (
-                <Text style={styles.reviewOk}>Reseña enviada (demo). Gracias por tu opinión.</Text>
+                <Text style={styles.reviewOk}>Reseña enviada. Gracias por tu opinión.</Text>
               ) : null}
 
               <SalonButton
-                title="Publicar reseña · demo"
+                title="Publicar reseña"
                 variant="heroGold"
                 fullWidth
                 onPress={() => setReviewPublished(true)}
@@ -367,11 +367,11 @@ export function TiendaFlow({ onClose }) {
           </View>
 
           {cartHint ? (
-            <Text style={styles.cartBanner}>Añadido al carrito (demo · sin persistencia)</Text>
+            <Text style={styles.cartBanner}>Añadido al carrito (sin persistencia aún)</Text>
           ) : null}
 
           <SalonButton
-            title="Añadir al carrito · demo"
+            title="Añadir al carrito"
             variant="outlineGray"
             fullWidth
             style={{ marginTop: spacing.md }}
@@ -456,7 +456,7 @@ export function TiendaFlow({ onClose }) {
           <PhaseBack label="Carrito" onPress={() => setPhase('cart')} />
 
           <Text style={styles.stepHead}>Resumen del pedido</Text>
-          <Text style={styles.stepSub}>Revisa importes antes de envío y pago (solo maquetación).</Text>
+          <Text style={styles.stepSub}>Revisa importes antes de envío y pago.</Text>
 
           <View style={subStyles.card}>
             {cartItems.map((item) => (
@@ -475,7 +475,7 @@ export function TiendaFlow({ onClose }) {
             ))}
             <View style={subStyles.divider} />
             <RowAmt label="Subtotal" value={formatQ(cartSubtotal)} />
-            <RowAmt label="Envío (demo)" value="Q 0.00" muted />
+            <RowAmt label="Envío" value="Q 0.00" muted />
             <View style={subStyles.divider} />
             <RowAmt label="Total estimado" value={formatQ(cartSubtotal)} bold />
           </View>
@@ -531,7 +531,7 @@ export function TiendaFlow({ onClose }) {
             <View style={[subStyles.card, styles.shipScenarioCard]}>
               <Text style={subStyles.rowLabel}>Dirección de entrega</Text>
               <Text style={styles.choiceSub}>
-                Completa estos datos para cotizar ruta y confirmar envío (demo).
+                Completa estos datos para cotizar ruta y confirmar envío.
               </Text>
 
               <View style={styles.shipChipRow}>
@@ -577,7 +577,7 @@ export function TiendaFlow({ onClose }) {
                 <Text style={styles.shipOkMsg}>Dirección guardada · lista para pasar a pago.</Text>
               ) : null}
               <SalonButton
-                title="Guardar dirección de envío · demo"
+                title="Guardar dirección de envío"
                 variant="outlineGold"
                 fullWidth
                 onPress={() => setHomeSaved(true)}
@@ -596,7 +596,7 @@ export function TiendaFlow({ onClose }) {
                   <QrCode size={78} color={tc.foreground} strokeWidth={1.8} />
                 </View>
                 <Text style={styles.qrCodeText}>APS-RET-2026-882041</Text>
-                <Text style={styles.qrMeta}>Pedido listo · válido por 24 horas (demo)</Text>
+                <Text style={styles.qrMeta}>Pedido listo · válido por 24 horas</Text>
               </View>
 
               <Text style={styles.shipOkMsg}>QR generado · listo para pasar a pago.</Text>
@@ -648,7 +648,7 @@ export function TiendaFlow({ onClose }) {
           {payId === 'pay-card' ? (
             <View style={[subStyles.card, styles.cardManager]}>
               <Text style={subStyles.rowLabel}>Tus tarjetas guardadas</Text>
-              <Text style={styles.choiceSub}>Selecciona una o agrega una nueva (demo).</Text>
+              <Text style={styles.choiceSub}>Selecciona una o agrega una nueva.</Text>
 
               {savedCards.map((card) => (
                 <TouchableOpacity
@@ -698,7 +698,7 @@ export function TiendaFlow({ onClose }) {
                     </View>
                   </View>
                   <SalonButton
-                    title="Guardar tarjeta · demo"
+                    title="Guardar tarjeta"
                     variant="heroGold"
                     fullWidth
                     onPress={() => {
@@ -711,7 +711,7 @@ export function TiendaFlow({ onClose }) {
               ) : null}
 
               {cardSavedToast ? (
-                <Text style={styles.shipOkMsg}>Tarjeta guardada y lista para usar (demo).</Text>
+                <Text style={styles.shipOkMsg}>Tarjeta guardada y lista para usar.</Text>
               ) : null}
             </View>
           ) : null}
@@ -743,7 +743,7 @@ export function TiendaFlow({ onClose }) {
               )}
 
               <SalonButton
-                title="Ya confirmé la transferencia · demo"
+                title="Ya confirmé la transferencia"
                 variant="outlineGold"
                 fullWidth
                 style={{ marginTop: spacing.sm }}
@@ -753,7 +753,7 @@ export function TiendaFlow({ onClose }) {
           ) : null}
 
           <SalonButton
-            title="Confirmar pedido y cerrar venta · demo"
+            title="Confirmar pedido y cerrar venta"
             variant="heroGold"
             fullWidth
             style={{ marginTop: spacing.lg }}
@@ -792,7 +792,7 @@ export function TiendaFlow({ onClose }) {
           <View style={[subStyles.card, styles.successCard]}>
             <Text style={styles.successTitle}>Venta cerrada</Text>
             <Text style={subStyles.bullets}>
-              Pedido demo #{lastOrder?.code ?? '—'} · El salón vería este pedido en su panel cuando
+              Pedido #{lastOrder?.code ?? '—'} · El salón vería este pedido en su panel cuando
               conectemos inventario y pagos. No se ha cobrado nada.
             </Text>
           </View>

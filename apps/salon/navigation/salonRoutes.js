@@ -45,9 +45,9 @@ export const SALON_MODULES = [
     Icon: Users,
   },
   {
-    id: 'staff',
+    id: 'empleados',
     title: 'Empleados',
-    subtitle: 'Equipo, roles y horarios',
+    subtitle: 'Fichas del equipo (sin acceso a la app ni caja)',
     Icon: UsersRound,
   },
   {
@@ -65,7 +65,7 @@ export const SALON_MODULES = [
   {
     id: 'marketing',
     title: 'Marketing',
-    subtitle: 'Campañas y contenidos',
+    subtitle: 'Fotos y videos para Tendencias (App Clientes)',
     Icon: Megaphone,
   },
   {
@@ -83,13 +83,13 @@ export const SALON_MODULES = [
   {
     id: 'incidentes',
     title: 'Incidentes',
-    subtitle: 'Incidencias y seguimiento',
+    subtitle: 'Accidentes físicos o materiales, PDF y firmas',
     Icon: AlertTriangle,
   },
   {
     id: 'inventory',
     title: 'Inventario',
-    subtitle: 'Stock, entradas y salidas',
+    subtitle: 'Catálogo tienda: productos y servicios',
     Icon: Boxes,
   },
   {
@@ -101,19 +101,19 @@ export const SALON_MODULES = [
   {
     id: 'papeleria',
     title: 'Papelería',
-    subtitle: 'Consumibles y útiles de oficina',
+    subtitle: 'Facturas de ventas registradas por el equipo (caja / POS)',
     Icon: ScrollText,
   },
   {
     id: 'proveedores',
     title: 'Proveedores',
-    subtitle: 'Contactos y órdenes de compra',
+    subtitle: 'Compañías: datos de contacto y logo',
     Icon: Truck,
   },
   {
     id: 'pedidos',
     title: 'Pedidos',
-    subtitle: 'Órdenes y estado de entregas',
+    subtitle: 'Compras, consultas Tendencias y carrusel inicio',
     Icon: ClipboardList,
   },
 ];

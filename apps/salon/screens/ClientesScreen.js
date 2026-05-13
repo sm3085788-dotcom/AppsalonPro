@@ -12,15 +12,17 @@ import {
   RefreshControl,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { UserPlus, Phone, MapPin, Calendar } from 'lucide-react-native';
+import { UserPlus, Phone, MapPin, Calendar, X, Mail } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
 import { SubScreenChrome, useSubStyles, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
+import { shareClienteFicha } from '../utils/shareClienteFicha';
 
 const MINT = { border: '#2E7D32', bg: '#E8F5E9', chip: '#C8E6C9' };
 
@@ -53,6 +55,9 @@ export function ClientesScreen({ onBack }) {
   const [search, setSearch] = useState('');
 
   const [modalManual, setModalManual] = useState(false);
+  const [modalFiltros, setModalFiltros] = useState(false);
+  const [sortMode, setSortMode] = useState('nombre_asc');
+  const [filterTipo, setFilterTipo] = useState('todos');
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
@@ -63,6 +68,8 @@ export function ClientesScreen({ onBack }) {
   });
   const [showNacPicker, setShowNacPicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [detailCliente, setDetailCliente] = useState(null);
+  const [exportingId, setExportingId] = useState(null);
 
   const loadClientes = useCallback(async () => {
     setLoadError(null);
@@ -89,21 +96,33 @@ export function ClientesScreen({ onBack }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return clientes;
-    return clientes.filter((row) => {
-      const blob = [
-        row.nombre,
-        row.telefono,
-        row.email,
-        row.direccion,
-        row.notas,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return blob.includes(q);
-    });
-  }, [clientes, search]);
+    let rows = clientes;
+    if (q) {
+      rows = rows.filter((row) => {
+        const blob = [row.nombre, row.telefono, row.email, row.direccion, row.notas]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    if (filterTipo === 'manual') rows = rows.filter((row) => isManualProfile(row));
+    if (filterTipo === 'app') rows = rows.filter((row) => !isManualProfile(row));
+
+    const sorted = [...rows];
+    if (sortMode === 'nombre_asc') {
+      sorted.sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
+    } else if (sortMode === 'nombre_desc') {
+      sorted.sort((a, b) => String(b.nombre || '').localeCompare(String(a.nombre || ''), 'es', { sensitivity: 'base' }));
+    } else if (sortMode === 'reciente') {
+      sorted.sort((a, b) => {
+        const ta = new Date(a.updated_at || a.created_at || 0).getTime();
+        const tb = new Date(b.updated_at || b.created_at || 0).getTime();
+        return tb - ta;
+      });
+    }
+    return sorted;
+  }, [clientes, search, filterTipo, sortMode]);
 
   const openManual = useCallback(() => {
     setNombre('');
@@ -163,6 +182,18 @@ export function ClientesScreen({ onBack }) {
     }
   };
 
+  const exportarCliente = async (item) => {
+    if (!item) return;
+    setExportingId(item.id);
+    try {
+      await shareClienteFicha(item);
+    } catch (e) {
+      Alert.alert('Exportar', e?.message || 'No se pudo compartir la ficha.');
+    } finally {
+      setExportingId(null);
+    }
+  };
+
   const padList = Math.max(insets.bottom + spacing.lg, spacing.xl * 2);
 
   const renderItem = useCallback(
@@ -170,38 +201,65 @@ export function ClientesScreen({ onBack }) {
       const manual = isManualProfile(item);
       const edad = ageFromBirthdate(item.cumpleanos);
       return (
-        <View style={[styles.rowCard, { borderColor: MINT.border, backgroundColor: c.card }]}>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => setDetailCliente(item)}
+          style={[styles.rowCard, { borderColor: MINT.border, backgroundColor: c.card }]}
+        >
           <View style={styles.rowTop}>
-            <Text style={styles.rowName} numberOfLines={2}>
-              {item.nombre || 'Sin nombre'}
-            </Text>
-            <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
-              <Text style={[styles.chipTxt, { color: manual ? '#1B5E20' : c.foregroundMuted }]}>
-                {manual ? 'Manual' : 'App clientes'}
-              </Text>
+            <View style={styles.rowAvatarWrap}>
+              {item.photo_url ? (
+                <Image source={{ uri: item.photo_url }} style={styles.rowAvatar} resizeMode="cover" />
+              ) : (
+                <View style={[styles.rowAvatar, styles.rowAvatarEmpty, { backgroundColor: c.surfaceMuted }]}>
+                  <Text style={styles.rowAvatarLetter}>
+                    {(item.nombre || '?').trim().charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={styles.rowNameRow}>
+                <Text style={styles.rowName} numberOfLines={2}>
+                  {item.nombre || 'Sin nombre'}
+                </Text>
+                <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
+                  <Text style={[styles.chipTxt, { color: manual ? '#1B5E20' : c.foregroundMuted }]}>
+                    {manual ? 'Manual' : 'App clientes'}
+                  </Text>
+                </View>
+              </View>
+              {item.email ? (
+                <View style={styles.rowLine}>
+                  <Mail size={15} color={c.foregroundMuted} strokeWidth={2} />
+                  <Text style={styles.rowMeta} numberOfLines={1}>
+                    {item.email}
+                  </Text>
+                </View>
+              ) : null}
+              {item.telefono ? (
+                <View style={styles.rowLine}>
+                  <Phone size={16} color={c.foregroundMuted} strokeWidth={2} />
+                  <Text style={styles.rowMeta}>{item.telefono}</Text>
+                </View>
+              ) : null}
+              {item.direccion ? (
+                <View style={styles.rowLine}>
+                  <MapPin size={16} color={c.foregroundMuted} strokeWidth={2} />
+                  <Text style={styles.rowMeta} numberOfLines={2}>
+                    {item.direccion}
+                  </Text>
+                </View>
+              ) : null}
+              {edad != null ? (
+                <Text style={styles.rowAge}>Edad aproximada: {edad} años</Text>
+              ) : null}
             </View>
           </View>
-          {item.telefono ? (
-            <View style={styles.rowLine}>
-              <Phone size={16} color={c.foregroundMuted} strokeWidth={2} />
-              <Text style={styles.rowMeta}>{item.telefono}</Text>
-            </View>
-          ) : null}
-          {item.direccion ? (
-            <View style={styles.rowLine}>
-              <MapPin size={16} color={c.foregroundMuted} strokeWidth={2} />
-              <Text style={styles.rowMeta} numberOfLines={2}>
-                {item.direccion}
-              </Text>
-            </View>
-          ) : null}
-          {edad != null ? (
-            <Text style={styles.rowAge}>Edad aproximada: {edad} años</Text>
-          ) : null}
-        </View>
+        </TouchableOpacity>
       );
     },
-    [c.card, c.foreground, c.foregroundMuted, c.foregroundSubtle, c.surfaceMuted, styles],
+    [c.card, c.foreground, c.foregroundMuted, c.surfaceMuted, styles],
   );
 
   const addPersonIconColor = isDark ? '#141414' : c.foreground;
@@ -241,8 +299,15 @@ export function ClientesScreen({ onBack }) {
 
           <View style={styles.listShell}>
             <View style={styles.agendaToolbar}>
-              <Text style={styles.agendaToolbarMeta}>Clientes del salón</Text>
-              <TouchableOpacity hitSlop={12} accessibilityRole="button" accessibilityLabel="Ordenar y filtros">
+              <Text style={styles.agendaToolbarMeta}>
+                {filtered.length} cliente{filtered.length === 1 ? '' : 's'}
+              </Text>
+              <TouchableOpacity
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Ordenar y filtros"
+                onPress={() => setModalFiltros(true)}
+              >
                 <Text style={styles.agendaToolbarLink}>Ordenar · filtros</Text>
               </TouchableOpacity>
             </View>
@@ -372,6 +437,125 @@ export function ClientesScreen({ onBack }) {
           </ScrollView>
         </View>
       </Modal>
+
+      <Modal visible={!!detailCliente} animationType="slide" transparent onRequestClose={() => setDetailCliente(null)}>
+        <View style={styles.modalBackdrop}>
+          <ScrollView contentContainerStyle={[styles.modalPad, { paddingBottom: insets.bottom + spacing.xl }]}>
+            {detailCliente ? (
+              <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+                <View style={styles.filterModalHead}>
+                  <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Ficha de cliente</Text>
+                  <TouchableOpacity onPress={() => setDetailCliente(null)} hitSlop={12}>
+                    <X size={22} color={c.foregroundMuted} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.detailPhotoWrap}>
+                  {detailCliente.photo_url ? (
+                    <Image source={{ uri: detailCliente.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.detailPhoto, styles.rowAvatarEmpty, { backgroundColor: c.surfaceMuted }]}>
+                      <Text style={styles.detailPhotoLetter}>
+                        {(detailCliente.nombre || '?').trim().charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {[
+                  ['Nombre', detailCliente.nombre],
+                  ['Email', detailCliente.email],
+                  ['Teléfono', detailCliente.telefono],
+                  ['Dirección', detailCliente.direccion],
+                  ['Cumpleaños', detailCliente.cumpleanos],
+                  ['Categoría', detailCliente.categoria],
+                  ['Puntos', detailCliente.puntos_fidelidad != null ? String(detailCliente.puntos_fidelidad) : null],
+                  ['Origen', detailCliente.tipo_registro],
+                  ['Notas', detailCliente.notas],
+                ].map(([label, val]) =>
+                  val ? (
+                    <View key={label} style={styles.detailRow}>
+                      <Text style={styles.detailLbl}>{label}</Text>
+                      <Text style={styles.detailVal}>{String(val)}</Text>
+                    </View>
+                  ) : null,
+                )}
+                <SalonButton
+                  title={exportingId === detailCliente.id ? 'Exportando…' : 'Exportar ficha y foto'}
+                  variant="outlineGold"
+                  fullWidth
+                  disabled={exportingId === detailCliente.id}
+                  onPress={() => void exportarCliente(detailCliente)}
+                  style={{ marginTop: spacing.md }}
+                />
+                <SalonButton
+                  title="Cerrar"
+                  variant="outlineGray"
+                  fullWidth
+                  onPress={() => setDetailCliente(null)}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+            ) : null}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+            <View style={styles.filterModalHead}>
+              <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Ordenar y filtrar</Text>
+              <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12} accessibilityLabel="Cerrar">
+                <X size={22} color={c.foregroundMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.fieldLbl}>Orden</Text>
+            <View style={styles.chipRow}>
+              {[
+                { id: 'nombre_asc', label: 'Nombre A → Z' },
+                { id: 'nombre_desc', label: 'Nombre Z → A' },
+                { id: 'reciente', label: 'Más recientes' },
+              ].map((opt) => {
+                const on = sortMode === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.filterChip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => setSortMode(opt.id)}
+                  >
+                    <Text style={[styles.filterChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.fieldLbl}>Origen</Text>
+            <View style={styles.chipRow}>
+              {[
+                { id: 'todos', label: 'Todos' },
+                { id: 'manual', label: 'Solo manual' },
+                { id: 'app', label: 'Solo app clientes' },
+              ].map((opt) => {
+                const on = filterTipo === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.filterChip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => setFilterTipo(opt.id)}
+                  >
+                    <Text style={[styles.filterChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalFiltros(false)} />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -445,9 +629,32 @@ function createStyles(c) {
     rowTop: {
       flexDirection: 'row',
       alignItems: 'flex-start',
-      justifyContent: 'space-between',
       gap: spacing.sm,
-      marginBottom: spacing.sm,
+    },
+    rowAvatarWrap: {
+      width: 52,
+      height: 52,
+    },
+    rowAvatar: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+    },
+    rowAvatarEmpty: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    rowAvatarLetter: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 20,
+      color: c.foregroundMuted,
+    },
+    rowNameRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: spacing.xs,
+      marginBottom: 4,
     },
     rowName: {
       flex: 1,
@@ -491,8 +698,7 @@ function createStyles(c) {
     },
     modalPad: { padding: spacing.md },
     modalCard: {
-      borderTopLeftRadius: radii.lg,
-      borderTopRightRadius: radii.lg,
+      borderRadius: radii.lg,
       padding: spacing.lg,
       overflow: 'hidden',
     },
@@ -537,6 +743,60 @@ function createStyles(c) {
       fontFamily: typography.fontSans,
       fontSize: 15,
       flex: 1,
+    },
+    filterModalHead: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.sm,
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginBottom: spacing.lg,
+    },
+    filterChip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
+    },
+    filterChipTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+    },
+    detailPhotoWrap: {
+      alignItems: 'center',
+      marginBottom: spacing.md,
+    },
+    detailPhoto: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+    },
+    detailPhotoLetter: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 36,
+      color: c.foregroundMuted,
+      lineHeight: 96,
+      textAlign: 'center',
+    },
+    detailRow: {
+      marginBottom: spacing.sm,
+    },
+    detailLbl: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 11,
+      color: c.foregroundMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    detailVal: {
+      fontFamily: typography.fontSans,
+      fontSize: 15,
+      color: c.foreground,
+      lineHeight: 21,
     },
   });
 }

@@ -10,6 +10,20 @@
 
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
+import { isSalonAdminRole } from './salonRoles.js';
+import { inventarioRowToAgendaServicio, inventarioRowToAgendaItem, splitNotas } from './inventarioMeta.js';
+
+export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
+export {
+  TIENDA_JSON_MARK,
+  DEFAULT_TIENDA_META,
+  splitNotas,
+  getArticuloTipo,
+  mergeNotas,
+  inventarioRowToAgendaServicio,
+  inventarioRowToAgendaItem,
+} from './inventarioMeta.js';
 
 // Variables de entorno - Configura en cada app
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -60,6 +74,13 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 export const db = {
   // ==================== AUTENTICACIÓN ====================
   auth: {
+    /** Email o teléfono (E.164, ej. +50257123456) + contraseña; según auth.users. */
+    signInWithPassword: async ({ email, phone, password }) => {
+      if (phone) {
+        return await supabase.auth.signInWithPassword({ phone, password });
+      }
+      return await supabase.auth.signInWithPassword({ email, password });
+    },
     signIn: async (email, password) => {
       return await supabase.auth.signInWithPassword({ email, password });
     },
@@ -68,6 +89,18 @@ export const db = {
         email, 
         password, 
         options: { data: metadata } 
+      });
+    },
+    /** SMS OTP. No fuerces shouldCreateUser: false por defecto (rompe el flujo igual que en GoTrue: default true). */
+    signInWithOtp: async (phone, otpOptions = {}) => {
+      return await supabase.auth.signInWithOtp({ phone, options: otpOptions });
+    },
+    /** Completa login con código de 6 dígitos (incluye OTP fijo de números de prueba). */
+    verifyPhoneOtp: async (phone, token) => {
+      return await supabase.auth.verifyOtp({
+        phone,
+        token: String(token).trim(),
+        type: 'sms',
       });
     },
     signOut: async () => {
@@ -126,7 +159,74 @@ export const db = {
           tel_emergencia: data.tel_emergencia || null,
           referido_por: data.referido_por || null,
           photo_url: data.photo_url || null,
+          user_id: data.user_id || null,
         })
+        .select()
+        .single();
+    },
+
+    getByUserId: async (userId) => {
+      return await supabase
+        .from('clientes')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+    },
+
+    /**
+     * Tras registro/login en app clientes: crea o actualiza la ficha enlazada a auth.users.
+     * Requiere política RLS INSERT con user_id = auth.uid() para cuentas nuevas.
+     */
+    ensureFromAuth: async ({ userId, nombre, email, referralCode }) => {
+      if (!userId) return { data: null, error: { message: 'Sin usuario autenticado' } };
+
+      const { data: existing, error: findErr } = await supabase
+        .from('clientes')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (findErr) return { data: null, error: findErr };
+
+      if (existing) {
+        const patch = {};
+        const nom = String(nombre || '').trim();
+        const em = String(email || '').trim();
+        if (nom && !String(existing.nombre || '').trim()) patch.nombre = nom;
+        if (em && !String(existing.email || '').trim()) patch.email = em;
+        if (Object.keys(patch).length === 0) {
+          return { data: existing, error: null, created: false };
+        }
+        const { data, error } = await supabase
+          .from('clientes')
+          .update(patch)
+          .eq('id', existing.id)
+          .select()
+          .single();
+        return { data, error, created: false };
+      }
+
+      const nom = String(nombre || '').trim() || String(email || '').split('@')[0] || 'Cliente';
+      const notas = referralCode ? `Código referido: ${String(referralCode).trim()}` : null;
+      const { data, error } = await supabase
+        .from('clientes')
+        .insert({
+          user_id: userId,
+          nombre: nom,
+          email: email || null,
+          tipo_registro: 'app_clientes',
+          categoria: 'Nuevo',
+          notas,
+        })
+        .select()
+        .single();
+      return { data, error, created: true };
+    },
+
+    updateByUserId: async (userId, data) => {
+      return await supabase
+        .from('clientes')
+        .update(data)
+        .eq('user_id', userId)
         .select()
         .single();
     },
@@ -194,6 +294,129 @@ export const db = {
         req = req.ilike('nombre', `%${q}%`);
       }
       return await req;
+    },
+
+    /** Agenda: inventario (productos + servicios) + tabla servicios legacy. */
+    listForAgenda: async (query = '', limit = 400) => {
+      const q = String(query || '').trim().toLowerCase();
+      const items = [];
+
+      const matchesQuery = (item) => {
+        if (!q) return true;
+        const blob = [item.nombre, item.categoria, item.barcode, item.articuloTipo]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        const words = q.split(/\s+/).filter(Boolean);
+        return words.every((w) => blob.includes(w));
+      };
+
+      const { data: invRows, error: invErr } = await supabase
+        .from('inventario')
+        .select('*')
+        .order('nombre')
+        .limit(limit);
+
+      if (!invErr && Array.isArray(invRows)) {
+        for (const row of invRows) {
+          const item = inventarioRowToAgendaItem(row);
+          if (!item || !matchesQuery(item)) continue;
+          items.push(item);
+        }
+      }
+
+      let svcReq = supabase
+        .from('servicios')
+        .select('id, nombre, precio, duracion_minutos')
+        .order('nombre', { ascending: true })
+        .limit(limit);
+      if (q) {
+        svcReq = svcReq.ilike('nombre', `%${String(query || '').trim()}%`);
+      }
+      const { data: svcRows, error: svcErr } = await svcReq;
+
+      const invNames = new Set(items.map((i) => i.nombre.toLowerCase()));
+      if (!svcErr && Array.isArray(svcRows)) {
+        for (const row of svcRows) {
+          const nombre = String(row.nombre || '').trim();
+          if (!nombre) continue;
+          if (invNames.has(nombre.toLowerCase())) continue;
+          const item = {
+            id: `svc-${row.id}`,
+            servicioId: row.id,
+            nombre,
+            precio: Number(row.precio) || 0,
+            duracion_minutos: Number(row.duracion_minutos) || 60,
+            articuloTipo: 'servicio',
+            categoria: '',
+            barcode: '',
+            stock_actual: null,
+            source: 'servicios',
+          };
+          if (!matchesQuery(item)) continue;
+          items.push(item);
+        }
+      }
+
+      items.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+      // No bloquear inventario si la tabla legacy `servicios` falla (RLS ausente, etc.).
+      return { data: items, error: invErr || (items.length === 0 ? svcErr : null) };
+    },
+
+    create: async (data) => {
+      return await supabase
+        .from('servicios')
+        .insert({
+          nombre: data.nombre,
+          precio: data.precio ?? 0,
+          duracion_minutos: data.duracion_minutos ?? 60,
+        })
+        .select('id, nombre, precio, duracion_minutos')
+        .single();
+    },
+
+    update: async (id, data) => {
+      return await supabase
+        .from('servicios')
+        .update(data)
+        .eq('id', id)
+        .select('id, nombre, precio, duracion_minutos')
+        .single();
+    },
+
+    /** Tras guardar inventario tipo servicio, refleja en tabla servicios (agenda). */
+    syncFromInventario: async ({ nombre, precio_venta, notas }) => {
+      const { meta } = splitNotas(notas);
+      if (meta.articuloTipo !== 'servicio') {
+        return { data: null, error: null, skipped: true };
+      }
+      const nombreTrim = String(nombre || '').trim();
+      if (!nombreTrim) {
+        return { error: { message: 'Nombre de servicio vacío' } };
+      }
+      const precio = Number(precio_venta) || 0;
+      const duracion_minutos = Math.max(15, Math.floor(Number(meta.duracion_minutos) || 60));
+
+      const { data: candidates, error: findErr } = await supabase
+        .from('servicios')
+        .select('id, nombre')
+        .ilike('nombre', nombreTrim)
+        .limit(10);
+      if (findErr) return { error: findErr };
+
+      const key = nombreTrim.toLowerCase();
+      const existing = (candidates || []).find((r) => String(r.nombre || '').trim().toLowerCase() === key);
+
+      if (existing?.id) {
+        return await supabase
+          .from('servicios')
+          .update({ precio, duracion_minutos, nombre: nombreTrim })
+          .eq('id', existing.id)
+          .select('id, nombre, precio, duracion_minutos')
+          .single();
+      }
+
+      return await db.servicios.create({ nombre: nombreTrim, precio, duracion_minutos });
     },
   },
 
@@ -1129,7 +1352,7 @@ export const db = {
         .order('full_name');
     },
 
-    // Obtener todo el staff
+    // Perfiles con rol staff (legacy; el producto ya no usa staff en lógica de negocio)
     getStaff: async () => {
       return await supabase
         .from('profiles')
@@ -1154,14 +1377,14 @@ export const db = {
         .insert({
           id: data.id, // UUID del auth.users
           full_name: data.full_name || null,
-          role: data.role || 'staff',
+          role: data.role || 'client',
           phone: data.phone || null,
           address: data.address || null,
           birthday: data.birthday || null,
           age: data.age || null,
           photo_url: data.photo_url || null,
           marketing_access: data.marketing_access || false,
-          app_scope: data.app_scope || 'staff',
+          app_scope: data.app_scope ?? 'clientes',
           community_enabled: data.community_enabled !== undefined ? data.community_enabled : true,
         })
         .select()
@@ -1192,11 +1415,10 @@ export const db = {
         .single();
     },
 
-    // Cambiar rol
+    // Roles permitidos en app: solo admin (gestión salón) y client (app clientes). Sin staff.
     changeRole: async (userId, newRole) => {
-      // Validar que el rol sea válido
-      if (!['admin', 'staff'].includes(newRole)) {
-        return { error: { message: 'Invalid role. Must be admin or staff' } };
+      if (!['admin', 'client'].includes(newRole)) {
+        return { error: { message: 'Rol no válido. Usá admin o client.' } };
       }
 
       return await supabase
@@ -1251,7 +1473,7 @@ export const db = {
         .eq('id', id)
         .single();
 
-      return data?.role === 'admin';
+      return isSalonAdminRole(data?.role);
     },
 
     // Obtener perfiles con marketing habilitado
@@ -1272,15 +1494,17 @@ export const db = {
       if (!profiles) return { error: 'Error al obtener perfiles' };
 
       const totalUsuarios = profiles.length;
-      const admins = profiles.filter(p => p.role === 'admin').length;
-      const staff = profiles.filter(p => p.role === 'staff').length;
-      const conMarketingAccess = profiles.filter(p => p.marketing_access).length;
+      const admins = profiles.filter((p) => p.role === 'admin').length;
+      const otrosPerfiles = profiles.filter((p) => p.role !== 'admin').length;
+      const legacyStaff = profiles.filter((p) => p.role === 'staff').length;
+      const conMarketingAccess = profiles.filter((p) => p.marketing_access).length;
 
       return {
         data: {
           totalUsuarios,
           admins,
-          staff,
+          otrosPerfiles,
+          legacyStaff,
           conMarketingAccess,
         },
         error: null,
@@ -1845,6 +2069,56 @@ export const db = {
         .gte('precio_venta', min)
         .lte('precio_venta', max)
         .order('precio_venta');
+    },
+  },
+
+  // ==================== PROVEEDORES (compañías / marcas) ====================
+  proveedores: {
+    getAll: async () => {
+      return await supabase.from('proveedores').select('*').order('nombre_compania', { ascending: true });
+    },
+    getById: async (id) => {
+      return await supabase.from('proveedores').select('*').eq('id', id).single();
+    },
+    create: async (data) => {
+      return await supabase
+        .from('proveedores')
+        .insert({
+          nombre_compania: data.nombre_compania,
+          logo_url: data.logo_url ?? null,
+          telefono: data.telefono ?? null,
+          nombre_agente: data.nombre_agente ?? null,
+          telefono_agente: data.telefono_agente ?? null,
+          email: data.email ?? null,
+          direccion: data.direccion ?? null,
+          sitio_web: data.sitio_web ?? null,
+          notas: data.notas ?? null,
+          nit: data.nit ?? null,
+        })
+        .select('*')
+        .single();
+    },
+    update: async (id, data) => {
+      return await supabase
+        .from('proveedores')
+        .update({
+          nombre_compania: data.nombre_compania,
+          logo_url: data.logo_url ?? null,
+          telefono: data.telefono ?? null,
+          email: data.email ?? null,
+          direccion: data.direccion ?? null,
+          sitio_web: data.sitio_web ?? null,
+          notas: data.notas ?? null,
+          nit: data.nit ?? null,
+          nombre_agente: data.nombre_agente ?? null,
+          telefono_agente: data.telefono_agente ?? null,
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+    },
+    delete: async (id) => {
+      return await supabase.from('proveedores').delete().eq('id', id);
     },
   },
 
@@ -2428,6 +2702,48 @@ export const db = {
       return { data, error };
     },
 
+    /** Posts publicados con multimedia para el feed Tendencias (App Clientes). */
+    getPublishedTendenciasFeed: async (limit = 40) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false })
+        .limit(limit);
+      if (error) return { data: [], error };
+      const list = data || [];
+      const filtered = list.filter((r) => {
+        if (String(r?.audience || '') === 'home_carousel') return false;
+        const url = r.media_url;
+        if (!url || typeof url !== 'string') return false;
+        const ct = String(r.content_type || '').toLowerCase();
+        if (ct === 'video' || ct === 'image') return true;
+        return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
+      });
+      return { data: filtered, error: null };
+    },
+
+    /** Carrusel «Publicidad» bajo Pedidos en App Clientes (misma tabla, audience = home_carousel). */
+    getPublishedHomeCarousel: async (limit = 15) => {
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'published')
+        .eq('audience', 'home_carousel')
+        .not('media_url', 'is', null)
+        .order('published_at', { ascending: false })
+        .limit(limit);
+      if (error) return { data: [], error };
+      const list = (data || []).filter((r) => {
+        const url = r.media_url;
+        if (!url || typeof url !== 'string') return false;
+        const ct = String(r.content_type || '').toLowerCase();
+        if (ct === 'image') return true;
+        return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+      });
+      return { data: list, error: null };
+    },
+
     search: async (query) => {
       const { data, error } = await supabase
         .from('marketing_posts')
@@ -2995,6 +3311,15 @@ export const db = {
       return { data, error };
     },
 
+    getRecentForInbox: async (limit = 300) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
     getByDateRange: async (startDate, endDate) => {
       const { data, error } = await supabase
         .from('marketing_direct_messages')
@@ -3261,6 +3586,15 @@ export const db = {
         .order('created_at', { ascending: false })
         .limit(limit);
       return { data, error };
+    },
+
+    /** Comentarios con post asociado — bandeja Pedidos (App Salón). */
+    listForPedidosInbox: async (limit = 400) => {
+      return await supabase
+        .from('marketing_comments')
+        .select('*, marketing_posts(id, title, audience, media_url, content_type)')
+        .order('created_at', { ascending: false })
+        .limit(limit);
     },
 
     getRecentByPost: async (postId, limit = 10) => {
@@ -5262,7 +5596,7 @@ export const db = {
         // Usuarios del Sistema
         totalUsuarios: statsProfiles?.totalUsuarios || 0,
         adminsCount: statsProfiles?.admins || 0,
-        staffCount: statsProfiles?.staff || 0,
+        staffCount: statsProfiles?.legacyStaff || 0,
         // Metas y Objetivos
         totalMetas: statsMetas?.totalMetas || 0,
         metasActivas: statsMetas?.metasActivas || 0,
@@ -5365,6 +5699,78 @@ export const db = {
     },
   },
 };
+
+/**
+ * Lee URI local (file:// / content://) y sube a un bucket de Supabase Storage.
+ */
+async function uploadStorageFromLocalUri(bucket, localUri, meta = {}) {
+  const ext = String(meta.extension || 'bin')
+    .replace(/^\./, '')
+    .replace(/[^a-z0-9]/gi, '') || 'bin';
+  const path = `salon/${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  const contentType = meta.contentType || 'application/octet-stream';
+
+  try {
+    let body;
+    const uri = String(localUri || '');
+    if (uri.startsWith('file://') || uri.startsWith('content://')) {
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
+      });
+      const raw = globalThis.atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+      body = bytes;
+    } else {
+      const res = await fetch(uri);
+      if (!res.ok) throw new Error('No se pudo leer el archivo');
+      body = await res.blob();
+    }
+
+    const { data, error } = await supabase.storage.from(bucket).upload(path, body, {
+      contentType,
+      upsert: false,
+    });
+    if (error) return { error, publicUrl: null };
+    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(data.path);
+    return { error: null, publicUrl: pub.publicUrl };
+  } catch (e) {
+    return { error: { message: e?.message || String(e) }, publicUrl: null };
+  }
+}
+
+/**
+ * Sube foto o video al bucket Storage `tendencias` (crealo en Supabase y definí políticas de lectura para App Clientes).
+ * @param {string} localUri file:// o content://
+ * @param {{ extension?: string, contentType?: string }} meta
+ */
+export async function uploadTendenciaMediaFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('tendencias', localUri, meta);
+}
+
+/** Bucket Storage `inventario` para imágenes de catálogo / tienda. */
+export async function uploadInventarioMediaFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('inventario', localUri, meta);
+}
+
+export async function uploadIncidenteMediaFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('incidentes', localUri, meta);
+}
+
+export async function uploadMensajeMediaFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('mensajes', localUri, meta);
+}
+
+export async function uploadProveedorLogoFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('proveedores', localUri, meta);
+}
+
+/** Bucket Storage `clientes` — fotos de perfil de app clientes. */
+export async function uploadClientePhotoFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('clientes', localUri, meta);
+}
+
+export { buildClienteExportPayload, buildClienteExportText, buildClienteExportJson } from './clienteExport.js';
 
 // Helpers para verificar conexión
 export const testConnection = async () => {

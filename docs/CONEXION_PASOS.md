@@ -79,8 +79,8 @@ Inventario en `docs/supabase/`:
 
 **Importante:**
 
-- **`is_staff_or_admin()`** sólo da `true` si en `profiles` el usuario tiene **`role` `admin` o `staff`**.
-- Pantallas **Cliente** que usen tabla **`citas`**: con las políticas actuales sólo tiene acceso staff; hacer UI de “Mis citas” implica nuevas políticas o flujo otro día (véase `notes.md`).
+- **`is_staff_or_admin()`** en la base original da `true` con rol **`admin` o `staff`**; el producto ahora usa **solo `admin`** para la app salón — en `docs/supabase/notes.md` está el SQL recomendado para redefinir la función sin renombrar políticas.
+- Pantallas **Cliente** y tabla **`citas`**: hace falta políticas cliente además del acceso admin (véase `notes.md`).
 
 ---
 

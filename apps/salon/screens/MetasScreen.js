@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -17,15 +17,25 @@ import { ChevronRight, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, useSubStyles, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
+import { db } from '@appsalon/shared-config';
 
 const PROP_TYPES = [
-  { id: 'global_mensual', label: 'Global mensual', hint: 'Facturación u objetivo único del salón', symbol: 'Q', progress: 72 },
-  { id: 'clientes_nuevos', label: 'Clientes nuevos', hint: 'Altas o primeras visitas del mes', symbol: '#', progress: 64 },
-  { id: 'suscripciones', label: 'Suscripciones', hint: 'Planes activos o renovaciones', symbol: '#', progress: 58 },
-  { id: 'individual', label: 'Por empleado', hint: 'Meta personalizada a una persona', symbol: '#', progress: 69 },
-  { id: 'ventas_pred', label: 'Ventas predeterminadas', hint: 'Metas base por paquete o servicio', symbol: 'Q', progress: 61 },
-  { id: 'eventos', label: 'Eventos', hint: 'Objetivos para temporadas o campañas', symbol: '#', progress: 47 },
+  { id: 'global_mensual', label: 'Global mensual', hint: 'Facturación u objetivo único del salón', symbol: 'Q' },
+  { id: 'clientes_nuevos', label: 'Clientes nuevos', hint: 'Altas o primeras visitas del mes', symbol: '#' },
+  { id: 'suscripciones', label: 'Suscripciones', hint: 'Planes activos o renovaciones', symbol: '#' },
+  { id: 'individual', label: 'Por empleado', hint: 'Meta personalizada a una persona', symbol: '#' },
+  { id: 'ventas_pred', label: 'Ventas predeterminadas', hint: 'Metas base por paquete o servicio', symbol: 'Q' },
+  { id: 'eventos', label: 'Eventos', hint: 'Objetivos para temporadas o campañas', symbol: '#' },
 ];
+
+const PROP_TIPO_DB = {
+  global_mensual: 'ventas',
+  clientes_nuevos: 'clientes',
+  suscripciones: 'clientes',
+  individual: 'servicios',
+  ventas_pred: 'ventas',
+  eventos: 'ingresos',
+};
 
 export function MetasScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
@@ -38,6 +48,24 @@ export function MetasScreen({ onBack }) {
   const [propValor, setPropValor] = useState('');
   const [propNota, setPropNota] = useState('');
   const [empleadoSearch, setEmpleadoSearch] = useState('');
+  const [modalMetaFiltros, setModalMetaFiltros] = useState(false);
+  const [metaSort, setMetaSort] = useState('nombre_asc');
+  const [metaRolFiltro, setMetaRolFiltro] = useState('todos');
+  const [empleadosCatalog, setEmpleadosCatalog] = useState([]);
+  const [metaEmpleadoId, setMetaEmpleadoId] = useState(null);
+  const [enviandoMeta, setEnviandoMeta] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await db.empleados.getAll();
+      if (cancelled) return;
+      if (!error && Array.isArray(data)) setEmpleadosCatalog(data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl * 1.5);
   const selectedType = PROP_TYPES.find((x) => x.id === propTipo);
@@ -47,24 +75,88 @@ export function MetasScreen({ onBack }) {
     setPropValor('');
     setPropNota('');
     setEmpleadoSearch('');
+    setMetaEmpleadoId(null);
+    setMetaSort('nombre_asc');
+    setMetaRolFiltro('todos');
+    setModalMetaFiltros(false);
     setModalProp(true);
   };
 
-  const enviarPropuesta = () => {
+  const metaFiltroResumen = useMemo(() => {
+    const s = metaSort === 'nombre_desc' ? 'Nombre Z → A' : 'Nombre A → Z';
+    const r =
+      metaRolFiltro === 'todos'
+        ? 'Todos los roles'
+        : metaRolFiltro === 'estilista'
+          ? 'Estilistas'
+          : metaRolFiltro === 'colorista'
+            ? 'Coloristas'
+            : 'Recepción';
+    return `${s} · ${r}`;
+  }, [metaSort, metaRolFiltro]);
+
+  const empleadoResults = useMemo(() => {
+    let rows = [...empleadosCatalog];
+    const q = empleadoSearch.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((e) => {
+        const blob = [e.nombre, e.rol].join(' ').toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    if (metaRolFiltro === 'estilista') rows = rows.filter((e) => String(e.rol || '').toLowerCase().includes('estilista'));
+    if (metaRolFiltro === 'colorista') rows = rows.filter((e) => String(e.rol || '').toLowerCase().includes('colorista'));
+    if (metaRolFiltro === 'recepcion') {
+      rows = rows.filter(
+        (e) =>
+          String(e.rol || '').toLowerCase().includes('recepción') || String(e.rol || '').toLowerCase().includes('recepcion'),
+      );
+    }
+    rows.sort((a, b) => {
+      const cmp = String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' });
+      return metaSort === 'nombre_desc' ? -cmp : cmp;
+    });
+    return rows;
+  }, [empleadoSearch, metaSort, metaRolFiltro, empleadosCatalog]);
+
+  const cerrarPropuesta = () => {
+    setModalProp(false);
+    setModalMetaFiltros(false);
+    setMetaEmpleadoId(null);
+  };
+
+  const enviarPropuesta = async () => {
     const v = Number(String(propValor).replace(/[^\d.]/g, ''));
     if (!Number.isFinite(v) || v <= 0) {
       Alert.alert('Valor', 'Ingresá un número objetivo mayor a 0.');
       return;
     }
-    if (propTipo === 'individual' && !empleadoSearch.trim()) {
-      Alert.alert('Por empleado', 'Ingresá al menos un criterio en el buscador de empleado.');
+    if (propTipo === 'individual' && !metaEmpleadoId) {
+      Alert.alert('Por empleado', 'Elegí un empleado de la lista.');
       return;
     }
-    Alert.alert(
-      'Demo',
-      'Propuesta creada en modo demo. No se guarda nada todavía.',
-    );
-    setModalProp(false);
+    if (enviandoMeta) return;
+    setEnviandoMeta(true);
+    const periodo = new Date().toISOString().slice(0, 7);
+    const alcance = propTipo === 'individual' ? 'individual' : 'global';
+    const payload = {
+      titulo: selectedType?.label || 'Meta',
+      tipo: PROP_TIPO_DB[propTipo] || 'ventas',
+      valor_objetivo: v,
+      actual: 0,
+      periodo,
+      alcance,
+      asignado_a: propTipo === 'individual' ? metaEmpleadoId : null,
+      activo: true,
+    };
+    const { error } = await db.metas.create(payload);
+    setEnviandoMeta(false);
+    if (error) {
+      Alert.alert('No se pudo guardar', error.message || 'Intentá de nuevo.');
+      return;
+    }
+    Alert.alert('Listo', 'La meta quedó registrada.');
+    cerrarPropuesta();
   };
 
   const renderProgressBar = (ratio) => (
@@ -100,8 +192,8 @@ export function MetasScreen({ onBack }) {
                 <Text style={[subStyles.muted, styles.propTileHint]} numberOfLines={2}>
                   {p.hint}
                 </Text>
-                <Text style={styles.progressLabel}>Avance {p.progress}%</Text>
-                {renderProgressBar(p.progress / 100)}
+                <Text style={styles.progressLabel}>Sin avance registrado</Text>
+                {renderProgressBar(0)}
                 <View style={styles.propTileFoot}>
                   <Text style={[styles.propLink, { color: c.primary }]}>Proponer</Text>
                   <ChevronRight size={16} color={c.primary} strokeWidth={2.2} />
@@ -112,7 +204,7 @@ export function MetasScreen({ onBack }) {
         </ScrollView>
       </SubScreenChrome>
 
-      <Modal visible={modalProp} animationType="slide" transparent onRequestClose={() => setModalProp(false)}>
+      <Modal visible={modalProp} animationType="slide" transparent onRequestClose={cerrarPropuesta}>
         <KeyboardAvoidingView
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -126,7 +218,7 @@ export function MetasScreen({ onBack }) {
             <View style={[styles.modalCard, { backgroundColor: c.background }]}>
             <View style={styles.modalHead}>
               <Text style={styles.modalTitle}>Nueva propuesta</Text>
-              <TouchableOpacity onPress={() => setModalProp(false)} hitSlop={12} accessibilityLabel="Cerrar">
+              <TouchableOpacity onPress={cerrarPropuesta} hitSlop={12} accessibilityLabel="Cerrar">
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
@@ -160,11 +252,53 @@ export function MetasScreen({ onBack }) {
                   onChangeText={setEmpleadoSearch}
                 />
                 <View style={styles.filterRow}>
-                  <Text style={styles.filterMeta}>Resultados de búsqueda</Text>
-                  <TouchableOpacity hitSlop={12} accessibilityRole="button" accessibilityLabel="Ordenar y filtros">
+                  <Text style={styles.filterMeta}>
+                    {empleadoResults.length} coincidencia{empleadoResults.length === 1 ? '' : 's'}
+                  </Text>
+                  <TouchableOpacity
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ordenar y filtros"
+                    onPress={() => setModalMetaFiltros(true)}
+                  >
                     <Text style={[styles.filterLink, { color: c.primary }]}>Ordenar · filtros</Text>
                   </TouchableOpacity>
                 </View>
+                <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.sm }]} numberOfLines={2}>
+                  {metaFiltroResumen}
+                </Text>
+                {empleadoResults.length ? (
+                  <View style={styles.empResultBox}>
+                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+                      {empleadoResults.map((e) => (
+                        <TouchableOpacity
+                          key={e.id}
+                          style={[
+                            styles.empRow,
+                            {
+                              borderColor: metaEmpleadoId === e.id ? c.primary : c.cardBorder,
+                              backgroundColor: c.card,
+                            },
+                          ]}
+                          onPress={() => {
+                            setMetaEmpleadoId(e.id);
+                            setEmpleadoSearch(e.nombre || '');
+                          }}
+                          activeOpacity={0.88}
+                        >
+                          <Text style={[styles.empRowName, { color: c.foreground }]} numberOfLines={1}>
+                            {e.nombre}
+                          </Text>
+                          <Text style={[styles.empRowRol, { color: c.foregroundMuted }]} numberOfLines={1}>
+                            {e.rol}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : (
+                  <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>Sin coincidencias con los filtros actuales.</Text>
+                )}
               </>
             ) : null}
 
@@ -179,17 +313,84 @@ export function MetasScreen({ onBack }) {
             />
 
             <View style={styles.actionStack}>
-              <SalonButton title="Enviar propuesta" variant="heroGold" fullWidth onPress={enviarPropuesta} />
+              <SalonButton
+                title={enviandoMeta ? 'Guardando…' : 'Enviar propuesta'}
+                variant="heroGold"
+                fullWidth
+                onPress={enviarPropuesta}
+              />
               <SalonButton
                 title="Cancelar"
                 variant="outlineGray"
                 fullWidth
-                onPress={() => setModalProp(false)}
+                onPress={cerrarPropuesta}
               />
             </View>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={modalMetaFiltros} animationType="slide" transparent onRequestClose={() => setModalMetaFiltros(false)}>
+        <View style={styles.metasFiltrosBackdrop}>
+          <View style={[styles.metasFiltrosSheet, { backgroundColor: c.background }]}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Ordenar y filtrar</Text>
+              <TouchableOpacity onPress={() => setModalMetaFiltros(false)} hitSlop={12}>
+                <X size={22} color={c.foregroundMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.fieldLbl}>Orden</Text>
+            <View style={styles.metasChipRow}>
+              {[
+                { id: 'nombre_asc', label: 'Nombre A → Z' },
+                { id: 'nombre_desc', label: 'Nombre Z → A' },
+              ].map((opt) => {
+                const on = metaSort === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.metasChip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => setMetaSort(opt.id)}
+                  >
+                    <Text style={{ color: on ? c.primary : c.foreground, fontFamily: typography.fontSansMedium, fontSize: 13 }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.fieldLbl}>Rol</Text>
+            <View style={styles.metasChipRow}>
+              {[
+                { id: 'todos', label: 'Todos' },
+                { id: 'estilista', label: 'Estilista' },
+                { id: 'colorista', label: 'Colorista' },
+                { id: 'recepcion', label: 'Recepción' },
+              ].map((opt) => {
+                const on = metaRolFiltro === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.metasChip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => setMetaRolFiltro(opt.id)}
+                  >
+                    <Text style={{ color: on ? c.primary : c.foreground, fontFamily: typography.fontSansMedium, fontSize: 13 }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalMetaFiltros(false)} />
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -346,6 +547,41 @@ function createStyles(c) {
     actionStack: {
       gap: spacing.sm,
       marginTop: spacing.sm,
+    },
+    empResultBox: {
+      maxHeight: 200,
+      marginBottom: spacing.md,
+    },
+    empRow: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    empRowName: { fontFamily: typography.fontSansMedium, fontSize: 15 },
+    empRowRol: { fontFamily: typography.fontSans, fontSize: 13, marginTop: 2 },
+    metasFiltrosBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
+    },
+    metasFiltrosSheet: {
+      borderTopLeftRadius: radii.lg,
+      borderTopRightRadius: radii.lg,
+      padding: spacing.lg,
+    },
+    metasChipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginBottom: spacing.lg,
+    },
+    metasChip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
     },
   });
 }
