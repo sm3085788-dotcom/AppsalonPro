@@ -1,0 +1,32 @@
+/**
+ * Punto de entrada de @appsalon/shared-config.
+ * Carga supabaseClient primero; los módulos de dominio importan `db` sin ciclo.
+ */
+export * from './supabaseClient.js';
+export {
+  getMetaGlobal,
+  guardarMetaGlobal,
+  registrarMontoVentaEnMeta,
+  progresoMetaPct,
+  reiniciarMetaGlobal,
+  formatMetaQ,
+  metaVigente,
+  parseMontoInput,
+  formatMontoInputLive,
+  montoInputFromNumber,
+} from './metaGlobal.js';
+export { confirmarCompraConTarjeta, mapInventarioToTiendaProduct, buildTiendaProductFicha } from './tiendaCheckout.js';
+export { crearPedidoEfectivo, confirmarCobroPedidoSalon } from './pedidoSalon.js';
+export { registerMarketingInterest, MARKETING_INTEREST_TYPES } from './marketingInterest.js';
+export {
+  fetchClientAuraMessages,
+  fetchClientAuraUnreadCount,
+  markClientAuraDelivered,
+  sendClientAuraChat,
+  isSalonOutboundMessage,
+} from './auraLineClient.js';
+export {
+  buildIncidentClientMessage,
+  sendIncidentReportToClient,
+  INCIDENT_REPORT_CONTENT_TYPE,
+} from './incidentAuraLine.js';

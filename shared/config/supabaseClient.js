@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { isSalonAdminRole } from './salonRoles.js';
-import { inventarioRowToAgendaServicio, inventarioRowToAgendaItem, splitNotas } from './inventarioMeta.js';
+import { inventarioRowToAgendaServicio, inventarioRowToAgendaItem, splitNotas, sanitizeInventarioFechaVencimiento } from './inventarioMeta.js';
 
 export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
 export {
@@ -21,6 +21,7 @@ export {
   splitNotas,
   getArticuloTipo,
   mergeNotas,
+  sanitizeInventarioFechaVencimiento,
   inventarioRowToAgendaServicio,
   inventarioRowToAgendaItem,
 } from './inventarioMeta.js';
@@ -1834,7 +1835,6 @@ export const db = {
         .from('inventario')
         .select('*')
         .eq('visible_en_tienda', true)
-        .gt('stock_actual', 0)
         .order('nombre');
     },
 
@@ -1908,7 +1908,7 @@ export const db = {
           barcode: data.barcode || null,
           imagen_url: data.imagen_url || null,
           imagenes_urls: data.imagenes_urls || [],
-          fecha_vencimiento: data.fecha_vencimiento || null,
+          fecha_vencimiento: sanitizeInventarioFechaVencimiento(data.fecha_vencimiento),
           ubicacion: data.ubicacion || null,
           notas: data.notas || null,
           visible_en_tienda: data.visible_en_tienda || false,
@@ -1920,12 +1920,13 @@ export const db = {
 
     // Actualizar producto
     update: async (id, data) => {
+      const patch = { ...data, updated_at: new Date().toISOString() };
+      if ('fecha_vencimiento' in patch) {
+        patch.fecha_vencimiento = sanitizeInventarioFechaVencimiento(patch.fecha_vencimiento);
+      }
       return await supabase
         .from('inventario')
-        .update({
-          ...data,
-          updated_at: new Date().toISOString(),
-        })
+        .update(patch)
         .eq('id', id)
         .select()
         .single();
@@ -2783,6 +2784,19 @@ export const db = {
 
     /** Posts publicados con multimedia para el feed Tendencias (App Clientes). */
     getPublishedTendenciasFeed: async (limit = 40) => {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('feed_tendencias', {
+        p_limit: limit,
+      });
+      if (!rpcError && Array.isArray(rpcData)) {
+        const filtered = rpcData.filter((r) => {
+          const url = r.media_url;
+          if (!url || typeof url !== 'string') return false;
+          const ct = String(r.content_type || '').toLowerCase();
+          if (ct === 'video' || ct === 'image') return true;
+          return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
+        });
+        return { data: filtered, error: null };
+      }
       const { data, error } = await supabase
         .from('marketing_posts')
         .select('*')
@@ -2792,7 +2806,8 @@ export const db = {
       if (error) return { data: [], error };
       const list = data || [];
       const filtered = list.filter((r) => {
-        if (String(r?.audience || '') === 'home_carousel') return false;
+        const aud = String(r?.audience || '');
+        if (aud === 'home_carousel' || aud === 'home_hero') return false;
         const url = r.media_url;
         if (!url || typeof url !== 'string') return false;
         const ct = String(r.content_type || '').toLowerCase();
@@ -2802,8 +2817,55 @@ export const db = {
       return { data: filtered, error: null };
     },
 
+    /** Carrusel hero «Reserva tu cita» (parte superior Inicio App Clientes). */
+    getPublishedHomeHero: async (limit = 15) => {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('feed_home_hero', {
+        p_limit: limit,
+      });
+      if (!rpcError && Array.isArray(rpcData)) {
+        const list = (rpcData || []).filter((r) => {
+          const url = r.media_url;
+          if (!url || typeof url !== 'string') return false;
+          const ct = String(r.content_type || '').toLowerCase();
+          if (ct === 'image') return true;
+          return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+        });
+        return { data: list, error: null };
+      }
+      const { data, error } = await supabase
+        .from('marketing_posts')
+        .select('*')
+        .eq('status', 'published')
+        .eq('audience', 'home_hero')
+        .not('media_url', 'is', null)
+        .order('published_at', { ascending: false })
+        .limit(limit);
+      if (error) return { data: [], error };
+      const list = (data || []).filter((r) => {
+        const url = r.media_url;
+        if (!url || typeof url !== 'string') return false;
+        const ct = String(r.content_type || '').toLowerCase();
+        if (ct === 'image') return true;
+        return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+      });
+      return { data: list, error: null };
+    },
+
     /** Carrusel «Publicidad» bajo Pedidos en App Clientes (misma tabla, audience = home_carousel). */
     getPublishedHomeCarousel: async (limit = 15) => {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('feed_home_carousel', {
+        p_limit: limit,
+      });
+      if (!rpcError && Array.isArray(rpcData)) {
+        const list = (rpcData || []).filter((r) => {
+          const url = r.media_url;
+          if (!url || typeof url !== 'string') return false;
+          const ct = String(r.content_type || '').toLowerCase();
+          if (ct === 'image') return true;
+          return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+        });
+        return { data: list, error: null };
+      }
       const { data, error } = await supabase
         .from('marketing_posts')
         .select('*')
@@ -3516,6 +3578,12 @@ export const db = {
     },
 
     getByPost: async (postId) => {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('list_marketing_comments', {
+        p_post_id: postId,
+      });
+      if (!rpcError && Array.isArray(rpcData)) {
+        return { data: rpcData, error: null };
+      }
       const { data, error } = await supabase
         .from('marketing_comments')
         .select('*')
@@ -3589,6 +3657,14 @@ export const db = {
     },
 
     create: async (data) => {
+      const { data: rpcRow, error: rpcError } = await supabase.rpc('create_marketing_comment', {
+        p_post_id: data.post_id,
+        p_content: data.content,
+        p_author_name: data.author_name || 'Cliente',
+      });
+      if (!rpcError && rpcRow) {
+        return { data: rpcRow, error: null };
+      }
       const commentData = {
         ...data,
         created_at: new Date().toISOString(),
@@ -3599,7 +3675,7 @@ export const db = {
         .insert([commentData])
         .select()
         .single();
-      return { data: newComment, error };
+      return { data: newComment, error: rpcError || error };
     },
 
     update: async (id, data) => {
@@ -5850,20 +5926,6 @@ export async function uploadClientePhotoFromUri(localUri, meta = {}) {
 }
 
 export { buildClienteExportPayload, buildClienteExportText, buildClienteExportJson } from './clienteExport.js';
-export {
-  getMetaGlobal,
-  guardarMetaGlobal,
-  registrarMontoVentaEnMeta,
-  progresoMetaPct,
-  reiniciarMetaGlobal,
-  formatMetaQ,
-  metaVigente,
-  parseMontoInput,
-  formatMontoInputLive,
-  montoInputFromNumber,
-} from './metaGlobal.js';
-export { confirmarCompraConTarjeta, mapInventarioToTiendaProduct } from './tiendaCheckout.js';
-export { crearPedidoEfectivo, confirmarCobroPedidoSalon } from './pedidoSalon.js';
 
 // Helpers para verificar conexión
 export const testConnection = async () => {

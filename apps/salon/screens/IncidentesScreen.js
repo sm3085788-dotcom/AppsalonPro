@@ -18,9 +18,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Camera, FileText, X } from 'lucide-react-native';
+import { Camera, FileText, X, Search, User, Send } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase, uploadIncidenteMediaFromUri } from '@appsalon/shared-config';
+import { db, supabase, uploadIncidenteMediaFromUri, sendIncidentReportToClient } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -208,6 +208,11 @@ export function IncidentesScreen({ onBack }) {
   const [firmaGerente, setFirmaGerente] = useState('');
   const [fotos, setFotos] = useState([]);
 
+  const [clientes, setClientes] = useState([]);
+  const [clienteSel, setClienteSel] = useState(null);
+  const [clienteSearch, setClienteSearch] = useState('');
+  const [enviarAuraLine, setEnviarAuraLine] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [recent, setRecent] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(true);
@@ -231,8 +236,42 @@ export function IncidentesScreen({ onBack }) {
     loadRecent();
   }, [loadRecent]);
 
+  useEffect(() => {
+    void (async () => {
+      const { data } = await db.clientes.getAll();
+      setClientes(Array.isArray(data) ? data : []);
+    })();
+  }, []);
+
+  const clientesFiltrados = useMemo(() => {
+    const q = clienteSearch.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return (clientes || [])
+      .filter((cl) => {
+        const blob = [cl.nombre, cl.telefono, cl.email].filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+      })
+      .slice(0, 8);
+  }, [clientes, clienteSearch]);
+
+  const selectCliente = (cl) => {
+    setClienteSel(cl);
+    setClienteSearch('');
+    if (cl?.nombre) setPersonaAfectada(cl.nombre);
+    setEnviarAuraLine(true);
+    if (!interruptores.clientePresente) {
+      setInterruptores((prev) => ({ ...prev, clientePresente: true }));
+    }
+  };
+
   const toggleInterruptor = (key) => {
-    setInterruptores((prev) => ({ ...prev, [key]: !prev[key] }));
+    setInterruptores((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (key === 'clientePresente' && next.clientePresente && clienteSel) {
+        setEnviarAuraLine(true);
+      }
+      return next;
+    });
   };
 
   const pickFotos = async () => {
@@ -268,6 +307,9 @@ export function IncidentesScreen({ onBack }) {
     if (!relato.trim() || relato.trim().length < 20) return 'Completá el relato del hecho (al menos unas líneas).';
     if (!firmaResponsable.trim()) return 'Indicá nombre completo del responsable (firma escrita).';
     if (!firmaGerente.trim()) return 'Indicá nombre completo de gerente o supervisión (firma escrita).';
+    if (enviarAuraLine && !clienteSel?.id) {
+      return 'Para enviar por Aura Line, buscá y elegí al cliente afectado en la lista.';
+    }
     return null;
   };
 
@@ -364,10 +406,34 @@ export function IncidentesScreen({ onBack }) {
         foto_3: urls[2],
         firmaResponsable: payload.firmaResponsable,
         firmaGerente: payload.firmaGerente,
+        aplicaReembolso: !!interruptores.reembolso,
+        aplicaCompensacion: !!interruptores.compensacion,
       };
 
+      let auraNote = '';
+      if (enviarAuraLine && clienteSel) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const sender = {
+          id: user?.id || null,
+          name:
+            user?.user_metadata?.full_name ||
+            user?.user_metadata?.name ||
+            user?.email?.split('@')[0] ||
+            'Equipo salón',
+        };
+        const { error: sendErr } = await sendIncidentReportToClient(clienteSel, dto, sender);
+        if (sendErr) {
+          auraNote = `\n\nAura Line: no se pudo enviar (${sendErr.message || 'error'}).`;
+        } else if (!clienteSel.user_id) {
+          auraNote =
+            '\n\nAura Line: mensaje registrado. El cliente verá el reporte cuando inicie sesión en App Clientes con la misma ficha.';
+        } else {
+          auraNote = '\n\nAura Line: reporte enviado al cliente en App Clientes.';
+        }
+      }
+
       await sharePdf(buildPdfHtml(dto));
-      Alert.alert('Registrado', `Incidente guardado. Folio: ${row.folio || row.id}`);
+      Alert.alert('Registrado', `Incidente guardado. Folio: ${row.folio || row.id}${auraNote}`);
 
       setNombreDeclarante('');
       setTelefono('');
@@ -381,6 +447,9 @@ export function IncidentesScreen({ onBack }) {
       setFirmaResponsable('');
       setFirmaGerente('');
       setFotos([]);
+      setClienteSel(null);
+      setClienteSearch('');
+      setEnviarAuraLine(false);
       loadRecent();
     } catch (e) {
       Alert.alert('Error', e?.message || 'No se pudo guardar el incidente.');
@@ -495,10 +564,82 @@ export function IncidentesScreen({ onBack }) {
               style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
               value={personaAfectada}
               onChangeText={setPersonaAfectada}
-              placeholder="Opcional"
+              placeholder="Nombre libre o se completa al elegir cliente"
               placeholderTextColor={c.foregroundSubtle}
             />,
           )}
+
+          <View style={[styles.auraCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+            <View style={styles.auraHead}>
+              <Send size={18} color={c.primary} strokeWidth={2} />
+              <Text style={[subStyles.rowLabel, { marginBottom: 0, flex: 1 }]}>Enviar reporte al cliente (Aura Line)</Text>
+            </View>
+            <Text style={[subStyles.muted, { marginBottom: spacing.sm }]}>
+              Buscá al cliente en la base del salón. El reporte llega a Mensajes en App Clientes (requiere toggle Mensajes activo).
+            </Text>
+            <View style={[styles.searchWrap, { borderColor: c.cardBorder, backgroundColor: c.background }]}>
+              <Search size={18} color={c.foregroundMuted} />
+              <TextInput
+                style={[styles.searchIn, { color: c.foreground }]}
+                placeholder="Buscar nombre, teléfono o correo…"
+                placeholderTextColor={c.foregroundSubtle}
+                value={clienteSearch}
+                onChangeText={setClienteSearch}
+              />
+            </View>
+            {clienteSel ? (
+              <View style={[styles.clienteChip, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}>
+                <User size={16} color={c.primary} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.clienteChipName, { color: c.foreground }]} numberOfLines={1}>
+                    {clienteSel.nombre}
+                  </Text>
+                  <Text style={[subStyles.muted, { fontSize: 11 }]} numberOfLines={1}>
+                    {clienteSel.telefono || clienteSel.email || 'Sin contacto'}
+                    {clienteSel.user_id ? ' · App Clientes vinculada' : ' · Sin cuenta app aún'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setClienteSel(null)} hitSlop={10}>
+                  <Text style={{ color: c.primary, fontFamily: typography.fontSansMedium, fontSize: 13 }}>Cambiar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            {!clienteSel && clienteSearch.trim().length >= 2 && clientesFiltrados.length === 0 ? (
+              <Text style={[subStyles.muted, { marginTop: spacing.sm, fontSize: 12 }]}>
+                Sin coincidencias. Creá la ficha en Clientes o revisá el nombre.
+              </Text>
+            ) : null}
+            {!clienteSel && clientesFiltrados.length > 0 ? (
+              <View style={[styles.pickList, { borderColor: c.cardBorder }]}>
+                {clientesFiltrados.map((cl) => (
+                  <TouchableOpacity
+                    key={String(cl.id)}
+                    style={[styles.pickRow, { borderBottomColor: c.cardBorder }]}
+                    onPress={() => selectCliente(cl)}
+                  >
+                    <Text style={[styles.pickName, { color: c.foreground }]} numberOfLines={1}>
+                      {cl.nombre}
+                    </Text>
+                    <Text style={[subStyles.muted, { fontSize: 12 }]} numberOfLines={1}>
+                      {cl.telefono || cl.email || '—'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+            <View style={[styles.switchRow, { borderBottomWidth: 0, paddingBottom: 0, marginTop: spacing.sm }]}>
+              <Text style={[styles.switchLabel, { color: c.foreground, flex: 1 }]}>
+                Enviar al guardar y generar PDF
+              </Text>
+              <Switch
+                value={enviarAuraLine}
+                onValueChange={setEnviarAuraLine}
+                trackColor={{ false: c.cardBorder, true: `${c.primary}88` }}
+                thumbColor={enviarAuraLine ? c.primary : c.foregroundSubtle}
+              />
+            </View>
+          </View>
+
           {field(
             'Área o lugar dentro del salón *',
             <TextInput
@@ -762,5 +903,54 @@ function createStyles(c) {
       marginBottom: spacing.sm,
     },
     recentFolio: { fontFamily: typography.fontSansMedium, fontSize: 15 },
+    auraCard: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+    },
+    auraHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    searchWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.md,
+      minHeight: 44,
+    },
+    searchIn: {
+      flex: 1,
+      fontFamily: typography.fontSans,
+      fontSize: 15,
+      paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+    },
+    clienteChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.sm,
+      marginTop: spacing.sm,
+    },
+    clienteChipName: { fontFamily: typography.fontSansMedium, fontSize: 14 },
+    pickList: {
+      marginTop: spacing.sm,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    pickRow: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    pickName: { fontFamily: typography.fontSansMedium, fontSize: 14 },
   });
 }

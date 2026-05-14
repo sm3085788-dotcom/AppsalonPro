@@ -53,6 +53,19 @@ function guessExt(uri, mime) {
   return m ? m[1].toLowerCase() : 'jpg';
 }
 
+/** AAAA-MM-DD o null; rechaza números sueltos (ej. códigos de barras en el campo fecha). */
+function parseFechaVencimiento(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return { value: null, invalid: false };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return { value: null, invalid: true };
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
+    return { value: null, invalid: true };
+  }
+  return { value: s, invalid: false };
+}
+
 function rowToTiendaCard(row) {
   const { meta } = splitNotas(row.notas);
   const venta = Number(row.precio_venta || 0);
@@ -94,8 +107,8 @@ function RatingStars({ rating, emptyColor, size = 12 }) {
           key={s}
           size={size}
           color={s <= full ? STAR_GOLD : emptyColor}
-          fill={s <= full ? STAR_GOLD : emptyColor}
-          strokeWidth={0}
+          fill={s <= full ? STAR_GOLD : 'transparent'}
+          strokeWidth={s <= full ? 0 : 1.2}
         />
       ))}
     </View>
@@ -119,7 +132,9 @@ function GalleryStrip({ uris, badgeText, width, colors, compact = false }) {
         ]}
       >
         <ImageIcon size={compact ? 22 : 32} color={colors.foregroundSubtle} strokeWidth={1.4} />
-        <Text style={[stripStyles.imageHint, compact && stripStyles.imageHintCompact]}>Imagen</Text>
+        <Text style={[stripStyles.imageHint, compact && stripStyles.imageHintCompact, { color: colors.foregroundSubtle }]}>
+          Imagen
+        </Text>
       </View>
     );
   }
@@ -171,7 +186,6 @@ const stripStyles = StyleSheet.create({
     marginTop: 6,
     fontFamily: typography.fontSans,
     fontSize: 11,
-    color: '#888',
   },
   imageHintCompact: {
     marginTop: 4,
@@ -211,11 +225,15 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           borderColor: colors.cardBorder,
           marginBottom: GAP,
           overflow: 'hidden',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.08,
-          shadowRadius: 3,
-          elevation: 2,
+          ...(isDark
+            ? { elevation: 0, shadowOpacity: 0 }
+            : {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.08,
+                shadowRadius: 3,
+                elevation: 2,
+              }),
         },
         body: { padding: compact ? 6 : spacing.sm },
         brandLine: {
@@ -231,7 +249,7 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           lineHeight: compact ? 14 : 17,
           color: colors.foreground,
           marginBottom: compact ? 4 : spacing.sm,
-          minHeight: compact ? 28 : 34,
+          minHeight: compact ? 0 : 34,
         },
         priceRow: {
           flexDirection: 'row',
@@ -288,15 +306,21 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           paddingHorizontal: compact ? 5 : 8,
           paddingVertical: compact ? 2 : 3,
           borderRadius: compact ? 4 : 6,
-          backgroundColor: product.visibleTienda ? 'rgba(46,125,50,0.12)' : 'rgba(0,0,0,0.06)',
+          backgroundColor: product.visibleTienda
+            ? isDark
+              ? 'rgba(129,199,132,0.18)'
+              : 'rgba(46,125,50,0.12)'
+            : isDark
+              ? 'rgba(255,255,255,0.08)'
+              : 'rgba(0,0,0,0.06)',
         },
         tiendaTagTxt: {
           fontSize: compact ? 8 : 10,
           fontFamily: typography.fontSansMedium,
-          color: product.visibleTienda ? '#2E7D32' : colors.foregroundMuted,
+          color: product.visibleTienda ? (isDark ? colors.success : '#2E7D32') : colors.foregroundMuted,
         },
       }),
-    [colors, compact, product.visibleTienda],
+    [colors, compact, product.visibleTienda, isDark],
   );
 
   return (
@@ -567,6 +591,18 @@ export function InventarioScreen({ onBack }) {
       Alert.alert('Nombre', 'El nombre del artículo es obligatorio.');
       return;
     }
+    const fechaVenc = parseFechaVencimiento(form.fecha_vencimiento);
+    if (fechaVenc.invalid) {
+      Alert.alert(
+        'Fecha de vencimiento',
+        'Formato inválido. Usá AAAA-MM-DD (ej. 2026-12-31) o dejá el campo vacío.\n\nUn número suelto (como un código de barras) no es una fecha válida.',
+      );
+      return;
+    }
+    if (form.visible_en_tienda && !(parseNum(form.precio_venta) > 0)) {
+      Alert.alert('Tienda', 'Para publicar en App Clientes, indicá un precio de venta mayor a 0.');
+      return;
+    }
     setSaving(true);
     try {
       const uploadWarnings = [];
@@ -607,7 +643,7 @@ export function InventarioScreen({ onBack }) {
         stock_actual: Math.max(0, Math.floor(parseNum(form.stock_actual))),
         stock_minimo: Math.max(0, Math.floor(parseNum(form.stock_minimo))),
         es_consumible: !!form.es_consumible,
-        fecha_vencimiento: form.fecha_vencimiento.trim() || null,
+        fecha_vencimiento: fechaVenc.value,
         ubicacion: form.ubicacion.trim() || null,
         descripcion_tienda: form.descripcion_tienda.trim() || null,
         visible_en_tienda: !!form.visible_en_tienda,
@@ -674,7 +710,18 @@ export function InventarioScreen({ onBack }) {
           `Los datos quedaron en inventario, pero ${uploadWarnings.length} foto(s) no se subieron a Storage.\n\nCreá el bucket "inventario" en Supabase y políticas para admin, o guardá sin fotos nuevas.\n\n${uploadWarnings[0]}`,
         );
       } else {
-        Alert.alert('Listo', form.id ? 'Artículo actualizado.' : 'Artículo creado.');
+        Alert.alert(
+          'Listo',
+          form.id
+            ? 'Artículo actualizado.'
+            : `Artículo creado.${
+                form.visible_en_tienda
+                  ? parseNum(form.stock_actual) <= 0
+                    ? '\n\nVisible en tienda: sí. Con stock 0 el cliente lo verá como sin stock.'
+                    : '\n\nYa debería aparecer en Tienda (App Clientes).'
+                  : '\n\nPara que aparezca en Tienda, activá «Visible en tienda (clientes)».'
+              }`,
+        );
       }
     } catch (e) {
       const msg =
@@ -695,7 +742,7 @@ export function InventarioScreen({ onBack }) {
   const rightAction = (
     <TouchableOpacity
       onPress={openNew}
-      style={[styles.addPersonCircle, isDark && styles.addPersonCircleDark]}
+      style={[styles.addPersonCircle, { backgroundColor: '#FFFFFF', borderColor: c.cardBorder }]}
       hitSlop={12}
       accessibilityLabel="Nuevo artículo"
       activeOpacity={0.85}
@@ -785,6 +832,7 @@ export function InventarioScreen({ onBack }) {
       </SubScreenChrome>
 
       <Modal visible={modalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalOpen(false)}>
+        <View style={[styles.modalShell, { backgroundColor: c.background }]}>
         <View style={[styles.modalHead, { borderBottomColor: c.cardBorder, paddingTop: insets.top + spacing.sm }]}>
           <Text style={[styles.modalTitle, { color: c.foreground }]}>{form.id ? 'Editar artículo' : 'Nuevo artículo'}</Text>
           <TouchableOpacity onPress={() => setModalOpen(false)} hitSlop={12}>
@@ -916,7 +964,12 @@ export function InventarioScreen({ onBack }) {
 
           <View style={styles.switchRow}>
             <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>Consumible / insumo</Text>
-            <Switch value={form.es_consumible} onValueChange={(v) => setForm((f) => ({ ...f, es_consumible: v }))} />
+            <Switch
+              value={form.es_consumible}
+              onValueChange={(v) => setForm((f) => ({ ...f, es_consumible: v }))}
+              trackColor={{ false: c.cardBorder, true: `${c.primary}88` }}
+              thumbColor={form.es_consumible ? c.primary : c.foregroundSubtle}
+            />
           </View>
           <View style={styles.switchRow}>
             <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>Visible en tienda (clientes)</Text>
@@ -933,8 +986,10 @@ export function InventarioScreen({ onBack }) {
               style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
               value={form.fecha_vencimiento}
               onChangeText={(t) => setForm((f) => ({ ...f, fecha_vencimiento: t }))}
-              placeholder="Opcional"
+              placeholder="Opcional · ej. 2026-12-31"
               placeholderTextColor={c.foregroundSubtle}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
           </Field>
           <Field label="Ubicación en salón" c={c}>
@@ -1062,11 +1117,12 @@ export function InventarioScreen({ onBack }) {
 
           <SalonButton title={saving ? 'Guardando…' : 'Guardar'} variant="heroGold" fullWidth loading={saving} onPress={save} style={{ marginTop: spacing.lg }} />
         </ScrollView>
+        </View>
       </Modal>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background }]}>
+          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
             <View style={styles.filterHead}>
               <Text style={[styles.filterTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
@@ -1144,23 +1200,14 @@ function Field({ label, children, c }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    modalShell: { flex: 1 },
     addPersonCircle: {
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: '#FFFFFF',
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: c.cardBorder,
-      elevation: 3,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.12,
-      shadowRadius: 4,
-    },
-    addPersonCircleDark: {
-      borderColor: 'rgba(255,255,255,0.35)',
     },
     searchWrap: {
       flexDirection: 'row',
@@ -1197,6 +1244,7 @@ function createStyles(c) {
     gridRow: {
       flexDirection: 'row',
       justifyContent: 'center',
+      alignItems: 'flex-start',
       gap: GAP,
     },
     filterBackdrop: {
@@ -1259,7 +1307,7 @@ function createStyles(c) {
       justifyContent: 'space-between',
       marginBottom: spacing.md,
     },
-    thumb: { width: 72, height: 72, borderRadius: radii.sm },
+    thumb: { width: 72, height: 72, borderRadius: radii.sm, borderWidth: 1, borderColor: c.cardBorder },
     thumbX: {
       position: 'absolute',
       top: -4,

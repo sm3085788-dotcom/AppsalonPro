@@ -21,6 +21,7 @@
     "install:clientes": "cd apps/clientes && npm install",
     "install:web": "cd apps/web-catalogo && npm install",
     "verify": "node verify-setup.js",
+    "db:marketing-setup": "node scripts/run-marketing-setup.mjs",
     "clean": "npm run clean:salon && npm run clean:clientes && npm run clean:web",
     "clean:salon": "cd apps/salon && rm -rf node_modules .expo",
     "clean:clientes": "cd apps/clientes && rm -rf node_modules .expo",
@@ -31,6 +32,7 @@
     "npm": ">=9.0.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.1"
+    "@supabase/supabase-js": "^2.105.1",
+    "pg": "^8.20.0"
   }
 }

@@ -32,8 +32,16 @@ import {
   Package,
   Gem,
   FileText,
+  MessageCircle,
 } from 'lucide-react-native';
-import { supabase, db, uploadClientePhotoFromUri } from '@appsalon/shared-config';
+import {
+  supabase,
+  db,
+  uploadClientePhotoFromUri,
+  registerMarketingInterest,
+  MARKETING_INTEREST_TYPES,
+  fetchClientAuraUnreadCount,
+} from '@appsalon/shared-config';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
 import {
   PlayfairDisplay_400Regular,
@@ -53,6 +61,11 @@ import {
 import { CLIENT_SUB } from './navigation/clientSubScreens';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
+import {
+  loadClientNotifPrefs,
+  saveClientNotifPrefs,
+  DEFAULT_CLIENT_NOTIF_PREFS,
+} from './services/clientNotifPrefs';
 import {
   spacing,
   typography,
@@ -128,6 +141,41 @@ function mapHomeCarouselPostToSlide(row) {
   };
 }
 
+/** `marketing_posts` con `audience === 'home_hero'`: carrusel «Reserva tu cita». */
+function mapHomeHeroPostToSlide(row) {
+  const id = String(row.id);
+  const uri = row.media_url;
+  let kicker = 'Tu próxima experiencia';
+  let headline = row.title || 'Reserva tu cita';
+  let bodyText = 'Descubre el arte de la belleza con nuestros estilistas expertos.';
+  let buttonTitle = 'Agendar ahora';
+  const raw = String(row.body || '').trim();
+  if (raw.startsWith('{')) {
+    try {
+      const o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        if (o.kicker) kicker = String(o.kicker);
+        if (o.headline) headline = String(o.headline);
+        if (o.body != null) bodyText = String(o.body);
+        if (o.buttonTitle) buttonTitle = String(o.buttonTitle);
+      }
+    } catch {
+      bodyText = raw;
+    }
+  } else if (raw) {
+    bodyText = raw;
+  }
+  return {
+    id,
+    uri,
+    caption: headline,
+    kicker,
+    headline,
+    body: bodyText,
+    buttonTitle,
+  };
+}
+
 const TABS = {
   INICIO: 'inicio',
   CITAS: 'citas',
@@ -199,8 +247,10 @@ function AppMain({ localProfile, onLogout }) {
   const [headerSearch, setHeaderSearch] = useState('');
   const [avatarUri, setAvatarUri] = useState(null);
   const [inicioPubSlides, setInicioPubSlides] = useState(PUBLICIDAD_SLIDES);
+  const [inicioHeroSlides, setInicioHeroSlides] = useState(null);
+  const [notifPrefs, setNotifPrefs] = useState(DEFAULT_CLIENT_NOTIF_PREFS);
+  const [auraUnread, setAuraUnread] = useState(0);
   const [openedSub, setOpenedSub] = useState(null);
-  const closeSub = useCallback(() => setOpenedSub(null), []);
   const openSub = useCallback((id) => setOpenedSub(id), []);
   const goTabFromSub = useCallback((slug) => {
     if (slug === 'inicio') setTab(TABS.INICIO);
@@ -304,10 +354,37 @@ function AppMain({ localProfile, onLogout }) {
     if (!hasSupabaseEnv) return;
     let alive = true;
     (async () => {
-      const { data, error } = await db.marketingPosts.getPublishedHomeCarousel(20);
+      const { data, error } = await db.marketingPosts.getPublishedHomeCarousel(15);
       if (!alive) return;
-      if (!error && Array.isArray(data) && data.length > 0) {
+      if (error) {
+        if (__DEV__) {
+          console.warn('[Inicio] Carrusel Supabase:', error.message);
+        }
+        return;
+      }
+      if (Array.isArray(data) && data.length > 0) {
         setInicioPubSlides(data.map(mapHomeCarouselPostToSlide));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasSupabaseEnv) return;
+    let alive = true;
+    (async () => {
+      const { data, error } = await db.marketingPosts.getPublishedHomeHero(15);
+      if (!alive) return;
+      if (error) {
+        if (__DEV__) {
+          console.warn('[Inicio] Hero Supabase:', error.message);
+        }
+        return;
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        setInicioHeroSlides(data.map(mapHomeHeroPostToSlide));
       }
     })();
     return () => {
@@ -367,6 +444,109 @@ function AppMain({ localProfile, onLogout }) {
     });
     return refreshClienteFicha(u.id);
   }, [session?.user, refreshClienteFicha]);
+
+  const refreshAuraUnread = useCallback(async () => {
+    if (!hasSupabaseEnv || !clienteRow?.id || !notifPrefs.mensajes) {
+      setAuraUnread(0);
+      return;
+    }
+    const { count } = await fetchClientAuraUnreadCount();
+    setAuraUnread(count || 0);
+  }, [clienteRow?.id, notifPrefs.mensajes]);
+
+  const handleNotifPrefChange = useCallback(
+    async (key, value) => {
+      setNotifPrefs((prev) => {
+        const next = { ...prev, [key]: value };
+        void saveClientNotifPrefs(session?.user?.id ?? null, next);
+        return next;
+      });
+      if (key === 'mensajes') {
+        setTimeout(() => refreshAuraUnread(), 0);
+      }
+    },
+    [session?.user?.id, refreshAuraUnread],
+  );
+
+  useEffect(() => {
+    void loadClientNotifPrefs(session?.user?.id ?? null).then(setNotifPrefs);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    refreshAuraUnread();
+    if (!clienteRow?.id || !notifPrefs.mensajes) return undefined;
+    const channel = supabase
+      .channel(`aura-unread-${clienteRow.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'marketing_direct_messages',
+          filter: `client_id=eq.${clienteRow.id}`,
+        },
+        () => refreshAuraUnread(),
+      )
+      .subscribe();
+    const iv = setInterval(refreshAuraUnread, 45000);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(iv);
+    };
+  }, [clienteRow?.id, notifPrefs.mensajes, refreshAuraUnread]);
+
+  const closeSub = useCallback(() => {
+    setOpenedSub(null);
+    void loadClientNotifPrefs(session?.user?.id ?? null).then(setNotifPrefs);
+    void refreshAuraUnread();
+  }, [session?.user?.id, refreshAuraUnread]);
+
+  useEffect(() => {
+    if (tab !== TABS.INICIO) return;
+    void loadClientNotifPrefs(session?.user?.id ?? null).then(setNotifPrefs);
+  }, [tab, session?.user?.id]);
+
+  const openAuraLine = useCallback(async () => {
+    if (!session?.user) {
+      Alert.alert('Aura Line', 'Iniciá sesión para ver mensajes del salón.');
+      return;
+    }
+    if (hasSupabaseEnv && !clienteRow?.id) {
+      await ensureClienteFicha();
+    }
+    openSub(CLIENT_SUB.MENSAJES);
+  }, [session?.user, hasSupabaseEnv, clienteRow?.id, ensureClienteFicha, openSub]);
+
+  const handleCarouselInterest = useCallback(
+    async (slide) => {
+      if (!slide) return;
+      if (!hasSupabaseEnv) {
+        openSub(CLIENT_SUB.TIENDA);
+        return;
+      }
+      const { error } = await registerMarketingInterest({
+        type: MARKETING_INTEREST_TYPES.CAROUSEL,
+        title: slide.headline || slide.caption || 'Promoción',
+        detail: slide.body || null,
+        postId: /^\d+$/.test(String(slide.id)) ? slide.id : null,
+        mediaUrl: slide.uri || null,
+        buttonLabel: slide.buttonTitle || null,
+      });
+      if (error) {
+        Alert.alert(
+          slide.buttonTitle || 'Ver más',
+          error.message ||
+            'No se pudo avisar al salón. Revisá tu sesión o permisos en Supabase.',
+        );
+        return;
+      }
+      Alert.alert(
+        '¡Gracias!',
+        'Tu interés en esta promoción llegó al salón por Mensajes (Aura Line).',
+      );
+    },
+    [hasSupabaseEnv, openSub],
+  );
 
   useEffect(() => {
     if (!session?.user?.id) {
@@ -475,11 +655,31 @@ function AppMain({ localProfile, onLogout }) {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <HeroImageCarousel onAgendar={() => setTab(TABS.CITAS)} />
+        <HeroImageCarousel slides={inicioHeroSlides} onAgendar={() => setTab(TABS.CITAS)} />
 
         <View style={styles.inicioBelowHero}>
           <View style={styles.sectionBlock}>
-            <Text style={styles.sectionKickerGold}>Acceso rápido</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionKickerGold, { marginBottom: 0 }]}>Acceso rápido</Text>
+              {notifPrefs.mensajes ? (
+                <TouchableOpacity
+                  style={[styles.messagesIconBtn, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+                  onPress={openAuraLine}
+                  accessibilityRole="button"
+                  accessibilityLabel="Mensajes Aura Line"
+                  activeOpacity={0.85}
+                >
+                  <MessageCircle size={22} color={c.primary} strokeWidth={2} />
+                  {auraUnread > 0 ? (
+                    <View style={[styles.messagesBadge, { backgroundColor: c.primary }]}>
+                      <Text style={[styles.messagesBadgeTxt, { color: c.heroCtaText }]}>
+                        {auraUnread > 9 ? '9+' : auraUnread}
+                      </Text>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <QuickAccessRow
               icon={Store}
               title="Tienda"
@@ -517,7 +717,8 @@ function AppMain({ localProfile, onLogout }) {
             buttonTitle="Ver más"
             buttonVariant="heroGold"
             fullWidthButton
-            onButtonPress={() => openSub(CLIENT_SUB.TIENDA)}
+            onButtonPress={handleCarouselInterest}
+            showAdvanceArrow={inicioPubSlides.length > 1}
             edgeToEdge
             squareCorners
             autoAdvance={false}
@@ -823,6 +1024,9 @@ function AppMain({ localProfile, onLogout }) {
             clienteRow={clienteRow}
             onCitasChanged={refreshCitas}
             sessionUser={session?.user ?? null}
+            notifPrefs={notifPrefs}
+            onNotifPrefChange={handleNotifPrefChange}
+            onAuraUnreadChange={refreshAuraUnread}
             onClienteUpdated={() => {
               if (session?.user?.id) void refreshClienteFicha(session.user.id);
             }}
@@ -842,6 +1046,9 @@ function AppMain({ localProfile, onLogout }) {
               clienteRow={clienteRow}
               onCitasChanged={refreshCitas}
               sessionUser={session?.user ?? null}
+              notifPrefs={notifPrefs}
+              onNotifPrefChange={handleNotifPrefChange}
+              onAuraUnreadChange={refreshAuraUnread}
               onClienteUpdated={() => {
                 if (session?.user?.id) void refreshClienteFicha(session.user.id);
               }}
@@ -1069,6 +1276,12 @@ function buildAppStyles(c) {
     marginTop: spacing.xl,
     marginBottom: spacing.sm,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
   sectionKickerGold: {
     fontFamily: typography.fontSansMedium,
     fontSize: 11,
@@ -1076,6 +1289,30 @@ function buildAppStyles(c) {
     color: c.primary,
     marginBottom: spacing.md,
     textTransform: 'uppercase',
+  },
+  messagesIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  messagesBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  messagesBadgeTxt: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 10,
   },
 
   featuredWrap: {

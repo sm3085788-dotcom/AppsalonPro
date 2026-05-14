@@ -240,7 +240,7 @@ export function LuxuryImageCarousel({
           <SalonButton
             title={displayButtonTitle}
             variant={buttonVariant}
-            onPress={onButtonPress}
+            onPress={() => onButtonPress?.(current, active)}
             fullWidth={fullWidthButton}
           />
         </View>

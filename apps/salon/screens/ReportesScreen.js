@@ -40,7 +40,6 @@ const REPORT_TYPES = [
   { id: 'inventario', label: 'Inventario' },
   { id: 'incidentes', label: 'Incidentes' },
   { id: 'empleados', label: 'Empleados' },
-  { id: 'convertor', label: 'Convertor' },
 ];
 
 function toStartIso(d) {
@@ -581,36 +580,6 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       const rows = filterByRange(data || [], startIso, endIso);
       return { rows, error, summary: `Empleados registrados: ${rows.length}` };
     }
-    case 'convertor': {
-      const invCosto = options.convertorItemCosto || null;
-      const invUtil = options.convertorItemUtilidad || null;
-      const fijo = invCosto ? Number(invCosto.precio_costo ?? invCosto.costo ?? 0) : 0;
-      const costoUtil = invUtil ? Number(invUtil.precio_costo ?? invUtil.costo ?? 0) : 0;
-      const ventaUtil = invUtil ? Number(invUtil.precio_venta ?? 0) : 0;
-      const neta = invUtil ? Math.max(0, ventaUtil - costoUtil) : 0;
-      const resultado = fijo * neta;
-      const nota = options.convertorNota?.trim() || 'Sin nota';
-      const nomCosto = invCosto?.nombre || '—';
-      const nomUtil = invUtil?.nombre || '—';
-      return {
-        rows: [
-          {
-            id: 'convertor-resumen',
-            nombre: `Costo fijo (inventario): ${nomCosto} → Q${fijo.toFixed(2)}`,
-            tipo: `Utilidad neta (inventario): ${nomUtil} → Q${neta.toFixed(2)}`,
-            descripcion: nota,
-            fecha: new Date().toISOString(),
-            costo_fijo: fijo,
-            utilidad_neta: neta,
-            resultado,
-            inventario_costo_id: invCosto?.id ?? null,
-            inventario_utilidad_id: invUtil?.id ?? null,
-          },
-        ],
-        error: null,
-        summary: `Convertor: ${nomCosto} (costo Q${fijo.toFixed(2)}) × margen ${nomUtil} (Q${neta.toFixed(2)}) = Q${resultado.toFixed(2)}`,
-      };
-    }
     default:
       return { rows: [], error: { message: 'Tipo de reporte no soportado' } };
   }
@@ -773,13 +742,6 @@ export function ReportesScreen({ onBack }) {
   const [itemNombre, setItemNombre] = useState('');
   const [clientesModo, setClientesModo] = useState('general');
   const [proveedorNombre, setProveedorNombre] = useState('');
-  const [convertorSearchCosto, setConvertorSearchCosto] = useState('');
-  const [convertorSearchUtilidad, setConvertorSearchUtilidad] = useState('');
-  const [convertorResultsCosto, setConvertorResultsCosto] = useState([]);
-  const [convertorResultsUtilidad, setConvertorResultsUtilidad] = useState([]);
-  const [convertorItemCosto, setConvertorItemCosto] = useState(null);
-  const [convertorItemUtilidad, setConvertorItemUtilidad] = useState(null);
-  const [convertorNota, setConvertorNota] = useState('');
   const [vendedorSearch, setVendedorSearch] = useState('');
   const [vendedorResults, setVendedorResults] = useState([]);
   const [vendedorSelected, setVendedorSelected] = useState(null);
@@ -809,42 +771,6 @@ export function ReportesScreen({ onBack }) {
       unsub();
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const q = sanitizeSearchQuery(convertorSearchCosto);
-    if (q.length < 2) {
-      setConvertorResultsCosto([]);
-      return undefined;
-    }
-    const t = setTimeout(async () => {
-      const { data, error } = await db.inventario.search(q);
-      if (!cancelled && !error) setConvertorResultsCosto(data || []);
-      else if (!cancelled) setConvertorResultsCosto([]);
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [convertorSearchCosto]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const q = sanitizeSearchQuery(convertorSearchUtilidad);
-    if (q.length < 2) {
-      setConvertorResultsUtilidad([]);
-      return undefined;
-    }
-    const t = setTimeout(async () => {
-      const { data, error } = await db.inventario.search(q);
-      if (!cancelled && !error) setConvertorResultsUtilidad(data || []);
-      else if (!cancelled) setConvertorResultsUtilidad([]);
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [convertorSearchUtilidad]);
 
   useEffect(() => {
     if (typeId !== 'empleado_ventas') {
@@ -936,13 +862,6 @@ export function ReportesScreen({ onBack }) {
       Alert.alert('Rango inválido', 'La fecha final no puede ser menor que la inicial.');
       return;
     }
-    if (typeId === 'convertor' && (!convertorItemCosto || !convertorItemUtilidad)) {
-      Alert.alert(
-        'Convertor',
-        'Elegí un producto en “Costo fijo” y otro en “Utilidad neta” usando la búsqueda de inventario.',
-      );
-      return;
-    }
     if (typeId === 'empleado_ventas' && !vendedorSelected) {
       Alert.alert('Ventas por empleado', 'Buscá y elegí un empleado para ver sus ventas en el rango.');
       return;
@@ -963,9 +882,6 @@ export function ReportesScreen({ onBack }) {
       itemNombre,
       clientesModo,
       proveedorNombre,
-      convertorItemCosto,
-      convertorItemUtilidad,
-      convertorNota,
       vendedorEmpleado: vendedorSelected,
       clienteVentas: clienteVentasSelected,
       agendaModo,
@@ -1451,134 +1367,6 @@ export function ReportesScreen({ onBack }) {
                   <Text style={[subStyles.muted, { marginBottom: spacing.md, fontSize: 12 }]}>
                     Se listan las ventas de ese vendedor entre las fechas elegidas arriba.
                   </Text>
-                </>
-              ) : null}
-
-              {typeId === 'convertor' ? (
-                <>
-                  <Text style={styles.fieldLbl}>Costo fijo — buscar en inventario</Text>
-                  <View style={[styles.searchBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                    <Search size={18} color={c.foregroundMuted} />
-                    <TextInput
-                      style={[styles.searchInput, { color: c.foreground }]}
-                      placeholder="Nombre, categoría o código"
-                      placeholderTextColor={c.foregroundSubtle}
-                      value={convertorSearchCosto}
-                      onChangeText={setConvertorSearchCosto}
-                      editable={!convertorItemCosto}
-                    />
-                  </View>
-                  {convertorItemCosto ? (
-                    <TouchableOpacity
-                      style={[styles.invPickPill, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}
-                      onPress={() => {
-                        setConvertorItemCosto(null);
-                        setConvertorSearchCosto('');
-                        setConvertorResultsCosto([]);
-                      }}
-                    >
-                      <Text style={[styles.invPickPillTxt, { color: c.foreground }]} numberOfLines={1}>
-                        {convertorItemCosto.nombre}
-                        <Text style={{ color: c.primary }}> · Q{Number(convertorItemCosto.precio_costo ?? convertorItemCosto.costo ?? 0).toFixed(2)} costo</Text>
-                      </Text>
-                      <Text style={[styles.invPickClear, { color: c.foregroundMuted }]}>Quitar</Text>
-                    </TouchableOpacity>
-                  ) : convertorResultsCosto.length > 0 ? (
-                    <View style={[styles.invSuggest, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                      {convertorResultsCosto.slice(0, 8).map((row) => (
-                        <TouchableOpacity
-                          key={row.id}
-                          style={styles.invSuggestRow}
-                          onPress={() => {
-                            setConvertorItemCosto(row);
-                            setConvertorSearchCosto('');
-                            setConvertorResultsCosto([]);
-                          }}
-                        >
-                          <Text style={[styles.invSuggestName, { color: c.foreground }]} numberOfLines={2}>
-                            {row.nombre}
-                          </Text>
-                          <Text style={[styles.invSuggestMeta, { color: c.foregroundMuted }]}>
-                            Stock {row.stock_actual ?? 0} · Costo Q{Number(row.precio_costo ?? row.costo ?? 0).toFixed(2)}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : null}
-
-                  <Text style={styles.fieldLbl}>Utilidad neta — buscar en inventario</Text>
-                  <View style={[styles.searchBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                    <Search size={18} color={c.foregroundMuted} />
-                    <TextInput
-                      style={[styles.searchInput, { color: c.foreground }]}
-                      placeholder="Nombre, categoría o código"
-                      placeholderTextColor={c.foregroundSubtle}
-                      value={convertorSearchUtilidad}
-                      onChangeText={setConvertorSearchUtilidad}
-                      editable={!convertorItemUtilidad}
-                    />
-                  </View>
-                  {convertorItemUtilidad ? (
-                    <TouchableOpacity
-                      style={[styles.invPickPill, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}
-                      onPress={() => {
-                        setConvertorItemUtilidad(null);
-                        setConvertorSearchUtilidad('');
-                        setConvertorResultsUtilidad([]);
-                      }}
-                    >
-                      <Text style={[styles.invPickPillTxt, { color: c.foreground }]} numberOfLines={1}>
-                        {convertorItemUtilidad.nombre}
-                        <Text style={{ color: c.primary }}>
-                          {' '}
-                          · Margen Q
-                          {Math.max(
-                            0,
-                            Number(convertorItemUtilidad.precio_venta ?? 0) -
-                              Number(convertorItemUtilidad.precio_costo ?? convertorItemUtilidad.costo ?? 0),
-                          ).toFixed(2)}
-                        </Text>
-                      </Text>
-                      <Text style={[styles.invPickClear, { color: c.foregroundMuted }]}>Quitar</Text>
-                    </TouchableOpacity>
-                  ) : convertorResultsUtilidad.length > 0 ? (
-                    <View style={[styles.invSuggest, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                      {convertorResultsUtilidad.slice(0, 8).map((row) => {
-                        const m = Math.max(
-                          0,
-                          Number(row.precio_venta ?? 0) - Number(row.precio_costo ?? row.costo ?? 0),
-                        );
-                        return (
-                          <TouchableOpacity
-                            key={row.id}
-                            style={styles.invSuggestRow}
-                            onPress={() => {
-                              setConvertorItemUtilidad(row);
-                              setConvertorSearchUtilidad('');
-                              setConvertorResultsUtilidad([]);
-                            }}
-                          >
-                            <Text style={[styles.invSuggestName, { color: c.foreground }]} numberOfLines={2}>
-                              {row.nombre}
-                            </Text>
-                            <Text style={[styles.invSuggestMeta, { color: c.foregroundMuted }]}>
-                              Venta Q{Number(row.precio_venta ?? 0).toFixed(2)} · Margen Q{m.toFixed(2)}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  ) : null}
-
-                  <Text style={styles.fieldLbl}>Notas</Text>
-                  <TextInput
-                    style={[styles.inputHint, styles.noteArea, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                    placeholder="Contexto del cálculo"
-                    placeholderTextColor={c.foregroundSubtle}
-                    multiline
-                    value={convertorNota}
-                    onChangeText={setConvertorNota}
-                  />
                 </>
               ) : null}
 

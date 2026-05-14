@@ -11,7 +11,7 @@ import {
   TIENDA_SAMPLE_SPECS,
   TIENDA_SAMPLE_LONG_COPY,
 } from '../../data/tiendaPlaceholders';
-import { confirmarCompraConTarjeta, crearPedidoEfectivo } from '@appsalon/shared-config';
+import { confirmarCompraConTarjeta, crearPedidoEfectivo, buildTiendaProductFicha } from '@appsalon/shared-config';
 
 const STAR_GOLD = '#FFB800';
 const STAR_EMPTY = '#E3E3E3';
@@ -102,7 +102,10 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
     if (selected?.id === 'sample-keratin-kit') {
       return { specs: TIENDA_SAMPLE_SPECS, longCopy: TIENDA_SAMPLE_LONG_COPY };
     }
-    return { specs: [], longCopy: '' };
+    if (selected?.inventarioId || (selected?.id && selected.id !== 'sample-keratin-kit')) {
+      return buildTiendaProductFicha(selected);
+    }
+    return { specs: [], longCopy: selected?.descripcion || '' };
   }, [selected]);
   const cartSubtotal = useMemo(
     () => cartItems.reduce((acc, item) => acc + item.priceAmount * item.qty, 0),
@@ -124,7 +127,7 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
     setReviewPublished(false);
     setReviewRating(5);
     setReviewType('compra_verificada');
-    setSpecsExpanded(false);
+    setSpecsExpanded(!!(product?.inventarioId || product?.articuloTipo));
     setPhase('detail');
   };
 
@@ -337,7 +340,7 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
                 accessibilityRole="button"
                 accessibilityLabel="Mostrar u ocultar especificaciones"
               >
-                <Text style={subStyles.rowLabel}>Especificaciones</Text>
+                <Text style={subStyles.rowLabel}>Ficha técnica</Text>
                 <Text style={styles.specToggleTxt}>{specsExpanded ? 'Ocultar' : 'Ver'}</Text>
               </TouchableOpacity>
               {specsExpanded

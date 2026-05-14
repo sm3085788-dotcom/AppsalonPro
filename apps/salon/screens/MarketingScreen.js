@@ -24,6 +24,9 @@ import { recordSalonDeletion } from '../services/salonBasurero';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
+/** Máximo de diapositivas activas en el carrusel de inicio (App Clientes). */
+const MAX_CAROUSEL_SLIDES = 15;
+
 /** Máximo de duración de video en Tendencias (picker iOS + validación cruzada). */
 const MAX_VIDEO_SECONDS = 50;
 
@@ -66,6 +69,31 @@ function formatPostDate(iso) {
     return new Date(iso).toLocaleString('es-GT', { dateStyle: 'short', timeStyle: 'short' });
   } catch {
     return '—';
+  }
+}
+
+function parseCarouselOverlay(row) {
+  const fallback = {
+    kicker: 'Publicidad',
+    headline: row?.title || 'Promoción',
+    body: '',
+    priceLabel: '',
+    buttonTitle: 'Ver más',
+  };
+  const raw = String(row?.body || '').trim();
+  if (!raw.startsWith('{')) return { ...fallback, body: raw };
+  try {
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object') return fallback;
+    return {
+      kicker: o.kicker ? String(o.kicker) : fallback.kicker,
+      headline: o.headline ? String(o.headline) : fallback.headline,
+      body: o.body != null ? String(o.body) : '',
+      priceLabel: o.priceLabel ? String(o.priceLabel) : '',
+      buttonTitle: o.buttonTitle ? String(o.buttonTitle) : fallback.buttonTitle,
+    };
+  } catch {
+    return { ...fallback, body: raw };
   }
 }
 
@@ -165,12 +193,14 @@ export function MarketingScreen({ onBack }) {
   const modalMaxHeight = Math.round(windowHeight * 0.88);
 
   const [posts, setPosts] = useState([]);
+  const [heroPosts, setHeroPosts] = useState([]);
   const [carouselPosts, setCarouselPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [composerOpen, setComposerOpen] = useState(false);
   const [carouselOpen, setCarouselOpen] = useState(false);
+  const [heroOpen, setHeroOpen] = useState(false);
   const [pendingKind, setPendingKind] = useState(null);
   const [pendingAsset, setPendingAsset] = useState(null);
   const [title, setTitle] = useState('');
@@ -183,6 +213,14 @@ export function MarketingScreen({ onBack }) {
   const [carPrice, setCarPrice] = useState('');
   const [carCta, setCarCta] = useState('Ver más');
 
+  const [heroAsset, setHeroAsset] = useState(null);
+  const [heroKicker, setHeroKicker] = useState('Tu próxima experiencia');
+  const [heroTitle, setHeroTitle] = useState('Reserva tu cita');
+  const [heroBody, setHeroBody] = useState(
+    'Descubre el arte de la belleza con nuestros estilistas expertos.',
+  );
+  const [heroCta, setHeroCta] = useState('Agendar ahora');
+
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
   const loadPosts = useCallback(async () => {
@@ -191,6 +229,14 @@ export function MarketingScreen({ onBack }) {
       const { data, error } = await db.marketingPosts.getAll();
       if (error) throw error;
       const all = data || [];
+      const hero = all
+        .filter((r) => String(r?.audience || '') === 'home_hero')
+        .sort(
+          (a, b) =>
+            new Date(b.published_at || b.created_at).getTime() -
+            new Date(a.published_at || b.created_at).getTime(),
+        );
+      setHeroPosts(hero);
       const car = all
         .filter((r) => String(r?.audience || '') === 'home_carousel')
         .sort(
@@ -201,7 +247,8 @@ export function MarketingScreen({ onBack }) {
       setCarouselPosts(car);
       const list = all
         .filter((row) => {
-          if (String(row?.audience || '') === 'home_carousel') return false;
+          const aud = String(row?.audience || '');
+          if (aud === 'home_carousel' || aud === 'home_hero') return false;
           return isTendenciasMediaPost(row);
         })
         .sort((a, b) => {
@@ -213,6 +260,7 @@ export function MarketingScreen({ onBack }) {
     } catch (e) {
       Alert.alert('Marketing', e?.message || 'No se pudieron cargar los contenidos.');
       setPosts([]);
+      setHeroPosts([]);
       setCarouselPosts([]);
     } finally {
       setLoading(false);
@@ -287,7 +335,107 @@ export function MarketingScreen({ onBack }) {
     setCarCta('Ver más');
   };
 
+  const closeHeroComposer = () => {
+    setHeroOpen(false);
+    setHeroAsset(null);
+    setHeroKicker('Tu próxima experiencia');
+    setHeroTitle('Reserva tu cita');
+    setHeroBody('Descubre el arte de la belleza con nuestros estilistas expertos.');
+    setHeroCta('Agendar ahora');
+  };
+
+  const openHeroPicker = async () => {
+    const publishedCount = heroPosts.filter((p) => String(p.status || '') === 'published').length;
+    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
+      Alert.alert(
+        'Límite del carrusel',
+        `Ya hay ${MAX_CAROUSEL_SLIDES} diapositivas en «Reserva tu cita». Eliminá una para subir otra.`,
+      );
+      return;
+    }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permisos', 'Necesitamos acceso a la galería para subir la imagen del carrusel.');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 5],
+      quality: 0.88,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    setHeroAsset(res.assets[0]);
+    setHeroKicker('Tu próxima experiencia');
+    setHeroTitle('Reserva tu cita');
+    setHeroBody('Descubre el arte de la belleza con nuestros estilistas expertos.');
+    setHeroCta('Agendar ahora');
+    setHeroOpen(true);
+  };
+
+  const confirmHeroPublish = async () => {
+    if (!heroAsset?.uri) return;
+    const publishedCount = heroPosts.filter((p) => String(p.status || '') === 'published').length;
+    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
+      Alert.alert('Límite', `Máximo ${MAX_CAROUSEL_SLIDES} diapositivas en el carrusel hero.`);
+      return;
+    }
+    const headline = heroTitle.trim() || 'Reserva tu cita';
+    const overlay = {
+      kicker: heroKicker.trim() || 'Tu próxima experiencia',
+      headline,
+      body: heroBody.trim() || ' ',
+      buttonTitle: heroCta.trim() || 'Agendar ahora',
+    };
+    const bodyJson = JSON.stringify(overlay);
+    setSaving(true);
+    try {
+      const ext = guessExtension(heroAsset.uri, heroAsset.mimeType, 'image');
+      const { publicUrl, error: upErr } = await uploadTendenciaMediaFromUri(heroAsset.uri, {
+        extension: ext,
+        contentType: heroAsset.mimeType || 'image/jpeg',
+      });
+      if (upErr) {
+        Alert.alert('No se pudo subir', upErr.message || 'Error de Storage');
+        return;
+      }
+      const payload = {
+        title: headline.slice(0, 200),
+        body: bodyJson,
+        media_url: publicUrl,
+        content_type: 'image',
+        status: 'published',
+        visibility: 'public',
+        audience: 'home_hero',
+        published_at: new Date().toISOString(),
+      };
+      const { data: created, error: crErr } = await db.marketingPosts.create(payload);
+      if (crErr) {
+        Alert.alert('Base de datos', crErr.message || 'No se pudo crear la diapositiva.');
+        return;
+      }
+      if (created?.id && created.status !== 'published') {
+        await db.marketingPosts.publish(created.id);
+      }
+      Alert.alert('Listo', 'Aparece en el carrusel «Reserva tu cita» arriba en Inicio (App Clientes).');
+      closeHeroComposer();
+      await loadPosts();
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Error inesperado');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openCarouselPicker = async () => {
+    const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
+    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
+      Alert.alert(
+        'Límite del carrusel',
+        `Ya hay ${MAX_CAROUSEL_SLIDES} diapositivas publicadas. Eliminá una para subir otra.`,
+      );
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permisos', 'Necesitamos acceso a la galería para subir la imagen del carrusel.');
@@ -311,6 +459,14 @@ export function MarketingScreen({ onBack }) {
 
   const confirmCarouselPublish = async () => {
     if (!carAsset?.uri) return;
+    const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
+    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
+      Alert.alert(
+        'Límite del carrusel',
+        `Máximo ${MAX_CAROUSEL_SLIDES} diapositivas en el carrusel de inicio.`,
+      );
+      return;
+    }
     const headline = carTitle.trim() || 'Promoción';
     const overlay = {
       kicker: carTipo.trim() || 'Publicidad',
@@ -352,7 +508,7 @@ export function MarketingScreen({ onBack }) {
       if (created?.id && created.status !== 'published') {
         await db.marketingPosts.publish(created.id);
       }
-      Alert.alert('Listo', 'La diapositiva aparece en el carrusel Publicidad bajo Pedidos (App Clientes).');
+      Alert.alert('Listo', 'La diapositiva aparece en el carrusel de inicio en App Clientes (hasta 15 publicaciones).');
       closeCarouselComposer();
       await loadPosts();
     } catch (e) {
@@ -414,8 +570,15 @@ export function MarketingScreen({ onBack }) {
   };
 
   const confirmDelete = (row) => {
-    const isCar = String(row?.audience || '') === 'home_carousel';
-    Alert.alert('Eliminar', isCar ? '¿Quitar esta diapositiva del carrusel inicio?' : '¿Quitar este contenido de Tendencias?', [
+    const aud = String(row?.audience || '');
+    const isHero = aud === 'home_hero';
+    const isCar = aud === 'home_carousel';
+    const label = isHero
+      ? '¿Quitar esta diapositiva del carrusel «Reserva tu cita»?'
+      : isCar
+        ? '¿Quitar esta diapositiva del carrusel publicidad?'
+        : '¿Quitar este contenido de Tendencias?';
+    Alert.alert('Eliminar', label, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar',
@@ -429,19 +592,21 @@ export function MarketingScreen({ onBack }) {
           }
           await recordSalonDeletion({
             source: 'marketing_posts',
-            title: row.title || (isCar ? 'Carrusel inicio' : 'Post Tendencias'),
+            title: row.title || (isHero ? 'Carrusel hero' : isCar ? 'Carrusel publicidad' : 'Post Tendencias'),
             summary: `${String(row.content_type || 'media')} · ID ${row.id}`,
             snapshot,
           });
-          if (isCar) setCarouselPosts((prev) => prev.filter((p) => p.id !== row.id));
+          if (isHero) setHeroPosts((prev) => prev.filter((p) => p.id !== row.id));
+          else if (isCar) setCarouselPosts((prev) => prev.filter((p) => p.id !== row.id));
           else setPosts((prev) => prev.filter((p) => p.id !== row.id));
         },
       },
     ]);
   };
 
-  const renderCarouselRow = ({ item }) => {
+  const renderHeroRow = ({ item }) => {
     const when = item.published_at || item.created_at;
+    const overlay = parseCarouselOverlay(item);
     return (
       <View style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
         <MarketingMediaThumb
@@ -451,12 +616,52 @@ export function MarketingScreen({ onBack }) {
           iconColor={c.foregroundMuted}
         />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[styles.cardTypeBadge, { color: c.primary }]}>Carrusel · Inicio clientes</Text>
+          <Text style={[styles.cardTypeBadge, { color: c.primary }]}>Hero · Reserva tu cita</Text>
           <Text style={[styles.cardTitle, { color: c.foreground }]} numberOfLines={2}>
-            {item.title || 'Sin título'}
+            {overlay.headline}
           </Text>
-          <Text style={[subStyles.muted, styles.cardMeta]} numberOfLines={2}>
-            Publicado: {formatPostDate(when)} · Estado: {String(item.status || '—')}
+          <Text style={[subStyles.muted, styles.cardDesc]} numberOfLines={2}>
+            {overlay.kicker}
+            {overlay.body?.trim() ? ` — ${overlay.body.trim()}` : ''}
+          </Text>
+          <Text style={[subStyles.muted, styles.cardMeta]} numberOfLines={1}>
+            CTA: {overlay.buttonTitle || 'Agendar ahora'} · {formatPostDate(when)}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.iconBtn, { borderColor: c.cardBorder }]}
+          onPress={() => confirmDelete(item)}
+          accessibilityLabel="Eliminar diapositiva hero"
+        >
+          <Trash2 size={18} color={c.foregroundMuted} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderCarouselRow = ({ item }) => {
+    const when = item.published_at || item.created_at;
+    const overlay = parseCarouselOverlay(item);
+    return (
+      <View style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+        <MarketingMediaThumb
+          uri={item.media_url}
+          contentType="image"
+          placeholderBg={c.surfaceMuted}
+          iconColor={c.foregroundMuted}
+        />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[styles.cardTypeBadge, { color: c.primary }]}>Carrusel · Publicidad</Text>
+          <Text style={[styles.cardTitle, { color: c.foreground }]} numberOfLines={2}>
+            {overlay.headline}
+          </Text>
+          <Text style={[subStyles.muted, styles.cardDesc]} numberOfLines={2}>
+            {overlay.kicker}
+            {overlay.priceLabel ? ` · ${overlay.priceLabel}` : ''}
+            {overlay.body?.trim() ? ` — ${overlay.body.trim()}` : ''}
+          </Text>
+          <Text style={[subStyles.muted, styles.cardMeta]} numberOfLines={1}>
+            CTA: {overlay.buttonTitle} · {formatPostDate(when)}
           </Text>
         </View>
         <TouchableOpacity
@@ -515,7 +720,7 @@ export function MarketingScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Marketing"
-        subtitle="Tendencias (foto/video) y carrusel Publicidad bajo Pedidos en App Clientes."
+        subtitle="Carruseles de Inicio, Tendencias y Mensajes por interés del cliente."
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
@@ -549,15 +754,54 @@ export function MarketingScreen({ onBack }) {
               Videos: máximo {MAX_VIDEO_SECONDS} s (iOS respeta límite en selector; en Android validamos si el dato viene de la galería).
             </Text>
 
-            <Text style={[styles.sectionTitle, { color: c.foreground }]}>Carrusel · publicidad inicio</Text>
+            <Text style={[styles.sectionTitle, { color: c.foreground }]}>Carrusel · Reserva tu cita</Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12 }]}>
-              Imágenes horizontales que rotan debajo de «Pedidos» en Inicio (App Clientes).
+              Imágenes del banner superior en Inicio (hasta {MAX_CAROUSEL_SLIDES}). Botón «Agendar ahora» abre Mis citas.
+            </Text>
+            <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12, fontFamily: typography.fontSansMedium }]}>
+              {heroPosts.length}/{MAX_CAROUSEL_SLIDES} diapositivas hero
             </Text>
             <SalonButton
-              title="Nueva diapositiva carrusel"
+              title={
+                heroPosts.length >= MAX_CAROUSEL_SLIDES
+                  ? 'Hero completo (15/15)'
+                  : 'Nueva imagen hero'
+              }
               variant="outlineGray"
               fullWidth
-              disabled={saving}
+              disabled={saving || heroPosts.length >= MAX_CAROUSEL_SLIDES}
+              onPress={openHeroPicker}
+              style={{ marginBottom: spacing.md }}
+            />
+            {loading ? null : heroPosts.length === 0 ? (
+              <Text style={[subStyles.muted, { marginBottom: spacing.lg }]}>
+                Sin imágenes hero; App Clientes usa fotos de ejemplo.
+              </Text>
+            ) : (
+              heroPosts.map((item) => (
+                <View key={`hero-${item.id}`}>{renderHeroRow({ item })}</View>
+              ))
+            )}
+
+            <Text style={[styles.sectionTitle, { color: c.foreground, marginTop: spacing.sm }]}>
+              Carrusel · Publicidad (bajo Pedidos)
+            </Text>
+            <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12 }]}>
+              Hasta {MAX_CAROUSEL_SLIDES} imágenes horizontales con titular, texto, precio y botón. Los clientes
+              avisan su interés al tocar el botón; llega a Mensajes.
+            </Text>
+            <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12, fontFamily: typography.fontSansMedium }]}>
+              {carouselPosts.length}/{MAX_CAROUSEL_SLIDES} diapositivas publicadas
+            </Text>
+            <SalonButton
+              title={
+                carouselPosts.length >= MAX_CAROUSEL_SLIDES
+                  ? 'Carrusel completo (15/15)'
+                  : 'Nueva diapositiva carrusel'
+              }
+              variant="outlineGray"
+              fullWidth
+              disabled={saving || carouselPosts.length >= MAX_CAROUSEL_SLIDES}
               onPress={openCarouselPicker}
               style={{ marginBottom: spacing.md }}
             />
@@ -652,6 +896,102 @@ export function MarketingScreen({ onBack }) {
         </View>
       </Modal>
 
+      <Modal visible={heroOpen} animationType="slide" transparent onRequestClose={closeHeroComposer}>
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: c.background, maxHeight: modalMaxHeight },
+            ]}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              style={{ maxHeight: modalMaxHeight }}
+              contentContainerStyle={[
+                styles.modalScrollContent,
+                { paddingBottom: padBottom },
+              ]}
+              showsVerticalScrollIndicator
+            >
+              <View style={styles.modalHead}>
+                <Text style={[styles.modalTitle, { color: c.foreground }]}>Carrusel «Reserva tu cita»</Text>
+                <TouchableOpacity onPress={closeHeroComposer} hitSlop={12}>
+                  <X size={22} color={c.foregroundMuted} />
+                </TouchableOpacity>
+              </View>
+              {heroAsset?.uri ? (
+                <Image
+                  source={{ uri: heroAsset.uri }}
+                  style={{ width: '100%', height: 200, borderRadius: radii.md, marginBottom: spacing.md }}
+                  resizeMode="cover"
+                />
+              ) : null}
+              <View style={[styles.carouselPreview, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
+                <Text style={[styles.previewKicker, { color: c.primary }]}>
+                  {(heroKicker.trim() || 'Tu próxima experiencia').toUpperCase()}
+                </Text>
+                <Text style={[styles.previewHeadline, { color: c.foreground }]}>
+                  {heroTitle.trim() || 'Reserva tu cita'}
+                </Text>
+                <Text style={[subStyles.muted, { fontSize: 13, lineHeight: 18 }]}>
+                  {heroBody.trim() || 'Texto bajo el titular en el banner.'}
+                </Text>
+                <Text style={[styles.previewCta, { color: c.primary }]}>{heroCta.trim() || 'Agendar ahora'}</Text>
+              </View>
+              <Text style={styles.fieldLbl}>Etiqueta superior (kicker)</Text>
+              <TextInput
+                style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                placeholder="Tu próxima experiencia"
+                placeholderTextColor={c.foregroundSubtle}
+                value={heroKicker}
+                onChangeText={setHeroKicker}
+                maxLength={40}
+              />
+              <Text style={styles.fieldLbl}>Titular</Text>
+              <TextInput
+                style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                placeholder="Reserva tu cita"
+                placeholderTextColor={c.foregroundSubtle}
+                value={heroTitle}
+                onChangeText={setHeroTitle}
+              />
+              <Text style={styles.fieldLbl}>Texto</Text>
+              <TextInput
+                style={[styles.input, styles.textArea, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                placeholder="Descripción breve"
+                placeholderTextColor={c.foregroundSubtle}
+                value={heroBody}
+                onChangeText={setHeroBody}
+                multiline
+              />
+              <Text style={styles.fieldLbl}>Texto del botón</Text>
+              <TextInput
+                style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                placeholder="Agendar ahora"
+                placeholderTextColor={c.foregroundSubtle}
+                value={heroCta}
+                onChangeText={setHeroCta}
+              />
+              <SalonButton
+                title={saving ? 'Publicando…' : 'Subir y publicar en hero'}
+                variant="heroGold"
+                fullWidth
+                disabled={saving || !heroAsset?.uri}
+                onPress={confirmHeroPublish}
+              />
+              <SalonButton
+                title="Cancelar"
+                variant="outlineGray"
+                fullWidth
+                style={{ marginTop: spacing.sm }}
+                disabled={saving}
+                onPress={closeHeroComposer}
+              />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={carouselOpen} animationType="slide" transparent onRequestClose={closeCarouselComposer}>
         <View style={styles.modalBackdrop}>
           <View
@@ -682,7 +1022,22 @@ export function MarketingScreen({ onBack }) {
                   resizeMode="cover"
                 />
               ) : null}
-              <Text style={styles.fieldLbl}>Tipo</Text>
+              <View style={[styles.carouselPreview, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
+                <Text style={[styles.previewKicker, { color: c.primary }]}>
+                  {(carTipo.trim() || 'Publicidad').toUpperCase()}
+                </Text>
+                <Text style={[styles.previewHeadline, { color: c.foreground }]}>
+                  {carTitle.trim() || 'Titular de la promo'}
+                </Text>
+                <Text style={[subStyles.muted, { fontSize: 13, lineHeight: 18 }]}>
+                  {carBody.trim() || 'Texto breve que verá el cliente sobre la imagen.'}
+                </Text>
+                {carPrice.trim() ? (
+                  <Text style={[styles.previewPrice, { color: c.foreground }]}>{carPrice.trim()}</Text>
+                ) : null}
+                <Text style={[styles.previewCta, { color: c.primary }]}>{carCta.trim() || 'Ver más'}</Text>
+              </View>
+              <Text style={styles.fieldLbl}>Etiqueta superior (kicker)</Text>
               <TextInput
                 style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
                 placeholder="Ej. Publicidad, Nuevo, Promo"
@@ -851,6 +1206,33 @@ function createStyles(c) {
     textArea: {
       minHeight: 88,
       textAlignVertical: 'top',
+    },
+    carouselPreview: {
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      gap: 4,
+    },
+    previewKicker: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+      letterSpacing: 1.5,
+    },
+    previewHeadline: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 20,
+      lineHeight: 24,
+    },
+    previewPrice: {
+      fontFamily: typography.fontDisplayRegular,
+      fontSize: 18,
+      marginTop: spacing.xs,
+    },
+    previewCta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      marginTop: spacing.sm,
     },
   });
 }

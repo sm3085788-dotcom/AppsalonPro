@@ -11,8 +11,7 @@ import { typography } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 
 /**
- * Galería horizontal manual (sin auto-carrusel). Ancho medido para paging estable.
- * Varios ítems: puntos superpuestos abajo (no restan altura a la imagen).
+ * Galería horizontal manual (sin auto-carrusel). Imágenes en cover dentro de cuadrado 1:1.
  */
 export function ProductImageStrip({ uris, badgeText, style }) {
   const { colors: c, isDark } = useTheme();
@@ -24,13 +23,17 @@ export function ProductImageStrip({ uris, badgeText, style }) {
       StyleSheet.create({
         wrap: {
           width: '100%',
+          aspectRatio: 1,
           backgroundColor: isDark ? c.iconCircleBg : '#F4F4F4',
           overflow: 'hidden',
         },
-        measurePlaceholder: {
+        slide: {
           width: '100%',
           aspectRatio: 1,
-          backgroundColor: isDark ? c.iconCircleBg : '#F4F4F4',
+          overflow: 'hidden',
+        },
+        imageFill: {
+          ...StyleSheet.absoluteFillObject,
         },
         dotsRow: {
           position: 'absolute',
@@ -74,7 +77,6 @@ export function ProductImageStrip({ uris, badgeText, style }) {
     setActiveIndex(0);
   }, [urisKey]);
 
-  /** Precarga para que al soltar el dedo la siguiente foto ya esté en caché. */
   useEffect(() => {
     const list = Array.isArray(uris) ? uris.filter(Boolean) : [];
     list.forEach((uri) => {
@@ -84,15 +86,11 @@ export function ProductImageStrip({ uris, badgeText, style }) {
     });
   }, [urisKey, uris]);
 
-  /** Índice desde offset: los puntos siguen el dedo sin esperar al fin del gesto. */
   const onScroll = useCallback(
     (e) => {
       if (stripW <= 0 || dataLen <= 1) return;
       const x = e.nativeEvent.contentOffset.x;
-      const idx = Math.min(
-        dataLen - 1,
-        Math.max(0, Math.round(x / stripW)),
-      );
+      const idx = Math.min(dataLen - 1, Math.max(0, Math.round(x / stripW)));
       setActiveIndex((prev) => (prev !== idx ? idx : prev));
     },
     [stripW, dataLen],
@@ -126,16 +124,20 @@ export function ProductImageStrip({ uris, badgeText, style }) {
 
   const showPager = data.length > 1;
 
+  const renderImage = (uri) => (
+    <View style={stripStyles.slide}>
+      <Image
+        source={{ uri }}
+        style={stripStyles.imageFill}
+        resizeMode="cover"
+        accessibilityLabel="Imagen del producto"
+      />
+    </View>
+  );
+
   return (
     <View style={[stripStyles.wrap, style]} onLayout={onLayout}>
-      {!showPager && stripW > 0 ? (
-        <Image
-          source={{ uri: data[0] }}
-          style={{ width: stripW, height: stripW }}
-          resizeMode="cover"
-          accessibilityLabel="Imagen del producto"
-        />
-      ) : null}
+      {!showPager ? renderImage(data[0]) : null}
 
       {showPager && stripW > 0 ? (
         <>
@@ -145,12 +147,8 @@ export function ProductImageStrip({ uris, badgeText, style }) {
             bounces={false}
             keyExtractor={(item, index) => `${index}-${item}`}
             renderItem={({ item }) => (
-              <View style={{ width: stripW }}>
-                <Image
-                  source={{ uri: item }}
-                  style={{ width: stripW, height: stripW }}
-                  resizeMode="cover"
-                />
+              <View style={{ width: stripW, aspectRatio: 1, overflow: 'hidden' }}>
+                <Image source={{ uri: item }} style={stripStyles.imageFill} resizeMode="cover" />
               </View>
             )}
             getItemLayout={getItemLayout}
@@ -179,10 +177,6 @@ export function ProductImageStrip({ uris, badgeText, style }) {
             ))}
           </View>
         </>
-      ) : null}
-
-      {showPager && stripW === 0 ? (
-        <View style={stripStyles.measurePlaceholder} />
       ) : null}
 
       {badgeText ? (

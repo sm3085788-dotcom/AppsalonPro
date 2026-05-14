@@ -12,6 +12,7 @@ import { TendenciasFeed } from '../components/tendencias/TendenciasFeed';
 import { PremiosDashboard } from '../components/premios/PremiosDashboard';
 import { MembresiasBody } from '../components/membresias/MembresiasBody';
 import { MisFacturasBody } from './MisFacturasBody';
+import { AuraLineInbox } from '../components/mensajes/AuraLineInbox';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -40,32 +41,28 @@ function useAccentChipStyle() {
   );
 }
 
-function NotificationsBody() {
+function NotificationsBody({ prefs, onPrefChange }) {
   const subStyles = useSubStyles();
   const chipText = useAccentChipStyle();
-  const [prefs, setPrefs] = useState({
+  const p = prefs || {
     recordatorios: true,
     promociones: false,
     cambiosAgenda: true,
     mensajes: true,
-  });
-  const toggle = (k) =>
-    setPrefs((p) => ({ ...p, [k]: !p[k] }));
+  };
 
   const Row = ({ k, label, sub }) => (
-    <TouchableOpacity
-      style={subStyles.rowTouch}
-      onPress={() => toggle(k)}
-      activeOpacity={0.85}
-      accessibilityRole="switch"
-      accessibilityState={{ checked: prefs[k] }}
-    >
-      <View style={{ flex: 1 }}>
+    <View style={subStyles.rowTouch}>
+      <View style={{ flex: 1, paddingRight: spacing.sm }}>
         <Text style={subStyles.rowLabel}>{label}</Text>
         <Text style={subStyles.rowSub}>{sub}</Text>
       </View>
-      <Text style={chipText}>{prefs[k] ? 'Activo' : 'Inactivo'}</Text>
-    </TouchableOpacity>
+      <Switch
+        value={Boolean(p[k])}
+        onValueChange={(v) => onPrefChange?.(k, v)}
+        trackColor={{ false: '#888', true: undefined }}
+      />
+    </View>
   );
 
   return (
@@ -76,7 +73,20 @@ function NotificationsBody() {
       <View style={subStyles.divider} />
       <Row k="cambiosAgenda" label="Cambios en tu agenda" sub="Reposiciones y cancelaciones." />
       <View style={subStyles.divider} />
-      <Row k="mensajes" label="Mensajes" sub="Chats del salón y tu estilista." />
+      <Row
+        k="mensajes"
+        label="Mensajes"
+        sub="Muestra el ícono Aura Line en Inicio y avisos del salón."
+      />
+      <Text style={[subStyles.muted, { marginTop: spacing.sm, fontSize: 12 }]}>
+        Estado mensajes:{' '}
+        <Text style={chipText}>{p.mensajes ? 'Activo' : 'Inactivo'}</Text>
+      </Text>
+      {p.mensajes ? (
+        <Text style={[subStyles.muted, { marginTop: spacing.xs, fontSize: 12 }]}>
+          En Inicio verás el ícono de mensajes junto a Acceso rápido.
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -242,6 +252,9 @@ export function ClientSubScreenBody({
   onCitasChanged,
   sessionUser,
   onClienteUpdated,
+  notifPrefs,
+  onNotifPrefChange,
+  onAuraUnreadChange,
 }) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
@@ -484,7 +497,16 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.CONTACTO:
       return <ContactoBody />;
     case CLIENT_SUB.NOTIFICACIONES:
-      return <NotificationsBody />;
+      return <NotificationsBody prefs={notifPrefs} onPrefChange={onNotifPrefChange} />;
+
+    case CLIENT_SUB.MENSAJES:
+      return (
+        <AuraLineInbox
+          clienteRow={clienteRow}
+          sessionUser={sessionUser}
+          onUnreadChange={onAuraUnreadChange}
+        />
+      );
 
     case CLIENT_SUB.METODOS_PAGO:
       return (

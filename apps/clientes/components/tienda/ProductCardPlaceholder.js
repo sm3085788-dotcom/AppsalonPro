@@ -68,8 +68,6 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
           aspectRatio: 1,
           width: '100%',
           backgroundColor: imageZoneBg,
-          alignItems: 'center',
-          justifyContent: 'center',
           borderBottomWidth: 1,
           borderBottomColor: c.cardBorder,
           overflow: 'hidden',
@@ -192,7 +190,7 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
     <View style={[styles.card, { width }]}>
       <View style={styles.imageZone}>
         {hasProduct && galleryUris.length > 0 ? (
-          <ProductImageStrip uris={galleryUris} badgeText={product.badge} />
+          <ProductImageStrip uris={galleryUris} badgeText={product.badge} style={{ flex: 1 }} />
         ) : hasProduct ? null : (
           <>
             <ImageIcon size={36} color={c.foregroundSubtle} strokeWidth={1.4} />

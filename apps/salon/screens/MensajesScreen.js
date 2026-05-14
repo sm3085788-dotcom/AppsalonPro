@@ -28,6 +28,7 @@ import {
   Send,
   Sparkles,
   X,
+  FileText,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, supabase, uploadMensajeMediaFromUri } from '@appsalon/shared-config';
@@ -98,8 +99,15 @@ export function MensajesScreen({ onBack }) {
   const [promoBody, setPromoBody] = useState('');
   const [promoImage, setPromoImage] = useState(null);
   const [broadcasting, setBroadcasting] = useState(false);
+  const [staffUserId, setStaffUserId] = useState(null);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setStaffUserId(user?.id ?? null);
+    });
+  }, []);
 
   const loadInbox = useCallback(async () => {
     setLoadingInbox(true);
@@ -414,30 +422,63 @@ export function MensajesScreen({ onBack }) {
   };
 
   const renderBubble = ({ item }) => {
-    const isBroadcast = String(item.content_type || '').includes('broadcast');
+    const ct = String(item.content_type || '');
+    const isBroadcast = ct.includes('broadcast');
+    const isIncident = ct === 'incident_report';
+    const isInterest = ct === 'tendencias_interest' || ct === 'carousel_interest';
+    const isInbound =
+      isInterest ||
+      (item.created_by && staffUserId && item.created_by !== staffUserId && !isBroadcast);
+    const interestSource =
+      ct === 'carousel_interest' ? 'Carrusel inicio' : ct === 'tendencias_interest' ? 'Tendencias' : null;
     return (
-      <View style={[styles.bubbleWrap, styles.bubbleOut]}>
-        <LinearGradient
-          colors={isBroadcast ? ['#B8860B', '#D4AF37', '#C9A227'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.bubbleGrad}
-        >
-          {isBroadcast ? (
-            <View style={styles.badgeRow}>
-              <Radio size={14} color="#1a1024" />
-              <Text style={styles.badgeTxt}>Difusión</Text>
-            </View>
-          ) : null}
-          <Text style={styles.bubbleText}>{item.content}</Text>
-          {item.media_url && item.media_kind === 'image' ? (
-            <Image source={{ uri: item.media_url }} style={styles.bubbleImg} resizeMode="cover" />
-          ) : null}
-          <Text style={styles.bubbleMeta}>
-            {new Date(item.created_at).toLocaleString('es-GT', { hour: '2-digit', minute: '2-digit' })} ·{' '}
-            {item.created_by_name || 'Salón'}
-          </Text>
-        </LinearGradient>
+      <View style={[styles.bubbleWrap, isInbound ? styles.bubbleIn : styles.bubbleOut]}>
+        {isInbound ? (
+          <View style={[styles.bubbleInbound, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+            {isInterest ? (
+              <View style={styles.badgeRow}>
+                <Sparkles size={14} color={c.primary} />
+                <Text style={[styles.badgeTxt, { color: c.primary }]}>Interés · {interestSource}</Text>
+              </View>
+            ) : null}
+            <Text style={[styles.bubbleTextIn, { color: c.foreground }]}>{item.content}</Text>
+            {item.media_url && item.media_kind === 'image' ? (
+              <Image source={{ uri: item.media_url }} style={styles.bubbleImg} resizeMode="cover" />
+            ) : null}
+            <Text style={[styles.bubbleMetaIn, { color: c.foregroundMuted }]}>
+              {new Date(item.created_at).toLocaleString('es-GT', { hour: '2-digit', minute: '2-digit' })} ·{' '}
+              {item.created_by_name || item.client_name || 'Cliente'}
+            </Text>
+          </View>
+        ) : (
+          <LinearGradient
+            colors={isBroadcast ? ['#B8860B', '#D4AF37', '#C9A227'] : isIncident ? ['#5c1f33', '#7a2d45', '#9a3d58'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.bubbleGrad}
+          >
+            {isBroadcast ? (
+              <View style={styles.badgeRow}>
+                <Radio size={14} color="#1a1024" />
+                <Text style={styles.badgeTxt}>Difusión</Text>
+              </View>
+            ) : null}
+            {isIncident ? (
+              <View style={styles.badgeRow}>
+                <FileText size={14} color="#fff" />
+                <Text style={[styles.badgeTxt, { color: '#fff' }]}>Reporte incidente</Text>
+              </View>
+            ) : null}
+            <Text style={styles.bubbleText}>{item.content}</Text>
+            {item.media_url && item.media_kind === 'image' ? (
+              <Image source={{ uri: item.media_url }} style={styles.bubbleImg} resizeMode="cover" />
+            ) : null}
+            <Text style={styles.bubbleMeta}>
+              {new Date(item.created_at).toLocaleString('es-GT', { hour: '2-digit', minute: '2-digit' })} ·{' '}
+              {item.created_by_name || 'Salón'}
+            </Text>
+          </LinearGradient>
+        )}
       </View>
     );
   };
@@ -761,6 +802,14 @@ function createStyles(c) {
       marginBottom: spacing.sm,
     },
     bubbleOut: { alignSelf: 'flex-end' },
+    bubbleIn: { alignSelf: 'flex-start' },
+    bubbleInbound: {
+      borderRadius: radii.lg,
+      borderWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      maxWidth: '100%',
+    },
     bubbleGrad: {
       borderRadius: radii.lg,
       paddingHorizontal: spacing.md,
@@ -784,6 +833,11 @@ function createStyles(c) {
       color: '#FFF',
       lineHeight: 22,
     },
+    bubbleTextIn: {
+      fontFamily: typography.fontSans,
+      fontSize: 15,
+      lineHeight: 22,
+    },
     bubbleImg: {
       width: '100%',
       height: 160,
@@ -794,6 +848,11 @@ function createStyles(c) {
       fontFamily: typography.fontSans,
       fontSize: 10,
       color: 'rgba(255,255,255,0.75)',
+      marginTop: 6,
+    },
+    bubbleMetaIn: {
+      fontFamily: typography.fontSans,
+      fontSize: 10,
       marginTop: 6,
     },
     previewBar: {

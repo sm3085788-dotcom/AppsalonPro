@@ -21,9 +21,7 @@ import { Heart, MessageCircle, Share2, CircleHelp, ChevronLeft, Send } from 'luc
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
-import { db, supabase } from '@appsalon/shared-config';
-
-const APPSALON_PHONE = '+50257199107';
+import { db, supabase, registerMarketingInterest, MARKETING_INTEREST_TYPES } from '@appsalon/shared-config';
 
 const TREND_VIDEOS = [
   {
@@ -531,7 +529,14 @@ export function TendenciasFeed({ onBack }) {
     (async () => {
       const { data, error } = await db.marketingPosts.getPublishedTendenciasFeed(40);
       if (!alive) return;
-      if (error || !data?.length) {
+      if (error) {
+        if (__DEV__) {
+          console.warn('[Tendencias] Feed Supabase:', error.message);
+        }
+        setRemoteFeed([]);
+        return;
+      }
+      if (!data?.length) {
         setRemoteFeed([]);
         return;
       }
@@ -603,9 +608,26 @@ export function TendenciasFeed({ onBack }) {
     }
   };
 
-  const onInterest = (video) => {
-    const msg = `Hola, me interesa esta tendencia de App Salón: "${video.title}". Quiero más información.`;
-    shareTo(`https://wa.me/${APPSALON_PHONE.replace('+', '')}?text=${encodeURIComponent(msg)}`);
+  const onInterest = async (video) => {
+    const { error } = await registerMarketingInterest({
+      type: MARKETING_INTEREST_TYPES.TENDENCIAS,
+      title: video.title,
+      detail: video.caption || null,
+      postId: video.postId ?? null,
+      mediaUrl: video.imageUri || video.videoUri || null,
+    });
+    if (error) {
+      Alert.alert(
+        'Me interesa',
+        error.message ||
+          'No se pudo avisar al salón. Si ves error de permisos, en Supabase activá la política de INSERT para clientes en marketing_direct_messages.',
+      );
+      return;
+    }
+    Alert.alert(
+      '¡Listo!',
+      'El salón recibió tu interés en Mensajes (Aura Line). Te contactarán pronto.',
+    );
   };
 
   return (
@@ -800,14 +822,17 @@ function TrendVideoCard({
   const { colors: tc } = useTheme();
   const player = useVideoPlayer(item.videoUri || '', (p) => {
     p.loop = true;
-    p.muted = true;
+    p.muted = false;
   });
 
   useEffect(() => {
     if (!isActive) {
+      player.muted = true;
       player.pause();
-      return;
+      return undefined;
     }
+
+    player.muted = false;
 
     const tryPlay = () => {
       if (player.status === 'readyToPlay') {
@@ -816,13 +841,20 @@ function TrendVideoCard({
     };
 
     tryPlay();
-    const sub = player.addListener('statusChange', ({ status }) => {
+    const statusSub = player.addListener('statusChange', ({ status }) => {
       if (status === 'readyToPlay' && isActive) {
         player.play();
       }
     });
+    const endSub = player.addListener('playToEnd', () => {
+      if (!isActive) return;
+      player.replay();
+    });
 
-    return () => sub.remove();
+    return () => {
+      statusSub.remove();
+      endSub.remove();
+    };
   }, [isActive, player]);
 
   return (

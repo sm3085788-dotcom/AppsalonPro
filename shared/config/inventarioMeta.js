@@ -37,6 +37,17 @@ export function mergeNotas(staff, meta) {
   return `${clean}${TIENDA_JSON_MARK}${JSON.stringify({ ...DEFAULT_TIENDA_META, ...meta })}`;
 }
 
+/** Fecha inventario AAAA-MM-DD o null (evita errores Postgres con valores sueltos). */
+export function sanitizeInventarioFechaVencimiento(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return s;
+}
+
 /** Fila inventario → ítem de catálogo para agenda (producto o servicio). */
 export function inventarioRowToAgendaItem(row) {
   if (!row?.nombre) return null;

@@ -1,5 +1,12 @@
 import { db } from './supabaseClient.js';
 import { registrarMontoVentaEnMeta } from './metaGlobal.js';
+import { splitNotas, DEFAULT_TIENDA_META } from './inventarioMeta.js';
+
+function formatQ(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'Q 0.00';
+  return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 /**
  * Cierra compra con tarjeta desde app clientes: venta en `ventas`, descuenta stock y suma monto a la meta global.
@@ -70,21 +77,80 @@ export async function confirmarCompraConTarjeta({ clienteId, clienteNombre, cart
 
 export function mapInventarioToTiendaProduct(row) {
   if (!row) return null;
+  const { meta } = splitNotas(row.notas);
   const imgs = Array.isArray(row.imagenes_urls) ? row.imagenes_urls.filter(Boolean) : [];
   const mainImg = row.imagen_url || imgs[0] || null;
+  const allImgs = [...new Set([mainImg, ...imgs].filter(Boolean))];
+  const venta = Number(row.precio_venta || 0);
+  const costo = Number(row.precio_costo ?? row.costo ?? 0);
+  const tipo = meta.articuloTipo === 'servicio' ? 'servicio' : 'producto';
+  const stock = Number(row.stock_actual ?? 0);
+
   return {
     id: row.id,
     inventarioId: row.id,
-    brandLine: row.categoria || 'Salón',
+    brandLine: row.categoria || (tipo === 'servicio' ? 'Servicio' : 'Salón'),
     title: row.nombre,
+    sku: row.barcode || null,
     imageUri: mainImg,
-    imageUris: imgs.length ? imgs : mainImg ? [mainImg] : [],
-    priceLabel: `Q ${Number(row.precio_venta || 0).toFixed(2)}`,
-    priceAmount: Number(row.precio_venta || 0),
-    stockHint: `En stock · ${row.stock_actual ?? 0} u.`,
-    rating: 4.5,
-    reviewCount: 0,
-    shippingLabel: 'Retiro en salón o envío según disponibilidad',
-    descripcion: row.descripcion_tienda || row.notas || '',
+    imageUris: allImgs,
+    priceLabel: formatQ(venta),
+    priceAmount: venta,
+    compareAtLabel: costo > venta && venta > 0 ? formatQ(costo) : null,
+    stockHint:
+      stock > 0
+        ? tipo === 'servicio'
+          ? 'Servicio disponible · agenda'
+          : `En stock · ${stock} u.`
+        : tipo === 'servicio'
+          ? 'Consultá disponibilidad en salón'
+          : 'Sin stock · consultá en salón',
+    stockActual: stock,
+    stockMinimo: Number(row.stock_minimo ?? 0),
+    rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
+    reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
+    shippingLabel: meta.shippingLabel || DEFAULT_TIENDA_META.shippingLabel,
+    badge: meta.badge?.trim() || null,
+    descripcion: row.descripcion_tienda || '',
+    articuloTipo: tipo,
+    duracionMinutos: Math.max(15, Math.floor(Number(meta.duracion_minutos) || 60)),
+    esConsumible: !!row.es_consumible,
+    fechaVencimiento: row.fecha_vencimiento || null,
+    ubicacion: row.ubicacion || null,
   };
+}
+
+/** Ficha técnica (especificaciones + descripción) para detalle de tienda. */
+export function buildTiendaProductFicha(product) {
+  if (!product) return { specs: [], longCopy: '' };
+  const specs = [];
+  const add = (label, value) => {
+    const v = value == null ? '' : String(value).trim();
+    if (v) specs.push({ label, value: v });
+  };
+
+  add('Tipo', product.articuloTipo === 'servicio' ? 'Servicio en salón' : 'Producto');
+  add('SKU / código', product.sku);
+  if (product.articuloTipo === 'servicio') {
+    add('Duración en agenda', `${product.duracionMinutos || 60} min`);
+  }
+  add('Precio', product.priceLabel);
+  if (product.compareAtLabel) add('Precio referencia', product.compareAtLabel);
+  add('Stock disponible', `${product.stockActual ?? 0} u.`);
+  add('Stock mínimo', `${product.stockMinimo ?? 0} u.`);
+  add('Consumible / insumo', product.esConsumible ? 'Sí' : 'No');
+  add('Fecha de vencimiento', product.fechaVencimiento);
+  add('Ubicación en salón', product.ubicacion);
+  add('Valoración', `${Number(product.rating || 0).toFixed(1)} / 5`);
+  add('Reseñas', `${product.reviewCount ?? 0}`);
+  add('Envío y retiro', product.shippingLabel);
+  if (product.badge) add('Insignia', product.badge);
+
+  const longCopy =
+    product.descripcion?.trim() ||
+    (product.articuloTipo === 'servicio'
+      ? 'Servicio profesional del salón. Coordiná tu cita desde la app.'
+      : 'Producto del salón. Retiro en recepción o envío según disponibilidad.');
+
+  return { specs, longCopy };
 }
