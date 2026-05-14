@@ -17,10 +17,10 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { UserPlus, Phone, MapPin, Calendar, X, Mail } from 'lucide-react-native';
+import { UserPlus, Calendar, X, ChevronRight } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
-import { SubScreenChrome, useSubStyles, SalonButton } from '../components/luxury';
+import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { shareClienteFicha } from '../utils/shareClienteFicha';
 
@@ -45,7 +45,6 @@ function isManualProfile(row) {
 export function ClientesScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const subStyles = useSubStyles();
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [clientes, setClientes] = useState([]);
@@ -124,6 +123,14 @@ export function ClientesScreen({ onBack }) {
     return sorted;
   }, [clientes, search, filterTipo, sortMode]);
 
+  const filtroResumen = useMemo(() => {
+    const orden =
+      sortMode === 'nombre_desc' ? 'Nombre Z → A' : sortMode === 'reciente' ? 'Más recientes' : 'Nombre A → Z';
+    const tipo =
+      filterTipo === 'manual' ? 'Solo manual' : filterTipo === 'app' ? 'Solo app clientes' : 'Todos los orígenes';
+    return `${orden} · ${tipo}`;
+  }, [sortMode, filterTipo]);
+
   const openManual = useCallback(() => {
     setNombre('');
     setTelefono('');
@@ -194,72 +201,56 @@ export function ClientesScreen({ onBack }) {
     }
   };
 
-  const padList = Math.max(insets.bottom + spacing.lg, spacing.xl * 2);
+  const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
 
   const renderItem = useCallback(
     ({ item }) => {
       const manual = isManualProfile(item);
       const edad = ageFromBirthdate(item.cumpleanos);
+      const subParts = [
+        item.telefono,
+        item.email,
+        item.direccion,
+        edad != null ? `${edad} años` : null,
+      ].filter(Boolean);
+
       return (
         <TouchableOpacity
-          activeOpacity={0.88}
+          activeOpacity={0.7}
           onPress={() => setDetailCliente(item)}
-          style={[styles.rowCard, { borderColor: MINT.border, backgroundColor: c.card }]}
+          style={[styles.row, { borderBottomColor: c.cardBorder }]}
         >
-          <View style={styles.rowTop}>
-            <View style={styles.rowAvatarWrap}>
-              {item.photo_url ? (
-                <Image source={{ uri: item.photo_url }} style={styles.rowAvatar} resizeMode="cover" />
-              ) : (
-                <View style={[styles.rowAvatar, styles.rowAvatarEmpty, { backgroundColor: c.surfaceMuted }]}>
-                  <Text style={styles.rowAvatarLetter}>
-                    {(item.nombre || '?').trim().charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <View style={styles.rowNameRow}>
-                <Text style={styles.rowName} numberOfLines={2}>
-                  {item.nombre || 'Sin nombre'}
+          <View style={styles.rowAvatarWrap}>
+            {item.photo_url ? (
+              <Image source={{ uri: item.photo_url }} style={styles.rowAvatar} resizeMode="cover" />
+            ) : (
+              <View style={[styles.rowAvatar, styles.rowAvatarEmpty, { backgroundColor: c.surfaceMuted }]}>
+                <Text style={[styles.rowAvatarLetter, { color: c.foregroundMuted }]}>
+                  {(item.nombre || '?').trim().charAt(0).toUpperCase()}
                 </Text>
-                <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
-                  <Text style={[styles.chipTxt, { color: manual ? '#1B5E20' : c.foregroundMuted }]}>
-                    {manual ? 'Manual' : 'App clientes'}
-                  </Text>
-                </View>
               </View>
-              {item.email ? (
-                <View style={styles.rowLine}>
-                  <Mail size={15} color={c.foregroundMuted} strokeWidth={2} />
-                  <Text style={styles.rowMeta} numberOfLines={1}>
-                    {item.email}
-                  </Text>
-                </View>
-              ) : null}
-              {item.telefono ? (
-                <View style={styles.rowLine}>
-                  <Phone size={16} color={c.foregroundMuted} strokeWidth={2} />
-                  <Text style={styles.rowMeta}>{item.telefono}</Text>
-                </View>
-              ) : null}
-              {item.direccion ? (
-                <View style={styles.rowLine}>
-                  <MapPin size={16} color={c.foregroundMuted} strokeWidth={2} />
-                  <Text style={styles.rowMeta} numberOfLines={2}>
-                    {item.direccion}
-                  </Text>
-                </View>
-              ) : null}
-              {edad != null ? (
-                <Text style={styles.rowAge}>Edad aproximada: {edad} años</Text>
-              ) : null}
-            </View>
+            )}
           </View>
+          <View style={styles.rowBody}>
+            <View style={styles.rowTopLine}>
+              <Text style={[styles.rowName, { color: c.foreground }]} numberOfLines={1}>
+                {item.nombre || 'Sin nombre'}
+              </Text>
+              <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
+                <Text style={[styles.chipTxt, { color: manual ? '#1B5E20' : c.foregroundMuted }]}>
+                  {manual ? 'Manual' : 'App'}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+              {subParts.length ? subParts.join(' · ') : 'Sin contacto'}
+            </Text>
+          </View>
+          <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
         </TouchableOpacity>
       );
     },
-    [c.card, c.foreground, c.foregroundMuted, c.surfaceMuted, styles],
+    [c.cardBorder, c.foreground, c.foregroundMuted, c.foregroundSubtle, c.surfaceMuted, styles],
   );
 
   const addPersonIconColor = isDark ? '#141414' : c.foreground;
@@ -285,6 +276,7 @@ export function ClientesScreen({ onBack }) {
         disableBodyScroll
         rightAction={rightAction}
         bottomPadding={0}
+        edgeToEdge
       >
         <View style={styles.body}>
           <TextInput
@@ -297,52 +289,60 @@ export function ClientesScreen({ onBack }) {
             accessibilityLabel="Buscar clientes"
           />
 
-          <View style={styles.listShell}>
-            <View style={styles.agendaToolbar}>
-              <Text style={styles.agendaToolbarMeta}>
-                {filtered.length} cliente{filtered.length === 1 ? '' : 's'}
-              </Text>
-              <TouchableOpacity
-                hitSlop={12}
-                accessibilityRole="button"
-                accessibilityLabel="Ordenar y filtros"
-                onPress={() => setModalFiltros(true)}
-              >
-                <Text style={styles.agendaToolbarLink}>Ordenar · filtros</Text>
-              </TouchableOpacity>
-            </View>
-
-            {loadError ? (
-              <View style={styles.centerBox}>
-                <Text style={[subStyles.muted, styles.errTxt]}>{loadError}</Text>
-              </View>
-            ) : null}
-
-            {loading ? (
-              <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color={c.primary} />
-              </View>
-            ) : (
-              <View style={styles.listWrap}>
-                <FlatList
-                  data={filtered}
-                  keyExtractor={(item) => String(item.id)}
-                  renderItem={renderItem}
-                  style={{ flex: 1 }}
-                  refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadClientes(); }} tintColor={c.primary} />
-                  }
-                  contentContainerStyle={{ paddingBottom: padList, flexGrow: 1 }}
-                  ListEmptyComponent={null}
-                  ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
-                  initialNumToRender={12}
-                  windowSize={8}
-                  removeClippedSubviews
-                />
-              </View>
-            )}
-
+          <View style={styles.toolbar}>
+            <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
+              {loading ? '…' : `${filtered.length} cliente${filtered.length === 1 ? '' : 's'}`}
+            </Text>
+            <TouchableOpacity
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Ordenar y filtros"
+              onPress={() => setModalFiltros(true)}
+            >
+              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
+            </TouchableOpacity>
           </View>
+          <Text style={[styles.filtroResumen, { color: c.foregroundSubtle }]} numberOfLines={1}>
+            {filtroResumen}
+          </Text>
+
+          {loadError ? (
+            <Text style={[styles.errTxt, { color: c.foregroundMuted }]}>{loadError}</Text>
+          ) : null}
+
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: spacing.md }} color={c.primary} />
+          ) : (
+            <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <FlatList
+                data={filtered}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={renderItem}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => {
+                      setRefreshing(true);
+                      loadClientes();
+                    }}
+                    tintColor={c.primary}
+                  />
+                }
+                contentContainerStyle={{ paddingBottom: padList, flexGrow: filtered.length === 0 ? 1 : 0 }}
+                showsVerticalScrollIndicator={false}
+                ListEmptyComponent={
+                  <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+                    {clientes.length === 0
+                      ? 'No hay clientes registrados.'
+                      : 'Ningún resultado con la búsqueda o filtros actuales.'}
+                  </Text>
+                }
+                initialNumToRender={16}
+                windowSize={8}
+                removeClippedSubviews
+              />
+            </View>
+          )}
         </View>
       </SubScreenChrome>
 
@@ -563,28 +563,36 @@ export function ClientesScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
-    body: { flex: 1 },
-    listShell: {
+    body: {
       flex: 1,
-      paddingTop: spacing.xs,
+      paddingHorizontal: spacing.sm,
     },
-    agendaToolbar: {
+    toolbar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: spacing.md,
+      marginBottom: 2,
     },
-    agendaToolbarMeta: {
+    toolbarMeta: {
       fontFamily: typography.fontSansMedium,
-      fontSize: 13,
-      color: c.foregroundMuted,
+      fontSize: 12,
     },
-    agendaToolbarLink: {
+    toolbarLink: {
       fontFamily: typography.fontSansMedium,
-      fontSize: 13,
-      color: c.primary,
+      fontSize: 12,
     },
-    listWrap: { flex: 1 },
+    filtroResumen: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginBottom: spacing.xs,
+    },
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
     addPersonCircle: {
       width: 44,
       height: 44,
@@ -605,40 +613,53 @@ function createStyles(c) {
     },
     search: {
       fontFamily: typography.fontSans,
-      fontSize: 15,
-      minHeight: 48,
-      borderRadius: radii.lg,
+      fontSize: 14,
+      minHeight: 40,
+      borderRadius: radii.md,
       borderWidth: 1,
-      paddingHorizontal: spacing.md,
-      marginBottom: spacing.md,
+      paddingHorizontal: spacing.sm,
+      marginBottom: spacing.xs,
     },
-    centerBox: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingVertical: spacing.xl,
-      paddingHorizontal: spacing.md,
-      gap: spacing.sm,
+    errTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      textAlign: 'center',
+      marginBottom: spacing.xs,
     },
-    errTxt: { textAlign: 'center', marginBottom: spacing.sm },
-    rowCard: {
-      borderRadius: radii.lg,
-      borderWidth: 1,
-      padding: spacing.md,
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      textAlign: 'center',
+      paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.sm,
     },
-    rowTop: {
+    row: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
       gap: spacing.sm,
+    },
+    rowBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    rowTopLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.xs,
     },
     rowAvatarWrap: {
-      width: 52,
-      height: 52,
+      width: 34,
+      height: 34,
+      flexShrink: 0,
     },
     rowAvatar: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
     },
     rowAvatarEmpty: {
       alignItems: 'center',
@@ -646,50 +667,31 @@ function createStyles(c) {
     },
     rowAvatarLetter: {
       fontFamily: typography.fontSansMedium,
-      fontSize: 20,
-      color: c.foregroundMuted,
-    },
-    rowNameRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      gap: spacing.xs,
-      marginBottom: 4,
+      fontSize: 14,
     },
     rowName: {
       flex: 1,
       fontFamily: typography.fontSansMedium,
       fontSize: 14,
-      lineHeight: 20,
-      color: c.foreground,
     },
     chip: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
       borderRadius: radii.pill,
+      flexShrink: 0,
     },
     chipTxt: {
       fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
       fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
     },
-    rowLine: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.sm,
-      marginTop: 4,
-    },
-    rowMeta: {
-      flex: 1,
-      fontFamily: typography.fontSans,
-      fontSize: 13,
-      lineHeight: 20,
-      color: c.foregroundMuted,
-    },
-    rowAge: {
-      fontFamily: typography.fontSans,
-      fontSize: 13,
-      color: c.foregroundMuted,
-      marginTop: spacing.sm,
+    rowChev: {
+      flexShrink: 0,
     },
     modalBackdrop: {
       flex: 1,

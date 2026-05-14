@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
 import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, Building2, QrCode } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SalonButton } from '../luxury/SalonButton';
@@ -11,6 +11,7 @@ import {
   TIENDA_SAMPLE_SPECS,
   TIENDA_SAMPLE_LONG_COPY,
 } from '../../data/tiendaPlaceholders';
+import { confirmarCompraConTarjeta, crearPedidoEfectivo } from '@appsalon/shared-config';
 
 const STAR_GOLD = '#FFB800';
 const STAR_EMPTY = '#E3E3E3';
@@ -67,9 +68,10 @@ function SpecRow({ label, value }) {
 }
 
 /**
- * Catálogo → ficha → resumen → envío → pago → venta cerrada. Solo UI y botones (sin integración real).
+ * Catálogo → ficha → resumen → envío → pago → venta cerrada.
+ * Compra con tarjeta: venta real, descuenta stock y suma unidades a la meta global.
  */
-export function TiendaFlow({ onClose }) {
+export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono, clientUserId }) {
   const { colors: tc, isDark } = useTheme();
   const styles = useTiendaStyles();
   const subStyles = useMemo(() => createSubStyles(tc), [tc]);
@@ -94,6 +96,7 @@ export function TiendaFlow({ onClose }) {
   const [showAddCardForm, setShowAddCardForm] = useState(false);
   const [cardSavedToast, setCardSavedToast] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
 
   const specsAndCopy = useMemo(() => {
     if (selected?.id === 'sample-keratin-kit') {
@@ -753,18 +756,108 @@ export function TiendaFlow({ onClose }) {
           ) : null}
 
           <SalonButton
-            title="Confirmar pedido y cerrar venta"
+            title={checkoutBusy ? 'Procesando…' : 'Confirmar pedido y cerrar venta'}
             variant="heroGold"
             fullWidth
             style={{ marginTop: spacing.lg }}
-            onPress={() => {
+            onPress={async () => {
+              if (payId === 'pay-card') {
+                if (!clienteId) {
+                  Alert.alert(
+                    'Iniciá sesión',
+                    'Para pagar con tarjeta necesitás una cuenta de cliente vinculada al salón.',
+                  );
+                  return;
+                }
+                if (!cartItems.length) {
+                  Alert.alert('Carrito', 'Agregá productos antes de confirmar.');
+                  return;
+                }
+                const hasLiveIds = cartItems.every((i) => i.id && !String(i.id).startsWith('sample-'));
+                if (!hasLiveIds) {
+                  Alert.alert(
+                    'Producto de ejemplo',
+                    'Este artículo es solo demostración. El salón debe publicar productos reales en inventario (visible en tienda).',
+                  );
+                  return;
+                }
+                setCheckoutBusy(true);
+                const res = await confirmarCompraConTarjeta({
+                  clienteId,
+                  clienteNombre,
+                  cartItems,
+                });
+                setCheckoutBusy(false);
+                if (!res.ok) {
+                  Alert.alert('No se completó la compra', res.error?.message || 'Intentá de nuevo.');
+                  return;
+                }
+                const orderCode = res.noFactura || `APS-${String(Date.now()).slice(-6)}`;
+                setLastOrder({
+                  code: orderCode,
+                  items: cartItems,
+                  subtotal: cartSubtotal,
+                  total: cartSubtotal,
+                  paymentSummary: `Tarjeta guardada · ${selectedCard.label}`,
+                  shippingSummary:
+                    shipId === 'ship-home'
+                      ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
+                      : 'Retiro en salón con QR',
+                  qrCode: shipId === 'ship-salon' ? 'APS-RET-2026-882041' : null,
+                  realSale: true,
+                });
+                setPhase('success');
+                setCartItems([]);
+                return;
+              }
+
+              if (payId === 'pay-cash') {
+                if (!cartItems.length) {
+                  Alert.alert('Carrito', 'Agregá productos antes de confirmar.');
+                  return;
+                }
+                const hasLiveIds = cartItems.every((i) => i.id && !String(i.id).startsWith('sample-'));
+                if (!hasLiveIds) {
+                  Alert.alert(
+                    'Producto de ejemplo',
+                    'Publicá productos reales en inventario (visible en tienda) para pedir en efectivo.',
+                  );
+                  return;
+                }
+                setCheckoutBusy(true);
+                const res = await crearPedidoEfectivo({
+                  clienteNombre: clienteNombre || 'Cliente tienda',
+                  clienteTelefono: clienteTelefono || '—',
+                  clientUserId: clientUserId || null,
+                  cartItems,
+                  shipId,
+                  homeAddressType,
+                });
+                setCheckoutBusy(false);
+                if (!res.ok) {
+                  Alert.alert('No se envió el pedido', res.error?.message || 'Intentá de nuevo.');
+                  return;
+                }
+                setLastOrder({
+                  code: res.trackingCode || res.order?.tracking_code,
+                  items: cartItems,
+                  subtotal: cartSubtotal,
+                  total: cartSubtotal,
+                  paymentSummary: 'Efectivo · pendiente de cobro en salón',
+                  shippingSummary:
+                    shipId === 'ship-home'
+                      ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
+                      : 'Retiro en salón',
+                  qrCode: shipId === 'ship-salon' ? res.trackingCode : null,
+                  realSale: 'pending_cash',
+                });
+                setPhase('success');
+                setCartItems([]);
+                return;
+              }
+
               const orderCode = `APS-${String(Date.now()).slice(-6)}`;
-              const paymentSummary =
-                payId === 'pay-card'
-                  ? `Tarjeta guardada · ${selectedCard.label}`
-                  : payId === 'pay-wire'
-                    ? 'Transferencia confirmada por llamada'
-                    : 'Efectivo al retirar';
+              const paymentSummary = 'Transferencia confirmada por llamada';
               const shippingSummary =
                 shipId === 'ship-home'
                   ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
@@ -778,11 +871,12 @@ export function TiendaFlow({ onClose }) {
                 paymentSummary,
                 shippingSummary,
                 qrCode: shipId === 'ship-salon' ? 'APS-RET-2026-882041' : null,
+                realSale: false,
               });
               setPhase('success');
               setCartItems([]);
             }}
-            disabled={!canConfirmPurchase}
+            disabled={!canConfirmPurchase || checkoutBusy}
           />
         </View>
       ) : null}
@@ -792,8 +886,12 @@ export function TiendaFlow({ onClose }) {
           <View style={[subStyles.card, styles.successCard]}>
             <Text style={styles.successTitle}>Venta cerrada</Text>
             <Text style={subStyles.bullets}>
-              Pedido #{lastOrder?.code ?? '—'} · El salón vería este pedido en su panel cuando
-              conectemos inventario y pagos. No se ha cobrado nada.
+              Pedido #{lastOrder?.code ?? '—'}
+              {lastOrder?.realSale === true
+                ? ' · Compra con tarjeta registrada, stock descontado y monto sumado a la meta.'
+                : lastOrder?.realSale === 'pending_cash'
+                  ? ' · Pedido enviado al salón. Pagá en efectivo al retirar; el equipo lo confirmará en Pedidos.'
+                  : ' · Pedido de referencia (transferencia).'}
             </Text>
           </View>
 

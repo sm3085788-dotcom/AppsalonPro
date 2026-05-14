@@ -4,6 +4,7 @@
  */
 import { db, supabase } from '@appsalon/shared-config';
 import { clearAllBasureroEntries, clearBasureroEntriesInDateRange } from './salonBasurero';
+import { clearAllReportes, loadReportes, deleteReportesInDateRange } from './salonReportesStorage';
 
 const CHUNK = 80;
 
@@ -225,4 +226,67 @@ export async function purgeBasureroLocal(opts) {
     return 0;
   }
   return clearBasureroEntriesInDateRange(r.fromISO, r.toISO);
+}
+
+/** Reportes PDF generados guardados en este dispositivo (pantalla Reportes). */
+export async function purgeReportesLocales(opts) {
+  const r = normalizeDateRangeOpts(opts);
+  if (!r) {
+    const list = await loadReportes();
+    const n = list.length;
+    await clearAllReportes();
+    return n;
+  }
+  return deleteReportesInDateRange(r.fromISO, r.toISO);
+}
+
+const PURGE_ALL_ORDER = [
+  'ventas_chain',
+  'caja_chain',
+  'pedidos',
+  'citas',
+  'marketing',
+  'notificaciones',
+  'metas',
+  'incidentes',
+  'inventario',
+  'proveedores',
+  'clientes',
+  'empleados',
+  'audit',
+  'basurero_local',
+];
+
+/** Ejecuta todos los purges de BD + locales opcionales. */
+export async function purgeAllModules(opts = {}) {
+  const { includeReportes = false, ...purgeOpts } = opts;
+  const runners = {
+    ventas_chain: purgeVentasYRelacionadas,
+    caja_chain: purgeCajasYMovimientos,
+    pedidos: purgePedidosEcommerce,
+    citas: purgeCitas,
+    marketing: purgeMarketingRed,
+    notificaciones: purgeNotificaciones,
+    metas: purgeMetas,
+    incidentes: purgeIncidentes,
+    inventario: purgeInventario,
+    proveedores: purgeProveedores,
+    clientes: purgeClientes,
+    empleados: purgeEmpleados,
+    audit: purgeAuditLogs,
+    basurero_local: purgeBasureroLocal,
+  };
+
+  let total = 0;
+  for (const key of PURGE_ALL_ORDER) {
+    const fn = runners[key];
+    if (!fn) continue;
+    const n = await fn(purgeOpts);
+    if (typeof n === 'number') total += n;
+  }
+  if (includeReportes) {
+    await purgeReportesLocales();
+    total += 1;
+  }
+  return total;
 }

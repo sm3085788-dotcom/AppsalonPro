@@ -15,7 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Megaphone, MessageCircle, Package, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db } from '@appsalon/shared-config';
+import { db, confirmarCobroPedidoSalon } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -60,6 +60,9 @@ export function PedidosScreen({ onBack }) {
   const [comments, setComments] = useState([]);
   const [carousel, setCarousel] = useState([]);
   const [detail, setDetail] = useState(null);
+  const [detailItems, setDetailItems] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -145,9 +148,46 @@ export function PedidosScreen({ onBack }) {
     });
   }, [orders, comments, carousel, tab, query]);
 
-  const openDetail = (row) => {
+  const openDetail = useCallback(async (row) => {
     setDetail(row);
-  };
+    setDetailItems([]);
+    if (row.kind !== 'compra') return;
+    setDetailLoading(true);
+    const { data } = await db.ecommerceOrderItems.getByOrder(row.data.id);
+    setDetailItems(Array.isArray(data) ? data : []);
+    setDetailLoading(false);
+  }, []);
+
+  const confirmarPagoEfectivo = useCallback(async () => {
+    if (!detail || detail.kind !== 'compra') return;
+    const o = detail.data;
+    if (String(o.status) !== 'pending') {
+      Alert.alert('Pedido', 'Este pedido ya no está pendiente.');
+      return;
+    }
+    Alert.alert(
+      'Confirmar pago en efectivo',
+      `¿El cliente pagó Q${Number(o.total_amount || 0).toFixed(2)}?\n\nSe registrará la venta, descontará stock y sumará a la meta global.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar cobro',
+          onPress: async () => {
+            setConfirmBusy(true);
+            const res = await confirmarCobroPedidoSalon(o.id);
+            setConfirmBusy(false);
+            if (!res.ok) {
+              Alert.alert('Error', res.error?.message || 'No se pudo confirmar.');
+              return;
+            }
+            Alert.alert('Listo', `Cobro registrado · folio ${res.noFactura}`);
+            setDetail(null);
+            load(true);
+          },
+        },
+      ],
+    );
+  }, [detail, load]);
 
   const renderItem = ({ item }) => {
     if (item.kind === 'compra') {
@@ -170,7 +210,7 @@ export function PedidosScreen({ onBack }) {
               {o.tracking_code} · {formatWhen(o.created_at)} · {String(o.status || '—')}
             </Text>
             <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-              Q{Number(o.total_amount || 0).toFixed(2)} · {o.customer_phone || '—'}
+              Q{Number(o.total_amount || 0).toFixed(2)} · {o.payment_method || '—'} · {o.customer_phone || '—'}
             </Text>
           </View>
           <ChevronRight size={18} color={c.foregroundMuted} />
@@ -251,9 +291,16 @@ export function PedidosScreen({ onBack }) {
         `Tel: ${o.customer_phone || '—'}`,
         `Tracking: ${o.tracking_code}`,
         `Estado: ${o.status}`,
+        `Pago: ${o.payment_method || '—'}`,
         `Total: Q${Number(o.total_amount || 0).toFixed(2)}`,
+        `Entrega: ${o.fulfillment_type || '—'}`,
         `Notas: ${o.notes || '—'}`,
         `Creado: ${formatWhen(o.created_at)}`,
+        detailItems.length
+          ? `\nProductos:\n${detailItems.map((l) => `· ${l.product_name} x${l.qty} · Q${Number(l.line_total || 0).toFixed(2)}`).join('\n')}`
+          : detailLoading
+            ? '\nCargando productos…'
+            : '',
       ].join('\n');
     }
     if (detail.kind === 'tendencias') {
@@ -389,6 +436,18 @@ export function PedidosScreen({ onBack }) {
             <Text style={{ color: c.foreground, fontFamily: typography.fontSans, fontSize: 14, lineHeight: 22 }} selectable>
               {detail ? detailBody() : ''}
             </Text>
+            {detail?.kind === 'compra' &&
+            String(detail.data.status) === 'pending' &&
+            ['efectivo', 'cash', 'efectivo_al_retirar'].includes(String(detail.data.payment_method || '').toLowerCase()) ? (
+              <SalonButton
+                title={confirmBusy ? 'Confirmando…' : 'Confirmar pago en efectivo recibido'}
+                variant="heroGold"
+                fullWidth
+                disabled={confirmBusy}
+                onPress={confirmarPagoEfectivo}
+                style={{ marginTop: spacing.md }}
+              />
+            ) : null}
             <SalonButton title="Cerrar" variant="outlineGray" fullWidth onPress={() => setDetail(null)} style={{ marginTop: spacing.md }} />
           </View>
         </View>

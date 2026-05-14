@@ -501,7 +501,15 @@ export function ClientSubScreenBody({
       );
 
     case CLIENT_SUB.TIENDA:
-      return <TiendaFlow onClose={onClose} />;
+      return (
+        <TiendaFlow
+          onClose={onClose}
+          clienteId={clienteRow?.id}
+          clienteNombre={clienteRow?.nombre}
+          clienteTelefono={clienteRow?.telefono}
+          clientUserId={sessionUser?.id}
+        />
+      );
 
     case CLIENT_SUB.TENDENCIAS:
       return <TendenciasFeed onBack={onClose} />;

@@ -11,9 +11,9 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Minus, Plus, Trash2, User, Package } from 'lucide-react-native';
+import { Minus, Plus, Trash2, User, Package, UserCog } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db } from '@appsalon/shared-config';
+import { db, registrarMontoVentaEnMeta } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -29,37 +29,13 @@ function formatQ(n) {
   return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Miles con punto, decimales con coma (2 cifras), p. ej. 1.250,50 */
-function formatDescuentoMonto(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x) || x < 0) return '0,00';
-  const [intRaw, dec = '00'] = x.toFixed(2).split('.');
-  const intPart = intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `${intPart},${dec}`;
-}
-
-function parseDescuentoMonto(s) {
-  const t = String(s || '').trim();
-  if (!t) return 0;
-  const noThousands = t.replace(/\./g, '');
-  const normalized = noThousands.replace(',', '.');
-  const x = parseFloat(normalized);
-  return Number.isFinite(x) && x >= 0 ? x : 0;
-}
-
-function sanitizeDescuentoTyping(t) {
-  let out = String(t || '').replace(/[^\d.,]/g, '');
-  const comma = out.indexOf(',');
+function sanitizeDescuentoPct(t) {
+  let out = String(t || '')
+    .replace(/,/g, '.')
+    .replace(/[^\d.]/g, '');
   const dot = out.indexOf('.');
-  if (comma >= 0 && dot >= 0) {
-    if (comma < dot) out = out.replace(/,/g, '');
-    else out = out.replace(/\./g, '');
-  }
-  const sep = out.includes(',') ? ',' : out.includes('.') ? '.' : null;
-  if (sep) {
-    const parts = out.split(sep);
-    if (parts.length > 2) out = `${parts[0]}${sep}${parts.slice(1).join('').slice(0, 2)}`;
-    else if (parts[1] && parts[1].length > 2) out = `${parts[0]}${sep}${parts[1].slice(0, 2)}`;
+  if (dot >= 0) {
+    out = `${out.slice(0, dot + 1)}${out.slice(dot + 1).replace(/\./g, '').slice(0, 2)}`;
   }
   return out;
 }
@@ -86,12 +62,15 @@ export function VenderScreen({ onBack }) {
 
   const [loading, setLoading] = useState(true);
   const [clientes, setClientes] = useState([]);
+  const [empleados, setEmpleados] = useState([]);
   const [inventario, setInventario] = useState([]);
   const [clienteSearch, setClienteSearch] = useState('');
+  const [profesionalSearch, setProfesionalSearch] = useState('');
   const [productoSearch, setProductoSearch] = useState('');
   const [clienteSel, setClienteSel] = useState(null);
+  const [profesionalSel, setProfesionalSel] = useState(null);
   const [lines, setLines] = useState([]);
-  const [descuentoStr, setDescuentoStr] = useState('0,00');
+  const [descuentoPctStr, setDescuentoPctStr] = useState('');
   const [metodoPago, setMetodoPago] = useState('efectivo');
   const [notas, setNotas] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -111,14 +90,21 @@ export function VenderScreen({ onBack }) {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [rCli, rInv] = await Promise.all([db.clientes.getAll(), db.inventario.getAll()]);
+      const [rCli, rEmp, rInv] = await Promise.all([
+        db.clientes.getAll(),
+        db.empleados.getActivos(),
+        db.inventario.getAll(),
+      ]);
       if (rCli.error) throw rCli.error;
+      if (rEmp.error) throw rEmp.error;
       if (rInv.error) throw rInv.error;
       setClientes(Array.isArray(rCli.data) ? rCli.data : []);
+      setEmpleados(Array.isArray(rEmp.data) ? rEmp.data : []);
       setInventario(Array.isArray(rInv.data) ? rInv.data : []);
     } catch (e) {
       Alert.alert('Vender', e?.message || 'No se pudieron cargar clientes o inventario.');
       setClientes([]);
+      setEmpleados([]);
       setInventario([]);
     } finally {
       setLoading(false);
@@ -139,7 +125,7 @@ export function VenderScreen({ onBack }) {
 
   const clientesFiltrados = useMemo(() => {
     const q = clienteSearch.trim().toLowerCase();
-    if (!q) return clientes.slice(0, 40);
+    if (q.length < 2) return [];
     return clientes
       .filter((row) => {
         const blob = [row.nombre, row.telefono, row.email].filter(Boolean).join(' ').toLowerCase();
@@ -147,6 +133,17 @@ export function VenderScreen({ onBack }) {
       })
       .slice(0, 60);
   }, [clientes, clienteSearch]);
+
+  const empleadosFiltrados = useMemo(() => {
+    const q = profesionalSearch.trim().toLowerCase();
+    if (q.length < 2 || profesionalSel) return [];
+    return empleados
+      .filter((row) => {
+        const blob = [row.nombre, row.rol, row.telefono, row.email].filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+      })
+      .slice(0, 40);
+  }, [empleados, profesionalSearch, profesionalSel]);
 
   const productosFiltrados = useMemo(() => {
     const q = productoSearch.trim().toLowerCase();
@@ -164,7 +161,16 @@ export function VenderScreen({ onBack }) {
     [lines],
   );
 
-  const descuentoNum = useMemo(() => parseDescuentoMonto(descuentoStr), [descuentoStr]);
+  const descuentoPct = useMemo(() => {
+    const raw = Number(String(descuentoPctStr || '').replace(',', '.'));
+    if (!Number.isFinite(raw)) return 0;
+    return Math.min(100, Math.max(0, raw));
+  }, [descuentoPctStr]);
+
+  const descuentoNum = useMemo(() => {
+    if (subtotal <= 0 || descuentoPct <= 0) return 0;
+    return Math.round(subtotal * (descuentoPct / 100) * 100) / 100;
+  }, [subtotal, descuentoPct]);
 
   const total = useMemo(() => Math.max(0, subtotal - descuentoNum), [subtotal, descuentoNum]);
 
@@ -265,13 +271,19 @@ export function VenderScreen({ onBack }) {
 
     const noFactura = nextNoFactura();
     const items = buildItemsPayload();
-    const clienteNombre = clienteSel?.nombre?.trim() || 'Mostrador';
 
     setSubmitting(true);
     try {
+      const { data: cajaAbierta } = await db.cajas.getCajaActual();
+      const cajaId = cajaAbierta?.id ?? null;
+
+      const profNombre = profesionalSel?.nombre?.trim() || profesionalSearch.trim() || null;
+
       const { error: vErr } = await db.ventas.create({
         cliente_id: clienteSel?.id ?? null,
-        cliente_nombre: clienteSel ? clienteSel.nombre : clienteNombre,
+        cliente_nombre: clienteSel?.nombre?.trim() || null,
+        profesional: profNombre,
+        vendedor_id: profesionalSel?.id ?? null,
         total,
         monto: total,
         metodo_pago: metodoPago,
@@ -279,6 +291,7 @@ export function VenderScreen({ onBack }) {
         no_factura: noFactura,
         descuento: descuentoNum,
         notas: notas.trim() || null,
+        caja_id: cajaId,
       });
 
       if (vErr) throw vErr;
@@ -296,6 +309,8 @@ export function VenderScreen({ onBack }) {
         }
       }
 
+      await registrarMontoVentaEnMeta(total);
+
       Alert.alert(
         'Factura creada',
         `Folio: ${noFactura}\nTotal: ${formatQ(total)}\nPago: ${metodoPago}`,
@@ -312,9 +327,11 @@ export function VenderScreen({ onBack }) {
 
   const resetFormPartial = () => {
     setLines([]);
-    setDescuentoStr('0,00');
+    setDescuentoPctStr('');
     setNotas('');
     setProductoSearch('');
+    setProfesionalSel(null);
+    setProfesionalSearch('');
   };
 
   if (loading) {
@@ -369,6 +386,11 @@ export function VenderScreen({ onBack }) {
                 </TouchableOpacity>
               </View>
             ) : null}
+            {!clienteSel && clienteSearch.trim().length >= 2 && clientesFiltrados.length === 0 ? (
+              <Text style={[styles.pickHint, { color: c.foregroundMuted }]}>
+                Sin coincidencias para «{clienteSearch.trim()}».
+              </Text>
+            ) : null}
             {!clienteSel && clientesFiltrados.length > 0 ? (
               <View
                 style={[
@@ -391,6 +413,77 @@ export function VenderScreen({ onBack }) {
                     <Text style={[styles.pickMeta, { color: c.foregroundMuted }]} numberOfLines={1}>
                       {item.telefono || item.email || '—'}
                     </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+
+            <View style={[styles.labelRow, { marginTop: spacing.lg }]}>
+              <View style={[styles.sectionIconWrap, { backgroundColor: c.card }]}>
+                <UserCog size={17} color={c.primary} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.sectionLabel, { color: c.foreground }]}>Profesional</Text>
+            </View>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  borderColor: posAccent.inputBorder,
+                  color: c.foreground,
+                  backgroundColor: c.card,
+                },
+              ]}
+              placeholder="Buscar o escribir nombre del profesional…"
+              placeholderTextColor={c.foregroundSubtle}
+              value={profesionalSearch}
+              onChangeText={setProfesionalSearch}
+            />
+            {profesionalSel ? (
+              <View
+                style={[
+                  styles.chipSelected,
+                  { borderColor: c.primary, backgroundColor: posAccent.sectionBg },
+                ]}
+              >
+                <Text style={[styles.chipSelectedTxt, { color: c.foreground }]} numberOfLines={1}>
+                  {profesionalSel.nombre}
+                  {profesionalSel.rol ? ` · ${profesionalSel.rol}` : ''}
+                </Text>
+                <TouchableOpacity onPress={() => setProfesionalSel(null)} hitSlop={10}>
+                  <Text style={[styles.chipClear, { color: c.primary }]}>Cambiar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            {!profesionalSel && profesionalSearch.trim().length >= 2 && empleadosFiltrados.length === 0 ? (
+              <Text style={[styles.pickHint, { color: c.foregroundMuted }]}>
+                Sin coincidencias para «{profesionalSearch.trim()}».
+              </Text>
+            ) : null}
+            {!profesionalSel && empleadosFiltrados.length > 0 ? (
+              <View
+                style={[
+                  styles.pickBlock,
+                  { borderColor: posAccent.sectionBorder, backgroundColor: c.card },
+                ]}
+              >
+                {empleadosFiltrados.map((item) => (
+                  <TouchableOpacity
+                    key={String(item.id)}
+                    style={[styles.pickTouch, { borderBottomColor: c.cardBorder }]}
+                    onPress={() => {
+                      setProfesionalSel(item);
+                      setProfesionalSearch('');
+                    }}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.pickName, { color: c.foreground }]} numberOfLines={1}>
+                        {item.nombre}
+                      </Text>
+                      <Text style={[styles.pickMeta, { color: c.foregroundMuted }]} numberOfLines={1}>
+                        {item.rol || 'Profesional'}
+                        {item.telefono ? ` · ${item.telefono}` : ''}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -518,26 +611,33 @@ export function VenderScreen({ onBack }) {
                 <Text style={[styles.totalMuted, { color: c.foregroundMuted }]}>Subtotal</Text>
                 <Text style={[styles.totalFig, { color: c.foreground }]}>{formatQ(subtotal)}</Text>
               </View>
-              <Text style={[styles.fieldLbl, { color: c.foreground }]}>Descuento (Q)</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    borderColor: posAccent.inputBorder,
-                    color: c.foreground,
-                    backgroundColor: c.backgroundAlt ?? c.surfaceMuted,
-                  },
-                ]}
-                placeholder="0,00"
-                placeholderTextColor={c.foregroundSubtle}
-                value={descuentoStr}
-                onChangeText={(t) => setDescuentoStr(sanitizeDescuentoTyping(t))}
-                onBlur={() => {
-                  const n = parseDescuentoMonto(descuentoStr);
-                  setDescuentoStr(formatDescuentoMonto(n));
-                }}
-                keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
-              />
+              <Text style={[styles.fieldLbl, { color: c.foreground }]}>Descuento (%)</Text>
+              <View style={styles.discountRow}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.discountInput,
+                    {
+                      borderColor: posAccent.inputBorder,
+                      color: c.foreground,
+                      backgroundColor: c.backgroundAlt ?? c.surfaceMuted,
+                    },
+                  ]}
+                  placeholder="0"
+                  placeholderTextColor={c.foregroundSubtle}
+                  value={descuentoPctStr}
+                  onChangeText={(t) => setDescuentoPctStr(sanitizeDescuentoPct(t))}
+                  keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
+                />
+                <View style={[styles.percentBox, { borderColor: posAccent.inputBorder, backgroundColor: c.card }]}>
+                  <Text style={[styles.percentBoxTxt, { color: c.foregroundMuted }]}>%</Text>
+                </View>
+              </View>
+              <Text style={[styles.hint, { color: c.foregroundMuted, marginTop: 0 }]}>
+                {descuentoPct > 0
+                  ? `Descuento: ${formatQ(descuentoNum)} (${descuentoPct}%)`
+                  : 'Escribí el porcentaje sin símbolo; el monto se calcula del subtotal.'}
+              </Text>
               <View style={[styles.grandRow, { borderTopColor: c.cardBorder }]}>
                 <Text style={[styles.grandLbl, { color: c.foreground }]}>Total</Text>
                 <Text style={[styles.grandVal, { color: c.primary }]}>{formatQ(total)}</Text>
@@ -709,6 +809,12 @@ function createStyles() {
       fontSize: 13,
       marginTop: 2,
     },
+    pickHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      marginTop: spacing.xs,
+      marginBottom: spacing.xs,
+    },
     addBtn: {
       width: 40,
       height: 40,
@@ -823,6 +929,27 @@ function createStyles() {
     payChipTxt: {
       fontFamily: typography.fontSansMedium,
       fontSize: 14,
+    },
+    discountRow: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      gap: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    discountInput: {
+      flex: 1,
+      marginBottom: 0,
+    },
+    percentBox: {
+      width: 48,
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    percentBoxTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 16,
     },
   });
 }

@@ -24,8 +24,15 @@ import {
   Lock,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { db } from '@appsalon/shared-config';
 import { SubScreenChrome, useSubStyles, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
+import {
+  clearCajaSession,
+  getCajaSession,
+  loadCajaTxs,
+  setCajaSession,
+} from '../services/salonCajaSession';
 
 const TX_FEED_VISIBLE = 10;
 const Q = 'Q';
@@ -112,6 +119,20 @@ export function CajaScreen({ onBack }) {
   const [facturaCambio, setFacturaCambio] = useState('');
   const [qrCambio, setQrCambio] = useState(false);
   const [feedExpanded, setFeedExpanded] = useState(false);
+  const [abriendo, setAbriendo] = useState(false);
+  const [restoring, setRestoring] = useState(true);
+
+  const cajaId = metaApertura?.cajaId ?? null;
+
+  const refreshTxsFromDb = useCallback(async (id) => {
+    if (!id) return;
+    try {
+      const rows = await loadCajaTxs(id);
+      setTxs(rows);
+    } catch (e) {
+      if (__DEV__) console.warn('Caja refresh', e);
+    }
+  }, []);
 
   const pushTx = useCallback(
     (row) => {
@@ -124,6 +145,46 @@ export function CajaScreen({ onBack }) {
     if (view === 'gate') setFeedExpanded(false);
   }, [view]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: caja } = await db.cajas.getCajaActual();
+        if (cancelled) return;
+        if (caja?.id && caja.estado === 'abierta') {
+          const session = await getCajaSession();
+          const nombre = caja.responsable_apertura || caja.responsable || session?.nombre || '—';
+          const monto = Number(caja.monto_apertura ?? session?.monto ?? 0);
+          setMetaApertura({
+            cajaId: caja.id,
+            nombre,
+            monto,
+            abierto: session?.abierto || nowLabel(),
+          });
+          setView('dash');
+          await refreshTxsFromDb(caja.id);
+        } else {
+          await clearCajaSession();
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('Caja restore', e);
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTxsFromDb]);
+
+  useEffect(() => {
+    if (view !== 'dash' || !cajaId) return undefined;
+    const id = setInterval(() => {
+      refreshTxsFromDb(cajaId);
+    }, 8000);
+    return () => clearInterval(id);
+  }, [view, cajaId, refreshTxsFromDb]);
+
   const totalEntrante = useMemo(() => {
     return txs.reduce((s, t) => s + (t.signo || 0) * (t.monto || 0), 0);
   }, [txs]);
@@ -135,7 +196,7 @@ export function CajaScreen({ onBack }) {
 
   const feedHiddenCount = txs.length > TX_FEED_VISIBLE ? txs.length - TX_FEED_VISIBLE : 0;
 
-  const abrirCaja = () => {
+  const abrirCaja = async () => {
     const nom = adminApertura.trim();
     const m = parseAmount(montoApertura);
     if (!nom) {
@@ -146,22 +207,51 @@ export function CajaScreen({ onBack }) {
       Alert.alert('Dato requerido', 'Ingresá un monto inicial mayor a 0.');
       return;
     }
-    setMetaApertura({ nombre: nom, monto: m, abierto: nowLabel() });
-    setTxs([
-      {
-        id: makeTxId(),
-        ts: Date.now(),
-        kind: 'apertura',
-        titulo: 'Apertura de caja',
-        detalle: `Responsable: ${nom}`,
-        monto: m,
-        signo: 1,
-      },
-    ]);
-    setView('dash');
+    setAbriendo(true);
+    try {
+      const { data: existente } = await db.cajas.getCajaActual();
+      if (existente?.id) {
+        const session = await getCajaSession();
+        setMetaApertura({
+          cajaId: existente.id,
+          nombre: existente.responsable_apertura || existente.responsable || nom,
+          monto: Number(existente.monto_apertura ?? m),
+          abierto: session?.abierto || nowLabel(),
+        });
+        setView('dash');
+        await refreshTxsFromDb(existente.id);
+        Alert.alert('Caja', 'Ya hay una caja abierta; se restauró el turno activo.');
+        return;
+      }
+
+      const { data: nueva, error } = await db.cajas.abrir({
+        monto_apertura: m,
+        responsable: nom,
+        responsable_apertura: nom,
+      });
+      if (error) throw error;
+      if (!nueva?.id) throw new Error('No se pudo crear la caja.');
+
+      const { error: movErr } = await db.movimientosCaja.registrarApertura(
+        nueva.id,
+        m,
+        `Responsable: ${nom}`,
+      );
+      if (movErr) throw movErr;
+
+      const abierto = nowLabel();
+      await setCajaSession({ cajaId: nueva.id, nombre: nom, monto: m, abierto });
+      setMetaApertura({ cajaId: nueva.id, nombre: nom, monto: m, abierto });
+      setView('dash');
+      await refreshTxsFromDb(nueva.id);
+    } catch (e) {
+      Alert.alert('Caja', e?.message || 'No se pudo abrir la caja.');
+    } finally {
+      setAbriendo(false);
+    }
   };
 
-  const registrarIngresos = () => {
+  const registrarIngresos = async () => {
     if (!ingresoTipoId) {
       Alert.alert('Tipo', 'Elegí una sugerencia de ingreso.');
       return;
@@ -172,20 +262,32 @@ export function CajaScreen({ onBack }) {
       return;
     }
     const tipo = INGRESO_TIPOS.find((t) => t.id === ingresoTipoId);
-    pushTx({
-      kind: 'ingreso',
-      titulo: tipo?.label || 'Ingreso',
-      detalle: ingresoNota.trim() || '—',
-      monto: m,
-      signo: 1,
-    });
+    const nota = ingresoNota.trim() || '—';
+    const desc = `${tipo?.label || 'Ingreso'}${nota !== '—' ? ` · ${nota}` : ''}`;
+
+    if (cajaId) {
+      const { error } = await db.movimientosCaja.registrarIngreso(cajaId, m, desc);
+      if (error) {
+        Alert.alert('Ingreso', error.message || 'No se pudo registrar en caja.');
+        return;
+      }
+      await refreshTxsFromDb(cajaId);
+    } else {
+      pushTx({
+        kind: 'ingreso',
+        titulo: tipo?.label || 'Ingreso',
+        detalle: nota,
+        monto: m,
+        signo: 1,
+      });
+    }
     setIngresoTipoId(null);
     setIngresoNota('');
     setIngresoMonto('');
     setModalIngresos(false);
   };
 
-  const registrarEgresos = () => {
+  const registrarEgresos = async () => {
     if (!egresoTipoId) {
       Alert.alert('Tipo', 'Elegí una sugerencia de egreso.');
       return;
@@ -196,13 +298,25 @@ export function CajaScreen({ onBack }) {
       return;
     }
     const tipo = EGRESO_TIPOS.find((t) => t.id === egresoTipoId);
-    pushTx({
-      kind: 'egreso',
-      titulo: tipo?.label || 'Egreso',
-      detalle: egresoNota.trim() || '—',
-      monto: m,
-      signo: -1,
-    });
+    const nota = egresoNota.trim() || '—';
+    const desc = `${tipo?.label || 'Egreso'}${nota !== '—' ? ` · ${nota}` : ''}`;
+
+    if (cajaId) {
+      const { error } = await db.movimientosCaja.registrarEgreso(cajaId, m, desc);
+      if (error) {
+        Alert.alert('Egreso', error.message || 'No se pudo registrar en caja.');
+        return;
+      }
+      await refreshTxsFromDb(cajaId);
+    } else {
+      pushTx({
+        kind: 'egreso',
+        titulo: tipo?.label || 'Egreso',
+        detalle: nota,
+        monto: m,
+        signo: -1,
+      });
+    }
     setEgresoTipoId(null);
     setEgresoNota('');
     setEgresoMonto('');
@@ -341,6 +455,14 @@ export function CajaScreen({ onBack }) {
         Alert.alert('PDF listo', `Archivo en: ${uri}`);
       }
       setModalCierre(false);
+      if (cajaId) {
+        await db.movimientosCaja.registrarCierre(cajaId, totalEntrante, 'Cierre de turno');
+        await db.cajas.cerrar(cajaId, {
+          monto_cierre: totalEntrante,
+          responsable_cierre: nomAdm,
+        });
+        await clearCajaSession();
+      }
       setView('gate');
       setTxs([]);
       setMetaApertura(null);
@@ -379,6 +501,15 @@ export function CajaScreen({ onBack }) {
   };
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.lg);
+
+  if (restoring && view === 'gate') {
+    return (
+      <View style={[styles.shell, { backgroundColor: c.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <Text style={[subStyles.muted, { marginTop: spacing.md }]}>Verificando caja…</Text>
+      </View>
+    );
+  }
 
   if (view === 'gate') {
     return (
@@ -419,7 +550,13 @@ export function CajaScreen({ onBack }) {
                   onChangeText={(v) => setMontoApertura(v.replace(/[^\d.,]/g, ''))}
                 />
               </View>
-              <SalonButton title="Entrar al dashboard de caja" variant="heroGold" fullWidth onPress={abrirCaja} />
+              <SalonButton
+                title={abriendo ? 'Abriendo…' : 'Entrar al dashboard de caja'}
+                variant="heroGold"
+                fullWidth
+                onPress={abrirCaja}
+                disabled={abriendo}
+              />
             </View>
           </ScrollView>
         </SubScreenChrome>

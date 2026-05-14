@@ -180,7 +180,7 @@ function SalonAdminShell({ onSignOut }) {
         <View style={styles.contentWrap}>
           <View style={[styles.headerTop, { paddingTop: insets.top + spacing.md }]}>
             <View style={styles.titleBlock}>
-              <Text style={styles.brand}>App Andrea Control</Text>
+              <Text style={styles.brand}>App Andrea</Text>
               <Text style={styles.brandLead}>Administracion</Text>
             </View>
             <View style={styles.headerActions}>

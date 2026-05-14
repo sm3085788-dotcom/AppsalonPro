@@ -11,22 +11,27 @@ import {
   Alert,
   KeyboardAvoidingView,
   useWindowDimensions,
+  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Calendar, FileText, Printer, Search, X } from 'lucide-react-native';
+import { Calendar, FileText, Printer, Search, X, ChevronRight } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, supabase } from '@appsalon/shared-config';
+import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
+import { addReporte, loadReportes, subscribeReportesStorage } from '../services/salonReportesStorage';
 
 const REPORT_TYPES = [
   { id: 'caja', label: 'Caja' },
   { id: 'mensajes', label: 'Mensajes' },
   { id: 'metas', label: 'Metas' },
+  { id: 'pedidos', label: 'Pedidos tienda' },
   { id: 'proveedores', label: 'Proveedores' },
   { id: 'clientes', label: 'Clientes' },
   { id: 'agenda', label: 'Agenda' },
@@ -72,6 +77,16 @@ function montoVenta(r) {
   return Number(r?.total ?? r?.monto ?? 0);
 }
 
+function enrichPedidoRow(r) {
+  return {
+    nombre: r?.customer_name || 'Cliente',
+    descripcion: `${r?.tracking_code || '—'} · ${r?.payment_method || '—'} · ${r?.status || '—'}`,
+    monto: Number(r?.total_amount || 0),
+    montoFmt: formatQ(Number(r?.total_amount || 0)),
+    fecha: r?.created_at || r?.confirmed_at,
+  };
+}
+
 function enrichVentaRow(r) {
   const fact = r?.no_factura ?? r?.id ?? '-';
   const cliente = r?.cliente?.nombre || r?.cliente_nombre || 'Cliente';
@@ -94,6 +109,210 @@ function enrichCitaRow(r) {
     descripcion: `${r?.estado || '—'} · ${prof}`,
     fecha: fh,
   };
+}
+
+function formatQ(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'Q 0.00';
+  return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function fmtFecha(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('es-GT', {
+      day: '2-digit',
+      month: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return String(iso);
+  }
+}
+
+function tipoMovLabel(tipo) {
+  const t = String(tipo || '').toLowerCase();
+  if (t === 'apertura') return 'Apertura';
+  if (t === 'cierre') return 'Cierre';
+  if (t === 'ingreso') return 'Ingreso';
+  if (t === 'egreso') return 'Egreso';
+  return tipo || 'Movimiento';
+}
+
+async function fetchCajaReport(startIso, endIso) {
+  const startDay = startIso.slice(0, 10);
+  const endDay = endIso.slice(0, 10);
+  const { data: cajas, error: cajasErr } = await db.cajas.getByDateRange(startDay, endDay);
+  if (cajasErr) return { rows: [], cajaSessions: [], error: cajasErr, summary: '' };
+
+  const inRange = (caja) => {
+    const keys = [caja.creado_a, caja.fecha_cierre, caja.fecha_apertura];
+    for (const raw of keys) {
+      if (!raw) continue;
+      const t = new Date(raw).getTime();
+      if (t >= new Date(startIso).getTime() && t <= new Date(endIso).getTime()) return true;
+    }
+    const fa = caja.fecha_apertura;
+    if (fa && fa >= startDay && fa <= endDay) return true;
+    return false;
+  };
+
+  const cajasFiltradas = (cajas || []).filter(inRange);
+  const cajaSessions = [];
+
+  for (const caja of cajasFiltradas) {
+    const [{ data: movimientos }, { data: ventas }, { data: cuadre }] = await Promise.all([
+      db.cajas.getMovimientos(caja.id),
+      db.cajas.getVentas(caja.id),
+      db.cajas.calcularCuadre(caja.id),
+    ]);
+    cajaSessions.push({
+      caja,
+      movimientos: movimientos || [],
+      ventas: ventas || [],
+      cuadre: cuadre || null,
+    });
+  }
+
+  const rows = [];
+  let totalVentasMonto = 0;
+  let totalMovs = 0;
+
+  for (const session of cajaSessions) {
+    const { caja, movimientos, ventas } = session;
+    const responsable =
+      caja.responsable_apertura || caja.responsable || caja.responsable_cierre || '—';
+    rows.push({
+      id: `turno-${caja.id}`,
+      caja_id: caja.id,
+      nombre: `Turno · ${responsable}`,
+      descripcion: `Estado: ${caja.estado || '—'} · Apertura ${formatQ(caja.monto_apertura)}${
+        caja.monto_cierre != null ? ` · Cierre ${formatQ(caja.monto_cierre)}` : ''
+      }`,
+      fecha: caja.creado_a || caja.fecha_apertura,
+      _section: 'turno',
+    });
+
+    for (const m of movimientos) {
+      totalMovs += 1;
+      const sign = m.tipo === 'egreso' ? '−' : '+';
+      rows.push({
+        id: m.id,
+        caja_id: caja.id,
+        nombre: tipoMovLabel(m.tipo),
+        descripcion: m.descripcion || '—',
+        monto: m.monto,
+        montoFmt: `${sign}${formatQ(m.monto)}`,
+        fecha: m.fecha,
+        _section: 'movimiento',
+      });
+    }
+
+    for (const v of ventas) {
+      totalMovs += 1;
+      const monto = Number(v.total ?? v.monto ?? 0);
+      totalVentasMonto += monto;
+      rows.push({
+        id: v.id,
+        caja_id: caja.id,
+        nombre: v.no_factura || 'Venta',
+        descripcion: `${v.cliente_nombre || v.cliente?.nombre || 'Cliente'} · ${v.metodo_pago || '—'}`,
+        monto,
+        montoFmt: formatQ(monto),
+        fecha: v.fecha,
+        _section: 'venta',
+      });
+    }
+  }
+
+  const summary = `Turnos: ${cajaSessions.length} · Movimientos/ventas: ${totalMovs} · Total ventas: ${formatQ(
+    totalVentasMonto,
+  )}`;
+
+  return { rows, cajaSessions, error: null, summary };
+}
+
+function enrichInventarioRow(r) {
+  const nombre = String(r?.nombre || r?.producto || r?.servicio || '—').trim();
+  const categoria = String(r?.categoria || '').trim();
+  const barcode = String(r?.barcode || '').trim();
+  const tipo = getArticuloTipo(r);
+  const precioVenta = Number(r?.precio_venta ?? 0);
+  const precioCosto = Number(r?.precio_costo ?? r?.costo ?? 0);
+  const stock = Math.max(0, Math.floor(Number(r?.stock_actual ?? 0)));
+  const stockMin = Math.max(0, Math.floor(Number(r?.stock_minimo ?? 0)));
+  const partesDetalle = [
+    tipo === 'servicio' ? 'Servicio' : 'Producto',
+    categoria || null,
+    barcode ? `Cód. ${barcode}` : null,
+    Number.isFinite(precioCosto) && precioCosto > 0 ? `Costo ${formatQ(precioCosto)}` : null,
+    stockMin > 0 ? `Mín. ${stockMin}` : null,
+  ].filter(Boolean);
+
+  return {
+    ...r,
+    nombre,
+    descripcion: partesDetalle.join(' · ') || '—',
+    monto: precioVenta,
+    montoFmt: formatQ(precioVenta),
+    stock_actual: stock,
+    stockFmt: String(stock),
+    fecha: r?.updated_at || r?.created_at || r?.creado_a || null,
+  };
+}
+
+function buildInventarioReportHtml(item) {
+  const rows = (item.rows || []).map(enrichInventarioRow);
+  const rowsHtml = rows
+    .map(
+      (r) => `<tr>
+        <td>${escHtml(r.nombre)}</td>
+        <td>${escHtml(r.descripcion)}</td>
+        <td style="text-align:right">${escHtml(r.montoFmt || formatQ(r.monto))}</td>
+        <td style="text-align:right">${escHtml(r.stockFmt ?? String(r.stock_actual ?? 0))}</td>
+        <td>${escHtml(fmtFecha(r.fecha))}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const totalStock = rows.reduce((s, r) => s + Number(r.stock_actual ?? 0), 0);
+
+  return `<!doctype html><html><head><meta charset="utf-8"/><style>
+    body{font-family:system-ui;padding:16px;color:#222;font-size:11px}
+    h1{font-size:18px;margin:0 0 6px}
+    .meta{font-size:10px;color:#555;margin:2px 0}
+    table{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}
+    th,td{border:1px solid #ccc;padding:4px 6px;vertical-align:top}
+    th{text-align:left;background:#f5f5f5}
+    td.num{text-align:right}
+  </style></head><body>
+    <h1>Reporte de inventario</h1>
+    <div class="meta">Rango consulta: ${escHtml(new Date(item.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
+      new Date(item.toIso).toLocaleDateString('es-GT'),
+    )}</div>
+    <div class="meta">${escHtml(item.summary || '')}</div>
+    <div class="meta">Artículos: ${rows.length} · Unidades en stock (suma): ${totalStock}</div>
+    <table>
+      <thead><tr>
+        <th>Concepto</th>
+        <th>Detalle</th>
+        <th class="num">Precio venta</th>
+        <th class="num">Stock actual</th>
+        <th>Actualizado</th>
+      </tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="5">Sin artículos</td></tr>'}</tbody>
+    </table>
+  </body></html>`;
 }
 
 function sanitizeSearchQuery(s) {
@@ -146,29 +365,57 @@ function buildClienteFichaRows(cli) {
 
 async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
   switch (typeId) {
-    case 'caja': {
-      // Trae cajas y movimientos; si el rango incluye varios días, retorna todo desglosado por fecha.
-      const { data: cajas, error: cajasErr } = await db.cajas.getByDateRange(startIso, endIso);
-      const { data: movs, error: movErr } = await db.movimientosCaja.getByRangoFechas(startIso, endIso);
-      const error = cajasErr || movErr;
-      const byDay = sumBy(movs || [], ['fecha', 'created_at']);
-      const resumen = Object.entries(byDay)
-        .map(([k, v]) => `${k}: ${v} movimientos`)
-        .join(' | ');
-      return {
-        rows: [{ tipo: 'cajas', total: (cajas || []).length }, ...(movs || [])],
-        error,
-        summary: `Cajas: ${(cajas || []).length}. ${resumen || 'Sin movimientos en el rango.'}`,
-      };
-    }
+    case 'caja':
+      return fetchCajaReport(startIso, endIso);
     case 'mensajes': {
       const { data, error } = await db.marketingDirectMessages.getByDateRange(startIso, endIso);
       return { rows: data || [], error, summary: `Mensajes en rango: ${(data || []).length}` };
     }
     case 'metas': {
-      const { data, error } = await db.metas.getAll();
-      const rows = filterByRange(data || [], startIso, endIso);
-      return { rows, error, summary: `Metas en rango: ${rows.length}` };
+      const { data: meta, error } = await db.metas.getGlobalMontoActiva();
+      let rows;
+      if (meta) {
+        rows = [
+          {
+            nombre: meta.titulo || 'Meta global',
+            descripcion: `Período ${meta.fecha_inicio || '—'} → ${meta.fecha_fin || '—'}`,
+            monto: Number(meta.actual || 0),
+            montoFmt: `Q${Number(meta.actual || 0).toFixed(2)} / Q${Number(meta.valor_objetivo || 0).toFixed(2)}`,
+            fecha: meta.fecha_fin || meta.creado_a,
+          },
+        ];
+      } else {
+        const { data: allMetas } = await db.metas.getAll();
+        rows = filterByRange(allMetas || [], startIso, endIso).map((m) => ({
+          nombre: m.titulo || m.tipo,
+          descripcion: `${m.alcance || '—'} · actual ${m.actual} / obj ${m.valor_objetivo}`,
+          monto: Number(m.actual || 0),
+          montoFmt: `Q${Number(m.actual || 0).toFixed(2)}`,
+          fecha: m.creado_a,
+        }));
+      }
+      const pct = meta?.valor_objetivo
+        ? Math.min(100, Math.round((Number(meta.actual || 0) / Number(meta.valor_objetivo)) * 100))
+        : 0;
+      return {
+        rows,
+        error,
+        summary: meta
+          ? `Meta global: Q${Number(meta.actual || 0).toFixed(2)} de Q${Number(meta.valor_objetivo || 0).toFixed(2)} (${pct}%)`
+          : `Metas en rango: ${rows.length}`,
+      };
+    }
+    case 'pedidos': {
+      const { data, error } = await db.orders.getAll();
+      const filtered = filterByRange(data || [], startIso, endIso);
+      const rows = filtered.map(enrichPedidoRow);
+      const totalQ = filtered.reduce((s, r) => s + Number(r.total_amount || 0), 0);
+      const pendientes = filtered.filter((r) => r.status === 'pending').length;
+      return {
+        rows,
+        error,
+        summary: `Pedidos: ${rows.length} · Q${totalQ.toFixed(2)} · ${pendientes} pendiente(s)`,
+      };
     }
     case 'proveedores': {
       const { proveedorNombre } = options;
@@ -305,13 +552,13 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
     }
     case 'inventario': {
       const { data: invRows, error: invErr } = await db.inventario.getAll();
-      let rows = filterByRange(invRows || [], startIso, endIso);
-      let summary = `Inventario global: ${rows.length} registros`;
+      let rows = (invRows || []).map(enrichInventarioRow);
+      let summary = `Inventario global: ${rows.length} artículos`;
       if (options.inventarioModo === 'producto_servicio') {
         const q = (options.itemNombre || '').trim().toLowerCase();
-        rows = rows.filter((r) => String(r?.nombre || r?.producto || r?.servicio || '').toLowerCase().includes(q));
+        rows = rows.filter((r) => String(r?.nombre || '').toLowerCase().includes(q));
         const vendido = rows.reduce((s, r) => s + Number(r?.vendidos || r?.cantidad_vendida || r?.salidas || 0), 0);
-        summary = `Item "${options.itemNombre || 'N/A'}" vendido en rango: ${vendido}`;
+        summary = `Item "${options.itemNombre || 'N/A'}" · ${rows.length} coincidencia(s) · vendidos en rango: ${vendido}`;
       }
       return { rows, error: invErr, summary };
     }
@@ -369,31 +616,130 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
   }
 }
 
-async function printReport(item) {
-  const previewRows = (item.rows || []).slice(0, 30);
-  const rowsHtml = previewRows
-    .map(
-      (r) => `<tr><td>${String(r.id || '-')}</td><td>${String(r.nombre || r.tipo || r.descripcion || '-')}</td><td>${String(
-        r.fecha || r.created_at || r.fecha_hora || '-',
-      )}</td></tr>`,
-    )
+function buildCajaReportHtml(item) {
+  const sessions = item.cajaSessions || [];
+  const sections = sessions
+    .map((session) => {
+      const { caja, movimientos, ventas, cuadre } = session;
+      const responsable = escHtml(
+        caja.responsable_apertura || caja.responsable || caja.responsable_cierre || '—',
+      );
+      const cierreNom = escHtml(caja.responsable_cierre || '—');
+      const cajaIdShort = escHtml(String(caja.id || '').slice(0, 8));
+
+      const movRows = (movimientos || [])
+        .map((m) => {
+          const sign = m.tipo === 'egreso' ? '−' : '+';
+          return `<tr>
+            <td>${escHtml(tipoMovLabel(m.tipo))}</td>
+            <td>${escHtml(m.descripcion || '—')}</td>
+            <td style="text-align:right">${sign}${escHtml(formatQ(m.monto))}</td>
+            <td>${escHtml(fmtFecha(m.fecha))}</td>
+          </tr>`;
+        })
+        .join('');
+
+      const venRows = (ventas || [])
+        .map((v) => {
+          const monto = Number(v.total ?? v.monto ?? 0);
+          return `<tr>
+            <td>${escHtml(v.no_factura || 'Venta')}</td>
+            <td>${escHtml(v.cliente_nombre || v.cliente?.nombre || 'Cliente')} · ${escHtml(v.metodo_pago || '—')}</td>
+            <td style="text-align:right">${escHtml(formatQ(monto))}</td>
+            <td>${escHtml(fmtFecha(v.fecha))}</td>
+          </tr>`;
+        })
+        .join('');
+
+      const cuadreBlock = cuadre
+        ? `<p class="meta">Cuadre: ventas ${escHtml(formatQ(cuadre.total_ventas))} · esperado ${escHtml(
+            formatQ(cuadre.monto_cierre_esperado),
+          )}${
+            cuadre.monto_cierre_real != null
+              ? ` · real ${escHtml(formatQ(cuadre.monto_cierre_real))} (${escHtml(cuadre.estado_cuadre)})`
+              : ''
+          }</p>`
+        : '';
+
+      return `
+        <section class="turno">
+          <h2>Turno de caja · ${responsable}</h2>
+          <p class="meta">ID turno: ${cajaIdShort}… · Estado: ${escHtml(caja.estado || '—')}</p>
+          <p class="meta">Responsable apertura: ${responsable} · Cierre: ${cierreNom}</p>
+          <p class="meta">Apertura: ${escHtml(formatQ(caja.monto_apertura))} · Cierre registrado: ${
+            caja.monto_cierre != null ? escHtml(formatQ(caja.monto_cierre)) : '—'
+          }</p>
+          <p class="meta">Abierto: ${escHtml(fmtFecha(caja.creado_a))} · Cerrado: ${escHtml(fmtFecha(caja.fecha_cierre))}</p>
+          ${cuadreBlock}
+          <h3>Movimientos de caja</h3>
+          <table>
+            <thead><tr><th>Tipo</th><th>Detalle</th><th>Monto</th><th>Fecha</th></tr></thead>
+            <tbody>${movRows || '<tr><td colspan="4">Sin movimientos</td></tr>'}</tbody>
+          </table>
+          <h3>Ventas del turno</h3>
+          <table>
+            <thead><tr><th>Folio</th><th>Cliente / pago</th><th>Total</th><th>Fecha</th></tr></thead>
+            <tbody>${venRows || '<tr><td colspan="4">Sin ventas</td></tr>'}</tbody>
+          </table>
+        </section>`;
+    })
     .join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><style>
-    body{font-family:system-ui;padding:20px;color:#222}
-    h1{font-size:20px;margin:0 0 8px}
-    .meta{font-size:12px;color:#555;margin-bottom:8px}
-    table{width:100%;border-collapse:collapse;font-size:12px}
-    th,td{border:1px solid #ccc;padding:6px}
+
+  return `<!doctype html><html><head><meta charset="utf-8"/><style>
+    body{font-family:system-ui;padding:16px;color:#222;font-size:11px}
+    h1{font-size:18px;margin:0 0 6px}
+    h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}
+    h3{font-size:12px;margin:10px 0 4px;color:#444}
+    .meta{font-size:10px;color:#555;margin:2px 0}
+    table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px}
+    th,td{border:1px solid #ccc;padding:4px 6px;vertical-align:top}
     th{text-align:left;background:#f5f5f5}
+    .turno{page-break-inside:avoid;margin-bottom:12px}
   </style></head><body>
-    <h1>Reporte ${item.typeLabel}</h1>
-    <div class="meta">Rango: ${new Date(item.fromIso).toLocaleDateString('es-GT')} - ${new Date(item.toIso).toLocaleDateString(
-      'es-GT',
+    <h1>Reporte de caja</h1>
+    <div class="meta">Rango: ${escHtml(new Date(item.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
+      new Date(item.toIso).toLocaleDateString('es-GT'),
     )}</div>
-    <div class="meta">${item.summary || ''}</div>
-    <div class="meta">Registros: ${item.total}</div>
-    <table><thead><tr><th>ID</th><th>Detalle</th><th>Fecha</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+    <div class="meta">${escHtml(item.summary || '')}</div>
+    ${sections || '<p>Sin turnos de caja en el rango.</p>'}
   </body></html>`;
+}
+
+async function printReport(item) {
+  let html;
+  if (item.typeId === 'caja') {
+    html = buildCajaReportHtml(item);
+  } else if (item.typeId === 'inventario') {
+    html = buildInventarioReportHtml(item);
+  } else {
+    const previewRows = (item.rows || []).slice(0, 80);
+    const rowsHtml = previewRows
+      .map(
+        (r) => `<tr><td>${escHtml(r.nombre || r.tipo || '-')}</td><td>${escHtml(
+          r.descripcion || r.detalle || '-',
+        )}</td><td>${escHtml(r.montoFmt || (r.monto != null ? formatQ(r.monto) : '-'))}</td><td>${escHtml(
+          fmtFecha(r.fecha || r.created_at || r.fecha_hora),
+        )}</td></tr>`,
+      )
+      .join('');
+    html = `<!doctype html><html><head><meta charset="utf-8"/><style>
+      body{font-family:system-ui;padding:16px;color:#222;font-size:11px}
+      h1{font-size:18px;margin:0 0 6px}
+      .meta{font-size:10px;color:#555;margin-bottom:6px}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th,td{border:1px solid #ccc;padding:4px 6px}
+      th{text-align:left;background:#f5f5f5}
+    </style></head><body>
+      <h1>Reporte ${escHtml(item.typeLabel)}</h1>
+      <div class="meta">Rango: ${escHtml(new Date(item.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
+        new Date(item.toIso).toLocaleDateString('es-GT'),
+      )}</div>
+      <div class="meta">${escHtml(item.summary || '')}</div>
+      <div class="meta">Registros: ${item.total}</div>
+      <table><thead><tr><th>Concepto</th><th>Detalle</th><th>Monto</th><th>Fecha</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+    </body></html>`;
+  }
+
   const { uri } = await Print.printToFileAsync({ html });
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: '.pdf', dialogTitle: 'Imprimir / Compartir reporte' });
@@ -411,6 +757,7 @@ export function ReportesScreen({ onBack }) {
   const modalScrollMaxHeight = Math.max(240, Math.min(winH * 0.72, winH * 0.92 - 140));
 
   const [generated, setGenerated] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [typeId, setTypeId] = useState('caja');
   const [fromDate, setFromDate] = useState(() => {
@@ -443,6 +790,25 @@ export function ReportesScreen({ onBack }) {
   const [agendaClienteSearch, setAgendaClienteSearch] = useState('');
   const [agendaClienteResults, setAgendaClienteResults] = useState([]);
   const [agendaClienteSelected, setAgendaClienteSelected] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const list = await loadReportes();
+      if (!cancelled) {
+        setGenerated(list);
+        setReportsLoading(false);
+      }
+    };
+    refresh();
+    const unsub = subscribeReportesStorage(() => {
+      refresh();
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -605,7 +971,7 @@ export function ReportesScreen({ onBack }) {
       agendaModo,
       agendaCliente: agendaClienteSelected,
     };
-    const { rows, error, summary } = await fetchRowsByType(typeId, startIso, endIso, options);
+    const { rows, error, summary, cajaSessions } = await fetchRowsByType(typeId, startIso, endIso, options);
     setLoading(false);
 
     if (error) {
@@ -621,11 +987,13 @@ export function ReportesScreen({ onBack }) {
       toIso: endIso,
       total: rows.length,
       rows,
+      cajaSessions: cajaSessions || null,
       summary,
       generatedAt: new Date().toISOString(),
       status: 'Generado',
     };
-    setGenerated((prev) => [item, ...prev]);
+    const next = await addReporte(item);
+    setGenerated(next);
     setModalOpen(false);
   };
 
@@ -639,35 +1007,60 @@ export function ReportesScreen({ onBack }) {
         disableBodyScroll
         bottomPadding={0}
         rightAction={rightAction}
+        edgeToEdge
       >
         <View style={styles.body}>
-          <ScrollView contentContainerStyle={{ paddingBottom: padBottom, paddingTop: spacing.sm }} showsVerticalScrollIndicator={false}>
-            {generated.length === 0 ? (
-              <Text style={subStyles.muted}>
-                Aún no hay reportes. Tocá el ícono de documento arriba a la derecha para generar uno.
-              </Text>
-            ) : (
-              generated.map((r) => (
-                <View key={r.id} style={[styles.reportItem, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.reportName}>{r.typeLabel}</Text>
-                    <Text style={subStyles.muted}>
-                      {new Date(r.fromIso).toLocaleDateString('es-GT')} - {new Date(r.toIso).toLocaleDateString('es-GT')}
-                    </Text>
-                    <Text style={subStyles.muted}>Registros: {r.total}</Text>
-                    {r.summary ? <Text style={subStyles.muted}>{r.summary}</Text> : null}
-                  </View>
+          {reportsLoading ? (
+            <ActivityIndicator style={{ marginTop: spacing.md }} color={c.primary} />
+          ) : generated.length === 0 ? (
+            <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+              Aún no hay reportes. Tocá el ícono de documento arriba a la derecha para generar uno.
+            </Text>
+          ) : (
+            <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <FlatList
+                data={generated}
+                keyExtractor={(r) => String(r.id)}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: padBottom }}
+                renderItem={({ item: r }) => (
                   <TouchableOpacity
-                    style={[styles.printBtn, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}
+                    style={[styles.row, { borderBottomColor: c.cardBorder }]}
                     onPress={() => printReport(r)}
+                    activeOpacity={0.7}
                   >
-                    <Printer size={16} color={c.primary} />
-                    <Text style={[styles.printTxt, { color: c.primary }]}>Imprimir</Text>
+                    <View style={styles.rowBody}>
+                      <View style={styles.rowTop}>
+                        <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+                          {r.typeLabel}
+                        </Text>
+                        <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+                          {r.total} reg.
+                        </Text>
+                      </View>
+                      <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+                        {new Date(r.fromIso).toLocaleDateString('es-GT')} –{' '}
+                        {new Date(r.toIso).toLocaleDateString('es-GT')} ·{' '}
+                        {new Date(r.generatedAt).toLocaleString('es-GT', {
+                          day: '2-digit',
+                          month: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      {r.summary ? (
+                        <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+                          {r.summary}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Printer size={16} color={c.primary} style={styles.rowIcon} />
+                    <ChevronRight size={16} color={c.foregroundSubtle} />
                   </TouchableOpacity>
-                </View>
-              ))
-            )}
-          </ScrollView>
+                )}
+              />
+            </View>
+          )}
         </View>
       </SubScreenChrome>
 
@@ -1214,7 +1607,54 @@ export function ReportesScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
-    body: { flex: 1 },
+    body: {
+      flex: 1,
+      paddingHorizontal: spacing.sm,
+      paddingTop: spacing.xs,
+    },
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.xs,
+    },
+    rowBody: { flex: 1, minWidth: 0 },
+    rowTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    rowTitle: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    rowMeta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    rowIcon: { flexShrink: 0 },
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 19,
+      paddingHorizontal: spacing.sm,
+    },
     headerIconCircle: {
       width: 44,
       height: 44,
@@ -1229,38 +1669,6 @@ function createStyles(c) {
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.12,
       shadowRadius: 4,
-    },
-    reportItem: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.md,
-      padding: spacing.sm,
-      marginBottom: spacing.sm,
-    },
-    reportName: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 14,
-      color: c.foreground,
-      marginBottom: 2,
-    },
-    badge: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 12,
-    },
-    printBtn: {
-      borderWidth: 1,
-      borderRadius: radii.md,
-      minHeight: 34,
-      paddingHorizontal: spacing.sm,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-    },
-    printTxt: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 12,
     },
     modalBackdrop: {
       flex: 1,

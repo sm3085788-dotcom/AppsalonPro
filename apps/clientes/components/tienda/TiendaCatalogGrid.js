@@ -1,24 +1,53 @@
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
-import { useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { db, mapInventarioToTiendaProduct } from '@appsalon/shared-config';
 import { TIENDA_PRODUCT_SLOTS } from '../../data/tiendaPlaceholders';
 import { ProductCardPlaceholder } from './ProductCardPlaceholder';
 
 const GAP = 10;
 
 /**
- * Catálogo tipo rejilla (referencia estilo Amazon): búsqueda fake, ordenar, tarjetas en 2 columnas.
- * Referencia de UI para el catálogo; App Salón puede reutilizar la misma interfaz.
- *
- * @param {(product: object) => void} [onProductPress] — Solo para huecos con `product` definido.
+ * Catálogo en rejilla. Si hay productos en inventario con `visible_en_tienda`, los muestra; si no, placeholders.
  */
-export function TiendaCatalogGrid({ onProductPress }) {
+export function TiendaCatalogGrid({ onProductPress, products: productsProp }) {
   const { colors: c } = useTheme();
   const { width: winW } = useWindowDimensions();
   const outerPad = spacing.lg * 2;
   const innerW = winW - outerPad;
   const cardW = (innerW - GAP) / 2;
+  const [liveProducts, setLiveProducts] = useState([]);
+  const [loading, setLoading] = useState(!productsProp);
+
+  useEffect(() => {
+    if (productsProp) return undefined;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await db.inventario.getVisiblesEnTienda();
+      if (cancelled) return;
+      if (!error && Array.isArray(data) && data.length) {
+        setLiveProducts(data.map(mapInventarioToTiendaProduct).filter(Boolean));
+      }
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [productsProp]);
+
+  const catalogProducts = productsProp?.length ? productsProp : liveProducts;
+
+  const slots = useMemo(() => {
+    if (catalogProducts.length) {
+      return catalogProducts.map((product, i) => ({
+        id: `live-${product.id}`,
+        index: i + 1,
+        product,
+      }));
+    }
+    return TIENDA_PRODUCT_SLOTS;
+  }, [catalogProducts]);
 
   const styles = useMemo(
     () =>
@@ -79,14 +108,18 @@ export function TiendaCatalogGrid({ onProductPress }) {
       </View>
 
       <View style={styles.toolbar}>
-        <Text style={styles.resultMeta}>Resultados del salón</Text>
+        <Text style={styles.resultMeta}>
+          {loading ? 'Cargando…' : `${slots.filter((s) => s.product).length} productos`}
+        </Text>
         <TouchableOpacity hitSlop={12} accessibilityRole="button">
           <Text style={styles.sortLink}>Ordenar · filtros</Text>
         </TouchableOpacity>
       </View>
 
+      {loading ? <ActivityIndicator color={c.primary} style={{ marginVertical: spacing.lg }} /> : null}
+
       <View style={styles.grid}>
-        {TIENDA_PRODUCT_SLOTS.map((slot) => (
+        {slots.map((slot) => (
           <ProductCardPlaceholder
             key={slot.id}
             slotIndex={slot.index}
@@ -102,8 +135,9 @@ export function TiendaCatalogGrid({ onProductPress }) {
       </View>
 
       <Text style={styles.footnote}>
-        Huecos listos para nombre, foto, precio (GTQ), stock y envío. Misma interfaz podrá usarse en
-        App Salón para gestionar el catálogo.
+        {catalogProducts.length
+          ? 'Productos con stock del inventario del salón (visible en tienda).'
+          : 'Sin productos en tienda todavía: el salón debe marcar artículos como visibles en inventario.'}
       </Text>
     </View>
   );

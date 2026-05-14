@@ -13,10 +13,10 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, FileText, X } from 'lucide-react-native';
+import { ChevronRight, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
 function formatQ(n) {
@@ -34,10 +34,13 @@ function facturaLabel(v) {
   return n || `Venta ${String(v?.id || '').slice(0, 8)}…`;
 }
 
+function profesionalLabel(v) {
+  return v?.vendedor?.nombre?.trim() || v?.profesional?.trim() || '';
+}
+
 export function PapeleriaScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const subStyles = useSubStyles();
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [ventas, setVentas] = useState([]);
@@ -123,7 +126,7 @@ export function PapeleriaScreen({ onBack }) {
     if (q) {
       rows = rows.filter((v) => {
         const cli = v?.cliente?.nombre || v?.cliente_nombre || '';
-        const vend = v?.vendedor?.nombre || '';
+        const vend = profesionalLabel(v);
         const blob = [facturaLabel(v), cli, vend, v?.metodo_pago, v?.notas].join(' ').toLowerCase();
         return blob.includes(q);
       });
@@ -162,7 +165,7 @@ export function PapeleriaScreen({ onBack }) {
       `Factura / folio: ${facturaLabel(v)}`,
       `Fecha: ${v?.fecha ? new Date(v.fecha).toLocaleString('es-GT') : '—'}`,
       `Cliente: ${v?.cliente?.nombre || v?.cliente_nombre || '—'}`,
-      `Vendedor: ${v?.vendedor?.nombre || '—'}`,
+      `Vendedor: ${profesionalLabel(v) || '—'}`,
       `Total: ${formatQ(montoVenta(v))}`,
       `Pago: ${v?.metodo_pago || '—'}`,
     ].join('\n');
@@ -176,42 +179,55 @@ export function PapeleriaScreen({ onBack }) {
     Alert.alert('Detalle de venta', body, [{ text: 'Cerrar' }], { cancelable: true });
   };
 
-  const renderItem = ({ item: v }) => (
-    <TouchableOpacity
-      style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-      onPress={() => verDetalle(v)}
-      activeOpacity={0.88}
-    >
-      <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-        <FileText size={20} color={c.foregroundMuted} strokeWidth={2} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.title, { color: c.foreground }]} numberOfLines={1}>
-          {facturaLabel(v)}
-        </Text>
-        <Text style={[subStyles.muted, styles.meta]} numberOfLines={2}>
-          {v?.vendedor?.nombre ? `${v.vendedor.nombre} · ` : ''}
-          {v?.cliente?.nombre || v?.cliente_nombre || 'Cliente'} · {formatQ(montoVenta(v))}
-        </Text>
-        <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-          {v?.fecha ? new Date(v.fecha).toLocaleString('es-GT') : '—'} · {v?.metodo_pago || '—'}
-        </Text>
-      </View>
-      <ChevronRight size={18} color={c.foregroundMuted} />
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item: v }) => {
+    const prof = profesionalLabel(v);
+    const cli = v?.cliente?.nombre || v?.cliente_nombre || '';
+    const fecha = v?.fecha
+      ? new Date(v.fecha).toLocaleString('es-GT', {
+          day: '2-digit',
+          month: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : '—';
+    const subParts = [prof, cli, fecha, v?.metodo_pago].filter(Boolean);
+
+    return (
+      <TouchableOpacity
+        style={[styles.row, { borderBottomColor: c.cardBorder }]}
+        onPress={() => verDetalle(v)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.rowBody}>
+          <View style={styles.rowTop}>
+            <Text style={[styles.folio, { color: c.foreground }]} numberOfLines={1}>
+              {facturaLabel(v)}
+            </Text>
+            <Text style={[styles.monto, { color: c.primary }]} numberOfLines={1}>
+              {formatQ(montoVenta(v))}
+            </Text>
+          </View>
+          <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+            {subParts.length ? subParts.join(' · ') : '—'}
+          </Text>
+        </View>
+        <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.shell, { backgroundColor: c.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Papelería"
-        subtitle="Facturas generadas en caja por los empleados (tabla ventas). La app Ventas (cliente) mostrará el mismo tipo de documento desde el lado de quien compra."
+        subtitle="Facturas del punto de venta y caja."
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
+        edgeToEdge
       >
-        <View style={{ flex: 1, paddingHorizontal: spacing.lg }}>
+        <View style={styles.body}>
           <TextInput
             style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
             placeholder="Buscar folio, cliente, empleado…"
@@ -235,27 +251,33 @@ export function PapeleriaScreen({ onBack }) {
               <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
             </TouchableOpacity>
           </View>
-          <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.md }]} numberOfLines={3}>
+          <Text
+            style={[styles.filtroResumen, { color: c.foregroundSubtle }]}
+            numberOfLines={1}
+          >
             {filtroResumen}
           </Text>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
+            <ActivityIndicator style={{ marginTop: spacing.md }} color={c.primary} />
           ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(v) => String(v.id)}
-              renderItem={renderItem}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
-              ListEmptyComponent={
-                <Text style={[subStyles.muted, { marginTop: spacing.sm }]}>
-                  {ventas.length === 0
-                    ? 'No hay ventas registradas. Cuando el equipo facture desde caja o punto de venta, aparecerán aquí con folio y totales.'
-                    : 'Ningún resultado con la búsqueda o filtros actuales.'}
-                </Text>
-              }
-            />
+            <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <FlatList
+                data={filtered}
+                keyExtractor={(v) => String(v.id)}
+                renderItem={renderItem}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                contentContainerStyle={{ paddingBottom: padBottom, flexGrow: filtered.length === 0 ? 1 : 0 }}
+                showsVerticalScrollIndicator={false}
+                ListEmptyComponent={
+                  <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+                    {ventas.length === 0
+                      ? 'No hay ventas registradas.'
+                      : 'Ningún resultado con la búsqueda o filtros actuales.'}
+                  </Text>
+                }
+              />
+            </View>
           )}
         </View>
       </SubScreenChrome>
@@ -392,23 +414,82 @@ export function PapeleriaScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    body: {
+      flex: 1,
+      paddingHorizontal: spacing.sm,
+    },
     search: {
       fontFamily: typography.fontSans,
-      fontSize: 15,
-      minHeight: 48,
-      borderRadius: radii.lg,
+      fontSize: 14,
+      minHeight: 40,
+      borderRadius: radii.md,
       borderWidth: 1,
-      paddingHorizontal: spacing.md,
-      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      marginBottom: spacing.xs,
     },
     toolbar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
+      marginBottom: 2,
+    },
+    toolbarMeta: { fontFamily: typography.fontSansMedium, fontSize: 12 },
+    toolbarLink: { fontFamily: typography.fontSansMedium, fontSize: 12 },
+    filtroResumen: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
       marginBottom: spacing.xs,
     },
-    toolbarMeta: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    toolbarLink: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.xs,
+    },
+    rowBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    rowTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    folio: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    monto: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    rowChev: {
+      flexShrink: 0,
+    },
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      textAlign: 'center',
+      paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.sm,
+    },
     filterBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
@@ -446,23 +527,5 @@ function createStyles(c) {
       maxWidth: '100%',
     },
     chipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    card: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-    },
-    iconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    title: { fontFamily: typography.fontSansMedium, fontSize: 16 },
-    meta: { fontSize: 12, marginTop: 4 },
   });
 }

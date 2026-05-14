@@ -72,3 +72,10 @@ export async function clearBasureroEntriesInDateRange(fromIso, toIso) {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(kept));
   return removed;
 }
+
+export async function deleteBasureroEntryById(id) {
+  const list = await getBasureroEntries();
+  const next = list.filter((e) => String(e.id) !== String(id));
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return list.length - next.length;
+}

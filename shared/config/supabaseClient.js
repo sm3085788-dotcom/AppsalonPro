@@ -2599,9 +2599,88 @@ export const db = {
         error: null,
       };
     },
-  },
 
-  // ==================== MARKETING POSTS ====================
+    /** Meta global única: monto en ventas Q (salón + app clientes). */
+    getGlobalMontoActiva: async () => {
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*')
+        .eq('alcance', 'global')
+        .eq('tipo', 'monto_ventas')
+        .eq('activo', true)
+        .order('creado_a', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return { data, error };
+    },
+
+    setMetaGlobalUnica: async ({
+      valor_objetivo,
+      titulo = 'Meta global de ventas',
+      fecha_inicio = null,
+      fecha_fin = null,
+    }) => {
+      const v = Number(valor_objetivo);
+      if (!Number.isFinite(v) || v <= 0) {
+        return { data: null, error: { message: 'El objetivo debe ser un monto mayor a 0.' } };
+      }
+      if (fecha_inicio && fecha_fin) {
+        const ini = new Date(fecha_inicio);
+        const fin = new Date(fecha_fin);
+        if (ini > fin) {
+          return { data: null, error: { message: 'La fecha de inicio no puede ser posterior al fin.' } };
+        }
+      }
+
+      await supabase.from('metas').update({ activo: false }).eq('alcance', 'global');
+
+      const { data: existing } = await supabase
+        .from('metas')
+        .select('*')
+        .eq('alcance', 'global')
+        .eq('tipo', 'monto_ventas')
+        .order('creado_a', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const periodo = new Date().toISOString().slice(0, 7);
+      const payload = {
+        titulo,
+        valor_objetivo: v,
+        activo: true,
+        periodo,
+        alcance: 'global',
+        tipo: 'monto_ventas',
+        asignado_a: null,
+        fecha_inicio: fecha_inicio || null,
+        fecha_fin: fecha_fin || null,
+      };
+
+      if (existing) {
+        return await db.metas.update(existing.id, payload);
+      }
+
+      return await db.metas.create({
+        ...payload,
+        actual: 0,
+      });
+    },
+
+    incrementarMonto: async (id, monto) => {
+      const delta = Number(monto);
+      if (!Number.isFinite(delta) || delta <= 0) return { data: null, error: null };
+      const { data: meta, error: e0 } = await db.metas.getById(id);
+      if (e0 || !meta) return { data: null, error: e0 || { message: 'Meta no encontrada' } };
+      const nuevo = Number(meta.actual || 0) + delta;
+      return db.metas.updateProgreso(id, nuevo);
+    },
+
+    reiniciarProgresoGlobal: async () => {
+      const { data } = await db.metas.getGlobalMontoActiva();
+      if (!data) return { data: null, error: { message: 'No hay meta global activa.' } };
+      return db.metas.updateProgreso(data.id, 0);
+    },
+  },
   marketingPosts: {
     getAll: async () => {
       const { data, error } = await supabase
@@ -5771,6 +5850,20 @@ export async function uploadClientePhotoFromUri(localUri, meta = {}) {
 }
 
 export { buildClienteExportPayload, buildClienteExportText, buildClienteExportJson } from './clienteExport.js';
+export {
+  getMetaGlobal,
+  guardarMetaGlobal,
+  registrarMontoVentaEnMeta,
+  progresoMetaPct,
+  reiniciarMetaGlobal,
+  formatMetaQ,
+  metaVigente,
+  parseMontoInput,
+  formatMontoInputLive,
+  montoInputFromNumber,
+} from './metaGlobal.js';
+export { confirmarCompraConTarjeta, mapInventarioToTiendaProduct } from './tiendaCheckout.js';
+export { crearPedidoEfectivo, confirmarCobroPedidoSalon } from './pedidoSalon.js';
 
 // Helpers para verificar conexión
 export const testConnection = async () => {
