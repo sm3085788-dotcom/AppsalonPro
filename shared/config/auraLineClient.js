@@ -7,7 +7,7 @@ export function isSalonOutboundMessage(row) {
   return SALON_OUTBOUND_TYPES.has(ct);
 }
 
-/** Mensajes Aura Line del cliente autenticado (RPC con fallback). */
+/** Mensajes Andreas Pro del cliente autenticado (RPC con fallback). */
 export async function fetchClientAuraMessages(limit = 200) {
   const { data: rpcData, error: rpcError } = await supabase.rpc('client_aura_messages', {
     p_limit: limit,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -23,13 +23,21 @@ import {
   guardarMetaGlobal,
   progresoMetaPct,
   reiniciarMetaGlobal,
+  renovarMetaGlobal,
   formatMetaQ,
   metaVigente,
   parseMontoInput,
   formatMontoInputLive,
   montoInputFromNumber,
 } from '@appsalon/shared-config';
-import { maybeArchivarMetaVencida } from '../services/salonMetaPeriod';
+import {
+  maybeArchivarMetaVencida,
+  getMetaRenewalPrompt,
+  dismissMetaRenewalPrompt,
+  metaPeriodoTerminado,
+  metaVenceHoy,
+  suggestNextPeriod,
+} from '../services/salonMetaPeriod';
 
 function formatShortDate(d) {
   if (!d) return '—';
@@ -60,6 +68,9 @@ export function MetasScreen({ onBack }) {
   const [pickerTarget, setPickerTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [renewing, setRenewing] = useState(false);
+  const renewalAlertOpenRef = useRef(false);
+  const promptRenovacionMetaRef = useRef(async () => {});
 
   const loadMeta = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -75,10 +86,72 @@ export function MetasScreen({ onBack }) {
         setFechaInicio(data.fecha_inicio ? new Date(data.fecha_inicio) : null);
         setFechaFin(data.fecha_fin ? new Date(data.fecha_fin) : null);
       }
+      await promptRenovacionMetaRef.current(data);
     }
     if (!silent) setLoading(false);
     setRefreshing(false);
   }, []);
+
+  const ejecutarRenovacion = useCallback(
+    async (metaData, suggested) => {
+      if (!metaData || !suggested) return;
+      setRenewing(true);
+      await maybeArchivarMetaVencida(metaData);
+      await dismissMetaRenewalPrompt(metaData);
+      const { error } = await renovarMetaGlobal({
+        valorObjetivo: metaData.valor_objetivo,
+        fechaInicio: toYmd(suggested.fechaInicio),
+        fechaFin: toYmd(suggested.fechaFin),
+      });
+      setRenewing(false);
+      renewalAlertOpenRef.current = false;
+      if (error) {
+        Alert.alert('No se renovó', error.message || 'Intentá de nuevo.');
+        return;
+      }
+      setFechaInicio(suggested.fechaInicio);
+      setFechaFin(suggested.fechaFin);
+      Alert.alert(
+        'Meta renovada',
+        `Nuevo período: ${formatShortDate(suggested.fechaInicio)} → ${formatShortDate(suggested.fechaFin)}. Avance reiniciado a Q 0.00.`,
+      );
+      await loadMeta(true);
+    },
+    [loadMeta],
+  );
+
+  const promptRenovacionMeta = useCallback(
+    async (metaData) => {
+      if (!metaData || renewalAlertOpenRef.current) return;
+      const { show, reason, suggested } = await getMetaRenewalPrompt(metaData);
+      if (!show || !suggested) return;
+
+      renewalAlertOpenRef.current = true;
+      const titulo = reason === 'expired' ? 'Período de meta finalizado' : 'Tu meta vence hoy';
+      const cuerpo =
+        reason === 'expired'
+          ? `El período terminó el ${formatShortDate(new Date(metaData.fecha_fin))}. ¿Renovar con el siguiente período (${formatShortDate(suggested.fechaInicio)} → ${formatShortDate(suggested.fechaFin)})? El avance volverá a Q 0.00.`
+          : `Hoy es el último día del período. ¿Renovar para ${formatShortDate(suggested.fechaInicio)} → ${formatShortDate(suggested.fechaFin)}? El avance volverá a Q 0.00.`;
+
+      Alert.alert(titulo, cuerpo, [
+        {
+          text: 'Después',
+          style: 'cancel',
+          onPress: () => {
+            renewalAlertOpenRef.current = false;
+            dismissMetaRenewalPrompt(metaData);
+          },
+        },
+        {
+          text: 'Renovar meta',
+          onPress: () => ejecutarRenovacion(metaData, suggested),
+        },
+      ]);
+    },
+    [ejecutarRenovacion],
+  );
+
+  promptRenovacionMetaRef.current = promptRenovacionMeta;
 
   useEffect(() => {
     loadMeta();
@@ -90,6 +163,19 @@ export function MetasScreen({ onBack }) {
   const actual = Number(meta?.actual || 0);
   const objetivo = Number(meta?.valor_objetivo || 0);
   const vigente = meta ? metaVigente(meta) : true;
+  const periodoCerrado = meta ? metaPeriodoTerminado(meta) : false;
+  const venceHoy = meta ? metaVenceHoy(meta) : false;
+
+  const renovarDesdeBanner = () => {
+    if (!meta) return;
+    const suggested = suggestNextPeriod(meta.fecha_inicio, meta.fecha_fin);
+    const titulo = periodoCerrado ? 'Renovar meta' : 'Renovar antes del cierre';
+    const cuerpo = `¿Iniciar el período ${formatShortDate(suggested.fechaInicio)} → ${formatShortDate(suggested.fechaFin)} con avance en Q 0.00?`;
+    Alert.alert(titulo, cuerpo, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Renovar', onPress: () => ejecutarRenovacion(meta, suggested) },
+    ]);
+  };
 
   const guardar = async () => {
     const v = parseMontoInput(objetivoStr);
@@ -171,6 +257,27 @@ export function MetasScreen({ onBack }) {
           {loading ? (
             <ActivityIndicator color={c.primary} style={{ marginTop: spacing.lg }} />
           ) : (
+            <>
+            {(periodoCerrado || venceHoy) && meta ? (
+              <View style={[styles.renewBanner, { borderColor: periodoCerrado ? '#C62828' : c.primary, backgroundColor: periodoCerrado ? 'rgba(198,40,40,0.08)' : 'rgba(212,175,55,0.12)' }]}>
+                <Text style={[styles.renewBannerTitle, { color: c.foreground }]}>
+                  {periodoCerrado ? 'Período finalizado' : 'La meta vence hoy'}
+                </Text>
+                <Text style={[styles.renewBannerBody, { color: c.foregroundMuted }]}>
+                  {periodoCerrado
+                    ? 'Renová la meta para abrir un nuevo período; el avance se reinicia a Q 0.00.'
+                    : 'Renová hoy para continuar sin interrupción en el siguiente período.'}
+                </Text>
+                <SalonButton
+                  title={renewing ? 'Renovando…' : 'Renovar meta'}
+                  variant="heroGold"
+                  fullWidth
+                  disabled={renewing || saving}
+                  onPress={renovarDesdeBanner}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+            ) : null}
             <View style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
               <Text style={[styles.cardTitle, { color: c.foreground }]}>{meta?.titulo || 'Meta global de ventas'}</Text>
               {meta?.fecha_inicio && meta?.fecha_fin ? (
@@ -271,6 +378,7 @@ export function MetasScreen({ onBack }) {
                 />
               ) : null}
             </View>
+            </>
           )}
         </ScrollView>
       </SubScreenChrome>
@@ -281,6 +389,9 @@ export function MetasScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    renewBanner: { borderWidth: 1, borderRadius: radii.lg, padding: spacing.md, marginBottom: spacing.md },
+    renewBannerTitle: { fontFamily: typography.fontSansMedium, fontSize: 15, marginBottom: 4 },
+    renewBannerBody: { fontFamily: typography.fontSans, fontSize: 13, lineHeight: 18 },
     card: { borderWidth: 1, borderRadius: radii.lg, padding: spacing.lg },
     cardTitle: { fontFamily: typography.fontDisplay, fontSize: 22, marginBottom: spacing.xs },
     periodoTxt: { fontFamily: typography.fontSansMedium, fontSize: 13, marginBottom: spacing.md },

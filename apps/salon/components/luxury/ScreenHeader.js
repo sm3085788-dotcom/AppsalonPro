@@ -67,7 +67,7 @@ export function ScreenHeader({
             placeholder={placeholder}
             placeholderTextColor={c.foregroundSubtle}
             returnKeyType="search"
-            accessibilityLabel="Buscar en el panel"
+            accessibilityLabel="Buscar en todo el salón"
           />
         </View>
       </View>

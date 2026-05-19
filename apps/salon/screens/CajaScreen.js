@@ -379,6 +379,7 @@ export function CajaScreen({ onBack }) {
         <td>${escHtml(new Date(t.ts).toLocaleString('es-GT'))}</td>
         <td>${escHtml(t.kind)}</td>
         <td>${escHtml(t.titulo)}</td>
+        <td>${escHtml(t.productos || '—')}</td>
         <td>${escHtml(t.detalle || '')}</td>
         <td style="text-align:right">${t.signo === -1 ? '-' : ''}${formatQ(t.monto || 0)}</td>
       </tr>`,
@@ -422,7 +423,7 @@ export function CajaScreen({ onBack }) {
   <p><strong>Saldo final:</strong> <span class="tot">${formatQ(totalEntrante)}</span></p>
   <h2>Movimientos</h2>
   <table class="movimientos">
-    <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Detalle</th><th>Monto</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Productos</th><th>Detalle</th><th>Monto</th></tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
   <div class="sig-wrap">
@@ -657,6 +658,11 @@ export function CajaScreen({ onBack }) {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.txTit}>{t.titulo}</Text>
+                        {t.productos && t.productos !== '—' ? (
+                          <Text style={subStyles.muted} numberOfLines={2}>
+                            {t.productos}
+                          </Text>
+                        ) : null}
                         <Text style={subStyles.muted}>{t.detalle}</Text>
                         <Text style={styles.txTime}>{new Date(t.ts).toLocaleString('es-GT')}</Text>
                       </View>

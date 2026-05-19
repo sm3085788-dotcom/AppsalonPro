@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { Moon, Sun, Store, LogOut } from 'lucide-react-native';
 
 import { ScreenHeader } from './components/luxury';
 import { AdminModuleTile } from './components/AdminModuleTile';
+import { GlobalSearchResults } from './components/GlobalSearchResults';
+import { runSalonGlobalSearch, SALON_SEARCH_MIN_LEN } from './services/salonGlobalSearch';
 import { spacing, typography } from '@appsalon/design-tokens';
 import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import {
@@ -65,6 +67,10 @@ function SalonAdminShell({ onSignOut }) {
   const { width: winW } = useWindowDimensions();
   const [openedModuleId, setOpenedModuleId] = useState(null);
   const [search, setSearch] = useState('');
+  const [searchHits, setSearchHits] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimerRef = useRef(null);
+  const searchGenRef = useRef(0);
   const badgeCounts = useMemo(
     () =>
       BADGE_MODULE_IDS.reduce((acc, id) => {
@@ -92,7 +98,36 @@ function SalonAdminShell({ onSignOut }) {
   const openedModule = openedModuleId ? getModuleById(openedModuleId) : null;
 
   const openModule = useCallback((id) => setOpenedModuleId(id), []);
-  const closeModule = useCallback(() => setOpenedModuleId(null), []);
+  const closeModule = useCallback(() => {
+    setOpenedModuleId(null);
+    setSearch('');
+    setSearchHits([]);
+    setSearchLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const q = search.trim();
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (q.length < SALON_SEARCH_MIN_LEN) {
+      setSearchHits([]);
+      setSearchLoading(false);
+      return undefined;
+    }
+    setSearchLoading(true);
+    searchTimerRef.current = setTimeout(() => {
+      const gen = searchGenRef.current + 1;
+      searchGenRef.current = gen;
+      runSalonGlobalSearch(q).then(({ hits }) => {
+        if (searchGenRef.current === gen) {
+          setSearchHits(hits);
+          setSearchLoading(false);
+        }
+      });
+    }, 320);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [search]);
   const toggleTheme = useCallback(() => {
     setScheme(isDark ? 'light' : 'dark');
   }, [isDark, setScheme]);
@@ -224,11 +259,22 @@ function SalonAdminShell({ onSignOut }) {
             showHomeBar
             searchValue={search}
             onSearchChange={setSearch}
-            placeholder="Buscar en el panel..."
+            placeholder="Buscar clientes, facturas, folios, teléfonos…"
             wrapStyle={styles.searchWrap}
           />
 
-          <Text style={styles.sectionLabel}>Modulos</Text>
+          {search.trim().length >= SALON_SEARCH_MIN_LEN ? (
+            <GlobalSearchResults
+              query={search}
+              hits={searchHits}
+              loading={searchLoading}
+              onOpenModule={openModule}
+            />
+          ) : null}
+
+          <Text style={styles.sectionLabel}>
+            {search.trim().length >= SALON_SEARCH_MIN_LEN ? 'Modulos relacionados' : 'Modulos'}
+          </Text>
 
           <View style={styles.grid}>
             {modules.map((m, i) => {

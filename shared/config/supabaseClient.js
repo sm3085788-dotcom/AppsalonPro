@@ -139,7 +139,9 @@ export const db = {
       return await supabase
         .from('clientes')
         .select('*')
-        .or(`nombre.ilike.%${query}%,telefono.ilike.%${query}%,email.ilike.%${query}%`)
+        .or(
+          `nombre.ilike.%${query}%,telefono.ilike.%${query}%,email.ilike.%${query}%,notas.ilike.%${query}%,direccion.ilike.%${query}%,categoria.ilike.%${query}%`,
+        )
         .order('nombre');
     },
 
@@ -275,6 +277,79 @@ export const db = {
         .from('clientes')
         .select('*')
         .eq('referido_por', userId);
+    },
+  },
+
+  // ==================== MEMBRESÍAS (Bronce / Plata / VIP) ====================
+  membresias: {
+    crearCodigo: async ({ nivel, clienteId, notas, codigo }) => {
+      const { buildMembresiaCodigo, isMembresiaNivelValid } = await import('./membresias.js');
+      if (!isMembresiaNivelValid(nivel)) {
+        return { data: null, error: { message: 'Nivel de membresía no válido.' } };
+      }
+      if (!clienteId) {
+        return { data: null, error: { message: 'Seleccioná un cliente.' } };
+      }
+      const code = codigo || buildMembresiaCodigo(nivel);
+      const { data: userData } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from('membresia_codigos')
+        .insert({
+          codigo: code,
+          nivel: String(nivel).toLowerCase(),
+          cliente_id: clienteId,
+          activo: true,
+          notas: notas || null,
+          creado_por: userData?.user?.id || null,
+        })
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    listCodigosPendientes: async (clienteId) => {
+      return await supabase
+        .from('membresia_codigos')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .eq('activo', true)
+        .is('usado_en', null)
+        .order('created_at', { ascending: false });
+    },
+
+    /** Cliente manual (sin app): el salón asigna el nivel directo en la ficha. */
+    asignarDirecta: async ({ clienteId, nivel }) => {
+      const { isMembresiaNivelValid } = await import('./membresias.js');
+      const id = String(nivel || '').toLowerCase();
+      if (!isMembresiaNivelValid(id)) {
+        return { data: null, error: { message: 'Nivel de membresía no válido.' } };
+      }
+      if (!clienteId) {
+        return { data: null, error: { message: 'Cliente no indicado.' } };
+      }
+      const categoria =
+        id === 'vip' ? 'VIP' : id === 'plata' ? 'Plata' : id === 'bronce' ? 'Bronce' : undefined;
+      const patch = {
+        membresia_nivel: id,
+        membresia_activada_en: new Date().toISOString(),
+      };
+      if (categoria) patch.categoria = categoria;
+      return db.clientes.update(clienteId, patch);
+    },
+
+    canjearCodigo: async (codigo) => {
+      const { normalizeMembresiaCodigoInput } = await import('./membresias.js');
+      const normalized = normalizeMembresiaCodigoInput(codigo);
+      if (!normalized) {
+        return { data: null, error: { message: 'Ingresá el código que te dio el salón.' } };
+      }
+      const { data, error } = await supabase.rpc('redeem_membresia_codigo', { p_codigo: normalized });
+      if (error) return { data: null, error };
+      const payload = data && typeof data === 'object' ? data : {};
+      if (payload.ok === false) {
+        return { data: null, error: { message: payload.error || 'No se pudo activar el código.' } };
+      }
+      return { data: payload, error: null };
     },
   },
 
@@ -506,6 +581,21 @@ export const db = {
         .order('fecha_hora');
     },
 
+    search: async (query, limit = 20) => {
+      const q = String(query || '').trim();
+      if (!q) return { data: [], error: null };
+      return await supabase
+        .from('citas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre, telefono, email),
+          empleado:empleados(id, nombre)
+        `)
+        .or(`servicio.ilike.%${q}%,notas_servicio.ilike.%${q}%,estado.ilike.%${q}%`)
+        .order('fecha_hora', { ascending: false })
+        .limit(limit);
+    },
+
     // Crear nueva cita
     create: async (data) => {
       return await supabase
@@ -688,6 +778,7 @@ export const db = {
           contacto_emergencia: data.contacto_emergencia || null,
           tel_emergencia: data.tel_emergencia || null,
           activo: data.activo !== undefined ? data.activo : true,
+          foto_url: data.foto_url ?? null,
         })
         .select()
         .single();
@@ -1624,6 +1715,23 @@ export const db = {
         .order('fecha', { ascending: false });
     },
 
+    search: async (query, limit = 20) => {
+      const q = String(query || '').trim();
+      if (!q) return { data: [], error: null };
+      return await supabase
+        .from('ventas')
+        .select(`
+          *,
+          cliente:clientes(id, nombre, telefono),
+          vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
+        `)
+        .or(
+          `no_factura.ilike.%${q}%,cliente_nombre.ilike.%${q}%,profesional.ilike.%${q}%,notas.ilike.%${q}%,metodo_pago.ilike.%${q}%`,
+        )
+        .order('fecha', { ascending: false })
+        .limit(limit);
+    },
+
     // Buscar ventas por número de factura
     getByFactura: async (noFactura) => {
       return await supabase
@@ -2121,6 +2229,19 @@ export const db = {
     delete: async (id) => {
       return await supabase.from('proveedores').delete().eq('id', id);
     },
+
+    search: async (query, limit = 20) => {
+      const q = String(query || '').trim();
+      if (!q) return { data: [], error: null };
+      return await supabase
+        .from('proveedores')
+        .select('*')
+        .or(
+          `nombre_compania.ilike.%${q}%,nit.ilike.%${q}%,nombre_agente.ilike.%${q}%,telefono.ilike.%${q}%,telefono_agente.ilike.%${q}%,email.ilike.%${q}%`,
+        )
+        .order('nombre_compania', { ascending: true })
+        .limit(limit);
+    },
   },
 
   // ==================== E-COMMERCE ORDERS ====================
@@ -2447,6 +2568,18 @@ export const db = {
         .select('*, asignado_a:empleados(id, nombre, rol)')
         .eq('alcance', 'individual')
         .order('creado_a', { ascending: false });
+      return { data, error };
+    },
+
+    search: async (query, limit = 20) => {
+      const q = String(query || '').trim();
+      if (!q) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('metas')
+        .select('*, asignado_a:empleados(id, nombre, rol)')
+        .or(`titulo.ilike.%${q}%,tipo.ilike.%${q}%,periodo.ilike.%${q}%,alcance.ilike.%${q}%`)
+        .order('creado_a', { ascending: false })
+        .limit(limit);
       return { data, error };
     },
 
@@ -3354,6 +3487,17 @@ export const db = {
       return { data, error };
     },
 
+    /** Interés carrusel / Tendencias desde App Clientes → bandeja Pedidos (salón). */
+    listPedidosInterest: async (limit = 400) => {
+      const { data, error } = await supabase
+        .from('marketing_direct_messages')
+        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .in('content_type', ['carousel_interest', 'tendencias_interest'])
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
     create: async (data) => {
       const messageData = {
         ...data,
@@ -3459,6 +3603,26 @@ export const db = {
         .order('created_at', { ascending: false })
         .limit(limit);
       return { data, error };
+    },
+
+    /** Último mensaje Andreas Pro por cliente (orden bandeja tipo WhatsApp). */
+    getInboxPreviewsByClient: async () => {
+      const { data, error } = await supabase.rpc('salon_inbox_client_preview');
+      if (!error) return { data: data || [], error: null };
+      const { data: fallback, error: fbErr } = await supabase
+        .from('marketing_direct_messages')
+        .select('client_id, content, created_at, content_type, status')
+        .in('content_type', ['chat', 'broadcast_promo', 'incident_report'])
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (fbErr) return { data: [], error: fbErr };
+      const lastBy = new Map();
+      for (const m of fallback || []) {
+        if (!m?.client_id) continue;
+        const prev = lastBy.get(m.client_id);
+        if (!prev || new Date(m.created_at) > new Date(prev.created_at)) lastBy.set(m.client_id, m);
+      }
+      return { data: Array.from(lastBy.values()), error: null };
     },
 
     getByDateRange: async (startDate, endDate) => {
@@ -4211,6 +4375,20 @@ export const db = {
     getHoy: async () => {
       const today = new Date().toISOString().split('T')[0];
       return await db.cajas.getByFecha(today);
+    },
+
+    search: async (query, limit = 15) => {
+      const q = String(query || '').trim();
+      if (!q) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .or(
+          `responsable.ilike.%${q}%,responsable_apertura.ilike.%${q}%,responsable_cierre.ilike.%${q}%,estado.ilike.%${q}%`,
+        )
+        .order('creado_a', { ascending: false })
+        .limit(limit);
+      return { data, error };
     },
 
     getByDateRange: async (startDate, endDate) => {
@@ -5920,12 +6098,22 @@ export async function uploadProveedorLogoFromUri(localUri, meta = {}) {
   return uploadStorageFromLocalUri('proveedores', localUri, meta);
 }
 
+/** Bucket Storage `empleados` — fotos de fichas del salón. */
+export async function uploadEmpleadoFotoFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('empleados', localUri, meta);
+}
+
 /** Bucket Storage `clientes` — fotos de perfil de app clientes. */
 export async function uploadClientePhotoFromUri(localUri, meta = {}) {
   return uploadStorageFromLocalUri('clientes', localUri, meta);
 }
 
-export { buildClienteExportPayload, buildClienteExportText, buildClienteExportJson } from './clienteExport.js';
+export {
+  buildClienteExportPayload,
+  buildClienteExportText,
+  buildClienteExportJson,
+  buildClienteFichaHtml,
+} from './clienteExport.js';
 
 // Helpers para verificar conexión
 export const testConnection = async () => {

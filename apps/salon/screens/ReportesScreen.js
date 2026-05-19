@@ -148,6 +148,23 @@ function tipoMovLabel(tipo) {
   return tipo || 'Movimiento';
 }
 
+function ventaProductosNombres(v) {
+  let items = v?.items;
+  if (!items) return '—';
+  if (typeof items === 'string') {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      return '—';
+    }
+  }
+  if (!Array.isArray(items) || items.length === 0) return '—';
+  const nombres = items
+    .map((it) => String(it?.nombre || it?.producto || it?.descripcion || '').trim())
+    .filter(Boolean);
+  return nombres.length ? nombres.join(', ') : '—';
+}
+
 async function fetchCajaReport(startIso, endIso) {
   const startDay = startIso.slice(0, 10);
   const endDay = endIso.slice(0, 10);
@@ -613,6 +630,7 @@ function buildCajaReportHtml(item) {
           const monto = Number(v.total ?? v.monto ?? 0);
           return `<tr>
             <td>${escHtml(v.no_factura || 'Venta')}</td>
+            <td>${escHtml(ventaProductosNombres(v))}</td>
             <td>${escHtml(v.cliente_nombre || v.cliente?.nombre || 'Cliente')} · ${escHtml(v.metodo_pago || '—')}</td>
             <td style="text-align:right">${escHtml(formatQ(monto))}</td>
             <td>${escHtml(fmtFecha(v.fecha))}</td>
@@ -647,8 +665,8 @@ function buildCajaReportHtml(item) {
           </table>
           <h3>Ventas del turno</h3>
           <table>
-            <thead><tr><th>Folio</th><th>Cliente / pago</th><th>Total</th><th>Fecha</th></tr></thead>
-            <tbody>${venRows || '<tr><td colspan="4">Sin ventas</td></tr>'}</tbody>
+            <thead><tr><th>Folio</th><th>Producto</th><th>Cliente / pago</th><th>Total</th><th>Fecha</th></tr></thead>
+            <tbody>${venRows || '<tr><td colspan="5">Sin ventas</td></tr>'}</tbody>
           </table>
         </section>`;
     })

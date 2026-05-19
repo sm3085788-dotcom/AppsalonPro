@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Camera, FileText, X, Search, User, Send } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, supabase, uploadIncidenteMediaFromUri, sendIncidentReportToClient } from '@appsalon/shared-config';
@@ -63,6 +64,57 @@ function escHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+function mimeForImage(uri, mimeHint) {
+  if (mimeHint?.includes('png')) return 'image/png';
+  if (mimeHint?.includes('jpeg') || mimeHint?.includes('jpg')) return 'image/jpeg';
+  const ext = guessExt(uri, mimeHint);
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+/** Convierte file://, content:// o https a data URL para que el motor PDF muestre la foto. */
+async function imageUriToDataUrl(uri, mimeHint) {
+  if (!uri) return null;
+  if (String(uri).startsWith('data:')) return uri;
+
+  const mime = mimeForImage(uri, mimeHint);
+  let readUri = uri;
+
+  if (uri.startsWith('http://') || uri.startsWith('https://')) {
+    const ext = guessExt(uri, mimeHint) || 'jpg';
+    const dest = `${FileSystem.cacheDirectory || ''}inc_pdf_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2)}.${ext}`;
+    const dl = await FileSystem.downloadAsync(uri, dest);
+    readUri = dl.uri;
+  } else if (!uri.startsWith('file://') && !uri.startsWith('content://')) {
+    return null;
+  }
+
+  const base64 = await FileSystem.readAsStringAsync(readUri, {
+    encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
+  });
+  return `data:${mime};base64,${base64}`;
+}
+
+async function resolvePdfImageSources(dto, localFotos = []) {
+  const uris = [dto.imagen_url, dto.foto_2, dto.foto_3];
+  const hints = localFotos.map((f) => f?.mimeType);
+  const out = [];
+  for (let i = 0; i < uris.length; i += 1) {
+    const u = uris[i];
+    if (!u) continue;
+    try {
+      const dataUrl = await imageUriToDataUrl(u, hints[i]);
+      if (dataUrl) out.push(dataUrl);
+    } catch {
+      /* omitir foto que no se pudo leer */
+    }
+  }
+  return out;
+}
+
 function buildDescripcionParaDb(payload) {
   const swLines = INTERRUPTOR_SPECS.map(
     (s) => `${s.label}: ${payload.interruptores[s.key] ? 'Sí' : 'No'}`,
@@ -97,40 +149,48 @@ function buildDescripcionParaDb(payload) {
   return `${body}\n\n${META_MARK}\n${JSON.stringify(meta)}`;
 }
 
-function buildPdfHtml(d) {
+function buildPdfHtml(d, imageDataUrls = []) {
   const swRows = INTERRUPTOR_SPECS.map(
     (s) =>
       `<tr><td>${escHtml(s.label)}</td><td style="text-align:center;font-weight:600">${
         d.interruptores[s.key] ? 'Sí' : 'No'
       }</td></tr>`,
   ).join('');
-  const imgs = [d.imagen_url, d.foto_2, d.foto_3].filter(Boolean);
-  const imgsHtml = imgs
+  const imgsHtml = imageDataUrls
     .map(
-      (u, i) =>
-        `<div style="margin:10px 0"><div style="font-size:11px;color:#666">Evidencia ${i + 1}</div><img src="${escHtml(
-          u,
-        )}" style="max-width:100%;max-height:220px;border:1px solid #ddd;border-radius:8px"/></div>`,
+      (src, i) =>
+        `<div class="evidencia-item"><div class="evidencia-cap">Evidencia ${i + 1}</div><img class="evidencia-img" src="${src}" alt="Evidencia ${i + 1}"/></div>`,
     )
     .join('');
 
   return `<!doctype html><html><head><meta charset="utf-8"/><style>
-    body{font-family:Georgia,serif;padding:22px;color:#1a1a1a;line-height:1.45}
+    @page{margin:14mm;size:auto}
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;height:auto;min-height:auto}
+    body{font-family:Georgia,serif;padding:18px 20px 28px;color:#1a1a1a;line-height:1.45;font-size:14px}
     h1{font-size:20px;margin:0 0 4px;color:#5c1f33}
     .sub{font-size:12px;color:#555;margin-bottom:18px}
     .box{border:1px solid #d4c4c8;border-radius:10px;padding:14px;margin-bottom:14px;background:#faf7f8}
     .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7a5a60;margin-bottom:4px}
-    .val{font-size:14px;margin-bottom:12px}
+    .val{font-size:14px;margin-bottom:12px;word-wrap:break-word;overflow-wrap:anywhere}
+    .val-relato{white-space:pre-wrap}
     table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
-    th,td{border:1px solid #e0d0d4;padding:8px}
+    th,td{border:1px solid #e0d0d4;padding:8px;vertical-align:top}
     th{text-align:left;background:#f3e8ea}
-    .sign{display:flex;gap:24px;margin-top:28px;page-break-inside:avoid}
-    .signCol{flex:1;border-top:1px solid #333;padding-top:8px;min-height:72px}
-    .signName{font-size:13px;font-weight:600;margin-top:6px}
+    .evidencia-box{page-break-inside:avoid;break-inside:avoid-page}
+    .evidencia-grid{display:flex;flex-direction:row;flex-wrap:nowrap;gap:10px;align-items:flex-start;width:100%;margin-top:6px}
+    .evidencia-item{flex:1 1 0;min-width:0;margin:0;text-align:center}
+    .evidencia-cap{font-size:10px;color:#666;margin-bottom:4px}
+    .evidencia-img{display:block;width:100%;height:140px;max-height:140px;min-height:140px;object-fit:cover;object-position:center;border:1px solid #ddd;border-radius:8px}
+    .sign{display:flex;flex-wrap:wrap;gap:24px;margin-top:28px}
+    .signCol{flex:1;min-width:200px;min-height:72px;display:flex;flex-direction:column}
+    .signLbl{font-size:11px;color:#666;margin-bottom:10px}
+    .signName{font-size:13px;font-weight:600;margin:0 0 4px 0}
+    .signLine{border:none;border-bottom:1px solid #333;margin:0;padding:0;height:0}
     .folio{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#333}
   </style></head><body>
     <h1>Reporte de accidente — salón</h1>
-    <div class="sub">Documento generado en App Andrea Control · ${escHtml(d.fechaLegible)}</div>
+    <div class="sub">Documento generado en Andreas Pro · ${escHtml(d.fechaLegible)}</div>
     <div class="box">
       <div class="label">Folio</div>
       <div class="val folio">${escHtml(d.folio)}</div>
@@ -149,9 +209,9 @@ function buildPdfHtml(d) {
     </div>
     <div class="box">
       <div class="label">Relato completo del hecho</div>
-      <div class="val" style="white-space:pre-wrap">${escHtml(d.relato)}</div>
+      <div class="val val-relato">${escHtml(d.relato)}</div>
       <div class="label">Notas adicionales</div>
-      <div class="val" style="white-space:pre-wrap">${escHtml(d.notas || '—')}</div>
+      <div class="val val-relato">${escHtml(d.notas || '—')}</div>
     </div>
     <div class="box">
       <div class="label">Montos estimados (GTQ)</div>
@@ -161,21 +221,35 @@ function buildPdfHtml(d) {
       <div class="label">Interruptores de protocolo</div>
       <table><thead><tr><th>Ítem</th><th style="width:72px">Aplica</th></tr></thead><tbody>${swRows}</tbody></table>
     </div>
-    ${imgs.length ? `<div class="box"><div class="label">Evidencia fotográfica (máx. 3)</div>${imgsHtml}</div>` : ''}
+    ${imageDataUrls.length ? `<div class="box evidencia-box"><div class="label">Evidencia fotográfica (máx. 3)</div><div class="evidencia-grid">${imgsHtml}</div></div>` : ''}
     <div class="sign">
       <div class="signCol">
-        <div style="font-size:11px;color:#666">Firma responsable (constancia escrita)</div>
+        <div class="signLbl">Firma responsable (constancia escrita)</div>
         <div class="signName">${escHtml(d.firmaResponsable)}</div>
+        <div class="signLine"></div>
       </div>
       <div class="signCol">
-        <div style="font-size:11px;color:#666">Firma gerente / supervisión</div>
+        <div class="signLbl">Firma gerente / supervisión</div>
         <div class="signName">${escHtml(d.firmaGerente)}</div>
+        <div class="signLine"></div>
       </div>
     </div>
   </body></html>`;
 }
 
-async function sharePdf(html) {
+async function shareIncidentPdf(dto, localFotos = []) {
+  const imageDataUrls = await resolvePdfImageSources(dto, localFotos);
+  const expectedPhotos = [dto.imagen_url, dto.foto_2, dto.foto_3].filter(Boolean).length;
+  if (expectedPhotos > 0 && imageDataUrls.length === 0) {
+    throw new Error('No se pudieron leer las fotos para el PDF. Volvé a adjuntarlas e intentá otra vez.');
+  }
+  if (expectedPhotos > imageDataUrls.length) {
+    Alert.alert(
+      'Fotos',
+      `Solo se incluyeron ${imageDataUrls.length} de ${expectedPhotos} imágenes en el PDF.`,
+    );
+  }
+  const html = buildPdfHtml(dto, imageDataUrls);
   const { uri } = await Print.printToFileAsync({ html });
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(uri, {
@@ -308,7 +382,7 @@ export function IncidentesScreen({ onBack }) {
     if (!firmaResponsable.trim()) return 'Indicá nombre completo del responsable (firma escrita).';
     if (!firmaGerente.trim()) return 'Indicá nombre completo de gerente o supervisión (firma escrita).';
     if (enviarAuraLine && !clienteSel?.id) {
-      return 'Para enviar por Aura Line, buscá y elegí al cliente afectado en la lista.';
+      return 'Para enviar por Andreas Pro, buscá y elegí al cliente afectado en la lista.';
     }
     return null;
   };
@@ -423,16 +497,16 @@ export function IncidentesScreen({ onBack }) {
         };
         const { error: sendErr } = await sendIncidentReportToClient(clienteSel, dto, sender);
         if (sendErr) {
-          auraNote = `\n\nAura Line: no se pudo enviar (${sendErr.message || 'error'}).`;
+          auraNote = `\n\nAndreas Pro: no se pudo enviar (${sendErr.message || 'error'}).`;
         } else if (!clienteSel.user_id) {
           auraNote =
-            '\n\nAura Line: mensaje registrado. El cliente verá el reporte cuando inicie sesión en App Clientes con la misma ficha.';
+            '\n\nAndreas Pro: mensaje registrado. El cliente verá el reporte cuando inicie sesión en App Clientes con la misma ficha.';
         } else {
-          auraNote = '\n\nAura Line: reporte enviado al cliente en App Clientes.';
+          auraNote = '\n\nAndreas Pro: reporte enviado al cliente en App Clientes.';
         }
       }
 
-      await sharePdf(buildPdfHtml(dto));
+      await shareIncidentPdf(dto, fotos);
       Alert.alert('Registrado', `Incidente guardado. Folio: ${row.folio || row.id}${auraNote}`);
 
       setNombreDeclarante('');
@@ -484,9 +558,9 @@ export function IncidentesScreen({ onBack }) {
       firmaGerente: firmaGerente.trim(),
     };
     try {
-      await sharePdf(buildPdfHtml(dto));
-    } catch {
-      Alert.alert('PDF', 'No se pudo generar el PDF.');
+      await shareIncidentPdf(dto, fotos);
+    } catch (e) {
+      Alert.alert('PDF', e?.message || 'No se pudo generar el PDF.');
     }
   };
 
@@ -505,6 +579,7 @@ export function IncidentesScreen({ onBack }) {
         subtitle="Reporte formal de accidentes físicos o materiales en el salón. Hasta 3 fotos, PDF y firmas."
         onBack={onBack}
         bottomPadding={padBottom}
+        edgeToEdge
       >
         <LinearGradient colors={['#5c1f33', '#7a2d45', '#9a3d58']} style={styles.hero}>
           <FileText size={26} color="#fff" strokeWidth={2} />
@@ -514,8 +589,8 @@ export function IncidentesScreen({ onBack }) {
           </Text>
         </LinearGradient>
 
-        <View style={[subStyles.card, { marginTop: spacing.md }]}>
-          <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Clasificación del evento</Text>
+        <View style={[styles.section, { borderBottomColor: c.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: c.foreground }]}>Clasificación del evento</Text>
           <View style={styles.chipRow}>
             {CLASIFICACION_OPTS.map((o) => {
               const on = clasificacion === o.id;
@@ -524,7 +599,7 @@ export function IncidentesScreen({ onBack }) {
                   key={o.id}
                   style={[
                     styles.chip,
-                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.background },
                   ]}
                   onPress={() => setClasificacion(o.id)}
                 >
@@ -536,11 +611,11 @@ export function IncidentesScreen({ onBack }) {
           </View>
         </View>
 
-        <View style={subStyles.card}>
+        <View style={[styles.section, { borderBottomColor: c.cardBorder }]}>
           {field(
             'Nombre completo (quien declara) *',
             <TextInput
-              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
               value={nombreDeclarante}
               onChangeText={setNombreDeclarante}
               placeholder="Apellidos y nombres"
@@ -550,7 +625,7 @@ export function IncidentesScreen({ onBack }) {
           {field(
             'Teléfono de contacto',
             <TextInput
-              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
               value={telefono}
               onChangeText={setTelefono}
               placeholder="WhatsApp o fijo"
@@ -561,7 +636,7 @@ export function IncidentesScreen({ onBack }) {
           {field(
             'Persona o cliente afectado (si aplica)',
             <TextInput
-              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
               value={personaAfectada}
               onChangeText={setPersonaAfectada}
               placeholder="Nombre libre o se completa al elegir cliente"
@@ -569,10 +644,12 @@ export function IncidentesScreen({ onBack }) {
             />,
           )}
 
-          <View style={[styles.auraCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+          <View style={styles.auraBlock}>
             <View style={styles.auraHead}>
               <Send size={18} color={c.primary} strokeWidth={2} />
-              <Text style={[subStyles.rowLabel, { marginBottom: 0, flex: 1 }]}>Enviar reporte al cliente (Aura Line)</Text>
+              <Text style={[styles.sectionTitle, { marginBottom: 0, flex: 1, color: c.foreground }]}>
+                Enviar reporte al cliente (Andreas Pro)
+              </Text>
             </View>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm }]}>
               Buscá al cliente en la base del salón. El reporte llega a Mensajes en App Clientes (requiere toggle Mensajes activo).
@@ -643,7 +720,7 @@ export function IncidentesScreen({ onBack }) {
           {field(
             'Área o lugar dentro del salón *',
             <TextInput
-              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
               value={lugar}
               onChangeText={setLugar}
               placeholder="Ej. Lavacabezas 2, coloración, recepción"
@@ -656,7 +733,7 @@ export function IncidentesScreen({ onBack }) {
               style={[
                 styles.input,
                 styles.textArea,
-                { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
+                { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background },
               ]}
               value={relato}
               onChangeText={setRelato}
@@ -672,7 +749,7 @@ export function IncidentesScreen({ onBack }) {
               style={[
                 styles.input,
                 styles.textArea,
-                { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
+                { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background },
               ]}
               value={notas}
               onChangeText={setNotas}
@@ -687,7 +764,7 @@ export function IncidentesScreen({ onBack }) {
               {field(
                 'Pérdida estimada (GTQ)',
                 <TextInput
-                  style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                  style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
                   value={montoPerdida}
                   onChangeText={setMontoPerdida}
                   placeholder="0"
@@ -700,7 +777,7 @@ export function IncidentesScreen({ onBack }) {
               {field(
                 'Costo total estimado (GTQ)',
                 <TextInput
-                  style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                  style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
                   value={costoEstimado}
                   onChangeText={setCostoEstimado}
                   placeholder="0"
@@ -712,8 +789,8 @@ export function IncidentesScreen({ onBack }) {
           </View>
         </View>
 
-        <View style={subStyles.card}>
-          <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Interruptores de protocolo</Text>
+        <View style={[styles.section, { borderBottomColor: c.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: c.foreground }]}>Interruptores de protocolo</Text>
           <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>
             Marcá todo lo que aplique. Reembolso y compensación se registran también en el expediente del sistema.
           </Text>
@@ -730,8 +807,8 @@ export function IncidentesScreen({ onBack }) {
           ))}
         </View>
 
-        <View style={subStyles.card}>
-          <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Evidencia (máx. {MAX_FOTOS} fotos)</Text>
+        <View style={[styles.section, { borderBottomColor: c.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: c.foreground }]}>Evidencia (máx. {MAX_FOTOS} fotos)</Text>
           <TouchableOpacity style={[styles.pickBtn, { borderColor: c.primary }]} onPress={pickFotos}>
             <Camera size={20} color={c.primary} />
             <Text style={[styles.pickTxt, { color: c.primary }]}>Agregar desde galería</Text>
@@ -748,12 +825,12 @@ export function IncidentesScreen({ onBack }) {
           </View>
         </View>
 
-        <View style={subStyles.card}>
-          <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Firmas (nombre completo como constancia)</Text>
+        <View style={[styles.section, { borderBottomColor: c.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: c.foreground }]}>Firmas (nombre completo como constancia)</Text>
           {field(
             'Responsable que declara *',
             <TextInput
-              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
               value={firmaResponsable}
               onChangeText={setFirmaResponsable}
               placeholder="Igual que arriba o quien firma el acta"
@@ -763,7 +840,7 @@ export function IncidentesScreen({ onBack }) {
           {field(
             'Gerente o supervisión *',
             <TextInput
-              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+              style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
               value={firmaGerente}
               onChangeText={setFirmaGerente}
               placeholder="Nombre completo"
@@ -772,6 +849,7 @@ export function IncidentesScreen({ onBack }) {
           )}
         </View>
 
+        <View style={[styles.actions, { paddingHorizontal: spacing.lg }]}>
         <SalonButton
           title={saving ? 'Guardando…' : 'Guardar en sistema y generar PDF'}
           variant="heroGold"
@@ -788,9 +866,10 @@ export function IncidentesScreen({ onBack }) {
           disabled={saving}
           onPress={soloPdfPreview}
         />
+        </View>
 
-        <View style={{ marginTop: spacing.xl }}>
-          <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Últimos folios</Text>
+        <View style={[styles.section, styles.sectionLast, { borderBottomColor: c.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: c.foreground }]}>Últimos folios</Text>
           {loadingRecent ? (
             <ActivityIndicator color={c.primary} />
           ) : (
@@ -799,7 +878,7 @@ export function IncidentesScreen({ onBack }) {
               data={recent}
               keyExtractor={(item) => String(item.id)}
               renderItem={({ item }) => (
-                <View style={[styles.recentRow, { borderColor: c.cardBorder }]}>
+                <View style={[styles.recentRow, { borderBottomColor: c.cardBorder }]}>
                   <Text style={[styles.recentFolio, { color: c.foreground }]}>{item.folio || item.id}</Text>
                   <Text style={[subStyles.muted, { fontSize: 12 }]}>
                     {item.tipo_incidente || '—'} · {item.estado || '—'}
@@ -822,9 +901,26 @@ function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
     hero: {
-      borderRadius: radii.lg,
-      padding: spacing.lg,
-      marginBottom: spacing.xs,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
+      marginBottom: 0,
+    },
+    section: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    sectionLast: {
+      paddingBottom: spacing.xl,
+    },
+    sectionTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 15,
+      marginBottom: spacing.sm,
+    },
+    actions: {
+      paddingTop: spacing.md,
+      paddingBottom: spacing.sm,
     },
     heroTitle: {
       fontFamily: typography.fontDisplay,
@@ -897,16 +993,12 @@ function createStyles(c) {
       borderColor: c.cardBorder,
     },
     recentRow: {
-      borderWidth: 1,
-      borderRadius: radii.md,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
     },
     recentFolio: { fontFamily: typography.fontSansMedium, fontSize: 15 },
-    auraCard: {
-      borderWidth: 1,
-      borderRadius: radii.md,
-      padding: spacing.md,
+    auraBlock: {
+      marginTop: spacing.sm,
       marginBottom: spacing.md,
     },
     auraHead: {

@@ -14,7 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Trash2, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { clearAllBasureroEntries, getBasureroEntries } from '../services/salonBasurero';
 
@@ -42,7 +42,6 @@ function sourceLabel(source) {
 export function BasureroScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const subStyles = useSubStyles();
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [entries, setEntries] = useState([]);
@@ -150,28 +149,38 @@ export function BasureroScreen({ onBack }) {
   };
 
   const renderItem = ({ item }) => (
-    <View style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-      <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-        <Trash2 size={20} color={c.foregroundMuted} strokeWidth={2} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.title, { color: c.foreground }]} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-          {sourceLabel(item.source)} · {new Date(item.deletedAt).toLocaleString('es-GT')}
+    <TouchableOpacity
+      style={[styles.row, { borderBottomColor: c.cardBorder }]}
+      onPress={() => verCopia(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+            {sourceLabel(item.source)}
+          </Text>
+        </View>
+        <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+          {new Date(item.deletedAt).toLocaleString('es-GT', {
+            day: '2-digit',
+            month: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
         </Text>
         {item.summary ? (
-          <Text style={[subStyles.muted, styles.sum]} numberOfLines={2}>
+          <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
             {item.summary}
           </Text>
         ) : null}
-        <TouchableOpacity onPress={() => verCopia(item)} hitSlop={8}>
-          <Text style={[styles.link, { color: c.primary }]}>Ver copia JSON</Text>
-        </TouchableOpacity>
       </View>
-      <ChevronRight size={18} color={c.foregroundMuted} />
-    </View>
+      <Trash2 size={16} color={c.foregroundMuted} style={styles.rowIcon} />
+      <ChevronRight size={16} color={c.foregroundSubtle} />
+    </TouchableOpacity>
   );
 
   const emptyText = loading
@@ -189,14 +198,15 @@ export function BasureroScreen({ onBack }) {
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
+        edgeToEdge
       >
-        <View style={{ flex: 1, paddingHorizontal: spacing.lg }}>
+        <View style={styles.body}>
           <SalonButton
             title="Limpiar todo"
             variant="outlineGray"
             fullWidth
             onPress={limpiarTodo}
-            style={{ marginBottom: spacing.md }}
+            style={{ marginBottom: spacing.sm }}
           />
 
           <TextInput
@@ -223,33 +233,38 @@ export function BasureroScreen({ onBack }) {
               <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
             </TouchableOpacity>
           </View>
-          <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.md }]} numberOfLines={2}>
+          <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
             {filtroResumen}
           </Text>
 
-          <FlatList
-            data={filtered}
-            keyExtractor={(it) => it.id}
-            renderItem={renderItem}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
-            ListEmptyComponent={<Text style={[subStyles.muted, { marginTop: spacing.sm }]}>{emptyText}</Text>}
-          />
+          <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+            <FlatList
+              data={filtered}
+              keyExtractor={(it) => it.id}
+              renderItem={renderItem}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>{emptyText}</Text>
+              }
+            />
+          </View>
         </View>
       </SubScreenChrome>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
-        <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background }]}>
-            <View style={styles.filterHead}>
-              <Text style={[styles.filterTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+            <View style={styles.modalHead}>
+              <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.sectionLbl, { color: c.foreground }]}>Orden</Text>
-            <View style={styles.chipRow}>
+            <Text style={[styles.fieldLbl, { color: c.foreground }]}>Orden</Text>
+            <View style={styles.typeGrid}>
               {[
                 { id: 'fecha_desc', label: 'Más recientes' },
                 { id: 'fecha_asc', label: 'Más antiguos' },
@@ -261,19 +276,19 @@ export function BasureroScreen({ onBack }) {
                   <TouchableOpacity
                     key={opt.id}
                     style={[
-                      styles.chip,
+                      styles.typeChip,
                       { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                     ]}
                     onPress={() => setSortMode(opt.id)}
                   >
-                    <Text style={[styles.chipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            <Text style={[styles.sectionLbl, { color: c.foreground }]}>Origen</Text>
-            <View style={styles.chipRow}>
+            <Text style={[styles.fieldLbl, { color: c.foreground }]}>Origen</Text>
+            <View style={styles.typeGrid}>
               {[
                 { id: 'todos', label: 'Todos' },
                 { id: 'marketing_posts', label: 'Marketing' },
@@ -289,12 +304,12 @@ export function BasureroScreen({ onBack }) {
                   <TouchableOpacity
                     key={opt.id}
                     style={[
-                      styles.chip,
+                      styles.typeChip,
                       { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                     ]}
                     onPress={() => setFilterSource(opt.id)}
                   >
-                    <Text style={[styles.chipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -311,6 +326,11 @@ export function BasureroScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    body: {
+      flex: 1,
+      paddingHorizontal: spacing.sm,
+      paddingTop: spacing.xs,
+    },
     search: {
       fontFamily: typography.fontSans,
       fontSize: 15,
@@ -334,67 +354,100 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
     },
-    filterBackdrop: {
+    filtroResumen: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.xs,
+    },
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.xs,
+    },
+    rowBody: { flex: 1, minWidth: 0 },
+    rowTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    rowTitle: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    rowMeta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    rowIcon: { flexShrink: 0 },
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 19,
+      padding: spacing.md,
+    },
+    modalBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'flex-end',
+      padding: spacing.md,
     },
-    filterSheet: {
-      borderTopLeftRadius: radii.lg,
-      borderTopRightRadius: radii.lg,
-      padding: spacing.lg,
+    modalCard: {
+      borderRadius: radii.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+      maxHeight: '92%',
     },
-    filterHead: {
+    modalHead: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
+      justifyContent: 'space-between',
       marginBottom: spacing.md,
     },
-    filterTitle: {
+    modalTitle: {
       fontFamily: typography.fontDisplay,
       fontSize: 20,
     },
-    sectionLbl: {
+    fieldLbl: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
-      marginBottom: spacing.sm,
+      marginBottom: spacing.xs,
     },
-    chipRow: {
+    typeGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: spacing.sm,
-      marginBottom: spacing.lg,
+      marginBottom: spacing.md,
     },
-    chip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
+    typeChip: {
+      borderWidth: 1,
       borderRadius: radii.md,
-      borderWidth: 1,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      minWidth: '47%',
     },
-    chipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    card: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-    },
-    iconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    title: { fontFamily: typography.fontSansMedium, fontSize: 16 },
-    meta: { fontSize: 12, marginTop: 4 },
-    sum: { fontSize: 13, marginTop: 6, lineHeight: 18 },
-    link: {
-      fontFamily: typography.fontSansMedium,
+    typeChipTxt: {
+      fontFamily: typography.fontSans,
       fontSize: 13,
-      marginTop: spacing.sm,
     },
   });
 }

@@ -1,4 +1,4 @@
--- Aura Line — lectura y respuesta desde App Clientes
+-- Andreas Pro — lectura y respuesta desde App Clientes
 -- Ejecutar en Supabase SQL Editor
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
@@ -117,3 +117,29 @@ GRANT EXECUTE ON FUNCTION public.client_aura_messages(integer) TO anon, authenti
 GRANT EXECUTE ON FUNCTION public.client_aura_unread_count() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.client_mark_aura_delivered(bigint[]) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.client_send_aura_chat(text, text, text) TO anon, authenticated;
+
+-- Bandeja salón: último mensaje por cliente (orden tipo WhatsApp)
+CREATE OR REPLACE FUNCTION public.salon_inbox_client_preview()
+RETURNS TABLE (
+  client_id uuid,
+  content text,
+  created_at timestamptz,
+  content_type text,
+  status text
+)
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT DISTINCT ON (m.client_id)
+    m.client_id,
+    m.content,
+    m.created_at,
+    m.content_type,
+    m.status
+  FROM marketing_direct_messages m
+  WHERE m.content_type IN ('chat', 'broadcast_promo', 'incident_report')
+  ORDER BY m.client_id, m.created_at DESC;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.salon_inbox_client_preview() TO authenticated;

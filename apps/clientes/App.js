@@ -61,6 +61,7 @@ import {
 import { CLIENT_SUB } from './navigation/clientSubScreens';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
+import { MembresiaBadge } from './components/MembresiaBadge';
 import {
   loadClientNotifPrefs,
   saveClientNotifPrefs,
@@ -508,7 +509,7 @@ function AppMain({ localProfile, onLogout }) {
 
   const openAuraLine = useCallback(async () => {
     if (!session?.user) {
-      Alert.alert('Aura Line', 'Iniciá sesión para ver mensajes del salón.');
+      Alert.alert('Andreas Pro', 'Iniciá sesión para ver mensajes del salón.');
       return;
     }
     if (hasSupabaseEnv && !clienteRow?.id) {
@@ -527,10 +528,13 @@ function AppMain({ localProfile, onLogout }) {
       const { error } = await registerMarketingInterest({
         type: MARKETING_INTEREST_TYPES.CAROUSEL,
         title: slide.headline || slide.caption || 'Promoción',
+        headline: slide.headline || slide.caption || 'Promoción',
         detail: slide.body || null,
         postId: /^\d+$/.test(String(slide.id)) ? slide.id : null,
         mediaUrl: slide.uri || null,
         buttonLabel: slide.buttonTitle || null,
+        kicker: slide.kicker || null,
+        priceLabel: slide.priceLabel || null,
       });
       if (error) {
         Alert.alert(
@@ -542,7 +546,7 @@ function AppMain({ localProfile, onLogout }) {
       }
       Alert.alert(
         '¡Gracias!',
-        'Tu interés en esta promoción llegó al salón por Mensajes (Aura Line).',
+        'Tu solicitud sobre esta publicación del carrusel llegó al salón en Pedidos.',
       );
     },
     [hasSupabaseEnv, openSub],
@@ -666,7 +670,7 @@ function AppMain({ localProfile, onLogout }) {
                   style={[styles.messagesIconBtn, { borderColor: c.cardBorder, backgroundColor: c.card }]}
                   onPress={openAuraLine}
                   accessibilityRole="button"
-                  accessibilityLabel="Mensajes Aura Line"
+                  accessibilityLabel="Mensajes Andreas Pro"
                   activeOpacity={0.85}
                 >
                   <MessageCircle size={22} color={c.primary} strokeWidth={2} />
@@ -912,6 +916,11 @@ function AppMain({ localProfile, onLogout }) {
         <View style={styles.identityText}>
           <Text style={styles.identityName}>{profileFullName}</Text>
           <Text style={styles.identityEmail}>{profileEmail}</Text>
+          {clienteRow?.membresia_nivel ? (
+            <View style={{ marginTop: spacing.xs }}>
+              <MembresiaBadge nivel={clienteRow.membresia_nivel} />
+            </View>
+          ) : null}
         </View>
       </View>
 

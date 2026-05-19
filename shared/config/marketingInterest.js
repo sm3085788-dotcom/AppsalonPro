@@ -11,7 +11,7 @@ function interestLabel(contentType) {
 }
 
 /**
- * Registra interés del cliente en marketing_direct_messages (visible en Mensajes del salón).
+ * Registra interés del cliente en marketing_direct_messages (bandeja Pedidos del salón).
  */
 export async function registerMarketingInterest({
   type,
@@ -20,6 +20,9 @@ export async function registerMarketingInterest({
   postId = null,
   mediaUrl = null,
   buttonLabel = null,
+  kicker = null,
+  headline = null,
+  priceLabel = null,
 }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const session = sessionData?.session;
@@ -62,17 +65,20 @@ export async function registerMarketingInterest({
   const clientName = cliente.nombre || user.user_metadata?.full_name || 'Cliente';
   const clientPhone = cliente.telefono || user.phone || null;
   const source = interestLabel(type);
-  const headline = String(title || 'Publicación').trim();
+  const titular = String(headline || title || 'Publicación').trim();
   const extra = String(detail || '').trim();
-  const cta = buttonLabel ? ` · Botón: «${buttonLabel}»` : '';
-  const postRef = postId != null ? ` (ref. #${postId})` : '';
-  const content = [
-    `📣 Me interesa · ${source}${postRef}`,
-    `«${headline}»${cta}`,
-    extra ? extra : null,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const lines = [
+    `📣 Solicitud · ${source}`,
+    postId != null ? `Publicación #${postId}` : null,
+    kicker ? `Etiqueta: ${String(kicker).trim()}` : null,
+    `Titular: ${titular}`,
+    extra ? `Descripción: ${extra}` : null,
+    priceLabel ? `Precio: ${String(priceLabel).trim()}` : null,
+    buttonLabel ? `Botón tocado: «${String(buttonLabel).trim()}»` : null,
+    `Cliente: ${clientName}`,
+    clientPhone ? `Tel: ${clientPhone}` : null,
+  ].filter(Boolean);
+  const content = lines.join('\n');
 
   return db.marketingDirectMessages.create({
     client_id: cliente.id,

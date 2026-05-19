@@ -12,6 +12,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, Radio, FileText } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
@@ -125,7 +126,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange }) {
     const { data, error } = await sendClientAuraChat(text, clientMeta);
     setSending(false);
     if (error) {
-      Alert.alert('Aura Line', error.message || 'No se pudo enviar.');
+      Alert.alert('Andreas Pro', error.message || 'No se pudo enviar.');
       return;
     }
     setDraft('');
@@ -193,7 +194,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange }) {
     return (
       <View style={styles.emptyWrap}>
         <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
-          Completá tu perfil para recibir mensajes de Aura Line.
+          Completá tu perfil para recibir mensajes de Andreas Pro.
         </Text>
       </View>
     );
@@ -236,7 +237,16 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange }) {
           }
         />
       )}
-      <View style={[styles.composer, { borderTopColor: c.cardBorder, backgroundColor: c.background }]}>
+      <View
+        style={[
+          styles.composer,
+          {
+            borderTopColor: c.cardBorder,
+            backgroundColor: c.background,
+            paddingBottom: composerPadBottom,
+          },
+        ]}
+      >
         <TextInput
           style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
           placeholder="Escribí al salón…"

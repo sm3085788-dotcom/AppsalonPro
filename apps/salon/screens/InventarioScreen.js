@@ -80,7 +80,7 @@ function rowToTiendaCard(row) {
       : stock > 0
         ? `En stock · ${stock} u.`
         : 'Sin stock';
-  const imageUris = [row.imagen_url, ...(Array.isArray(row.imagenes_urls) ? row.imagenes_urls : [])].filter(Boolean);
+  const imageUris = [...new Set([row.imagen_url, ...(Array.isArray(row.imagenes_urls) ? row.imagenes_urls : [])].filter(Boolean))];
   return {
     id: row.id,
     brandLine,
@@ -135,6 +135,25 @@ function GalleryStrip({ uris, badgeText, width, colors, compact = false }) {
         <Text style={[stripStyles.imageHint, compact && stripStyles.imageHintCompact, { color: colors.foregroundSubtle }]}>
           Imagen
         </Text>
+      </View>
+    );
+  }
+  if (data.length === 1) {
+    return (
+      <View
+        style={[
+          stripStyles.imageZone,
+          { width, aspectRatio: aspect, borderBottomColor: colors.cardBorder, backgroundColor: colors.iconCircleBg },
+        ]}
+      >
+        <Image source={{ uri: data[0] }} style={stripStyles.galleryImageFill} resizeMode="cover" />
+        {badgeText ? (
+          <View style={[stripStyles.badge, compact && stripStyles.badgeCompact]}>
+            <Text style={[stripStyles.badgeTxt, compact && stripStyles.badgeTxtCompact]} numberOfLines={1}>
+              {badgeText}
+            </Text>
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -235,21 +254,21 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
                 elevation: 2,
               }),
         },
-        body: { padding: compact ? 6 : spacing.sm },
+        body: { padding: compact ? 5 : spacing.sm },
         brandLine: {
           fontFamily: typography.fontSans,
-          fontSize: compact ? 8 : 10,
+          fontSize: compact ? 7 : 10,
           color: colors.foregroundMuted,
           marginBottom: compact ? 2 : 4,
-          letterSpacing: compact ? 0.3 : 0.6,
+          letterSpacing: compact ? 0.2 : 0.6,
         },
         title: {
           fontFamily: typography.fontSansMedium,
-          fontSize: compact ? 11 : 13,
-          lineHeight: compact ? 14 : 17,
+          fontSize: compact ? 10 : 13,
+          lineHeight: compact ? 13 : 17,
           color: colors.foreground,
-          marginBottom: compact ? 4 : spacing.sm,
-          minHeight: compact ? 0 : 34,
+          marginBottom: compact ? 3 : spacing.sm,
+          minHeight: compact ? 26 : 34,
         },
         priceRow: {
           flexDirection: 'row',
@@ -260,13 +279,13 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
         },
         compareAt: {
           fontFamily: typography.fontSans,
-          fontSize: compact ? 9 : 12,
+          fontSize: compact ? 8 : 12,
           color: colors.foregroundMuted,
           textDecorationLine: 'line-through',
         },
         priceLive: {
           fontFamily: typography.fontSansMedium,
-          fontSize: compact ? 12 : 16,
+          fontSize: compact ? 11 : 16,
           color: colors.foreground,
         },
         ratingRow: {
@@ -278,27 +297,28 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
         },
         ratingNum: {
           fontFamily: typography.fontSansMedium,
-          fontSize: compact ? 9 : 11,
+          fontSize: compact ? 8 : 11,
           color: colors.foreground,
         },
         ratingTxt: {
           fontFamily: typography.fontSans,
-          fontSize: compact ? 9 : 11,
+          fontSize: compact ? 8 : 11,
           color: colors.foregroundMuted,
         },
-        shipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
+        shipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: compact ? 2 : 4, marginBottom: compact ? 2 : 0 },
         shipTxt: {
           flex: 1,
           fontFamily: typography.fontSans,
-          fontSize: 10,
+          fontSize: compact ? 7 : 10,
           color: colors.foregroundMuted,
-          lineHeight: 14,
+          lineHeight: compact ? 10 : 14,
         },
         stockHint: {
-          marginTop: compact ? 3 : 6,
+          marginTop: compact ? 2 : 6,
           fontFamily: typography.fontSans,
-          fontSize: compact ? 9 : 10,
+          fontSize: compact ? 7 : 10,
           color: colors.primary,
+          lineHeight: compact ? 10 : 14,
         },
         tiendaTag: {
           alignSelf: 'flex-start',
@@ -315,7 +335,7 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
               : 'rgba(0,0,0,0.06)',
         },
         tiendaTagTxt: {
-          fontSize: compact ? 8 : 10,
+          fontSize: compact ? 7 : 10,
           fontFamily: typography.fontSansMedium,
           color: product.visibleTienda ? (isDark ? colors.success : '#2E7D32') : colors.foregroundMuted,
         },
@@ -342,7 +362,7 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           {product.title}
         </Text>
         <View style={styles.priceRow}>
-          {!compact && product.compareAtLabel ? (
+          {product.compareAtLabel ? (
             <Text style={styles.compareAt}>{product.compareAtLabel}</Text>
           ) : null}
           <Text style={styles.priceLive}>{product.priceLabel}</Text>
@@ -350,21 +370,17 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
         <View style={styles.ratingRow}>
           <RatingStars rating={product.rating} emptyColor={emptyStar} size={compact ? 8 : 12} />
           <Text style={styles.ratingNum}>{product.rating.toFixed(1)}</Text>
-          {!compact ? <Text style={styles.ratingTxt}>({product.reviewCount})</Text> : null}
+          <Text style={styles.ratingTxt}>({product.reviewCount})</Text>
         </View>
-        {!compact ? (
-          <View style={styles.shipRow}>
-            <Truck size={12} color={colors.foregroundMuted} strokeWidth={2} />
-            <Text style={styles.shipTxt} numberOfLines={2}>
-              {product.shippingLabel}
-            </Text>
-          </View>
-        ) : null}
+        <View style={styles.shipRow}>
+          <Truck size={compact ? 9 : 12} color={colors.foregroundMuted} strokeWidth={2} />
+          <Text style={styles.shipTxt} numberOfLines={compact ? 2 : 2}>
+            {product.shippingLabel}
+          </Text>
+        </View>
         {product.stockHint ? (
-          <Text style={styles.stockHint} numberOfLines={1}>
-            {compact
-              ? product.stockHint.replace('En stock · ', '').replace('Servicio en salón · agenda', 'Servicio')
-              : product.stockHint}
+          <Text style={styles.stockHint} numberOfLines={compact ? 2 : 1}>
+            {product.stockHint}
           </Text>
         ) : null}
         <View style={styles.tiendaTag}>
@@ -1243,8 +1259,8 @@ function createStyles(c) {
     },
     gridRow: {
       flexDirection: 'row',
-      justifyContent: 'center',
       alignItems: 'flex-start',
+      justifyContent: 'flex-start',
       gap: GAP,
     },
     filterBackdrop: {

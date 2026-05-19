@@ -16,7 +16,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Building2, Plus, Search, X, Image as ImageIcon } from 'lucide-react-native';
+import { Building2, Plus, X, Image as ImageIcon, ChevronRight } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, uploadProveedorLogoFromUri } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
@@ -72,9 +72,13 @@ export function ProveedoresScreen({ onBack }) {
       if (error) throw error;
       setItems(Array.isArray(data) ? data : []);
     } catch (e) {
+      const msg = e?.message || 'No se pudo cargar.';
+      const faltaTabla = /could not find the table|relation.*does not exist/i.test(msg);
       Alert.alert(
         'Proveedores',
-        `${e?.message || 'No se pudo cargar.'}\n\nSi la tabla no tiene columnas nuevas (logo_url, etc.), ejecutá en Supabase el SQL sugerido en la ayuda al guardar.`,
+        faltaTabla
+          ? `${msg}\n\nLa tabla aún no existe en Supabase. Abrí el proyecto → SQL Editor y ejecutá el archivo supabase-proveedores-setup.sql de la raíz del repo (crea tabla, permisos y bucket de logos).`
+          : `${msg}\n\nSi faltan columnas (logo_url, etc.), ejecutá supabase-proveedores-setup.sql en Supabase SQL Editor.`,
       );
       setItems([]);
     } finally {
@@ -266,16 +270,7 @@ export function ProveedoresScreen({ onBack }) {
       Alert.alert('Listo', form.id ? 'Proveedor actualizado.' : 'Proveedor creado.');
     } catch (e) {
       const hint =
-        'Si falla por columnas faltantes, en Supabase SQL editor:\n\n' +
-        'alter table proveedores add column if not exists logo_url text;\n' +
-        'alter table proveedores add column if not exists telefono text;\n' +
-        'alter table proveedores add column if not exists email text;\n' +
-        'alter table proveedores add column if not exists direccion text;\n' +
-        'alter table proveedores add column if not exists sitio_web text;\n' +
-        'alter table proveedores add column if not exists notas text;\n' +
-        'alter table proveedores add column if not exists nit text;\n' +
-        'alter table proveedores add column if not exists nombre_agente text;\n' +
-        'alter table proveedores add column if not exists telefono_agente text;';
+        'Si falla por tabla o columnas, en Supabase SQL Editor ejecutá:\n\nsupabase-proveedores-setup.sql\n\n(raíz del proyecto AppSalon Pro)';
       Alert.alert('Guardar', `${e?.message || 'Error'}\n\n${hint}`);
     } finally {
       setSaving(false);
@@ -296,39 +291,49 @@ export function ProveedoresScreen({ onBack }) {
     </TouchableOpacity>
   );
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.row, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-      onPress={() => openEdit(item)}
-      activeOpacity={0.88}
-    >
-      {item.logo_url ? (
-        <Image source={{ uri: item.logo_url }} style={styles.logo} resizeMode="cover" />
-      ) : (
-        <View style={[styles.logoPh, { backgroundColor: c.surfaceMuted }]}>
-          <Building2 size={26} color={c.foregroundMuted} strokeWidth={1.6} />
+  const renderItem = ({ item }) => {
+    const contacto = [item.telefono, item.email].filter(Boolean).join(' · ') || 'Sin contacto';
+    const agente =
+      item.nombre_agente || item.telefono_agente
+        ? `Agente: ${[item.nombre_agente, item.telefono_agente].filter(Boolean).join(' · ')}`
+        : null;
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => openEdit(item)}
+        style={[styles.row, { borderBottomColor: c.cardBorder }]}
+        accessibilityRole="button"
+        accessibilityLabel={`Editar ${item.nombre_compania}`}
+      >
+        {item.logo_url ? (
+          <Image source={{ uri: item.logo_url }} style={styles.logo} resizeMode="cover" />
+        ) : (
+          <View style={[styles.logoPh, { backgroundColor: c.surfaceMuted }]}>
+            <Building2 size={16} color={c.foregroundMuted} strokeWidth={1.6} />
+          </View>
+        )}
+        <View style={styles.rowBody}>
+          <View style={styles.rowTop}>
+            <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+              {item.nombre_compania || 'Sin nombre'}
+            </Text>
+            <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+              {item.nit ? `NIT ${item.nit}` : '—'}
+            </Text>
+          </View>
+          <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+            {contacto}
+          </Text>
+          {agente ? (
+            <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+              {agente}
+            </Text>
+          ) : null}
         </View>
-      )}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={2}>
-          {item.nombre_compania || 'Sin nombre'}
-        </Text>
-        <Text style={[subStyles.muted, styles.rowMeta]} numberOfLines={1}>
-          {[item.telefono, item.email].filter(Boolean).join(' · ') || 'Sin contacto empresa'}
-        </Text>
-        {item.nombre_agente || item.telefono_agente ? (
-          <Text style={[subStyles.muted, styles.rowSub]} numberOfLines={1}>
-            Agente: {[item.nombre_agente, item.telefono_agente].filter(Boolean).join(' · ')}
-          </Text>
-        ) : null}
-        {item.nit ? (
-          <Text style={[subStyles.muted, styles.rowSub]} numberOfLines={1}>
-            NIT · {item.nit}
-          </Text>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  );
+        <ChevronRight size={16} color={c.foregroundSubtle} />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.shell, { backgroundColor: c.background }]}>
@@ -340,49 +345,57 @@ export function ProveedoresScreen({ onBack }) {
         disableBodyScroll
         bottomPadding={0}
         rightAction={rightAction}
+        edgeToEdge
       >
-        <View style={{ flex: 1, paddingHorizontal: spacing.lg }}>
-          <View style={[styles.searchWrap, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-            <Search size={18} color={c.foregroundMuted} />
-            <TextInput
-              style={[styles.searchIn, { color: c.foreground }]}
-              placeholder="Buscar compañía, NIT, agente, teléfonos…"
-              placeholderTextColor={c.foregroundSubtle}
-              value={query}
-              onChangeText={setQuery}
-            />
-          </View>
+        <View style={styles.body}>
+          <TextInput
+            style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
+            placeholder="Buscar compañía, NIT, agente, teléfonos…"
+            placeholderTextColor={c.foregroundSubtle}
+            value={query}
+            onChangeText={setQuery}
+            autoCorrect={false}
+            accessibilityLabel="Buscar proveedores"
+          />
 
           <View style={styles.toolbar}>
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
-              {loading ? '…' : `${filtered.length} compañía${filtered.length === 1 ? '' : 's'}`}
+              {loading ? 'Cargando…' : `${filtered.length} compañía${filtered.length === 1 ? '' : 's'}`}
             </Text>
-            <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)} accessibilityRole="button">
+            <TouchableOpacity
+              hitSlop={12}
+              onPress={() => setModalFiltros(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Ordenar y filtros"
+            >
               <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
             </TouchableOpacity>
           </View>
-          <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.md }]} numberOfLines={2}>
+          <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
             {filtroResumen}
           </Text>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
+            <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
           ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(r) => String(r.id)}
-              renderItem={renderItem}
-              onRefresh={() => load(true)}
-              refreshing={refreshing}
-              contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
-              ListEmptyComponent={
-                <Text style={subStyles.muted}>
-                  {items.length === 0
-                    ? 'No hay proveedores. Tocá + para registrar la primera compañía con su logo.'
-                    : 'Ningún resultado con la búsqueda o filtros actuales.'}
-                </Text>
-              }
-            />
+            <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <FlatList
+                data={filtered}
+                keyExtractor={(r) => String(r.id)}
+                renderItem={renderItem}
+                onRefresh={() => load(true)}
+                refreshing={refreshing}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
+                ListEmptyComponent={
+                  <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+                    {items.length === 0
+                      ? 'No hay proveedores. Tocá + para registrar la primera compañía.'
+                      : 'Ningún resultado con la búsqueda o filtros actuales.'}
+                  </Text>
+                }
+              />
+            </View>
           )}
         </View>
       </SubScreenChrome>
@@ -533,8 +546,8 @@ export function ProveedoresScreen({ onBack }) {
       </Modal>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
-        <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background }]}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
             <View style={styles.filterHead}>
               <Text style={[styles.filterTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
@@ -542,7 +555,7 @@ export function ProveedoresScreen({ onBack }) {
               </TouchableOpacity>
             </View>
             <Text style={[styles.sectionLbl, { color: c.foreground }]}>Orden</Text>
-            <View style={styles.chipRow}>
+            <View style={styles.typeGrid}>
               {[
                 { id: 'nombre_asc', label: 'Nombre A → Z' },
                 { id: 'nombre_desc', label: 'Nombre Z → A' },
@@ -552,18 +565,18 @@ export function ProveedoresScreen({ onBack }) {
                   <TouchableOpacity
                     key={opt.id}
                     style={[
-                      styles.chip,
+                      styles.typeChip,
                       { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                     ]}
                     onPress={() => setSortMode(opt.id)}
                   >
-                    <Text style={[styles.chipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
             <Text style={[styles.sectionLbl, { color: c.foreground }]}>Logo</Text>
-            <View style={styles.chipRow}>
+            <View style={styles.typeGrid}>
               {[
                 { id: 'todos', label: 'Todos' },
                 { id: 'con_logo', label: 'Con logo' },
@@ -574,12 +587,12 @@ export function ProveedoresScreen({ onBack }) {
                   <TouchableOpacity
                     key={opt.id}
                     style={[
-                      styles.chip,
+                      styles.typeChip,
                       { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                     ]}
                     onPress={() => setFilterLogo(opt.id)}
                   >
-                    <Text style={[styles.chipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -604,6 +617,89 @@ function Field({ label, children, c }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    body: {
+      flex: 1,
+      paddingHorizontal: spacing.sm,
+    },
+    search: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: Platform.OS === 'ios' ? 11 : 9,
+      fontFamily: typography.fontSans,
+      fontSize: 15,
+      marginBottom: spacing.sm,
+    },
+    toolbar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.xs,
+    },
+    toolbarMeta: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    toolbarLink: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    filtroResumen: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.xs,
+    },
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.sm,
+    },
+    rowBody: { flex: 1, minWidth: 0 },
+    rowTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    rowTitle: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    rowMeta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    logo: {
+      width: 36,
+      height: 36,
+      borderRadius: radii.sm,
+      backgroundColor: c.surfaceMuted,
+    },
+    logoPh: {
+      width: 36,
+      height: 36,
+      borderRadius: radii.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 19,
+      padding: spacing.md,
+    },
     addCircle: {
       width: 44,
       height: 44,
@@ -622,55 +718,19 @@ function createStyles(c) {
     addCircleDark: {
       borderColor: 'rgba(255,255,255,0.35)',
     },
-    searchWrap: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      paddingHorizontal: spacing.md,
-      minHeight: 46,
-      marginBottom: spacing.sm,
-    },
-    searchIn: {
+    modalBackdrop: {
       flex: 1,
-      fontFamily: typography.fontSans,
-      fontSize: 15,
-      paddingVertical: Platform.OS === 'ios' ? 10 : 8,
-    },
-    toolbar: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: spacing.xs,
-    },
-    toolbarMeta: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    toolbarLink: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.md,
-      borderWidth: 1,
-      borderRadius: radii.lg,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
       padding: spacing.md,
-      marginBottom: spacing.sm,
     },
-    logo: {
-      width: 56,
-      height: 56,
-      borderRadius: radii.md,
-      backgroundColor: c.surfaceMuted,
+    filterModalCard: {
+      borderRadius: radii.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+      maxHeight: '92%',
     },
-    logoPh: {
-      width: 56,
-      height: 56,
-      borderRadius: radii.md,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    rowTitle: { fontFamily: typography.fontSansMedium, fontSize: 16 },
-    rowMeta: { fontSize: 13, marginTop: 4 },
-    rowSub: { fontSize: 12, marginTop: 2 },
     modalHead: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -706,16 +766,6 @@ function createStyles(c) {
       borderRadius: 12,
       padding: 4,
     },
-    filterBackdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'flex-end',
-    },
-    filterSheet: {
-      borderTopLeftRadius: radii.lg,
-      borderTopRightRadius: radii.lg,
-      padding: spacing.lg,
-    },
     filterHead: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -728,18 +778,20 @@ function createStyles(c) {
       fontSize: 13,
       marginBottom: spacing.sm,
     },
-    chipRow: {
+    typeGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: spacing.sm,
       marginBottom: spacing.lg,
     },
-    chip: {
+    typeChip: {
+      minWidth: '47%',
+      flexGrow: 1,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
       borderRadius: radii.md,
       borderWidth: 1,
     },
-    chipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    typeChipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
   });
 }

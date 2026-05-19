@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Megaphone, MessageCircle, Package, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, confirmarCobroPedidoSalon } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
 const TABS = [
@@ -45,20 +45,40 @@ function formatWhen(iso) {
   }
 }
 
+function interestField(content, label) {
+  const re = new RegExp(`${label}:\\s*(.+)`, 'i');
+  const m = String(content || '').match(re);
+  return m?.[1]?.trim() || '';
+}
+
+function interestPreview(msg) {
+  const content = msg?.content || '';
+  const titular = interestField(content, 'Titular');
+  const boton = interestField(content, 'Botón tocado').replace(/^«|»$/g, '');
+  const desc = interestField(content, 'Descripción');
+  const parts = [titular, boton && `Botón: ${boton}`, desc].filter(Boolean);
+  if (parts.length) return parts.join(' · ');
+  return content.split('\n').slice(0, 2).join(' · ') || '—';
+}
+
+function interestRowTitle(msg) {
+  return msg?.client_name || interestField(msg?.content, 'Cliente') || 'Cliente';
+}
+
 export function PedidosScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const subStyles = useSubStyles();
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [tab, setTab] = useState('todos');
+  const [sortMode, setSortMode] = useState('fecha_desc');
   const [query, setQuery] = useState('');
   const [modalFiltros, setModalFiltros] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [orders, setOrders] = useState([]);
   const [comments, setComments] = useState([]);
-  const [carousel, setCarousel] = useState([]);
+  const [interests, setInterests] = useState([]);
   const [detail, setDetail] = useState(null);
   const [detailItems, setDetailItems] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -70,10 +90,10 @@ export function PedidosScreen({ onBack }) {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const [oRes, cRes, pRes] = await Promise.all([
+      const [oRes, cRes, iRes] = await Promise.all([
         db.orders.getAll(),
         db.marketingComments.listForPedidosInbox(400),
-        db.marketingPosts.getPublishedHomeCarousel(30),
+        db.marketingDirectMessages.listPedidosInterest(400),
       ]);
       if (oRes.error) throw oRes.error;
       setOrders(Array.isArray(oRes.data) ? oRes.data : []);
@@ -82,13 +102,13 @@ export function PedidosScreen({ onBack }) {
       } else {
         setComments([]);
       }
-      if (!pRes.error && Array.isArray(pRes.data)) setCarousel(pRes.data);
-      else setCarousel([]);
+      if (!iRes.error && Array.isArray(iRes.data)) setInterests(iRes.data);
+      else setInterests([]);
     } catch (e) {
       Alert.alert('Pedidos', e?.message || 'No se pudo cargar la bandeja.');
       setOrders([]);
       setComments([]);
-      setCarousel([]);
+      setInterests([]);
     } finally {
       if (isRefresh) setRefreshing(false);
       else setLoading(false);
@@ -98,6 +118,14 @@ export function PedidosScreen({ onBack }) {
   useEffect(() => {
     load(false);
   }, [load]);
+
+  const filtroResumen = useMemo(() => {
+    const t = TABS.find((x) => x.id === tab)?.label || 'Todos';
+    const orden = sortMode === 'fecha_asc' ? 'Más antiguos' : 'Más recientes';
+    return `${orden} · ${t}`;
+  }, [tab, sortMode]);
+
+  const isTendenciasRow = (kind) => kind === 'tendencias_comentario' || kind === 'tendencias_solicitud';
 
   const merged = useMemo(() => {
     const rows = [];
@@ -112,24 +140,37 @@ export function PedidosScreen({ onBack }) {
     for (const cm of comments) {
       rows.push({
         key: `comment-${cm.id}`,
-        kind: 'tendencias',
+        kind: 'tendencias_comentario',
         sortAt: cm.created_at,
         data: cm,
       });
     }
-    for (const p of carousel) {
-      rows.push({
-        key: `carousel-${p.id}`,
-        kind: 'carrusel',
-        sortAt: p.published_at || p.created_at,
-        data: p,
-      });
+    for (const msg of interests) {
+      const ct = String(msg.content_type || '');
+      if (ct === 'carousel_interest') {
+        rows.push({
+          key: `interest-carousel-${msg.id}`,
+          kind: 'carrusel',
+          sortAt: msg.created_at,
+          data: msg,
+        });
+      } else if (ct === 'tendencias_interest') {
+        rows.push({
+          key: `interest-tendencias-${msg.id}`,
+          kind: 'tendencias_solicitud',
+          sortAt: msg.created_at,
+          data: msg,
+        });
+      }
     }
-    rows.sort((a, b) => new Date(b.sortAt || 0) - new Date(a.sortAt || 0));
+    rows.sort((a, b) => {
+      const cmp = new Date(b.sortAt || 0) - new Date(a.sortAt || 0);
+      return sortMode === 'fecha_asc' ? -cmp : cmp;
+    });
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (tab === 'compra' && r.kind !== 'compra') return false;
-      if (tab === 'tendencias' && r.kind !== 'tendencias') return false;
+      if (tab === 'tendencias' && !isTendenciasRow(r.kind)) return false;
       if (tab === 'carrusel' && r.kind !== 'carrusel') return false;
       if (!q) return true;
       if (r.kind === 'compra') {
@@ -137,16 +178,19 @@ export function PedidosScreen({ onBack }) {
         const blob = [o.customer_name, o.customer_phone, o.tracking_code, o.notes, o.status].join(' ').toLowerCase();
         return blob.includes(q);
       }
-      if (r.kind === 'tendencias') {
+      if (r.kind === 'tendencias_comentario') {
         const cm = r.data;
         const blob = [cm.content, cm.author_name, cm.marketing_posts?.title].join(' ').toLowerCase();
         return blob.includes(q);
       }
-      const p = r.data;
-      const blob = [p.title, p.body, p.cta_text].join(' ').toLowerCase();
-      return blob.includes(q);
+      if (r.kind === 'tendencias_solicitud' || r.kind === 'carrusel') {
+        const msg = r.data;
+        const blob = [msg.content, msg.client_name, msg.client_phone, msg.content_type].join(' ').toLowerCase();
+        return blob.includes(q);
+      }
+      return true;
     });
-  }, [orders, comments, carousel, tab, query]);
+  }, [orders, comments, interests, tab, query, sortMode]);
 
   const openDetail = useCallback(async (row) => {
     setDetail(row);
@@ -194,90 +238,126 @@ export function PedidosScreen({ onBack }) {
       const o = item.data;
       return (
         <TouchableOpacity
-          style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+          activeOpacity={0.7}
           onPress={() => openDetail(item)}
-          activeOpacity={0.88}
+          style={[styles.row, { borderBottomColor: c.cardBorder }]}
+          accessibilityRole="button"
         >
           <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-            <Package size={20} color={c.foregroundMuted} strokeWidth={2} />
+            <Package size={16} color={c.foregroundMuted} strokeWidth={2} />
           </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[styles.badge, { color: c.primary }]}>Compra · tienda</Text>
-            <Text style={[styles.title, { color: c.foreground }]} numberOfLines={1}>
-              {o.customer_name || 'Cliente'}
+          <View style={styles.rowBody}>
+            <View style={styles.rowTop}>
+              <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+                {o.customer_name || 'Cliente'}
+              </Text>
+              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+                Compra
+              </Text>
+            </View>
+            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+              {o.tracking_code} · Q{Number(o.total_amount || 0).toFixed(2)} · {o.payment_method || '—'}
             </Text>
-            <Text style={[subStyles.muted, styles.meta]} numberOfLines={2}>
-              {o.tracking_code} · {formatWhen(o.created_at)} · {String(o.status || '—')}
-            </Text>
-            <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-              Q{Number(o.total_amount || 0).toFixed(2)} · {o.payment_method || '—'} · {o.customer_phone || '—'}
+            <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+              {formatWhen(o.created_at)} · {String(o.status || '—')}
             </Text>
           </View>
-          <ChevronRight size={18} color={c.foregroundMuted} />
+          <ChevronRight size={16} color={c.foregroundSubtle} />
         </TouchableOpacity>
       );
     }
-    if (item.kind === 'tendencias') {
+    if (item.kind === 'tendencias_comentario') {
       const cm = item.data;
       return (
         <TouchableOpacity
-          style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+          activeOpacity={0.7}
           onPress={() => openDetail(item)}
-          activeOpacity={0.88}
+          style={[styles.row, { borderBottomColor: c.cardBorder }]}
+          accessibilityRole="button"
         >
           <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-            <MessageCircle size={20} color={c.foregroundMuted} strokeWidth={2} />
+            <MessageCircle size={16} color={c.foregroundMuted} strokeWidth={2} />
           </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[styles.badge, { color: c.primary }]}>Tendencias · consulta</Text>
-            <Text style={[styles.title, { color: c.foreground }]} numberOfLines={2}>
+          <View style={styles.rowBody}>
+            <View style={styles.rowTop}>
+              <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+                {cm.author_name || 'Cliente'}
+              </Text>
+              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+                Comentario
+              </Text>
+            </View>
+            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={2}>
               {cm.content || '—'}
             </Text>
-            <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-              {cm.author_name || 'Cliente'} · {formatWhen(cm.created_at)} · {cm.moderation_status || '—'}
-            </Text>
-            <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-              Post: {cm.marketing_posts?.title || `#${cm.post_id}`}
+            <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+              {cm.marketing_posts?.title || `Post #${cm.post_id}`} · {formatWhen(cm.created_at)}
             </Text>
           </View>
-          <ChevronRight size={18} color={c.foregroundMuted} />
+          <ChevronRight size={16} color={c.foregroundSubtle} />
         </TouchableOpacity>
       );
     }
-    const p = item.data;
-    let carPreview = (p.body || '').trim();
-    if (String(p.audience || '') === 'home_carousel' && carPreview.startsWith('{')) {
-      try {
-        const o = JSON.parse(carPreview);
-        carPreview = [o.headline, o.body].filter(Boolean).join(' · ') || carPreview;
-      } catch {
-        /* mantener */
-      }
+    if (item.kind === 'tendencias_solicitud') {
+      const msg = item.data;
+      return (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => openDetail(item)}
+          style={[styles.row, { borderBottomColor: c.cardBorder }]}
+          accessibilityRole="button"
+        >
+          <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
+            <MessageCircle size={16} color={c.foregroundMuted} strokeWidth={2} />
+          </View>
+          <View style={styles.rowBody}>
+            <View style={styles.rowTop}>
+              <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+                {interestRowTitle(msg)}
+              </Text>
+              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+                Tendencias
+              </Text>
+            </View>
+            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={2}>
+              {interestPreview(msg)}
+            </Text>
+            <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+              {formatWhen(msg.created_at)}
+            </Text>
+          </View>
+          <ChevronRight size={16} color={c.foregroundSubtle} />
+        </TouchableOpacity>
+      );
     }
-    const carPreviewShort =
-      carPreview.length > 120 ? `${carPreview.slice(0, 120)}…` : carPreview;
+    const msg = item.data;
     return (
       <TouchableOpacity
-        style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+        activeOpacity={0.7}
         onPress={() => openDetail(item)}
-        activeOpacity={0.88}
+        style={[styles.row, { borderBottomColor: c.cardBorder }]}
+        accessibilityRole="button"
       >
         <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-          <Megaphone size={20} color={c.foregroundMuted} strokeWidth={2} />
+          <Megaphone size={16} color={c.foregroundMuted} strokeWidth={2} />
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[styles.badge, { color: c.primary }]}>Publicidad · carrusel inicio</Text>
-          <Text style={[styles.title, { color: c.foreground }]} numberOfLines={2}>
-            {p.title || 'Diapositiva'}
+        <View style={styles.rowBody}>
+          <View style={styles.rowTop}>
+            <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+              {interestRowTitle(msg)}
+            </Text>
+            <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+              Carrusel
+            </Text>
+          </View>
+          <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={2}>
+            {interestPreview(msg)}
           </Text>
-          <Text style={[subStyles.muted, styles.meta]} numberOfLines={2}>
-            {carPreviewShort}
-          </Text>
-          <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-            {formatWhen(p.published_at || p.created_at)} · {p.status || '—'}
+          <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+            {formatWhen(msg.created_at)}
           </Text>
         </View>
-        <ChevronRight size={18} color={c.foregroundMuted} />
+        <ChevronRight size={16} color={c.foregroundSubtle} />
       </TouchableOpacity>
     );
   };
@@ -303,41 +383,28 @@ export function PedidosScreen({ onBack }) {
             : '',
       ].join('\n');
     }
-    if (detail.kind === 'tendencias') {
+    if (detail.kind === 'tendencias_comentario') {
       const cm = detail.data;
       return [
-        `Comentario:\n${cm.content}`,
+        'Tipo: Comentario en Tendencias',
+        `Comentario del cliente:\n${cm.content || '—'}`,
         `\nAutor: ${cm.author_name || '—'}`,
-        `Moderación: ${cm.moderation_status || '—'}`,
         `Post: ${cm.marketing_posts?.title || cm.post_id}`,
+        `Moderación: ${cm.moderation_status || '—'}`,
         `Fecha: ${formatWhen(cm.created_at)}`,
       ].join('\n');
     }
-    const p = detail.data;
-    let bodyShow = (p.body || '—').trim();
-    if (String(p.audience || '') === 'home_carousel' && bodyShow.startsWith('{')) {
-      try {
-        const o = JSON.parse(bodyShow);
-        const lines = [
-          o.headline && `Titular: ${o.headline}`,
-          o.body != null && String(o.body).trim() && `Texto: ${o.body}`,
-          o.priceLabel && `Precio: ${o.priceLabel}`,
-          o.buttonTitle && `Botón: ${o.buttonTitle}`,
-          o.kicker && `Etiqueta: ${o.kicker}`,
-        ].filter(Boolean);
-        if (lines.length) bodyShow = lines.join('\n');
-      } catch {
-        /* mantener texto crudo */
-      }
+    if (detail.kind === 'tendencias_solicitud' || detail.kind === 'carrusel') {
+      const msg = detail.data;
+      const tipo = detail.kind === 'carrusel' ? 'Botón carrusel inicio' : 'Solicitud Tendencias';
+      return [
+        `Tipo: ${tipo}`,
+        '',
+        msg.content || '—',
+        msg.media_url ? `\nImagen publicación:\n${msg.media_url}` : '',
+      ].join('\n');
     }
-    return [
-      `Título: ${p.title}`,
-      `Cuerpo / overlay:\n${bodyShow}`,
-      `CTA (columna legacy): ${p.cta_text || '—'}`,
-      `Estado: ${p.status}`,
-      `Publicado: ${formatWhen(p.published_at || p.created_at)}`,
-      `Media: ${p.media_url || '—'}`,
-    ].join('\n');
+    return '';
   };
 
   return (
@@ -345,79 +412,116 @@ export function PedidosScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Pedidos"
-        subtitle="Compras de la tienda (ecommerce), consultas en Tendencias y piezas del carrusel Publicidad en App Clientes."
+        subtitle="Bandeja del salón: compras de tienda, consultas en Tendencias y piezas del carrusel, todas enviadas desde App Clientes."
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
+        edgeToEdge
       >
-        <View style={{ flex: 1, paddingHorizontal: spacing.lg }}>
+        <View style={styles.body}>
           <TextInput
             style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
-            placeholder="Buscar en la bandeja…"
+            placeholder="Buscar cliente, tracking, comentario…"
             placeholderTextColor={c.foregroundSubtle}
             value={query}
             onChangeText={setQuery}
+            autoCorrect={false}
+            accessibilityLabel="Buscar pedidos"
           />
-          <View style={styles.tabRow}>
-            {TABS.map((t) => {
-              const on = tab === t.id;
-              return (
-                <TouchableOpacity
-                  key={t.id}
-                  style={[
-                    styles.tabChip,
-                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
-                  ]}
-                  onPress={() => setTab(t.id)}
-                >
-                  <Text style={[styles.tabChipTxt, { color: on ? c.primary : c.foreground }]}>{t.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+
           <View style={styles.toolbar}>
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
-              {loading ? '…' : `${merged.length} ítem${merged.length === 1 ? '' : 's'}`}
+              {loading ? 'Cargando…' : `${merged.length} ítem${merged.length === 1 ? '' : 's'}`}
             </Text>
-            <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
-              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ayuda</Text>
+            <TouchableOpacity
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Ordenar y filtros"
+              onPress={() => setModalFiltros(true)}
+            >
+              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
             </TouchableOpacity>
           </View>
+          <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
+            {filtroResumen}
+          </Text>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
+            <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
           ) : (
-            <FlatList
-              data={merged}
-              keyExtractor={(it) => it.key}
-              renderItem={renderItem}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
-              contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
-              ListEmptyComponent={
-                <Text style={subStyles.muted}>
-                  No hay registros con los filtros actuales. Las compras llegan desde App Clientes (checkout); los
-                  comentarios, desde Tendencias; el carrusel se publica en Marketing · Carrusel inicio.
-                </Text>
-              }
-            />
+            <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <FlatList
+                data={merged}
+                keyExtractor={(it) => it.key}
+                renderItem={renderItem}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={c.primary} />}
+                contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
+                ListEmptyComponent={
+                  <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+                    Sin entradas. Las compras llegan del checkout en App Clientes; las consultas, desde Tendencias; el
+                    carrusel se publica en Marketing.
+                  </Text>
+                }
+              />
+            </View>
           )}
         </View>
       </SubScreenChrome>
 
-      <Modal visible={modalFiltros} animationType="fade" transparent onRequestClose={() => setModalFiltros(false)}>
-        <View style={styles.helpBackdrop}>
-          <View style={[styles.helpCard, { backgroundColor: c.background }]}>
-            <View style={styles.helpHead}>
-              <Text style={[styles.helpTitle, { color: c.foreground }]}>Bandeja Pedidos</Text>
+      <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+            <View style={styles.modalHead}>
+              <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
-            <Text style={[subStyles.muted, { lineHeight: 20 }]}>
-              · Compras: filas de `ecommerce_orders` generadas por clientes.{'\n'}
-              · Tendencias: comentarios en posts de marketing con multimedia (no carrusel inicio).{'\n'}
-              · Carrusel: contenidos con audiencia «inicio» creados en Marketing.{'\n'}
-              Moderá comentarios pendientes desde aquí o en la base (`marketing_comments`).
+            <Text style={[styles.sectionLbl, { color: c.foreground }]}>Orden</Text>
+            <View style={styles.typeGrid}>
+              {[
+                { id: 'fecha_desc', label: 'Más recientes' },
+                { id: 'fecha_asc', label: 'Más antiguos' },
+              ].map((opt) => {
+                const on = sortMode === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.typeChip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => setSortMode(opt.id)}
+                  >
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[styles.sectionLbl, { color: c.foreground }]}>Tipo</Text>
+            <View style={styles.typeGrid}>
+              {TABS.map((t) => {
+                const on = tab === t.id;
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.typeChip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => setTab(t.id)}
+                  >
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{t.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[styles.helpTxt, { color: c.foregroundMuted }]}>
+              Entradas desde App Clientes:{'\n'}
+              · Compras: pedidos de la tienda.{'\n'}
+              · Tendencias: comentarios y solicitudes «Me interesa» con titular y publicación.{'\n'}
+              · Carrusel: cada toque en un botón del carrusel (hasta 15 piezas distintas) con titular, botón, precio y publicación #.
             </Text>
             <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalFiltros(false)} />
           </View>
@@ -425,15 +529,18 @@ export function PedidosScreen({ onBack }) {
       </Modal>
 
       <Modal visible={detail != null} animationType="slide" transparent onRequestClose={() => setDetail(null)}>
-        <View style={styles.helpBackdrop}>
-          <View style={[styles.helpCard, { backgroundColor: c.background }]}>
-            <View style={styles.helpHead}>
-              <Text style={[styles.helpTitle, { color: c.foreground }]}>Detalle</Text>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+            <View style={styles.modalHead}>
+              <Text style={[styles.modalTitle, { color: c.foreground }]}>Detalle</Text>
               <TouchableOpacity onPress={() => setDetail(null)} hitSlop={12}>
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
-            <Text style={{ color: c.foreground, fontFamily: typography.fontSans, fontSize: 14, lineHeight: 22 }} selectable>
+            <Text
+              style={{ color: c.foreground, fontFamily: typography.fontSans, fontSize: 14, lineHeight: 22 }}
+              selectable
+            >
               {detail ? detailBody() : ''}
             </Text>
             {detail?.kind === 'compra' &&
@@ -448,7 +555,13 @@ export function PedidosScreen({ onBack }) {
                 style={{ marginTop: spacing.md }}
               />
             ) : null}
-            <SalonButton title="Cerrar" variant="outlineGray" fullWidth onPress={() => setDetail(null)} style={{ marginTop: spacing.md }} />
+            <SalonButton
+              title="Cerrar"
+              variant="outlineGray"
+              fullWidth
+              onPress={() => setDetail(null)}
+              style={{ marginTop: spacing.md }}
+            />
           </View>
         </View>
       </Modal>
@@ -459,72 +572,128 @@ export function PedidosScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    body: {
+      flex: 1,
+      paddingHorizontal: spacing.sm,
+    },
     search: {
       fontFamily: typography.fontSans,
       fontSize: 15,
-      minHeight: 46,
-      borderRadius: radii.lg,
+      minHeight: 48,
+      borderRadius: radii.md,
       borderWidth: 1,
       paddingHorizontal: spacing.md,
       marginBottom: spacing.sm,
     },
-    tabRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.xs,
-      marginBottom: spacing.sm,
-    },
-    tabChip: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 6,
-      borderRadius: radii.pill,
-      borderWidth: 1,
-    },
-    tabChipTxt: { fontFamily: typography.fontSansMedium, fontSize: 12 },
     toolbar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: spacing.sm,
+      marginBottom: spacing.xs,
     },
     toolbarMeta: { fontFamily: typography.fontSansMedium, fontSize: 13 },
     toolbarLink: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    card: {
+    filtroResumen: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.xs,
+    },
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    row: {
       flexDirection: 'row',
       alignItems: 'center',
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
       gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
+    },
+    rowBody: { flex: 1, minWidth: 0 },
+    rowTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    rowTitle: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    rowMeta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
     },
     iconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+      width: 36,
+      height: 36,
+      borderRadius: radii.sm,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    badge: { fontFamily: typography.fontSansMedium, fontSize: 11, marginBottom: 4 },
-    title: { fontFamily: typography.fontSansMedium, fontSize: 15 },
-    meta: { fontSize: 12, marginTop: 4 },
-    helpBackdrop: {
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 19,
+      padding: spacing.md,
+    },
+    modalBackdrop: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.45)',
-      justifyContent: 'center',
-      padding: spacing.lg,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
+      padding: spacing.md,
     },
-    helpCard: {
+    filterModalCard: {
       borderRadius: radii.lg,
-      padding: spacing.lg,
-      maxHeight: '88%',
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+      maxHeight: '92%',
     },
-    helpHead: {
+    modalHead: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: spacing.md,
     },
-    helpTitle: { fontFamily: typography.fontDisplay, fontSize: 20 },
+    modalTitle: { fontFamily: typography.fontDisplay, fontSize: 20 },
+    sectionLbl: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      marginBottom: spacing.sm,
+    },
+    typeGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    typeChip: {
+      minWidth: '47%',
+      flexGrow: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
+    },
+    typeChipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    helpTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 20,
+      marginBottom: spacing.md,
+    },
   });
 }

@@ -50,16 +50,35 @@ export function mapMovimientoToTx(m) {
   };
 }
 
+export function ventaProductosNombres(v) {
+  let items = v?.items;
+  if (!items) return '—';
+  if (typeof items === 'string') {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      return '—';
+    }
+  }
+  if (!Array.isArray(items) || items.length === 0) return '—';
+  const nombres = items
+    .map((it) => String(it?.nombre || it?.producto || it?.descripcion || '').trim())
+    .filter(Boolean);
+  return nombres.length ? nombres.join(', ') : '—';
+}
+
 export function mapVentaToTx(v) {
   const mp = v.metodo_pago || 'efectivo';
   const signo = mp === 'efectivo' ? 1 : 0;
   const cliente = v.cliente_nombre || v.cliente?.nombre;
   const detalle = [cliente, mp].filter(Boolean).join(' · ') || '—';
+  const productos = ventaProductosNombres(v);
   return {
     id: `ven-${v.id}`,
     ts: new Date(v.fecha || v.creado_a).getTime(),
     kind: 'venta_producto',
     titulo: v.no_factura || 'Venta POS',
+    productos,
     detalle,
     monto: Number(v.total ?? v.monto ?? 0),
     signo,

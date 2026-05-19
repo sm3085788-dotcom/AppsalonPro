@@ -50,6 +50,25 @@ export async function reiniciarMetaGlobal() {
   return db.metas.reiniciarProgresoGlobal();
 }
 
+/**
+ * Renueva la meta global: nuevo período y avance en 0.
+ * Llama maybeArchivarMetaVencida antes si el período anterior venció.
+ */
+export async function renovarMetaGlobal({ valorObjetivo, fechaInicio, fechaFin, titulo }) {
+  const { data: current } = await db.metas.getGlobalMontoActiva();
+  const { data, error } = await guardarMetaGlobal({
+    valorObjetivo: valorObjetivo ?? current?.valor_objetivo,
+    titulo: titulo ?? current?.titulo,
+    fechaInicio,
+    fechaFin,
+  });
+  if (error || !data?.id) return { data, error };
+
+  const reset = await db.metas.updateProgreso(data.id, 0);
+  if (reset.error) return { data, error: reset.error };
+  return { data: { ...data, actual: 0 }, error: null };
+}
+
 function addThousandsSeparator(intDigits) {
   const digits = String(intDigits || '').replace(/\D/g, '');
   if (!digits) return '';

@@ -1,4 +1,4 @@
--- Incidentes → Aura Line (cliente recibe reporte en App Clientes)
+-- Incidentes → Andreas Pro (cliente recibe reporte en App Clientes)
 -- Ejecutar en Supabase SQL Editor después de supabase-aura-line-client.sql
 
 CREATE OR REPLACE FUNCTION public.client_aura_unread_count()

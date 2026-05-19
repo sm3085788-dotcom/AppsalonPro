@@ -43,7 +43,7 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.MEMBRESIAS:
       return { title: 'Membresías', subtitle: 'Bronce, Plata y VIP · beneficios por nivel.' };
     case CLIENT_SUB.MENSAJES:
-      return { title: 'Aura Line', subtitle: 'Mensajes y promos del salón.' };
+      return { title: 'Andreas Pro', subtitle: 'Mensajes y promos del salón.' };
     case CLIENT_SUB.MIS_FACTURAS:
       return {
         title: 'Mis facturas',

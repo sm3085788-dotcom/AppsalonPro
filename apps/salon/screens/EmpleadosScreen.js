@@ -12,14 +12,23 @@ import {
   RefreshControl,
   Alert,
   Switch,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, UserPlus } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { X, UserPlus, ChevronRight, User, Image as ImageIcon } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
-import { db } from '@appsalon/shared-config';
+import { db, uploadEmpleadoFotoFromUri } from '@appsalon/shared-config';
+
+function guessExt(uri, mime) {
+  if (mime?.includes('png')) return 'png';
+  if (mime?.includes('jpeg') || mime?.includes('jpg')) return 'jpg';
+  const m = String(uri || '').match(/\.([a-z0-9]+)(\?|$)/i);
+  return m ? m[1].toLowerCase() : 'jpg';
+}
 
 function parseComision(str) {
   const n = parseFloat(String(str || '').replace(',', '.').trim());
@@ -53,6 +62,8 @@ export function EmpleadosScreen({ onBack }) {
   const [contactoEmergencia, setContactoEmergencia] = useState('');
   const [telEmergencia, setTelEmergencia] = useState('');
   const [activo, setActivo] = useState(true);
+  const [localFoto, setLocalFoto] = useState(null);
+  const [remoteFoto, setRemoteFoto] = useState('');
   const [saving, setSaving] = useState(false);
 
   const loadEmpleados = useCallback(async () => {
@@ -60,7 +71,13 @@ export function EmpleadosScreen({ onBack }) {
     try {
       const { data, error } = await db.empleados.getAll();
       if (error) {
-        setLoadError(error.message || 'No se pudo cargar el listado.');
+        const msg = error.message || 'No se pudo cargar el listado.';
+        const faltaFoto = /foto_url|column.*does not exist/i.test(msg);
+        setLoadError(
+          faltaFoto
+            ? `${msg}\n\nEjecutá supabase-empleados-foto.sql en Supabase (columna foto_url + bucket Storage).`
+            : msg,
+        );
         setEmpleados([]);
         return;
       }
@@ -89,6 +106,8 @@ export function EmpleadosScreen({ onBack }) {
     setContactoEmergencia('');
     setTelEmergencia('');
     setActivo(true);
+    setLocalFoto(null);
+    setRemoteFoto('');
   }, []);
 
   const openNuevo = useCallback(() => {
@@ -108,8 +127,23 @@ export function EmpleadosScreen({ onBack }) {
     setContactoEmergencia(String(item.contacto_emergencia || ''));
     setTelEmergencia(String(item.tel_emergencia || ''));
     setActivo(item.activo !== false);
+    setLocalFoto(null);
+    setRemoteFoto(item.foto_url || '');
     setModalEmpleado(true);
   }, []);
+
+  const pickFoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permisos', 'Se necesita acceso a la galería para la foto.');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.88 });
+    if (!res.canceled && res.assets?.[0]) setLocalFoto(res.assets[0]);
+  };
+
+  const clearLocalFoto = () => setLocalFoto(null);
+  const removeRemoteFoto = () => setRemoteFoto('');
 
   const cerrarModalEmpleado = useCallback(() => {
     setModalEmpleado(false);
@@ -136,14 +170,31 @@ export function EmpleadosScreen({ onBack }) {
 
     setSaving(true);
     try {
+      let foto_url = remoteFoto?.trim() || null;
+      if (localFoto?.uri) {
+        const ext = guessExt(localFoto.uri, localFoto.mimeType);
+        const { publicUrl, error: upErr } = await uploadEmpleadoFotoFromUri(localFoto.uri, {
+          extension: ext,
+          contentType: localFoto.mimeType || 'image/jpeg',
+        });
+        if (upErr) {
+          throw new Error(
+            upErr.message ||
+              'No se pudo subir la foto. Ejecutá supabase-empleados-foto.sql en Supabase (columna + bucket).',
+          );
+        }
+        foto_url = publicUrl;
+      }
+      const payload = { ...basePayload, foto_url };
+
       if (editingId) {
-        const { error } = await db.empleados.update(editingId, basePayload);
+        const { error } = await db.empleados.update(editingId, payload);
         if (error) {
           Alert.alert('No se guardó', error.message || 'Revisá permisos RLS (admin).');
           return;
         }
       } else {
-        const { error } = await db.empleados.create({ ...basePayload, tipo_registro: 'manual' });
+        const { error } = await db.empleados.create({ ...payload, tipo_registro: 'manual' });
         if (error) {
           Alert.alert('No se guardó', error.message || 'Revisá permisos RLS (admin).');
           return;
@@ -257,6 +308,7 @@ export function EmpleadosScreen({ onBack }) {
         disableBodyScroll
         bottomPadding={0}
         rightAction={rightAction}
+        edgeToEdge
       >
         <View style={styles.body}>
           <TextInput
@@ -269,37 +321,38 @@ export function EmpleadosScreen({ onBack }) {
             accessibilityLabel="Buscar empleados"
           />
 
-          <View style={styles.listShell}>
-            <View style={styles.agendaToolbar}>
-              <Text style={styles.agendaToolbarMeta}>
-                {loading
-                  ? 'Cargando…'
-                  : `${filtered.length} ficha${filtered.length === 1 ? '' : 's'} de ${empleados.length}`}
-              </Text>
-              <TouchableOpacity
-                hitSlop={12}
-                accessibilityRole="button"
-                accessibilityLabel="Ordenar y filtros"
-                onPress={() => setModalFiltros(true)}
-              >
-                <Text style={styles.agendaToolbarLink}>Ordenar · filtros</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.hint, { color: c.foregroundMuted }]} numberOfLines={2}>
-              {resumenFiltros}
+          <View style={styles.toolbar}>
+            <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
+              {loading
+                ? 'Cargando…'
+                : `${filtered.length} ficha${filtered.length === 1 ? '' : 's'} de ${empleados.length}`}
             </Text>
+            <TouchableOpacity
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Ordenar y filtros"
+              onPress={() => setModalFiltros(true)}
+            >
+              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
+            {resumenFiltros}
+          </Text>
 
-            {loadError ? (
-              <Text style={{ color: c.foregroundMuted, marginBottom: spacing.sm }}>{loadError}</Text>
-            ) : null}
+          {loadError ? (
+            <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>{loadError}</Text>
+          ) : null}
 
-            {loading ? (
-              <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
-            ) : (
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
+          ) : (
+            <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
               <FlatList
                 data={filtered}
                 keyExtractor={(item) => String(item.id)}
                 contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
+                showsVerticalScrollIndicator={false}
                 refreshControl={
                   <RefreshControl
                     refreshing={refreshing}
@@ -310,38 +363,53 @@ export function EmpleadosScreen({ onBack }) {
                     tintColor={c.primary}
                   />
                 }
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    activeOpacity={0.75}
-                    onPress={() => openEditar(item)}
-                    style={[styles.row, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Editar ${item.nombre}`}
-                  >
-                    <View style={styles.rowTop}>
-                      <Text style={[styles.nombre, { color: c.foreground }]} numberOfLines={1}>
-                        {item.nombre}
-                      </Text>
-                      {item.activo === false ? (
-                        <View style={[styles.badgeInactivo, { borderColor: c.cardBorder }]}>
-                          <Text style={[styles.badgeInactivoTxt, { color: c.foregroundMuted }]}>Inactivo</Text>
+                renderItem={({ item }) => {
+                  const com = item.comision_porcentaje;
+                  const comTxt =
+                    com != null && com !== '' && Number(com) > 0 ? `Comisión ${Number(com)}%` : null;
+                  return (
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => openEditar(item)}
+                      style={[styles.row, { borderBottomColor: c.cardBorder }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Editar ${item.nombre}`}
+                    >
+                      {item.foto_url ? (
+                        <Image source={{ uri: item.foto_url }} style={styles.avatar} resizeMode="cover" />
+                      ) : (
+                        <View style={[styles.avatarPh, { backgroundColor: c.surfaceMuted }]}>
+                          <User size={16} color={c.foregroundMuted} strokeWidth={1.6} />
                         </View>
-                      ) : null}
-                    </View>
-                    <Text style={[styles.rol, { color: c.foregroundMuted }]} numberOfLines={1}>
-                      {item.rol || '—'}
-                    </Text>
-                    <Text style={[styles.meta, { color: c.foregroundSubtle }]} numberOfLines={1}>
-                      {item.telefono || '—'} · {item.email || '—'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                      )}
+                      <View style={styles.rowBody}>
+                        <View style={styles.rowTop}>
+                          <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+                            {item.nombre}
+                          </Text>
+                          <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+                            {item.activo === false ? 'Inactivo' : item.rol || 'Sin rol'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+                          {item.telefono || '—'} · {item.email || '—'}
+                        </Text>
+                        {comTxt ? (
+                          <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+                            {comTxt}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <ChevronRight size={16} color={c.foregroundSubtle} />
+                    </TouchableOpacity>
+                  );
+                }}
                 ListEmptyComponent={
-                  <Text style={{ color: c.foregroundMuted, marginTop: spacing.md }}>Sin coincidencias.</Text>
+                  <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>Sin coincidencias.</Text>
                 }
               />
-            )}
-          </View>
+            </View>
+          )}
         </View>
       </SubScreenChrome>
 
@@ -352,7 +420,38 @@ export function EmpleadosScreen({ onBack }) {
             contentContainerStyle={[styles.modalPad, { paddingBottom: insets.bottom + spacing.xl }]}
           >
             <View style={[styles.modalCard, { backgroundColor: c.background }]}>
-              <Text style={styles.modalTitle}>{editingId ? 'Editar empleado' : 'Nuevo empleado'}</Text>
+              <Text style={[styles.modalTitle, { color: c.foreground, marginBottom: spacing.md }]}>
+                {editingId ? 'Editar empleado' : 'Nuevo empleado'}
+              </Text>
+
+              <Text style={[styles.fieldLbl, { color: c.foreground }]}>Foto</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.md }}>
+                {localFoto?.uri ? (
+                  <View>
+                    <Image source={{ uri: localFoto.uri }} style={styles.thumb} />
+                    <TouchableOpacity onPress={clearLocalFoto} style={styles.thumbX}>
+                      <X size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                ) : remoteFoto ? (
+                  <View>
+                    <Image source={{ uri: remoteFoto }} style={styles.thumb} />
+                    <TouchableOpacity onPress={removeRemoteFoto} style={styles.thumbX}>
+                      <X size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={[styles.thumbPh, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
+                    <ImageIcon size={28} color={c.foregroundSubtle} strokeWidth={1.4} />
+                  </View>
+                )}
+              </View>
+              <SalonButton
+                title="Elegir foto (galería)"
+                variant="outlineGray"
+                onPress={pickFoto}
+                style={{ marginBottom: spacing.md }}
+              />
 
               <Text style={styles.fieldLbl}>Nombre</Text>
               <TextInput
@@ -469,16 +568,16 @@ export function EmpleadosScreen({ onBack }) {
       </Modal>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
-        <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background }]}>
-            <View style={styles.filterHead}>
-              <Text style={styles.filterTitle}>Ordenar y filtrar</Text>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+            <View style={styles.modalHead}>
+              <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.sectionLbl}>Orden</Text>
-            <View style={styles.chipRow}>
+            <Text style={[styles.fieldLbl, { color: c.foreground }]}>Orden</Text>
+            <View style={styles.typeGrid}>
               {[
                 { id: 'nombre_asc', label: 'Nombre A → Z' },
                 { id: 'nombre_desc', label: 'Nombre Z → A' },
@@ -488,18 +587,18 @@ export function EmpleadosScreen({ onBack }) {
                   <TouchableOpacity
                     key={opt.id}
                     style={[
-                      styles.chip,
+                      styles.typeChip,
                       { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                     ]}
                     onPress={() => setSortMode(opt.id)}
                   >
-                    <Text style={[styles.chipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <Text style={styles.sectionLbl}>Rol</Text>
-            <View style={styles.chipRow}>
+            <Text style={[styles.fieldLbl, { color: c.foreground }]}>Rol</Text>
+            <View style={styles.typeGrid}>
               {[
                 { id: 'todos', label: 'Todos' },
                 { id: 'estilista', label: 'Estilista' },
@@ -511,18 +610,18 @@ export function EmpleadosScreen({ onBack }) {
                   <TouchableOpacity
                     key={opt.id}
                     style={[
-                      styles.chip,
+                      styles.typeChip,
                       { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                     ]}
                     onPress={() => setRolFiltro(opt.id)}
                   >
-                    <Text style={[styles.chipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <Text style={styles.sectionLbl}>Estado</Text>
-            <View style={styles.chipRow}>
+            <Text style={[styles.fieldLbl, { color: c.foreground }]}>Estado</Text>
+            <View style={styles.typeGrid}>
               {[
                 { id: 'todos', label: 'Todos' },
                 { id: 'activos', label: 'Solo activos' },
@@ -533,12 +632,12 @@ export function EmpleadosScreen({ onBack }) {
                   <TouchableOpacity
                     key={opt.id}
                     style={[
-                      styles.chip,
+                      styles.typeChip,
                       { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                     ]}
                     onPress={() => setActivoFiltro(opt.id)}
                   >
-                    <Text style={[styles.chipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -554,7 +653,11 @@ export function EmpleadosScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
-    body: { flex: 1 },
+    body: {
+      flex: 1,
+      paddingHorizontal: spacing.sm,
+      paddingTop: spacing.xs,
+    },
     search: {
       fontFamily: typography.fontSans,
       fontSize: 15,
@@ -562,56 +665,101 @@ function createStyles(c) {
       borderRadius: radii.lg,
       borderWidth: 1,
       paddingHorizontal: spacing.md,
-      marginBottom: spacing.md,
+      marginBottom: spacing.sm,
     },
-    listShell: {
-      flex: 1,
-      paddingTop: spacing.xs,
-    },
-    agendaToolbar: {
+    toolbar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: spacing.xs,
     },
-    agendaToolbarMeta: {
+    toolbarMeta: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
-      color: c.foregroundMuted,
     },
-    agendaToolbarLink: {
+    toolbarLink: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
-      color: c.primary,
     },
-    hint: {
+    filtroResumen: {
       fontFamily: typography.fontSans,
       fontSize: 12,
       lineHeight: 17,
-      marginBottom: spacing.md,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.xs,
+    },
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
     },
     row: {
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.sm,
     },
+    avatar: {
+      width: 36,
+      height: 36,
+      borderRadius: radii.sm,
+      backgroundColor: c.surfaceMuted,
+    },
+    avatarPh: {
+      width: 36,
+      height: 36,
+      borderRadius: radii.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    thumb: { width: 96, height: 96, borderRadius: radii.md },
+    thumbPh: {
+      width: 96,
+      height: 96,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    thumbX: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      borderRadius: 12,
+      padding: 4,
+    },
+    rowBody: { flex: 1, minWidth: 0 },
     rowTop: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: spacing.sm,
     },
-    nombre: { fontFamily: typography.fontSansMedium, fontSize: 16, flex: 1 },
-    badgeInactivo: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 2,
-      borderRadius: radii.pill,
-      borderWidth: 1,
+    rowTitle: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
     },
-    badgeInactivoTxt: { fontFamily: typography.fontSansMedium, fontSize: 11 },
-    rol: { fontFamily: typography.fontSans, fontSize: 14, marginTop: 4 },
-    meta: { fontFamily: typography.fontSans, fontSize: 12, marginTop: 2 },
+    rowMeta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 19,
+      padding: spacing.md,
+    },
     addCircle: {
       width: 44,
       height: 44,
@@ -634,8 +782,22 @@ function createStyles(c) {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'flex-end',
+      padding: spacing.md,
     },
     modalPad: { padding: spacing.md },
+    filterModalCard: {
+      borderRadius: radii.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+      maxHeight: '92%',
+    },
+    modalHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.md,
+    },
     modalCard: {
       borderRadius: radii.lg,
       padding: spacing.lg,
@@ -644,13 +806,10 @@ function createStyles(c) {
     modalTitle: {
       fontFamily: typography.fontDisplay,
       fontSize: 20,
-      color: c.foreground,
-      marginBottom: spacing.md,
     },
     fieldLbl: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
-      color: c.foreground,
       marginTop: spacing.xs,
       marginBottom: spacing.xs,
     },
@@ -674,45 +833,22 @@ function createStyles(c) {
       justifyContent: 'space-between',
       marginBottom: spacing.lg,
     },
-    filterBackdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'flex-end',
-    },
-    filterSheet: {
-      borderTopLeftRadius: radii.lg,
-      borderTopRightRadius: radii.lg,
-      padding: spacing.lg,
-    },
-    filterHead: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: spacing.md,
-    },
-    filterTitle: {
-      fontFamily: typography.fontDisplay,
-      fontSize: 20,
-      color: c.foreground,
-    },
-    sectionLbl: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 13,
-      color: c.foreground,
-      marginBottom: spacing.sm,
-    },
-    chipRow: {
+    typeGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: spacing.sm,
-      marginBottom: spacing.lg,
+      marginBottom: spacing.md,
     },
-    chip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: radii.md,
+    typeChip: {
       borderWidth: 1,
+      borderRadius: radii.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      minWidth: '47%',
     },
-    chipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    typeChipTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+    },
   });
 }

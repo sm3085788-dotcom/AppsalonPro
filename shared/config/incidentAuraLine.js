@@ -1,8 +1,9 @@
 import { db } from './supabaseClient.js';
+import { isClienteAppVerificado } from './clienteAppMeta.js';
 
 export const INCIDENT_REPORT_CONTENT_TYPE = 'incident_report';
 
-/** Texto del reporte para el cliente (App Clientes · Aura Line). */
+/** Texto del reporte para el cliente (App Clientes · Andreas Pro). */
 export function buildIncidentClientMessage(dto) {
   const lines = [
     'Reporte del salón',
@@ -33,10 +34,19 @@ export function buildIncidentClientMessage(dto) {
   return lines.join('\n');
 }
 
-/** Envía el reporte al cliente vía marketing_direct_messages (Aura Line). */
+/** Envía el reporte al cliente vía marketing_direct_messages (Andreas Pro). */
 export async function sendIncidentReportToClient(client, dto, sender = {}) {
   if (!client?.id) {
     return { data: null, error: { message: 'Elegí un cliente de la lista.' } };
+  }
+  if (!isClienteAppVerificado(client)) {
+    return {
+      data: null,
+      error: {
+        message:
+          'Este cliente es ficha manual sin App Clientes. Solo los clientes verificados en la app pueden recibir mensajes.',
+      },
+    };
   }
   const content = buildIncidentClientMessage(dto);
   return db.marketingDirectMessages.create({

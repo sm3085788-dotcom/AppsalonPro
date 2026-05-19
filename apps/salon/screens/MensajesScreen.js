@@ -13,6 +13,7 @@ import {
   Image,
   ActivityIndicator,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,19 +25,63 @@ import {
   Image as ImageIcon,
   Megaphone,
   Radio,
-  Search,
   Send,
   Sparkles,
   X,
   FileText,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase, uploadMensajeMediaFromUri } from '@appsalon/shared-config';
+import {
+  db,
+  supabase,
+  uploadMensajeMediaFromUri,
+  isClienteAppVerificado,
+  isClienteManual,
+  CLIENTE_MANUAL_AURA,
+} from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
-const INBOX_MSG_LIMIT = 300;
 const BULK_CHUNK = 80;
+const INBOX_PREVIEW_TYPES = new Set(['chat', 'broadcast_promo', 'incident_report']);
+const INBOX_OPEN_HINT = 'Tocá para abrir Andreas Pro';
+
+function inboxPreviewTime(iso) {
+  if (!iso) return 0;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Orden WhatsApp: conversación más reciente arriba; sin mensajes al final (nombre A–Z). */
+function compareInboxRows(a, b) {
+  const ta = inboxPreviewTime(a.lastAt);
+  const tb = inboxPreviewTime(b.lastAt);
+  if (ta !== tb) return tb - ta;
+  if (!ta && !tb) {
+    return String(a.client?.nombre || '').localeCompare(String(b.client?.nombre || ''), 'es');
+  }
+  return 0;
+}
+
+function isInboxPreviewMessage(row) {
+  if (!row?.client_id) return false;
+  const t = row.content_type;
+  if (!t) return true;
+  return INBOX_PREVIEW_TYPES.has(t);
+}
+
+function mergeInboxPreview(prev, row) {
+  if (!isInboxPreviewMessage(row)) return prev;
+  const list = [...(prev || [])];
+  const idx = list.findIndex((m) => m.client_id === row.client_id);
+  const incoming = inboxPreviewTime(row.created_at);
+  if (idx >= 0) {
+    if (incoming <= inboxPreviewTime(list[idx].created_at)) return prev;
+    list[idx] = { ...list[idx], ...row };
+    return list;
+  }
+  return [...list, row];
+}
 
 function initials(name) {
   const p = String(name || '')
@@ -48,25 +93,23 @@ function initials(name) {
   return '?';
 }
 
-function buildInboxRows(allClients, recentMessages) {
+function buildInboxRows(allClients, previews) {
   const lastBy = new Map();
-  for (const m of recentMessages || []) {
+  for (const m of previews || []) {
     if (!m?.client_id) continue;
+    if (!isInboxPreviewMessage(m)) continue;
     const prev = lastBy.get(m.client_id);
-    if (!prev || new Date(m.created_at) > new Date(prev.created_at)) lastBy.set(m.client_id, m);
+    if (!prev || inboxPreviewTime(m.created_at) > inboxPreviewTime(prev.created_at)) lastBy.set(m.client_id, m);
   }
-  const rows = (allClients || []).map((c) => ({
-    client: c,
-    preview: lastBy.get(c.id)?.content || 'Tocá para abrir Aura Line',
-    lastAt: lastBy.get(c.id)?.created_at || null,
-  }));
-  rows.sort((a, b) => {
-    if (!a.lastAt && !b.lastAt) return String(a.client.nombre || '').localeCompare(String(b.client.nombre || ''));
-    if (!a.lastAt) return 1;
-    if (!b.lastAt) return -1;
-    return new Date(b.lastAt) - new Date(a.lastAt);
+  const rows = (allClients || []).map((c) => {
+    const last = lastBy.get(c.id);
+    return {
+      client: c,
+      preview: last?.content || INBOX_OPEN_HINT,
+      lastAt: last?.created_at || null,
+    };
   });
-  return rows;
+  return rows.sort(compareInboxRows);
 }
 
 function guessExt(uri, mime) {
@@ -84,7 +127,7 @@ export function MensajesScreen({ onBack }) {
   const listRef = useRef(null);
 
   const [clients, setClients] = useState([]);
-  const [recentMsgs, setRecentMsgs] = useState([]);
+  const [inboxPreviews, setInboxPreviews] = useState([]);
   const [inboxQuery, setInboxQuery] = useState('');
   const [loadingInbox, setLoadingInbox] = useState(true);
   const [selectedClient, setSelectedClient] = useState(null);
@@ -101,7 +144,8 @@ export function MensajesScreen({ onBack }) {
   const [broadcasting, setBroadcasting] = useState(false);
   const [staffUserId, setStaffUserId] = useState(null);
 
-  const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
+  const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
+  const padBottom = padList;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -112,19 +156,19 @@ export function MensajesScreen({ onBack }) {
   const loadInbox = useCallback(async () => {
     setLoadingInbox(true);
     try {
-      const [cRes, mRes] = await Promise.all([
+      const [cRes, pRes] = await Promise.all([
         db.clientes.getAll(),
-        db.marketingDirectMessages.getRecentForInbox(INBOX_MSG_LIMIT),
+        db.marketingDirectMessages.getInboxPreviewsByClient(),
       ]);
       if (cRes.error) throw cRes.error;
-      if (mRes.error) throw mRes.error;
+      if (pRes.error) throw pRes.error;
       const clientList = cRes.data || [];
       setClients(clientList);
-      setRecentMsgs(mRes.data || []);
+      setInboxPreviews(pRes.data || []);
     } catch (e) {
-      Alert.alert('Aura Line', e?.message || 'No se pudo cargar la bandeja.');
+      Alert.alert('Andreas Pro', e?.message || 'No se pudo cargar la bandeja.');
       setClients([]);
-      setRecentMsgs([]);
+      setInboxPreviews([]);
     } finally {
       setLoadingInbox(false);
     }
@@ -134,41 +178,68 @@ export function MensajesScreen({ onBack }) {
     loadInbox();
   }, [loadInbox]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel('andreas-pro-inbox')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'marketing_direct_messages',
+        },
+        (payload) => {
+          const row = payload.new;
+          if (!row?.client_id) return;
+          setInboxPreviews((prev) => mergeInboxPreview(prev, row));
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const verifiedClients = useMemo(() => clients.filter((c) => isClienteAppVerificado(c)), [clients]);
+
   const inboxRows = useMemo(() => {
-    const rows = buildInboxRows(clients, recentMsgs);
+    const rows = buildInboxRows(clients, inboxPreviews);
     const q = inboxQuery.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((r) => {
-      const blob = [r.client.nombre, r.client.telefono, r.client.email, r.preview].join(' ').toLowerCase();
-      return blob.includes(q);
-    });
-  }, [clients, recentMsgs, inboxQuery]);
+    return rows
+      .filter((r) => {
+        const blob = [r.client.nombre, r.client.telefono, r.client.email, r.preview].join(' ').toLowerCase();
+        return blob.includes(q);
+      })
+      .sort(compareInboxRows);
+  }, [clients, inboxPreviews, inboxQuery]);
+
+  const openClientChat = useCallback((client) => {
+    if (!isClienteAppVerificado(client)) {
+      Alert.alert(
+        'Sin App Clientes',
+        `${client.nombre || 'Este cliente'} es una ficha manual. Andreas Pro solo envía mensajes a clientes verificados en App Clientes (con cuenta vinculada).`,
+      );
+      return;
+    }
+    setSelectedClient(client);
+  }, []);
 
   const inboxListEmpty = useMemo(() => {
     const q = inboxQuery.trim();
     if (q && clients.length > 0) {
       return (
-        <View style={{ marginTop: spacing.lg, paddingHorizontal: spacing.md }}>
-          <Text style={[subStyles.muted]}>No hay clientes que coincidan con la búsqueda.</Text>
-        </View>
+        <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+          Ningún resultado con la búsqueda actual.
+        </Text>
       );
     }
     return (
-      <View style={{ marginTop: spacing.lg, paddingHorizontal: spacing.md }}>
-        <Text style={[subStyles.muted]}>No hay clientes cargados.</Text>
-        <Text style={[subStyles.muted, { marginTop: spacing.sm, fontSize: 13 }]}>
-          Agregá clientes desde el módulo Clientes para verlos en la bandeja de Aura Line.
-        </Text>
-        <SalonButton
-          title="Reintentar"
-          variant="outlineGray"
-          fullWidth
-          style={{ marginTop: spacing.md }}
-          onPress={loadInbox}
-        />
-      </View>
+      <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+        {clients.length === 0 ? 'No hay clientes registrados.' : 'Ningún resultado con la búsqueda actual.'}
+      </Text>
     );
-  }, [clients.length, inboxQuery, loadInbox, subStyles.muted]);
+  }, [clients.length, inboxQuery, c.foregroundMuted]);
 
   const loadChat = useCallback(async (clientId) => {
     setLoadingChat(true);
@@ -228,9 +299,13 @@ export function MensajesScreen({ onBack }) {
 
   const sendChatMessage = async () => {
     if (!selectedClient) return;
+    if (!isClienteAppVerificado(selectedClient)) {
+      Alert.alert('Sin App Clientes', 'No podés enviar mensajes a fichas manuales.');
+      return;
+    }
     const text = draft.trim();
     if (!text && !pendingImage) {
-      Alert.alert('Aura Line', 'Escribí un mensaje o adjuntá una foto.');
+      Alert.alert('Andreas Pro', 'Escribí un mensaje o adjuntá una foto.');
       return;
     }
     setSending(true);
@@ -274,10 +349,10 @@ export function MensajesScreen({ onBack }) {
           if (prev.some((m) => m.id === data.id)) return prev;
           return [...prev, data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         });
+        setInboxPreviews((prev) => mergeInboxPreview(prev, data));
       }
       setDraft('');
       setPendingImage(null);
-      loadInbox();
     } catch (e) {
       Alert.alert('Envío', e?.message || 'No se pudo enviar.');
     } finally {
@@ -337,9 +412,15 @@ export function MensajesScreen({ onBack }) {
         mediaUrl = publicUrl;
         mediaKind = 'image';
       }
-      const targets = clients.filter((x) => x?.id);
+      const targets = verifiedClients;
+      const skipped = clients.length - targets.length;
       if (!targets.length) {
-        Alert.alert('Pulso masivo', 'No hay clientes en la base.');
+        Alert.alert(
+          'Pulso masivo',
+          skipped > 0
+            ? `Hay ${clients.length} cliente(s) en la base, pero ninguno tiene App Clientes verificada.`
+            : 'No hay clientes en la base.',
+        );
         setBroadcasting(false);
         return;
       }
@@ -360,7 +441,9 @@ export function MensajesScreen({ onBack }) {
         const { error } = await db.marketingDirectMessages.createBulk(slice);
         if (error) throw error;
       }
-      Alert.alert('Pulso masivo', `Se encolaron ${targets.length} mensajes para todos los clientes.`);
+      const skipNote =
+        skipped > 0 ? ` (${skipped} ficha${skipped === 1 ? '' : 's'} manual omitida${skipped === 1 ? '' : 's'})` : '';
+      Alert.alert('Pulso masivo', `Se encolaron ${targets.length} mensajes para clientes con App Clientes${skipNote}.`);
       setBroadcastOpen(false);
       setPromoTitle('');
       setPromoBody('');
@@ -388,38 +471,65 @@ export function MensajesScreen({ onBack }) {
     [c.foreground, isDark, styles.addPersonCircle, styles.addPersonCircleDark],
   );
 
-  const renderInboxRow = ({ item }) => {
-    const { client, preview, lastAt } = item;
-    return (
-      <TouchableOpacity
-        style={[styles.inboxCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-        onPress={() => setSelectedClient(client)}
-        activeOpacity={0.88}
-      >
-        <LinearGradient colors={['#5B3CAD', '#8B5CF6']} style={styles.avatarRing}>
-          <View style={[styles.avatarInner, { backgroundColor: c.card }]}>
-            <Text style={[styles.avatarTxt, { color: '#5B3CAD' }]}>{initials(client.nombre)}</Text>
-          </View>
-        </LinearGradient>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={styles.inboxTopRow}>
-            <Text style={[styles.inboxName, { color: c.foreground }]} numberOfLines={1}>
-              {client.nombre}
-            </Text>
-            {lastAt ? (
-              <Text style={[styles.inboxTime, { color: c.foregroundSubtle }]}>
-                {new Date(lastAt).toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })}
+  const renderInboxRow = useCallback(
+    ({ item }) => {
+      const { client, preview, lastAt } = item;
+      const manual = isClienteManual(client);
+      const fechaTxt = lastAt
+        ? new Date(lastAt).toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })
+        : null;
+      const subLine = manual
+        ? 'Sin cuenta en App Clientes'
+        : [preview !== INBOX_OPEN_HINT ? preview : null, fechaTxt].filter(Boolean).join(' · ') ||
+          'Sin mensajes';
+
+      return (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => openClientChat(client)}
+          style={[
+            styles.row,
+            {
+              borderBottomColor: manual ? CLIENTE_MANUAL_AURA.border : c.cardBorder,
+              backgroundColor: manual ? CLIENTE_MANUAL_AURA.bg : 'transparent',
+            },
+          ]}
+          accessibilityRole="button"
+        >
+          <View style={styles.rowAvatarWrap}>
+            <View
+              style={[
+                styles.rowAvatar,
+                styles.rowAvatarEmpty,
+                { backgroundColor: manual ? CLIENTE_MANUAL_AURA.chip : c.surfaceMuted },
+              ]}
+            >
+              <Text style={[styles.rowAvatarLetter, { color: manual ? CLIENTE_MANUAL_AURA.chipText : c.foregroundMuted }]}>
+                {initials(client.nombre)}
               </Text>
-            ) : null}
+            </View>
           </View>
-          <Text style={[subStyles.muted, styles.inboxPreview]} numberOfLines={2}>
-            {preview}
-          </Text>
-        </View>
-        <ChevronRight size={20} color={c.foregroundMuted} />
-      </TouchableOpacity>
-    );
-  };
+          <View style={styles.rowBody}>
+            <View style={styles.rowTopLine}>
+              <Text style={[styles.rowName, { color: c.foreground }]} numberOfLines={1}>
+                {client.nombre || 'Sin nombre'}
+              </Text>
+              <View style={[styles.chip, { backgroundColor: manual ? CLIENTE_MANUAL_AURA.chip : c.surfaceMuted }]}>
+                <Text style={[styles.chipTxt, { color: manual ? CLIENTE_MANUAL_AURA.chipText : c.foregroundMuted }]}>
+                  {manual ? 'Manual' : 'App'}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+              {subLine}
+            </Text>
+          </View>
+          <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
+        </TouchableOpacity>
+      );
+    },
+    [c.cardBorder, c.foreground, c.foregroundMuted, c.foregroundSubtle, c.surfaceMuted, openClientChat, styles],
+  );
 
   const renderBubble = ({ item }) => {
     const ct = String(item.content_type || '');
@@ -491,7 +601,9 @@ export function MensajesScreen({ onBack }) {
           <LinearGradient colors={['#2d1b52', '#5B3CAD']} style={styles.modalHero}>
             <Sparkles size={28} color="#F5E6A8" />
             <Text style={styles.modalHeroTitle}>Pulso masivo</Text>
-            <Text style={styles.modalHeroSub}>Una promoción para todos tus clientes, al instante.</Text>
+            <Text style={styles.modalHeroSub}>
+              Solo llega a clientes con App Clientes verificada ({verifiedClients.length} de {clients.length}).
+            </Text>
           </LinearGradient>
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: spacing.lg }}>
             <Text style={[styles.fieldLbl, { color: c.foreground }]}>Título (opcional)</Text>
@@ -521,14 +633,14 @@ export function MensajesScreen({ onBack }) {
               <Image source={{ uri: promoImage.uri }} style={styles.promoPreview} resizeMode="cover" />
             ) : null}
             <SalonButton
-              title={broadcasting ? 'Enviando…' : `Difundir a ${clients.length} clientes`}
+              title={broadcasting ? 'Enviando…' : `Difundir a ${verifiedClients.length} clientes verificados`}
               variant="heroGold"
               fullWidth
               disabled={broadcasting || !clients.length}
               onPress={() => {
                 Alert.alert(
                   'Confirmar difusión',
-                  `Se enviará a ${clients.length} clientes. ¿Continuar?`,
+                  `Se enviará a ${verifiedClients.length} cliente(s) con App Clientes verificada. ¿Continuar?`,
                   [
                     { text: 'Cancelar', style: 'cancel' },
                     { text: 'Difundir', onPress: runBroadcast },
@@ -563,7 +675,7 @@ export function MensajesScreen({ onBack }) {
             <Text style={styles.chatTitle} numberOfLines={1}>
               {selectedClient.nombre}
             </Text>
-            <Text style={styles.chatSub}>Aura Line · en vivo</Text>
+            <Text style={styles.chatSub}>Andreas Pro · en vivo</Text>
           </View>
           <TouchableOpacity onPress={() => setBroadcastOpen(true)} hitSlop={12} accessibilityLabel="Pulso masivo">
             <Megaphone size={22} color="rgba(255,255,255,0.9)" strokeWidth={2.2} />
@@ -602,7 +714,16 @@ export function MensajesScreen({ onBack }) {
             </View>
           ) : null}
 
-          <View style={[styles.composer, { borderTopColor: c.cardBorder, backgroundColor: c.background }]}>
+          <View
+            style={[
+              styles.composer,
+              {
+                borderTopColor: c.cardBorder,
+                backgroundColor: c.background,
+                paddingBottom: Math.max(insets.bottom, spacing.md) + spacing.sm,
+              },
+            ]}
+          >
             <TouchableOpacity style={[styles.composerIcon, { borderColor: c.cardBorder }]} onPress={pickChatImage}>
               <ImageIcon size={22} color={c.primary} />
             </TouchableOpacity>
@@ -635,44 +756,57 @@ export function MensajesScreen({ onBack }) {
     <View style={[styles.shell, { backgroundColor: c.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
-        title="Aura Line"
-        subtitle="Chateá con cualquier cliente. Fotos, promos y difusión masiva."
+        title="Andreas Pro"
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
         rightAction={broadcastBtn}
+        edgeToEdge
       >
-        <LinearGradient colors={['rgba(107,47,189,0.12)', 'transparent']} style={styles.inboxGlow}>
-          <View style={[styles.searchWrap, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-            <Search size={18} color={c.foregroundMuted} />
-            <TextInput
-              style={[styles.searchIn, { color: c.foreground }]}
-              placeholder="Buscar cliente…"
-              placeholderTextColor={c.foregroundSubtle}
-              value={inboxQuery}
-              onChangeText={setInboxQuery}
-            />
-          </View>
-          <View style={styles.pillRow}>
-            <View style={[styles.pill, { backgroundColor: c.surfaceMuted }]}>
-              <Radio size={14} color={c.primary} />
-              <Text style={[styles.pillTxt, { color: c.foregroundMuted }]}>Tiempo real al abrir un chat</Text>
-            </View>
-          </View>
-        </LinearGradient>
-
-        {loadingInbox ? (
-          <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
-        ) : (
-          <FlatList
-            data={inboxRows}
-            keyExtractor={(r) => String(r.client.id)}
-            renderItem={renderInboxRow}
-            contentContainerStyle={{ paddingBottom: padBottom, paddingTop: spacing.sm }}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={inboxListEmpty}
+        <View style={styles.body}>
+          <TextInput
+            style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
+            placeholder="Buscar por nombre o teléfono…"
+            placeholderTextColor={c.foregroundSubtle}
+            value={inboxQuery}
+            onChangeText={setInboxQuery}
+            autoCorrect={false}
+            accessibilityLabel="Buscar clientes"
           />
-        )}
+
+          <View style={styles.toolbar}>
+            <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
+              {loadingInbox ? '…' : `${inboxRows.length} cliente${inboxRows.length === 1 ? '' : 's'}`}
+            </Text>
+          </View>
+          <Text style={[styles.filtroResumen, { color: c.foregroundSubtle }]} numberOfLines={1}>
+            {clients.length - verifiedClients.length > 0
+              ? `${verifiedClients.length} con App · ${clients.length - verifiedClients.length} manual (verde, sin mensajes)`
+              : 'Todos con App Clientes · mensajes habilitados'}
+          </Text>
+
+          {loadingInbox ? (
+            <ActivityIndicator style={{ marginTop: spacing.md }} color={c.primary} />
+          ) : (
+            <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <FlatList
+                data={inboxRows}
+                keyExtractor={(r) => String(r.client.id)}
+                renderItem={renderInboxRow}
+                refreshControl={
+                  <RefreshControl refreshing={false} onRefresh={loadInbox} tintColor={c.primary} />
+                }
+                contentContainerStyle={{ paddingBottom: padList, flexGrow: inboxRows.length === 0 ? 1 : 0 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={inboxListEmpty}
+                initialNumToRender={16}
+                windowSize={8}
+                removeClippedSubviews
+              />
+            </View>
+          )}
+        </View>
       </SubScreenChrome>
     </View>
     {broadcastModal}
@@ -701,82 +835,107 @@ function createStyles(c) {
     addPersonCircleDark: {
       borderColor: 'rgba(255,255,255,0.35)',
     },
-    inboxGlow: {
-      paddingBottom: spacing.sm,
-    },
-    searchWrap: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      paddingHorizontal: spacing.md,
-      minHeight: 46,
-    },
-    searchIn: {
+    body: {
       flex: 1,
-      fontFamily: typography.fontSans,
-      fontSize: 15,
-      paddingVertical: Platform.OS === 'ios' ? 10 : 8,
-    },
-    pillRow: { marginTop: spacing.sm },
-    pill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      alignSelf: 'flex-start',
       paddingHorizontal: spacing.sm,
-      paddingVertical: 6,
-      borderRadius: radii.pill,
     },
-    pillTxt: { fontFamily: typography.fontSans, fontSize: 11 },
-    inboxCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-    },
-    avatarRing: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      padding: 2,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    avatarInner: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    avatarTxt: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 16,
-    },
-    inboxTopRow: {
+    toolbar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      gap: spacing.sm,
+      marginBottom: 2,
     },
-    inboxName: {
+    toolbarMeta: {
       fontFamily: typography.fontSansMedium,
-      fontSize: 16,
-      flex: 1,
+      fontSize: 12,
     },
-    inboxTime: {
+    filtroResumen: {
       fontFamily: typography.fontSans,
       fontSize: 11,
+      lineHeight: 15,
+      marginBottom: spacing.xs,
     },
-    inboxPreview: {
+    listShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    search: {
+      fontFamily: typography.fontSans,
+      fontSize: 14,
+      minHeight: 40,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      paddingHorizontal: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    emptyTxt: {
+      fontFamily: typography.fontSans,
       fontSize: 13,
-      marginTop: 4,
-      lineHeight: 18,
+      textAlign: 'center',
+      paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.sm,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.sm,
+    },
+    rowBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    rowTopLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.xs,
+    },
+    rowAvatarWrap: {
+      width: 34,
+      height: 34,
+      flexShrink: 0,
+    },
+    rowAvatar: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+    },
+    rowAvatarEmpty: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    rowAvatarLetter: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    rowName: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    chip: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: radii.pill,
+      flexShrink: 0,
+    },
+    chipTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    rowChev: {
+      flexShrink: 0,
     },
     chatHeader: {
       flexDirection: 'row',

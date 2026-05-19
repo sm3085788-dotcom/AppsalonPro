@@ -2,52 +2,41 @@ import { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Crown, Medal, Sparkles } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { MEMBRESIA_TIERS, getMembresiaTier } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
+import { ActivarMembresiaCard } from './ActivarMembresiaCard';
 
-const TIERS = [
-  {
-    id: 'bronce',
-    label: 'Bronce',
-    subtitle: 'Inicio en Aura · acumulás desde la primera visita',
-    accent: '#B87333',
-    Icon: Medal,
-    benefits: [
-      '5% de descuento en servicios seleccionados del menú Aura.',
-      'Puntos Aura estándar (x1) en cada visita pagada.',
-      'Tips de mantenimiento y recordatorios de retoque en la app.',
-    ],
-  },
-  {
-    id: 'plata',
-    label: 'Plata',
-    subtitle: 'Más valor en cada cita y en tienda',
-    accent: '#9CA3AF',
-    Icon: Sparkles,
-    benefits: [
-      '10% de descuento en servicios y 5% en productos de línea profesional.',
-      'Puntos Aura acelerados (x1,25) al pagar en salón.',
-      'Prioridad ligera en lista de espera de agenda.',
-      'Detalle de cumpleaños: mini beneficio o obsequio según campaña.',
-    ],
-  },
-  {
-    id: 'vip',
-    label: 'VIP',
-    subtitle: 'Experiencia prioritaria y máximos beneficios',
-    accent: '#C5A368',
-    Icon: Crown,
-    benefits: [
-      'Hasta 20% en servicios premium y 15% en productos (según cartelera).',
-      'Puntos Aura x2 en visitas confirmadas con tu código de cliente.',
-      'Canal preferente con recepción / WhatsApp del salón para agendar.',
-      'Acceso anticipado a promociones, lanzamientos y eventos cerrados.',
-      'Un upgrade de servicio al año sujeto a disponibilidad.',
-    ],
-  },
-];
+const TIER_ICONS = {
+  bronce: Medal,
+  plata: Sparkles,
+  vip: Crown,
+};
 
-export function MembresiasBody() {
+const TIER_BENEFITS = {
+  bronce: [
+    '5% de descuento en servicios seleccionados del menú Aura.',
+    'Puntos Aura estándar (x1) en cada visita pagada.',
+    'Tips de mantenimiento y recordatorios de retoque en la app.',
+  ],
+  plata: [
+    '10% de descuento en servicios y 5% en productos de línea profesional.',
+    'Puntos Aura acelerados (x1,25) al pagar en salón.',
+    'Prioridad ligera en lista de espera de agenda.',
+    'Detalle de cumpleaños: mini beneficio u obsequio según campaña.',
+  ],
+  vip: [
+    'Hasta 20% en servicios premium y 15% en productos (según cartelera).',
+    'Puntos Aura x2 en visitas confirmadas con tu código de cliente.',
+    'Canal preferente con recepción / WhatsApp del salón para agendar.',
+    'Acceso anticipado a promociones, lanzamientos y eventos cerrados.',
+    'Un upgrade de servicio al año sujeto a disponibilidad.',
+  ],
+};
+
+export function MembresiasBody({ clienteRow, onMembershipChanged }) {
   const { colors: c } = useTheme();
+  const activeTier = getMembresiaTier(clienteRow?.membresia_nivel);
+
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -65,6 +54,9 @@ export function MembresiasBody() {
           borderColor: c.cardBorder,
           padding: spacing.md,
           marginBottom: spacing.md,
+        },
+        tierCardActive: {
+          borderWidth: 2,
         },
         tierHead: {
           flexDirection: 'row',
@@ -94,6 +86,18 @@ export function MembresiasBody() {
           color: c.foregroundMuted,
           marginTop: 4,
           lineHeight: 16,
+        },
+        activeTag: {
+          alignSelf: 'flex-start',
+          marginTop: 6,
+          paddingHorizontal: 8,
+          paddingVertical: 3,
+          borderRadius: radii.pill,
+        },
+        activeTagTxt: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 10,
+          letterSpacing: 0.5,
         },
         benefitsBlock: {
           paddingTop: spacing.sm,
@@ -128,17 +132,27 @@ export function MembresiasBody() {
 
   return (
     <>
+      <ActivarMembresiaCard clienteRow={clienteRow} onActivated={onMembershipChanged} />
+
       <Text style={styles.intro}>
-        Elegí tu camino de membresía. El salón define en App Salón cómo se sube de nivel y
-        vigencia de cada beneficio.
+        {activeTier
+          ? `Tenés membresía ${activeTier.label}. Los beneficios dependen del nivel activo en tu perfil.`
+          : 'Niveles definidos por el salón. Tu asesor te propone un plan y te entrega un código para activarlo arriba.'}
       </Text>
 
-      {TIERS.map((tier) => {
-        const Icon = tier.Icon;
+      {MEMBRESIA_TIERS.map((tier) => {
+        const Icon = TIER_ICONS[tier.id] || Medal;
+        const isActive = activeTier?.id === tier.id;
+        const benefits = TIER_BENEFITS[tier.id] || [];
         return (
           <View
             key={tier.id}
-            style={[styles.tierCard, { borderLeftColor: tier.accent, borderLeftWidth: 4 }]}
+            style={[
+              styles.tierCard,
+              { borderLeftColor: tier.accent, borderLeftWidth: 4 },
+              isActive && styles.tierCardActive,
+              isActive && { borderColor: tier.accent },
+            ]}
           >
             <View style={styles.tierHead}>
               <View style={[styles.tierIconWrap, { backgroundColor: `${tier.accent}18` }]}>
@@ -147,11 +161,16 @@ export function MembresiasBody() {
               <View style={styles.tierHeadText}>
                 <Text style={styles.tierLabel}>{tier.label}</Text>
                 <Text style={styles.tierSubtitle}>{tier.subtitle}</Text>
+                {isActive ? (
+                  <View style={[styles.activeTag, { backgroundColor: `${tier.accent}22` }]}>
+                    <Text style={[styles.activeTagTxt, { color: tier.accent }]}>TU NIVEL ACTIVO</Text>
+                  </View>
+                ) : null}
               </View>
             </View>
             <View style={styles.benefitsBlock}>
               <Text style={styles.benefitsKicker}>Beneficios</Text>
-              {tier.benefits.map((line, i) => (
+              {benefits.map((line, i) => (
                 <Text key={i} style={styles.benefitLine}>
                   · {line}
                 </Text>
@@ -162,8 +181,8 @@ export function MembresiasBody() {
       })}
 
       <Text style={styles.foot}>
-        Niveles Bronce, Plata y VIP son ilustrativos · condiciones finales y exclusiones las publica
-        el salón.
+        Bronce, Plata y VIP se activan solo con el código que genera tu asesor en App Salón · condiciones finales las
+        publica el salón.
       </Text>
     </>
   );

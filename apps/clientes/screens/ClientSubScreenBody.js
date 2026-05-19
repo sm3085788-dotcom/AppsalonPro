@@ -76,7 +76,7 @@ function NotificationsBody({ prefs, onPrefChange }) {
       <Row
         k="mensajes"
         label="Mensajes"
-        sub="Muestra el ícono Aura Line en Inicio y avisos del salón."
+        sub="Muestra el ícono Andreas Pro en Inicio y avisos del salón."
       />
       <Text style={[subStyles.muted, { marginTop: spacing.sm, fontSize: 12 }]}>
         Estado mensajes:{' '}
@@ -542,7 +542,7 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.MEMBRESIAS:
       return (
         <>
-          <MembresiasBody />
+          <MembresiasBody clienteRow={clienteRow} onMembershipChanged={onClienteUpdated} />
           <SalonButton
             variant="outlineGray"
             title="Cerrar"

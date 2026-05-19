@@ -612,6 +612,7 @@ export function TendenciasFeed({ onBack }) {
     const { error } = await registerMarketingInterest({
       type: MARKETING_INTEREST_TYPES.TENDENCIAS,
       title: video.title,
+      headline: video.title,
       detail: video.caption || null,
       postId: video.postId ?? null,
       mediaUrl: video.imageUri || video.videoUri || null,
@@ -626,7 +627,7 @@ export function TendenciasFeed({ onBack }) {
     }
     Alert.alert(
       '¡Listo!',
-      'El salón recibió tu interés en Mensajes (Aura Line). Te contactarán pronto.',
+      'Tu solicitud sobre esta publicación llegó al salón en Pedidos.',
     );
   };
 

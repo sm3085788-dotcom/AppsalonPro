@@ -3,6 +3,7 @@ import { formatMetaQ, progresoMetaPct } from '../../../shared/config/metaGlobal.
 import { addReporte } from './salonReportesStorage';
 
 const KEY = '@salon/meta_periodos_archivados_v1';
+const RENEWAL_ALERT_KEY = '@salon/meta_renovacion_alertada_v1';
 
 function toStartIso(d) {
   const x = new Date(d);
@@ -72,4 +73,95 @@ export async function maybeArchivarMetaVencida(meta) {
   await addReporte(item);
   await markArchivado(meta.id, meta.fecha_fin);
   return true;
+}
+
+function endOfDay(d) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/** El período ya terminó (después del último día de fecha_fin). */
+export function metaPeriodoTerminado(meta, at = new Date()) {
+  if (!meta?.fecha_fin) return false;
+  return at.getTime() > endOfDay(meta.fecha_fin).getTime();
+}
+
+/** Hoy es el último día del período (fecha_fin). */
+export function metaVenceHoy(meta, at = new Date()) {
+  if (!meta?.fecha_fin) return false;
+  return startOfDay(meta.fecha_fin).getTime() === startOfDay(at).getTime();
+}
+
+/** Sugiere el período siguiente con la misma duración que el anterior. */
+export function suggestNextPeriod(fechaInicio, fechaFin) {
+  const ini = fechaInicio ? new Date(fechaInicio) : startOfDay(new Date());
+  const fin = fechaFin ? new Date(fechaFin) : new Date(ini);
+  const durationMs = Math.max(24 * 60 * 60 * 1000, endOfDay(fin).getTime() - startOfDay(ini).getTime());
+  const nextIni = startOfDay(fin);
+  nextIni.setDate(nextIni.getDate() + 1);
+  const nextFin = new Date(nextIni.getTime() + durationMs);
+  return { fechaInicio: nextIni, fechaFin: nextFin };
+}
+
+async function loadRenewalAlerts() {
+  try {
+    const raw = await AsyncStorage.getItem(RENEWAL_ALERT_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function renewalToken(meta) {
+  return `${meta?.id}:${meta?.fecha_fin}`;
+}
+
+async function markRenewalAlertShown(meta) {
+  if (!meta?.id || !meta?.fecha_fin) return;
+  const list = await loadRenewalAlerts();
+  const token = renewalToken(meta);
+  if (!list.includes(token)) {
+    list.push(token);
+    await AsyncStorage.setItem(RENEWAL_ALERT_KEY, JSON.stringify(list.slice(-120)));
+  }
+}
+
+/**
+ * Determina si debe mostrarse alerta de renovación (una vez por período).
+ * @returns {{ show: boolean, reason: 'expired'|'due_today'|null, suggested: { fechaInicio: Date, fechaFin: Date }|null }}
+ */
+export async function getMetaRenewalPrompt(meta) {
+  if (!meta?.id || !meta?.fecha_fin || !meta?.activo) {
+    return { show: false, reason: null, suggested: null };
+  }
+
+  const expired = metaPeriodoTerminado(meta);
+  const dueToday = metaVenceHoy(meta);
+  if (!expired && !dueToday) {
+    return { show: false, reason: null, suggested: null };
+  }
+
+  const token = renewalToken(meta);
+  const shown = (await loadRenewalAlerts()).includes(token);
+  if (shown) {
+    return { show: false, reason: null, suggested: suggestNextPeriod(meta.fecha_inicio, meta.fecha_fin) };
+  }
+
+  return {
+    show: true,
+    reason: expired ? 'expired' : 'due_today',
+    suggested: suggestNextPeriod(meta.fecha_inicio, meta.fecha_fin),
+  };
+}
+
+export async function dismissMetaRenewalPrompt(meta) {
+  await markRenewalAlertShown(meta);
 }

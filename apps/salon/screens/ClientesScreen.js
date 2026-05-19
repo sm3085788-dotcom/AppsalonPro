@@ -19,8 +19,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { UserPlus, Calendar, X, ChevronRight } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db } from '@appsalon/shared-config';
+import { db, MEMBRESIA_TIERS, membresiaLabel, isClienteAppVerificado } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { MembresiaBadge } from '../components/MembresiaBadge';
 import { useTheme } from '../theme/ThemeProvider';
 import { shareClienteFicha } from '../utils/shareClienteFicha';
 
@@ -69,6 +70,10 @@ export function ClientesScreen({ onBack }) {
   const [saving, setSaving] = useState(false);
   const [detailCliente, setDetailCliente] = useState(null);
   const [exportingId, setExportingId] = useState(null);
+  const [codigosPendientes, setCodigosPendientes] = useState([]);
+  const [nivelCodigo, setNivelCodigo] = useState('bronce');
+  const [generandoCodigo, setGenerandoCodigo] = useState(false);
+  const [asignandoMembresia, setAsignandoMembresia] = useState(false);
 
   const loadClientes = useCallback(async () => {
     setLoadError(null);
@@ -98,7 +103,14 @@ export function ClientesScreen({ onBack }) {
     let rows = clientes;
     if (q) {
       rows = rows.filter((row) => {
-        const blob = [row.nombre, row.telefono, row.email, row.direccion, row.notas]
+        const blob = [
+          row.nombre,
+          row.telefono,
+          row.email,
+          row.direccion,
+          row.notas,
+          row.membresia_nivel ? membresiaLabel(row.membresia_nivel) : null,
+        ]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -130,6 +142,83 @@ export function ClientesScreen({ onBack }) {
       filterTipo === 'manual' ? 'Solo manual' : filterTipo === 'app' ? 'Solo app clientes' : 'Todos los orígenes';
     return `${orden} · ${tipo}`;
   }, [sortMode, filterTipo]);
+
+  const loadCodigosPendientes = useCallback(async (clienteId) => {
+    if (!clienteId) {
+      setCodigosPendientes([]);
+      return;
+    }
+    const { data } = await db.membresias.listCodigosPendientes(clienteId);
+    setCodigosPendientes(Array.isArray(data) ? data : []);
+  }, []);
+
+  useEffect(() => {
+    if (!detailCliente?.id) {
+      setCodigosPendientes([]);
+      return;
+    }
+    if (detailCliente.membresia_nivel) {
+      setNivelCodigo(String(detailCliente.membresia_nivel).toLowerCase());
+    }
+    if (isClienteAppVerificado(detailCliente)) {
+      void loadCodigosPendientes(detailCliente.id);
+    } else {
+      setCodigosPendientes([]);
+    }
+  }, [detailCliente, loadCodigosPendientes]);
+
+  const asignarMembresiaManual = async () => {
+    if (!detailCliente?.id) return;
+    setAsignandoMembresia(true);
+    const { data, error } = await db.membresias.asignarDirecta({
+      clienteId: detailCliente.id,
+      nivel: nivelCodigo,
+    });
+    setAsignandoMembresia(false);
+    if (error) {
+      Alert.alert('No se asignó', error.message || 'Intentá de nuevo.');
+      return;
+    }
+    const actualizado = data || { ...detailCliente, membresia_nivel: nivelCodigo };
+    setDetailCliente(actualizado);
+    setClientes((prev) => prev.map((c) => (c.id === actualizado.id ? { ...c, ...actualizado } : c)));
+    Alert.alert('Listo', `Membresía ${membresiaLabel(nivelCodigo)} asignada en la ficha (sin código).`);
+  };
+
+  const generarCodigoMembresia = async () => {
+    if (!detailCliente?.id) return;
+    if (!isClienteAppVerificado(detailCliente)) {
+      Alert.alert(
+        'Cliente manual',
+        'Este cliente no tiene App Clientes vinculada. Usá «Asignar membresía» para fijar el nivel en la ficha.',
+      );
+      return;
+    }
+    setGenerandoCodigo(true);
+    const { data, error } = await db.membresias.crearCodigo({
+      nivel: nivelCodigo,
+      clienteId: detailCliente.id,
+    });
+    setGenerandoCodigo(false);
+    if (error) {
+      const msg = error.message || '';
+      if (msg.includes('membresia_codigos') || msg.includes('does not exist')) {
+        Alert.alert(
+          'Base de datos',
+          'Ejecutá supabase-membresias-setup.sql en Supabase para habilitar códigos de membresía.',
+        );
+      } else {
+        Alert.alert('No se generó', msg || 'Intentá de nuevo.');
+      }
+      return;
+    }
+    await loadCodigosPendientes(detailCliente.id);
+    Alert.alert(
+      'Código para el cliente',
+      `Nivel ${membresiaLabel(nivelCodigo)}:\n\n${data.codigo}\n\nEl cliente debe ingresarlo en App Clientes → Membresías.`,
+      [{ text: 'Entendido' }],
+    );
+  };
 
   const openManual = useCallback(() => {
     setNombre('');
@@ -236,10 +325,13 @@ export function ClientesScreen({ onBack }) {
               <Text style={[styles.rowName, { color: c.foreground }]} numberOfLines={1}>
                 {item.nombre || 'Sin nombre'}
               </Text>
-              <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
-                <Text style={[styles.chipTxt, { color: manual ? '#1B5E20' : c.foregroundMuted }]}>
-                  {manual ? 'Manual' : 'App'}
-                </Text>
+              <View style={styles.rowChips}>
+                {item.membresia_nivel ? <MembresiaBadge nivel={item.membresia_nivel} compact /> : null}
+                <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
+                  <Text style={[styles.chipTxt, { color: manual ? '#1B5E20' : c.foregroundMuted }]}>
+                    {manual ? 'Manual' : 'App'}
+                  </Text>
+                </View>
               </View>
             </View>
             <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
@@ -467,6 +559,12 @@ export function ClientesScreen({ onBack }) {
                   ['Dirección', detailCliente.direccion],
                   ['Cumpleaños', detailCliente.cumpleanos],
                   ['Categoría', detailCliente.categoria],
+                  [
+                    'Membresía',
+                    detailCliente.membresia_nivel
+                      ? membresiaLabel(detailCliente.membresia_nivel)
+                      : 'Sin activar',
+                  ],
                   ['Puntos', detailCliente.puntos_fidelidad != null ? String(detailCliente.puntos_fidelidad) : null],
                   ['Origen', detailCliente.tipo_registro],
                   ['Notas', detailCliente.notas],
@@ -478,8 +576,91 @@ export function ClientesScreen({ onBack }) {
                     </View>
                   ) : null,
                 )}
+                {(() => {
+                  const conApp = isClienteAppVerificado(detailCliente);
+                  return (
+                    <View style={[styles.membresiaBlock, { borderColor: c.cardBorder }]}>
+                      <Text style={[styles.membresiaBlockTitle, { color: c.foreground }]}>
+                        {conApp ? 'Membresía · App Clientes' : 'Membresía · ficha manual'}
+                      </Text>
+                      <Text style={[styles.membresiaBlockHint, { color: c.foregroundMuted }]}>
+                        {conApp
+                          ? 'Generá un código para que el cliente lo active en App Clientes → Membresías.'
+                          : 'Cliente sin cuenta en la app: asigná el nivel directo en la ficha (no usa código).'}
+                      </Text>
+                      <View style={styles.chipRow}>
+                        {MEMBRESIA_TIERS.map((t) => {
+                          const on = nivelCodigo === t.id;
+                          return (
+                            <TouchableOpacity
+                              key={t.id}
+                              style={[
+                                styles.filterChip,
+                                {
+                                  borderColor: on ? t.accent : c.cardBorder,
+                                  backgroundColor: on ? `${t.accent}18` : c.card,
+                                },
+                              ]}
+                              onPress={() => setNivelCodigo(t.id)}
+                            >
+                              <Text style={[styles.filterChipTxt, { color: on ? t.accent : c.foreground }]}>
+                                {t.label}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      {conApp ? (
+                        <>
+                          <SalonButton
+                            title={
+                              generandoCodigo ? 'Generando…' : `Generar código ${membresiaLabel(nivelCodigo) || ''}`
+                            }
+                            variant="heroGold"
+                            fullWidth
+                            disabled={generandoCodigo || asignandoMembresia}
+                            onPress={() => void generarCodigoMembresia()}
+                            style={{ marginTop: spacing.xs }}
+                          />
+                          {codigosPendientes.length > 0 ? (
+                            <View style={{ marginTop: spacing.sm }}>
+                              <Text
+                                style={[styles.membresiaBlockHint, { color: c.foregroundMuted, marginBottom: 4 }]}
+                              >
+                                Códigos pendientes de activar:
+                              </Text>
+                              {codigosPendientes.map((row) => (
+                                <Text
+                                  key={row.id}
+                                  style={[styles.codigoPendiente, { color: c.primary }]}
+                                  selectable
+                                >
+                                  {row.codigo} · {membresiaLabel(row.nivel)}
+                                </Text>
+                              ))}
+                            </View>
+                          ) : null}
+                        </>
+                      ) : (
+                        <SalonButton
+                          title={
+                            asignandoMembresia
+                              ? 'Guardando…'
+                              : `Asignar membresía ${membresiaLabel(nivelCodigo) || ''}`
+                          }
+                          variant="heroGold"
+                          fullWidth
+                          disabled={asignandoMembresia || generandoCodigo}
+                          onPress={() => void asignarMembresiaManual()}
+                          style={{ marginTop: spacing.xs }}
+                        />
+                      )}
+                    </View>
+                  );
+                })()}
+
                 <SalonButton
-                  title={exportingId === detailCliente.id ? 'Exportando…' : 'Exportar ficha y foto'}
+                  title={exportingId === detailCliente.id ? 'Generando PDF…' : 'Exportar PDF (ficha y foto)'}
                   variant="outlineGold"
                   fullWidth
                   disabled={exportingId === detailCliente.id}
@@ -651,6 +832,12 @@ function createStyles(c) {
       justifyContent: 'space-between',
       gap: spacing.xs,
     },
+    rowChips: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      flexShrink: 0,
+    },
     rowAvatarWrap: {
       width: 34,
       height: 34,
@@ -799,6 +986,29 @@ function createStyles(c) {
       fontSize: 15,
       color: c.foreground,
       lineHeight: 21,
+    },
+    membresiaBlock: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginTop: spacing.md,
+    },
+    membresiaBlockTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      marginBottom: 4,
+    },
+    membresiaBlockHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
+    },
+    codigoPendiente: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      letterSpacing: 0.5,
+      marginBottom: 4,
     },
   });
 }
