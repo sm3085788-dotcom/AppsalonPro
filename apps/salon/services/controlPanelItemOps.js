@@ -1,6 +1,7 @@
 import { db, supabase } from '@appsalon/shared-config';
 import { getBasureroEntries, deleteBasureroEntryById } from './salonBasurero';
 import { loadReportes, deleteReporteById } from './salonReportesStorage';
+import { deleteModuleItemWithBasurero } from './salonDeleteFlow';
 
 function mapRows(rows, labelKey, subKeys = []) {
   return (rows || []).slice(0, 15).map((r) => ({
@@ -8,6 +9,48 @@ function mapRows(rows, labelKey, subKeys = []) {
     label: String(r[labelKey] || r.nombre || r.id || '—').slice(0, 120),
     sub: subKeys.map((k) => r[k]).filter(Boolean).join(' · ').slice(0, 160) || String(r.id || '').slice(0, 8),
   }));
+}
+
+function mapVentasRows(rows, limit = 25) {
+  return (rows || []).slice(0, limit).map((r) => ({
+    id: r.id,
+    label: r.no_factura || `Venta ${String(r.id).slice(0, 8)}`,
+    sub: [
+      r.cliente_nombre || r.cliente?.nombre,
+      r.total != null ? `Q${Number(r.total).toFixed(2)}` : null,
+      r.fecha ? new Date(r.fecha).toLocaleString('es-GT', { day: '2-digit', month: 'numeric' }) : null,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  }));
+}
+
+async function listVentasForPanel(query = '') {
+  const q = String(query || '').trim();
+  const ql = q.toLowerCase();
+  if (q.length >= 2) {
+    const { data, error } = await supabase
+      .from('ventas')
+      .select('id, no_factura, cliente_nombre, total, fecha')
+      .or(`no_factura.ilike.%${q}%,cliente_nombre.ilike.%${q}%`)
+      .order('fecha', { ascending: false })
+      .limit(25);
+    if (error) throw new Error(error.message);
+    return mapVentasRows(data);
+  }
+  const { data, error } = await db.ventas.getAll();
+  if (error) throw new Error(error.message);
+  let list = data || [];
+  if (q.length >= 1) {
+    list = list.filter((r) => {
+      const blob = [r.no_factura, r.cliente_nombre, r.cliente?.nombre, r.profesional]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return blob.includes(ql);
+    });
+  }
+  return mapVentasRows(list, 30);
 }
 
 export async function listModuleItems(actionId, query = '') {
@@ -38,8 +81,63 @@ export async function listModuleItems(actionId, query = '') {
     }));
   }
 
+  if (actionId === 'papeleria') {
+    return listVentasForPanel(q);
+  }
+
+  if (moduleListsOnExpand(actionId) && q.length < 2) {
+    return listModuleItemsExpanded(actionId);
+  }
+
   if (q.length < 2) return [];
   return searchModuleItems(actionId, q);
+}
+
+async function listModuleItemsExpanded(actionId) {
+  switch (actionId) {
+    case 'papeleria':
+      return listVentasForPanel('');
+    case 'clientes': {
+      const { data, error } = await db.clientes.getAll();
+      if (error) throw new Error(error.message);
+      return mapRows(data, 'nombre', ['telefono', 'email']).slice(0, 25);
+    }
+    case 'empleados': {
+      const { data, error } = await db.empleados.getAll();
+      if (error) throw new Error(error.message);
+      return mapRows(data, 'nombre', ['rol', 'telefono']).slice(0, 25);
+    }
+    case 'inventario': {
+      const { data, error } = await db.inventario.getAll();
+      if (error) throw new Error(error.message);
+      return mapRows(data, 'nombre', ['categoria', 'barcode']).slice(0, 25);
+    }
+    case 'incidentes': {
+      const { data, error } = await db.incidentes.getAll();
+      if (error) throw new Error(error.message);
+      return mapRows(data, 'folio', ['tipo_incidente', 'estado']).slice(0, 25);
+    }
+    case 'citas': {
+      const { data, error } = await db.citas.getAll();
+      if (error) throw new Error(error.message);
+      return (data || []).slice(0, 25).map((r) => ({
+        id: r.id,
+        label: `${r.cliente?.nombre || r.cliente_nombre || 'Cliente'} · ${r.servicio || 'Cita'}`,
+        sub: r.fecha_hora || r.estado || '',
+      }));
+    }
+    case 'proveedores': {
+      const { data, error } = await db.proveedores.getAll();
+      if (error) throw new Error(error.message);
+      return (data || []).slice(0, 25).map((r) => ({
+        id: r.id,
+        label: r.nombre_compania || 'Proveedor',
+        sub: [r.telefono, r.email].filter(Boolean).join(' · '),
+      }));
+    }
+    default:
+      return [];
+  }
 }
 
 export async function searchModuleItems(actionId, query) {
@@ -62,20 +160,9 @@ export async function searchModuleItems(actionId, query) {
       if (error) throw new Error(error.message);
       return mapRows(data, 'nombre', ['categoria', 'barcode']);
     }
-    case 'ventas_chain': {
-      const { data, error } = await supabase
-        .from('ventas')
-        .select('id, no_factura, cliente_nombre, total, fecha')
-        .or(`no_factura.ilike.%${q}%,cliente_nombre.ilike.%${q}%`)
-        .order('fecha', { ascending: false })
-        .limit(15);
-      if (error) throw new Error(error.message);
-      return (data || []).map((r) => ({
-        id: r.id,
-        label: r.no_factura || `Venta ${String(r.id).slice(0, 8)}`,
-        sub: [r.cliente_nombre, r.total != null ? `Q${Number(r.total).toFixed(2)}` : null].filter(Boolean).join(' · '),
-      }));
-    }
+    case 'papeleria':
+    case 'ventas_chain':
+      return listVentasForPanel(q);
     case 'citas': {
       const { data, error } = await db.citas.getAll();
       if (error) throw new Error(error.message);
@@ -147,48 +234,25 @@ export async function searchModuleItems(actionId, query) {
           sub: `${r.estado || '—'} · ${r.fecha_apertura || ''}`,
         }));
     }
-    case 'reportes_local': {
+    case 'reportes_local':
       return listModuleItems('reportes_local', q);
-    }
-    case 'basurero_local': {
+    case 'basurero_local':
       return listModuleItems('basurero_local', q);
-    }
     default:
       return [];
   }
 }
 
 export async function deleteModuleItem(actionId, id) {
-  switch (actionId) {
-    case 'clientes':
-      return (await db.clientes.delete(id)).error;
-    case 'empleados':
-      return (await db.empleados.delete(id)).error;
-    case 'inventario':
-      return (await db.inventario.delete(id)).error;
-    case 'ventas_chain':
-      return (await db.ventas.delete(id)).error;
-    case 'citas':
-      return (await db.citas.delete(id)).error;
-    case 'incidentes':
-      return (await db.incidentes.delete(id)).error;
-    case 'proveedores':
-      return (await db.proveedores.delete(id)).error;
-    case 'metas':
-      return (await db.metas.delete(id)).error;
-    case 'caja_chain':
-      return (await db.cajas.delete(id)).error;
-    case 'reportes_local': {
-      const n = await deleteReporteById(id);
-      return n > 0 ? null : { message: 'Reporte no encontrado en este dispositivo.' };
-    }
-    case 'basurero_local': {
-      const n = await deleteBasureroEntryById(id);
-      return n > 0 ? null : { message: 'Entrada no encontrada.' };
-    }
-    default:
-      return { message: 'Este módulo no admite borrado puntual desde el panel.' };
+  if (actionId === 'reportes_local') {
+    const n = await deleteReporteById(id);
+    return n > 0 ? null : { message: 'Reporte no encontrado en este dispositivo.' };
   }
+  if (actionId === 'basurero_local') {
+    const n = await deleteBasureroEntryById(id);
+    return n > 0 ? null : { message: 'Entrada no encontrada.' };
+  }
+  return deleteModuleItemWithBasurero(actionId, id);
 }
 
 export function moduleSupportsSearch(actionId) {
@@ -196,6 +260,7 @@ export function moduleSupportsSearch(actionId) {
     'clientes',
     'empleados',
     'inventario',
+    'papeleria',
     'ventas_chain',
     'citas',
     'incidentes',
@@ -208,5 +273,15 @@ export function moduleSupportsSearch(actionId) {
 }
 
 export function moduleListsOnExpand(actionId) {
-  return actionId === 'reportes_local' || actionId === 'basurero_local';
+  return [
+    'reportes_local',
+    'basurero_local',
+    'papeleria',
+    'clientes',
+    'empleados',
+    'inventario',
+    'incidentes',
+    'citas',
+    'proveedores',
+  ].includes(actionId);
 }

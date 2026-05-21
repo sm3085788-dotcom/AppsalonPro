@@ -82,6 +82,13 @@ export async function purgeVentasYRelacionadas(opts) {
   return deleteWhereDateBetween('ventas', 'fecha', r.fromISO, r.toISO);
 }
 
+/** Solo facturas/ventas (Papelería), sin devoluciones ni cambios. */
+export async function purgeVentasSolo(opts) {
+  const r = normalizeDateRangeOpts(opts);
+  if (!r) return wipeByGetAllDelete(() => db.ventas.getAll(), (id) => db.ventas.delete(id));
+  return deleteWhereDateBetween('ventas', 'fecha', r.fromISO, r.toISO);
+}
+
 export async function purgeCajasYMovimientos(opts) {
   const r = normalizeDateRangeOpts(opts);
   if (!r) {

@@ -29,8 +29,10 @@ import { SubScreenChrome, useSubStyles, SalonButton } from '../components/luxury
 import { useTheme } from '../theme/ThemeProvider';
 import {
   clearCajaSession,
+  getCajaChicaSaldo,
   getCajaSession,
   loadCajaTxs,
+  setCajaChicaSaldo,
   setCajaSession,
 } from '../services/salonCajaSession';
 
@@ -95,6 +97,7 @@ export function CajaScreen({ onBack }) {
 
   const [view, setView] = useState('gate');
   const [adminApertura, setAdminApertura] = useState('');
+  const [cajaChicaStr, setCajaChicaStr] = useState('');
   const [montoApertura, setMontoApertura] = useState('');
   const [gerenteCierre, setGerenteCierre] = useState('');
   const [administradorCierre, setAdministradorCierre] = useState('');
@@ -196,6 +199,34 @@ export function CajaScreen({ onBack }) {
 
   const feedHiddenCount = txs.length > TX_FEED_VISIBLE ? txs.length - TX_FEED_VISIBLE : 0;
 
+  useEffect(() => {
+    if (view !== 'gate') return;
+    let alive = true;
+    (async () => {
+      const saldo = await getCajaChicaSaldo();
+      if (!alive) return;
+      setCajaChicaStr(saldo > 0 ? String(saldo) : '');
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [view]);
+
+  const cajaChicaNum = useMemo(() => parseAmount(cajaChicaStr), [cajaChicaStr]);
+  const montoAperturaNum = useMemo(() => parseAmount(montoApertura), [montoApertura]);
+  const cajaChicaTrasApertura = useMemo(
+    () => Math.max(0, Math.round((cajaChicaNum - montoAperturaNum) * 100) / 100),
+    [cajaChicaNum, montoAperturaNum],
+  );
+  const chicaInsuficiente = montoAperturaNum > 0 && cajaChicaNum + 0.004 < montoAperturaNum;
+
+  const guardarSaldoCajaChica = async () => {
+    const n = parseAmount(cajaChicaStr);
+    await setCajaChicaSaldo(n);
+    setCajaChicaStr(n > 0 ? String(n) : '');
+    Alert.alert('Caja chica', `Saldo guardado: ${formatQ(n)}`);
+  };
+
   const abrirCaja = async () => {
     const nom = adminApertura.trim();
     const m = parseAmount(montoApertura);
@@ -207,8 +238,18 @@ export function CajaScreen({ onBack }) {
       Alert.alert('Dato requerido', 'Ingresá un monto inicial mayor a 0.');
       return;
     }
+    const chica = parseAmount(cajaChicaStr);
+    if (chica + 0.004 < m) {
+      Alert.alert(
+        'Caja chica',
+        `El monto inicial (${formatQ(m)}) supera el saldo de caja chica (${formatQ(chica)}). Ajustá el saldo o el monto a pasar a caja.`,
+      );
+      return;
+    }
     setAbriendo(true);
     try {
+      const nuevoSaldoChica = await setCajaChicaSaldo(chica - m);
+      setCajaChicaStr(nuevoSaldoChica > 0 ? String(nuevoSaldoChica) : '');
       const { data: existente } = await db.cajas.getCajaActual();
       if (existente?.id) {
         const session = await getCajaSession();
@@ -235,7 +276,7 @@ export function CajaScreen({ onBack }) {
       const { error: movErr } = await db.movimientosCaja.registrarApertura(
         nueva.id,
         m,
-        `Responsable: ${nom}`,
+        `Responsable: ${nom} · ${formatQ(m)} desde caja chica (queda ${formatQ(nuevoSaldoChica)})`,
       );
       if (movErr) throw movErr;
 
@@ -529,7 +570,7 @@ export function CajaScreen({ onBack }) {
                 <Text style={styles.gateTitle}>Abrir caja</Text>
               </View>
               <Text style={subStyles.muted}>
-                Antes del dashboard, registrá quién abre y con cuánto efectivo inicia el turno.
+                Registrá quién abre el turno. El monto inicial sale de la caja chica y se descuenta al abrir.
               </Text>
               <Text style={styles.label}>Administrador responsable</Text>
               <TextInput
@@ -539,7 +580,7 @@ export function CajaScreen({ onBack }) {
                 value={adminApertura}
                 onChangeText={setAdminApertura}
               />
-              <Text style={styles.label}>Monto inicial en caja</Text>
+              <Text style={styles.label}>Caja chica (saldo disponible)</Text>
               <View style={styles.qRow}>
                 <Text style={styles.qPrefix}>{Q}</Text>
                 <TextInput
@@ -547,10 +588,47 @@ export function CajaScreen({ onBack }) {
                   placeholder="0.00"
                   placeholderTextColor={c.foregroundSubtle}
                   keyboardType="decimal-pad"
+                  value={cajaChicaStr}
+                  onChangeText={(v) => setCajaChicaStr(v.replace(/[^\d.,]/g, ''))}
+                  onEndEditing={() => void setCajaChicaSaldo(parseAmount(cajaChicaStr))}
+                />
+              </View>
+              <TouchableOpacity onPress={() => void guardarSaldoCajaChica()} style={styles.linkSaveChica}>
+                <Text style={[styles.linkSaveChicaTxt, { color: c.primary }]}>Guardar saldo de caja chica</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.label}>Monto inicial en caja (se descuenta de caja chica)</Text>
+              <View style={styles.qRow}>
+                <Text style={styles.qPrefix}>{Q}</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { flex: 1, marginBottom: 0 },
+                    chicaInsuficiente && { borderColor: '#C62828' },
+                  ]}
+                  placeholder="0.00"
+                  placeholderTextColor={c.foregroundSubtle}
+                  keyboardType="decimal-pad"
                   value={montoApertura}
                   onChangeText={(v) => setMontoApertura(v.replace(/[^\d.,]/g, ''))}
                 />
               </View>
+              {montoAperturaNum > 0 ? (
+                <Text
+                  style={[
+                    styles.chicaPreview,
+                    { color: chicaInsuficiente ? '#C62828' : c.foregroundMuted },
+                  ]}
+                >
+                  {chicaInsuficiente
+                    ? `Falta ${formatQ(montoAperturaNum - cajaChicaNum)} en caja chica.`
+                    : `Tras abrir: quedarán ${formatQ(cajaChicaTrasApertura)} en caja chica.`}
+                </Text>
+              ) : (
+                <Text style={[styles.chicaPreview, { color: c.foregroundMuted }]}>
+                  Saldo actual en caja chica: {formatQ(cajaChicaNum)}
+                </Text>
+              )}
               <SalonButton
                 title={abriendo ? 'Abriendo…' : 'Entrar al dashboard de caja'}
                 variant="heroGold"
@@ -972,6 +1050,21 @@ function createStyles(c) {
       color: c.foreground,
       marginTop: spacing.md,
       marginBottom: spacing.xs,
+    },
+    linkSaveChica: {
+      alignSelf: 'flex-start',
+      marginBottom: spacing.sm,
+      marginTop: -spacing.xs,
+    },
+    linkSaveChicaTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    chicaPreview: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
     },
     input: {
       minHeight: 48,

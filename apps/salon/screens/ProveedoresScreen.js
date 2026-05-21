@@ -16,12 +16,14 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Building2, Plus, X, Image as ImageIcon, ChevronRight } from 'lucide-react-native';
+import { Building2, Plus, X, Image as ImageIcon, ChevronRight, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, uploadProveedorLogoFromUri } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
-import { recordSalonDeletion } from '../services/salonBasurero';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
+import { useListSelection } from '../hooks/useListSelection';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 
 function guessExt(uri, mime) {
   if (mime?.includes('png')) return 'png';
@@ -53,6 +55,8 @@ export function ProveedoresScreen({ onBack }) {
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const sel = useListSelection();
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -171,9 +175,23 @@ export function ProveedoresScreen({ onBack }) {
 
   const eliminar = () => {
     if (!form.id) return;
+    const snap = {
+      id: form.id,
+      nombre_compania: form.nombre_compania,
+      nit: form.nit,
+      telefono: form.telefono,
+      nombre_agente: form.nombre_agente,
+      telefono_agente: form.telefono_agente,
+      email: form.email,
+      sitio_web: form.sitio_web,
+      direccion: form.direccion,
+      notas: form.notas,
+      logo_url: form.remoteLogo,
+      remoteLogo: form.remoteLogo,
+    };
     Alert.alert(
       'Eliminar proveedor',
-      `¿Borrar "${form.nombre_compania.trim()}"? Se quitará de la base de datos.`,
+      `¿Borrar "${form.nombre_compania.trim()}"? Se guardará copia en Basurero.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -182,29 +200,8 @@ export function ProveedoresScreen({ onBack }) {
           onPress: async () => {
             setSaving(true);
             try {
-              const snap = {
-                id: form.id,
-                nombre_compania: form.nombre_compania,
-                nit: form.nit,
-                telefono: form.telefono,
-                nombre_agente: form.nombre_agente,
-                telefono_agente: form.telefono_agente,
-                email: form.email,
-                sitio_web: form.sitio_web,
-                direccion: form.direccion,
-                notas: form.notas,
-                remoteLogo: form.remoteLogo,
-              };
-              const { error } = await db.proveedores.delete(form.id);
-              if (error) throw error;
-              await recordSalonDeletion({
-                source: 'proveedores',
-                title: snap.nombre_compania || 'Proveedor',
-                summary:
-                  [form.nombre_agente, form.telefono_agente, form.email, form.telefono].filter(Boolean).join(' · ') ||
-                  '',
-                snapshot: snap,
-              });
+              const r = await deleteRowWithBasurero('proveedores', snap, () => db.proveedores.delete(form.id));
+              if (!r.ok) throw new Error(r.error);
               setModalOpen(false);
               setForm(emptyForm());
               load(false);
@@ -291,20 +288,73 @@ export function ProveedoresScreen({ onBack }) {
     </TouchableOpacity>
   );
 
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar proveedores',
+      `¿Eliminar ${sel.count} compañía(s)? Copia en Basurero antes del borrado.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = items.find((p) => String(p.id) === String(id));
+              if (!row) continue;
+              const r = await deleteRowWithBasurero('proveedores', row, () => db.proveedores.delete(row.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await load(false);
+            setDeleteBusy(false);
+            if (errs.length) Alert.alert('Parcial', `Eliminados: ${ok}. Fallos: ${errs.length}.`);
+            else Alert.alert('Listo', ok === 1 ? 'Proveedor eliminado.' : `Se eliminaron ${ok}.`);
+          },
+        },
+      ],
+    );
+  };
+
   const renderItem = ({ item }) => {
     const contacto = [item.telefono, item.email].filter(Boolean).join(' · ') || 'Sin contacto';
     const agente =
       item.nombre_agente || item.telefono_agente
         ? `Agente: ${[item.nombre_agente, item.telefono_agente].filter(Boolean).join(' · ')}`
         : null;
+    const picked = sel.isSelected(item.id);
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => openEdit(item)}
-        style={[styles.row, { borderBottomColor: c.cardBorder }]}
+        onPress={() => {
+          if (sel.active) sel.toggleId(item.id);
+          else openEdit(item);
+        }}
+        onLongPress={() => {
+          if (!sel.active) sel.setActive(true);
+          sel.toggleId(item.id);
+        }}
+        style={[styles.row, { borderBottomColor: c.cardBorder }, picked && { backgroundColor: c.surfaceMuted }]}
         accessibilityRole="button"
-        accessibilityLabel={`Editar ${item.nombre_compania}`}
+        accessibilityLabel={sel.active ? `Seleccionar ${item.nombre_compania}` : `Editar ${item.nombre_compania}`}
       >
+        {sel.active ? (
+          <View
+            style={[
+              styles.check,
+              {
+                borderColor: picked ? c.primary : c.cardBorder,
+                backgroundColor: picked ? c.primary : 'transparent',
+              },
+            ]}
+          >
+            {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+          </View>
+        ) : null}
         {item.logo_url ? (
           <Image source={{ uri: item.logo_url }} style={styles.logo} resizeMode="cover" />
         ) : (
@@ -330,7 +380,7 @@ export function ProveedoresScreen({ onBack }) {
             </Text>
           ) : null}
         </View>
-        <ChevronRight size={16} color={c.foregroundSubtle} />
+        {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} /> : null}
       </TouchableOpacity>
     );
   };
@@ -362,14 +412,13 @@ export function ProveedoresScreen({ onBack }) {
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
               {loading ? 'Cargando…' : `${filtered.length} compañía${filtered.length === 1 ? '' : 's'}`}
             </Text>
-            <TouchableOpacity
-              hitSlop={12}
-              onPress={() => setModalFiltros(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Ordenar y filtros"
-            >
-              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle }}> · </Text>
+              <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
+                <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
             {filtroResumen}
@@ -386,7 +435,7 @@ export function ProveedoresScreen({ onBack }) {
                 onRefresh={() => load(true)}
                 refreshing={refreshing}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
+                contentContainerStyle={{ paddingBottom: sel.count ? 100 : padBottom, flexGrow: 1 }}
                 ListEmptyComponent={
                   <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
                     {items.length === 0
@@ -398,6 +447,18 @@ export function ProveedoresScreen({ onBack }) {
             </View>
           )}
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={modalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalOpen(false)}>
@@ -658,6 +719,15 @@ function createStyles(c) {
       paddingHorizontal: spacing.sm,
       borderBottomWidth: StyleSheet.hairlineWidth,
       gap: spacing.sm,
+    },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.xs,
     },
     rowBody: { flex: 1, minWidth: 0 },
     rowTop: {

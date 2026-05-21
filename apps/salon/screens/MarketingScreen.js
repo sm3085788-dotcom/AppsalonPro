@@ -17,10 +17,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { Image as ImageIcon, Play, Trash2, Video as VideoIcon, X } from 'lucide-react-native';
+import { Image as ImageIcon, Play, Video as VideoIcon, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, uploadTendenciaMediaFromUri } from '@appsalon/shared-config';
-import { recordSalonDeletion } from '../services/salonBasurero';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
+import { useListSelection } from '../hooks/useListSelection';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -194,6 +196,8 @@ export function MarketingScreen({ onBack }) {
 
   const [posts, setPosts] = useState([]);
   const [heroPosts, setHeroPosts] = useState([]);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const sel = useListSelection();
   const [carouselPosts, setCarouselPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -569,46 +573,107 @@ export function MarketingScreen({ onBack }) {
     }
   };
 
-  const confirmDelete = (row) => {
+  const allMarketingPosts = useMemo(
+    () => [...heroPosts, ...carouselPosts, ...posts],
+    [heroPosts, carouselPosts, posts],
+  );
+
+  const removePostFromState = (row) => {
     const aud = String(row?.audience || '');
-    const isHero = aud === 'home_hero';
-    const isCar = aud === 'home_carousel';
-    const label = isHero
-      ? '¿Quitar esta diapositiva del carrusel «Reserva tu cita»?'
-      : isCar
-        ? '¿Quitar esta diapositiva del carrusel publicidad?'
-        : '¿Quitar este contenido de Tendencias?';
-    Alert.alert('Eliminar', label, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: async () => {
-          const snapshot = { ...row };
-          const { error } = await db.marketingPosts.delete(row.id);
-          if (error) {
-            Alert.alert('Error', error.message || 'No se pudo eliminar');
-            return;
-          }
-          await recordSalonDeletion({
-            source: 'marketing_posts',
-            title: row.title || (isHero ? 'Carrusel hero' : isCar ? 'Carrusel publicidad' : 'Post Tendencias'),
-            summary: `${String(row.content_type || 'media')} · ID ${row.id}`,
-            snapshot,
-          });
-          if (isHero) setHeroPosts((prev) => prev.filter((p) => p.id !== row.id));
-          else if (isCar) setCarouselPosts((prev) => prev.filter((p) => p.id !== row.id));
-          else setPosts((prev) => prev.filter((p) => p.id !== row.id));
+    if (aud === 'home_hero') setHeroPosts((prev) => prev.filter((p) => p.id !== row.id));
+    else if (aud === 'home_carousel') setCarouselPosts((prev) => prev.filter((p) => p.id !== row.id));
+    else setPosts((prev) => prev.filter((p) => p.id !== row.id));
+  };
+
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar contenido',
+      `¿Eliminar ${sel.count} publicación(es)? Copia en Basurero antes del borrado.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = allMarketingPosts.find((p) => String(p.id) === String(id));
+              if (!row) continue;
+              const r = await deleteRowWithBasurero('marketing_posts', row, () => db.marketingPosts.delete(row.id));
+              if (r.ok) {
+                ok += 1;
+                removePostFromState(row);
+              } else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            setDeleteBusy(false);
+            if (errs.length) Alert.alert('Parcial', `Eliminados: ${ok}. Fallos: ${errs.length}.`);
+            else Alert.alert('Listo', ok === 1 ? 'Contenido eliminado.' : `Se eliminaron ${ok}.`);
+          },
         },
-      },
-    ]);
+      ],
+    );
+  };
+
+  const wrapCardPress = (row, children) => {
+    const picked = sel.isSelected(row.id);
+    const inner = (
+      <View
+        style={[
+          styles.card,
+          { borderColor: c.cardBorder, backgroundColor: c.card },
+          picked && { borderColor: c.primary, backgroundColor: c.surfaceMuted },
+        ]}
+      >
+        {sel.active ? (
+          <View
+            style={[
+              styles.cardCheck,
+              {
+                borderColor: picked ? c.primary : c.cardBorder,
+                backgroundColor: picked ? c.primary : 'transparent',
+              },
+            ]}
+          >
+            {picked ? <Check size={12} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+          </View>
+        ) : null}
+        {children}
+      </View>
+    );
+    if (!sel.active) {
+      return (
+        <TouchableOpacity
+          activeOpacity={1}
+          onLongPress={() => {
+            sel.setActive(true);
+            sel.toggleId(row.id);
+          }}
+        >
+          {inner}
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => sel.toggleId(row.id)}
+        onLongPress={() => sel.toggleId(row.id)}
+      >
+        {inner}
+      </TouchableOpacity>
+    );
   };
 
   const renderHeroRow = ({ item }) => {
     const when = item.published_at || item.created_at;
     const overlay = parseCarouselOverlay(item);
-    return (
-      <View style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+    return wrapCardPress(
+      item,
+      <>
         <MarketingMediaThumb
           uri={item.media_url}
           contentType="image"
@@ -628,22 +693,16 @@ export function MarketingScreen({ onBack }) {
             CTA: {overlay.buttonTitle || 'Agendar ahora'} · {formatPostDate(when)}
           </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.iconBtn, { borderColor: c.cardBorder }]}
-          onPress={() => confirmDelete(item)}
-          accessibilityLabel="Eliminar diapositiva hero"
-        >
-          <Trash2 size={18} color={c.foregroundMuted} />
-        </TouchableOpacity>
-      </View>
+      </>,
     );
   };
 
   const renderCarouselRow = ({ item }) => {
     const when = item.published_at || item.created_at;
     const overlay = parseCarouselOverlay(item);
-    return (
-      <View style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+    return wrapCardPress(
+      item,
+      <>
         <MarketingMediaThumb
           uri={item.media_url}
           contentType="image"
@@ -664,14 +723,7 @@ export function MarketingScreen({ onBack }) {
             CTA: {overlay.buttonTitle} · {formatPostDate(when)}
           </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.iconBtn, { borderColor: c.cardBorder }]}
-          onPress={() => confirmDelete(item)}
-          accessibilityLabel="Eliminar diapositiva"
-        >
-          <Trash2 size={18} color={c.foregroundMuted} />
-        </TouchableOpacity>
-      </View>
+      </>,
     );
   };
 
@@ -682,8 +734,9 @@ export function MarketingScreen({ onBack }) {
     if (ct === 'image' || /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url)) typeLabel = 'Foto';
     else if (ct === 'video' || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url)) typeLabel = 'Video';
     const when = item.published_at || item.created_at;
-    return (
-      <View style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+    return wrapCardPress(
+      item,
+      <>
         <MarketingMediaThumb
           uri={item.media_url}
           contentType={item.content_type}
@@ -704,14 +757,7 @@ export function MarketingScreen({ onBack }) {
             Publicado: {formatPostDate(when)} · Estado: {String(item.status || '—')}
           </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.iconBtn, { borderColor: c.cardBorder }]}
-          onPress={() => confirmDelete(item)}
-          accessibilityLabel="Eliminar"
-        >
-          <Trash2 size={18} color={c.foregroundMuted} />
-        </TouchableOpacity>
-      </View>
+      </>,
     );
   };
 
@@ -733,6 +779,14 @@ export function MarketingScreen({ onBack }) {
             keyboardShouldPersistTaps="handled"
           >
             <Text style={[subStyles.muted, styles.hint]}>{CAPACITY_HINT}</Text>
+            <View style={styles.selectToolbar}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              {sel.active ? (
+                <Text style={[subStyles.muted, { fontSize: 12, flex: 1, marginLeft: spacing.sm }]}>
+                  Tocá las tarjetas para marcarlas y eliminar en lote (copia en Basurero).
+                </Text>
+              ) : null}
+            </View>
 
             <View style={styles.actionsRow}>
               <TouchableOpacity
@@ -832,6 +886,18 @@ export function MarketingScreen({ onBack }) {
             )}
           </ScrollView>
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={composerOpen} animationType="slide" transparent onRequestClose={closeComposer}>
@@ -1128,6 +1194,11 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 14,
     },
+    selectToolbar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.sm,
+    },
     card: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -1136,6 +1207,19 @@ function createStyles(c) {
       borderRadius: radii.md,
       padding: spacing.sm,
       marginBottom: spacing.sm,
+      position: 'relative',
+    },
+    cardCheck: {
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2,
     },
     cardTypeBadge: {
       fontFamily: typography.fontSansMedium,

@@ -18,6 +18,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import {
   purgeCitas,
   purgeVentasYRelacionadas,
+  purgeVentasSolo,
   purgeCajasYMovimientos,
   purgePedidosEcommerce,
   purgeMarketingRed,
@@ -38,9 +39,15 @@ import { searchModuleItems, deleteModuleItem, moduleSupportsSearch, listModuleIt
 
 const PURGE_ACTIONS = [
   {
+    id: 'papeleria',
+    title: 'Papelería (facturas / ventas)',
+    detail: 'Facturas del punto de venta y caja. Con fechas: por campo fecha de ventas. Podés buscar y borrar registros puntuales.',
+    run: purgeVentasSolo,
+  },
+  {
     id: 'ventas_chain',
     title: 'Ventas, devoluciones y cambios',
-    detail: 'Devoluciones, cambios de producto y ventas (Papelería). Con fechas: por campo fecha de cada tabla.',
+    detail: 'Devoluciones, cambios de producto y ventas. Con fechas: por campo fecha de cada tabla.',
     run: purgeVentasYRelacionadas,
   },
   {
@@ -595,7 +602,9 @@ export function ControlPanelScreen({ onBack }) {
                           style={[styles.moduleSearchInput, { color: c.foreground }]}
                           placeholder={
                             moduleListsOnExpand(action.id)
-                              ? 'Filtrar listado local (opcional)…'
+                              ? action.id === 'papeleria'
+                                ? 'Filtrar facturas (opcional)…'
+                                : 'Filtrar listado (opcional)…'
                               : 'Buscar un registro para borrar (mín. 2 letras)…'
                           }
                           placeholderTextColor={c.foregroundSubtle}

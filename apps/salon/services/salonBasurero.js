@@ -79,3 +79,14 @@ export async function deleteBasureroEntryById(id) {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return list.length - next.length;
 }
+
+/** Elimina varias entradas del basurero local (sin tocar Supabase). */
+export async function deleteBasureroEntriesByIds(ids) {
+  const idSet = new Set((ids || []).map(String));
+  if (!idSet.size) return 0;
+  const list = await getBasureroEntries();
+  const next = list.filter((e) => !idSet.has(String(e.id)));
+  const removed = list.length - next.length;
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return removed;
+}

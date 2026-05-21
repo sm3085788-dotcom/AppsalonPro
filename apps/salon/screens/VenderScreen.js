@@ -16,6 +16,7 @@ import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, registrarMontoVentaEnMeta } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
+import { printVentaTicket } from '../utils/ventaTicketPrint';
 
 const METODOS = [
   { id: 'efectivo', label: 'Efectivo' },
@@ -27,6 +28,24 @@ function formatQ(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return 'Q 0.00';
   return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function sanitizeMontoInput(t) {
+  let out = String(t || '')
+    .replace(/,/g, '.')
+    .replace(/[^\d.]/g, '');
+  const parts = out.split('.');
+  if (parts.length > 2) out = `${parts[0]}.${parts.slice(1).join('')}`;
+  const dot = out.indexOf('.');
+  if (dot >= 0) {
+    out = `${out.slice(0, dot + 1)}${out.slice(dot + 1).replace(/\./g, '').slice(0, 2)}`;
+  }
+  return out;
+}
+
+function parseMontoEfectivo(str) {
+  const n = Number(String(str || '').replace(',', '.').replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
 }
 
 function sanitizeDescuentoPct(t) {
@@ -72,6 +91,7 @@ export function VenderScreen({ onBack }) {
   const [lines, setLines] = useState([]);
   const [descuentoPctStr, setDescuentoPctStr] = useState('');
   const [metodoPago, setMetodoPago] = useState('efectivo');
+  const [efectivoRecibidoStr, setEfectivoRecibidoStr] = useState('');
   const [notas, setNotas] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -174,6 +194,16 @@ export function VenderScreen({ onBack }) {
 
   const total = useMemo(() => Math.max(0, subtotal - descuentoNum), [subtotal, descuentoNum]);
 
+  const efectivoRecibido = useMemo(() => parseMontoEfectivo(efectivoRecibidoStr), [efectivoRecibidoStr]);
+
+  const cambio = useMemo(() => {
+    if (metodoPago !== 'efectivo' || total <= 0) return 0;
+    return Math.max(0, Math.round((efectivoRecibido - total) * 100) / 100);
+  }, [metodoPago, efectivoRecibido, total]);
+
+  const efectivoInsuficiente =
+    metodoPago === 'efectivo' && total > 0 && efectivoRecibidoStr.trim() !== '' && efectivoRecibido < total - 0.004;
+
   const maxQtyForLine = useCallback(
     (line) => {
       const stock = stockById[line.productoId] ?? 0;
@@ -268,6 +298,16 @@ export function VenderScreen({ onBack }) {
       Alert.alert('Descuento', 'El descuento no puede ser mayor al subtotal.');
       return;
     }
+    if (metodoPago === 'efectivo') {
+      if (!efectivoRecibidoStr.trim()) {
+        Alert.alert('Efectivo', 'Ingresá el monto que entregó el cliente.');
+        return;
+      }
+      if (efectivoRecibido < total - 0.004) {
+        Alert.alert('Efectivo', `Falta ${formatQ(total - efectivoRecibido)}. El recibido debe cubrir el total.`);
+        return;
+      }
+    }
 
     const noFactura = nextNoFactura();
     const items = buildItemsPayload();
@@ -311,11 +351,28 @@ export function VenderScreen({ onBack }) {
 
       await registrarMontoVentaEnMeta(total);
 
-      Alert.alert(
-        'Factura creada',
-        `Folio: ${noFactura}\nTotal: ${formatQ(total)}\nPago: ${metodoPago}`,
-        [{ text: 'OK', onPress: () => {} }],
-      );
+      try {
+        await printVentaTicket({
+          no_factura: noFactura,
+          fecha: new Date().toISOString(),
+          cliente_nombre: clienteSel?.nombre?.trim() || null,
+          profesional: profNombre,
+          items,
+          subtotal,
+          descuento: descuentoNum,
+          total,
+          metodo_pago: metodoPago,
+          efectivo_recibido: metodoPago === 'efectivo' ? efectivoRecibido : null,
+          cambio: metodoPago === 'efectivo' ? cambio : null,
+          notas: notas.trim() || null,
+        });
+      } catch (printErr) {
+        Alert.alert(
+          'Venta guardada',
+          `Folio ${noFactura} registrado, pero no se pudo abrir el ticket: ${printErr?.message || 'error de impresión'}.`,
+        );
+      }
+
       await loadAll();
       resetFormPartial();
     } catch (e) {
@@ -328,6 +385,7 @@ export function VenderScreen({ onBack }) {
   const resetFormPartial = () => {
     setLines([]);
     setDescuentoPctStr('');
+    setEfectivoRecibidoStr('');
     setNotas('');
     setProductoSearch('');
     setProfesionalSel(null);
@@ -672,6 +730,55 @@ export function VenderScreen({ onBack }) {
               })}
             </View>
 
+            {metodoPago === 'efectivo' ? (
+              <View
+                style={[
+                  styles.efectivoBlock,
+                  {
+                    borderColor: posAccent.sectionBorder,
+                    backgroundColor: posAccent.sectionBg,
+                  },
+                ]}
+              >
+                <Text style={[styles.fieldLbl, { color: c.foreground, marginTop: 0 }]}>Efectivo del cliente</Text>
+                <Text style={[styles.hint, { color: c.foregroundMuted, marginTop: 0 }]}>
+                  Monto que entrega el cliente; el cambio se calcula solo.
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.efectivoInput,
+                    {
+                      borderColor: efectivoInsuficiente ? '#C62828' : posAccent.inputBorder,
+                      color: c.foreground,
+                      backgroundColor: c.card,
+                    },
+                  ]}
+                  placeholder={total > 0 ? formatQ(total) : '0.00'}
+                  placeholderTextColor={c.foregroundSubtle}
+                  value={efectivoRecibidoStr}
+                  onChangeText={(t) => setEfectivoRecibidoStr(sanitizeMontoInput(t))}
+                  keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
+                />
+                <View style={styles.cambioRow}>
+                  <Text style={[styles.cambioLbl, { color: c.foregroundMuted }]}>Cambio a entregar</Text>
+                  <Text
+                    style={[
+                      styles.cambioVal,
+                      {
+                        color: efectivoInsuficiente ? '#C62828' : c.primary,
+                      },
+                    ]}
+                  >
+                    {efectivoRecibidoStr.trim() ? formatQ(cambio) : '—'}
+                  </Text>
+                </View>
+                {efectivoInsuficiente ? (
+                  <Text style={styles.cambioWarn}>El monto recibido es menor al total ({formatQ(total)}).</Text>
+                ) : null}
+              </View>
+            ) : null}
+
             <Text style={[styles.fieldLbl, { color: c.foreground }]}>Notas</Text>
             <TextInput
               style={[
@@ -929,6 +1036,38 @@ function createStyles() {
     payChipTxt: {
       fontFamily: typography.fontSansMedium,
       fontSize: 14,
+    },
+    efectivoBlock: {
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      padding: spacing.md,
+      marginTop: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    efectivoInput: {
+      fontSize: 22,
+      fontFamily: typography.fontSansMedium,
+      textAlign: 'center',
+      marginBottom: spacing.sm,
+    },
+    cambioRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    cambioLbl: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    cambioVal: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 26,
+    },
+    cambioWarn: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      color: '#C62828',
+      marginTop: spacing.xs,
     },
     discountRow: {
       flexDirection: 'row',

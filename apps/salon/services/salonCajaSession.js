@@ -2,6 +2,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '@appsalon/shared-config';
 
 const KEY = '@salon/caja_abierta_v1';
+const KEY_CHICA = '@salon/caja_chica_saldo_v1';
+
+/** Saldo manual de caja chica (se descuenta al abrir turno con monto inicial). */
+export async function getCajaChicaSaldo() {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_CHICA);
+    if (raw == null || raw === '') return 0;
+    const n = Number(String(raw).replace(',', '.'));
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function setCajaChicaSaldo(amount) {
+  const n = Number(amount);
+  const safe = Number.isFinite(n) ? Math.max(0, Math.round(n * 100) / 100) : 0;
+  await AsyncStorage.setItem(KEY_CHICA, String(safe));
+  return safe;
+}
 
 /** @typedef {{ cajaId: string, nombre: string, monto: number, abierto: string }} CajaSession */
 

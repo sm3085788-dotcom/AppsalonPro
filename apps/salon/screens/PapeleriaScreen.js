@@ -13,10 +13,13 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, X } from 'lucide-react-native';
+import { ChevronRight, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useTheme } from '../theme/ThemeProvider';
 
 function formatQ(n) {
@@ -48,6 +51,8 @@ export function PapeleriaScreen({ onBack }) {
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [modalFiltros, setModalFiltros] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const sel = useListSelection();
   const [sortMode, setSortMode] = useState('fecha_desc');
   const [filterVendedor, setFilterVendedor] = useState('todos');
   const [filterMetodo, setFilterMetodo] = useState('todos');
@@ -179,6 +184,41 @@ export function PapeleriaScreen({ onBack }) {
     Alert.alert('Detalle de venta', body, [{ text: 'Cerrar' }], { cancelable: true });
   };
 
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar facturas',
+      `¿Eliminar ${sel.count} venta(s)? Se guardará una copia en Basurero antes de borrar en la base de datos.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const v = ventas.find((x) => String(x.id) === String(id));
+              if (!v) continue;
+              const r = await deleteRowWithBasurero('ventas', v, () => db.ventas.delete(v.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await load();
+            setDeleteBusy(false);
+            if (errs.length) {
+              Alert.alert('Completado con errores', `Eliminadas: ${ok}. Fallos: ${errs.length}.`);
+            } else {
+              Alert.alert('Listo', ok === 1 ? 'Factura eliminada.' : `Se eliminaron ${ok} facturas.`);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const renderItem = ({ item: v }) => {
     const prof = profesionalLabel(v);
     const cli = v?.cliente?.nombre || v?.cliente_nombre || '';
@@ -191,13 +231,38 @@ export function PapeleriaScreen({ onBack }) {
         })
       : '—';
     const subParts = [prof, cli, fecha, v?.metodo_pago].filter(Boolean);
+    const picked = sel.isSelected(v.id);
 
     return (
       <TouchableOpacity
-        style={[styles.row, { borderBottomColor: c.cardBorder }]}
-        onPress={() => verDetalle(v)}
+        style={[
+          styles.row,
+          { borderBottomColor: c.cardBorder },
+          picked && { backgroundColor: c.surfaceMuted },
+        ]}
+        onPress={() => {
+          if (sel.active) sel.toggleId(v.id);
+          else verDetalle(v);
+        }}
+        onLongPress={() => {
+          if (!sel.active) sel.setActive(true);
+          sel.toggleId(v.id);
+        }}
         activeOpacity={0.7}
       >
+        {sel.active ? (
+          <View
+            style={[
+              styles.check,
+              {
+                borderColor: picked ? c.primary : c.cardBorder,
+                backgroundColor: picked ? c.primary : 'transparent',
+              },
+            ]}
+          >
+            {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+          </View>
+        ) : null}
         <View style={styles.rowBody}>
           <View style={styles.rowTop}>
             <Text style={[styles.folio, { color: c.foreground }]} numberOfLines={1}>
@@ -211,7 +276,7 @@ export function PapeleriaScreen({ onBack }) {
             {subParts.length ? subParts.join(' · ') : '—'}
           </Text>
         </View>
-        <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
+        {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} /> : null}
       </TouchableOpacity>
     );
   };
@@ -221,7 +286,7 @@ export function PapeleriaScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Papelería"
-        subtitle="Facturas del punto de venta y caja."
+        subtitle="Facturas del punto de venta. «Seleccionar» para eliminar varias (copia en Basurero)."
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
@@ -242,14 +307,18 @@ export function PapeleriaScreen({ onBack }) {
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
               {loading ? '…' : `${filtered.length} factura${filtered.length === 1 ? '' : 's'}`}
             </Text>
-            <TouchableOpacity
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Ordenar y filtros"
-              onPress={() => setModalFiltros(true)}
-            >
-              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle }}> · </Text>
+              <TouchableOpacity
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Ordenar y filtros"
+                onPress={() => setModalFiltros(true)}
+              >
+                <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text
             style={[styles.filtroResumen, { color: c.foregroundSubtle }]}
@@ -267,7 +336,10 @@ export function PapeleriaScreen({ onBack }) {
                 keyExtractor={(v) => String(v.id)}
                 renderItem={renderItem}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                contentContainerStyle={{ paddingBottom: padBottom, flexGrow: filtered.length === 0 ? 1 : 0 }}
+                contentContainerStyle={{
+                  paddingBottom: sel.count ? 100 : padBottom,
+                  flexGrow: filtered.length === 0 ? 1 : 0,
+                }}
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
                   <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
@@ -280,6 +352,18 @@ export function PapeleriaScreen({ onBack }) {
             </View>
           )}
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
@@ -482,6 +566,15 @@ function createStyles(c) {
     },
     rowChev: {
       flexShrink: 0,
+    },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.xs,
     },
     emptyTxt: {
       fontFamily: typography.fontSans,

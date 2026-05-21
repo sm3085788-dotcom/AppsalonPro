@@ -16,7 +16,10 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Calendar, ChevronLeft, Clock, Minus, Plus, Stethoscope, UserPlus, X } from 'lucide-react-native';
+import { Calendar, ChevronLeft, Clock, Minus, Plus, Stethoscope, UserPlus, X, Check } from 'lucide-react-native';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, useSubStyles } from '../components/luxury';
@@ -134,6 +137,8 @@ export function AppointmentsScreen({ onBack }) {
   const [agendaEstado, setAgendaEstado] = useState('todos');
 
   const [citas, setCitas] = useState([]);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const sel = useListSelection();
   const [citasLoading, setCitasLoading] = useState(true);
   const [citasError, setCitasError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -523,6 +528,38 @@ export function AppointmentsScreen({ onBack }) {
     setRefreshing(false);
   }, [loadCitas]);
 
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar citas',
+      `¿Eliminar ${sel.count} cita(s)? Copia en Basurero antes del borrado.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = citas.find((x) => String(x.id) === String(id));
+              if (!row) continue;
+              const r = await deleteRowWithBasurero('citas', row, () => db.citas.delete(row.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await loadCitas();
+            setDeleteBusy(false);
+            if (errs.length) Alert.alert('Parcial', `Eliminadas: ${ok}. Fallos: ${errs.length}.`);
+            else Alert.alert('Listo', ok === 1 ? 'Cita eliminada.' : `Se eliminaron ${ok} citas.`);
+          },
+        },
+      ],
+    );
+  };
+
   const addPersonIconColor = isDark ? '#141414' : c.foreground;
 
   const rightAction = (
@@ -546,14 +583,13 @@ export function AppointmentsScreen({ onBack }) {
         <View style={styles.listShell}>
           <View style={styles.agendaToolbar}>
             <Text style={styles.agendaToolbarMeta}>Citas del salón</Text>
-            <TouchableOpacity
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Ordenar y filtros"
-              onPress={() => setAgendaFiltersOpen(true)}
-            >
-              <Text style={styles.agendaToolbarLink}>Ordenar · filtros</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle, fontSize: 13 }}> · </Text>
+              <TouchableOpacity hitSlop={12} onPress={() => setAgendaFiltersOpen(true)}>
+                <Text style={styles.agendaToolbarLink}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={[subStyles.muted, styles.agendaFilterHint]} numberOfLines={2}>
             {agendaFiltroResumen}. Deslizá hacia abajo para actualizar.
@@ -574,7 +610,6 @@ export function AppointmentsScreen({ onBack }) {
               data={citasFiltradas}
               keyExtractor={(item) => String(item.id)}
               style={styles.agendaList}
-              contentContainerStyle={styles.agendaListContent}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefreshCitas} tintColor={c.primary} />}
               ListEmptyComponent={
                 <View style={styles.listPlaceholder}>
@@ -584,24 +619,49 @@ export function AppointmentsScreen({ onBack }) {
                   </Text>
                 </View>
               }
+              contentContainerStyle={[
+                styles.agendaListContent,
+                sel.count > 0 && { paddingBottom: 100 },
+              ]}
               renderItem={({ item }) => {
                 const est = String(item.estado || 'pendiente').toLowerCase();
-                const pendiente = est === 'pendiente';
+                const pendiente = est === 'pendiente' && !sel.active;
                 const clienteNombre = item.cliente?.nombre || 'Sin ficha de cliente';
                 const busy = updatingId === item.id;
+                const picked = sel.isSelected(item.id);
                 return (
                   <View
                     style={[
                       styles.citaCard,
-                      { borderColor: c.cardBorder, backgroundColor: c.card },
+                      { borderColor: picked ? c.primary : c.cardBorder, backgroundColor: picked ? c.surfaceMuted : c.card },
                     ]}
                   >
                     <TouchableOpacity
                       activeOpacity={0.85}
-                      onPress={() => setDetailCita(item)}
+                      onPress={() => {
+                        if (sel.active) sel.toggleId(item.id);
+                        else setDetailCita(item);
+                      }}
+                      onLongPress={() => {
+                        if (!sel.active) sel.setActive(true);
+                        sel.toggleId(item.id);
+                      }}
                       accessibilityRole="button"
-                      accessibilityLabel={`Ver detalle de cita ${item.servicio}`}
+                      accessibilityLabel={sel.active ? `Seleccionar cita ${item.servicio}` : `Ver detalle de cita ${item.servicio}`}
                     >
+                      {sel.active ? (
+                        <View
+                          style={[
+                            styles.citaCheck,
+                            {
+                              borderColor: picked ? c.primary : c.cardBorder,
+                              backgroundColor: picked ? c.primary : 'transparent',
+                            },
+                          ]}
+                        >
+                          {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+                        </View>
+                      ) : null}
                       <View style={styles.citaCardTop}>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={[styles.citaServicio, { color: c.foreground }]} numberOfLines={2}>
@@ -657,6 +717,18 @@ export function AppointmentsScreen({ onBack }) {
             />
           )}
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={agendaFiltersOpen} animationType="slide" transparent onRequestClose={() => setAgendaFiltersOpen(false)}>
@@ -1294,6 +1366,19 @@ function createStyles(c) {
       borderWidth: 1,
       padding: spacing.md,
       marginBottom: spacing.sm,
+      position: 'relative',
+    },
+    citaCheck: {
+      position: 'absolute',
+      top: spacing.sm,
+      right: spacing.sm,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2,
     },
     citaCardTop: {
       flexDirection: 'row',

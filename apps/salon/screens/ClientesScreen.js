@@ -17,10 +17,13 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { UserPlus, Calendar, X, ChevronRight } from 'lucide-react-native';
+import { UserPlus, Calendar, X, ChevronRight, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, MEMBRESIA_TIERS, membresiaLabel, isClienteAppVerificado } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { MembresiaBadge } from '../components/MembresiaBadge';
 import { useTheme } from '../theme/ThemeProvider';
 import { shareClienteFicha } from '../utils/shareClienteFicha';
@@ -49,6 +52,8 @@ export function ClientesScreen({ onBack }) {
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [clientes, setClientes] = useState([]);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const sel = useListSelection();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
@@ -292,6 +297,38 @@ export function ClientesScreen({ onBack }) {
 
   const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
 
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar clientes',
+      `¿Eliminar ${sel.count} cliente(s)? Copia en Basurero. Puede fallar si hay citas o ventas vinculadas.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = clientes.find((x) => String(x.id) === String(id));
+              if (!row) continue;
+              const r = await deleteRowWithBasurero('clientes', row, () => db.clientes.delete(row.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await loadClientes();
+            setDeleteBusy(false);
+            if (errs.length) Alert.alert('Parcial', `Eliminados: ${ok}. Fallos: ${errs.length}.`);
+            else Alert.alert('Listo', ok === 1 ? 'Cliente eliminado.' : `Se eliminaron ${ok}.`);
+          },
+        },
+      ],
+    );
+  };
+
   const renderItem = useCallback(
     ({ item }) => {
       const manual = isManualProfile(item);
@@ -302,13 +339,34 @@ export function ClientesScreen({ onBack }) {
         item.direccion,
         edad != null ? `${edad} años` : null,
       ].filter(Boolean);
+      const picked = sel.isSelected(item.id);
 
       return (
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => setDetailCliente(item)}
-          style={[styles.row, { borderBottomColor: c.cardBorder }]}
+          onPress={() => {
+            if (sel.active) sel.toggleId(item.id);
+            else setDetailCliente(item);
+          }}
+          onLongPress={() => {
+            if (!sel.active) sel.setActive(true);
+            sel.toggleId(item.id);
+          }}
+          style={[styles.row, { borderBottomColor: c.cardBorder }, picked && { backgroundColor: c.surfaceMuted }]}
         >
+          {sel.active ? (
+            <View
+              style={[
+                styles.check,
+                {
+                  borderColor: picked ? c.primary : c.cardBorder,
+                  backgroundColor: picked ? c.primary : 'transparent',
+                },
+              ]}
+            >
+              {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+            </View>
+          ) : null}
           <View style={styles.rowAvatarWrap}>
             {item.photo_url ? (
               <Image source={{ uri: item.photo_url }} style={styles.rowAvatar} resizeMode="cover" />
@@ -338,11 +396,11 @@ export function ClientesScreen({ onBack }) {
               {subParts.length ? subParts.join(' · ') : 'Sin contacto'}
             </Text>
           </View>
-          <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
+          {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} /> : null}
         </TouchableOpacity>
       );
     },
-    [c.cardBorder, c.foreground, c.foregroundMuted, c.foregroundSubtle, c.surfaceMuted, styles],
+    [c, isDark, sel, styles],
   );
 
   const addPersonIconColor = isDark ? '#141414' : c.foreground;
@@ -385,14 +443,13 @@ export function ClientesScreen({ onBack }) {
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
               {loading ? '…' : `${filtered.length} cliente${filtered.length === 1 ? '' : 's'}`}
             </Text>
-            <TouchableOpacity
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Ordenar y filtros"
-              onPress={() => setModalFiltros(true)}
-            >
-              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle }}> · </Text>
+              <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
+                <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={[styles.filtroResumen, { color: c.foregroundSubtle }]} numberOfLines={1}>
             {filtroResumen}
@@ -420,7 +477,10 @@ export function ClientesScreen({ onBack }) {
                     tintColor={c.primary}
                   />
                 }
-                contentContainerStyle={{ paddingBottom: padList, flexGrow: filtered.length === 0 ? 1 : 0 }}
+                contentContainerStyle={{
+                  paddingBottom: sel.count ? 100 : padList,
+                  flexGrow: filtered.length === 0 ? 1 : 0,
+                }}
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
                   <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
@@ -436,6 +496,18 @@ export function ClientesScreen({ onBack }) {
             </View>
           )}
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={modalManual} animationType="slide" transparent onRequestClose={closeManual}>
@@ -876,6 +948,15 @@ function createStyles(c) {
       fontSize: 11,
       lineHeight: 15,
       marginTop: 2,
+    },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.xs,
     },
     rowChev: {
       flexShrink: 0,

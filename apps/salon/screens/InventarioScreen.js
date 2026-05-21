@@ -18,7 +18,10 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, Search, Star, Truck, X, Image as ImageIcon } from 'lucide-react-native';
+import { Plus, Search, Star, Truck, X, Image as ImageIcon, Check } from 'lucide-react-native';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   db,
@@ -436,6 +439,8 @@ export function InventarioScreen({ onBack }) {
   const [modalFiltros, setModalFiltros] = useState(false);
   const [sortInv, setSortInv] = useState('nombre_asc');
   const [filterInv, setFilterInv] = useState('todos');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const sel = useListSelection();
 
   const cardW = (winW - GRID_H_PAD * 2 - GAP * (GRID_COLS - 1)) / GRID_COLS;
 
@@ -755,6 +760,38 @@ export function InventarioScreen({ onBack }) {
 
   const addPersonIconColor = isDark ? '#141414' : c.foreground;
 
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar artículos',
+      `¿Eliminar ${sel.count} artículo(s)? Copia en Basurero.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = items.find((x) => String(x.id) === String(id));
+              if (!row) continue;
+              const r = await deleteRowWithBasurero('inventario', row, () => db.inventario.delete(row.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await load();
+            setDeleteBusy(false);
+            if (errs.length) Alert.alert('Parcial', `Eliminados: ${ok}. Fallos: ${errs.length}.`);
+            else Alert.alert('Listo', ok === 1 ? 'Artículo eliminado.' : `Se eliminaron ${ok}.`);
+          },
+        },
+      ],
+    );
+  };
+
   const rightAction = (
     <TouchableOpacity
       onPress={openNew}
@@ -796,14 +833,13 @@ export function InventarioScreen({ onBack }) {
             <Text style={[styles.invToolbarMeta, { color: c.foregroundMuted }]}>
               {filtered.length} artículo{filtered.length === 1 ? '' : 's'}
             </Text>
-            <TouchableOpacity
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Ordenar y filtros"
-              onPress={() => setModalFiltros(true)}
-            >
-              <Text style={[styles.invToolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle, fontSize: 13 }}> · </Text>
+              <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
+                <Text style={[styles.invToolbarLink, { color: c.primary }]}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.sm }]} numberOfLines={2}>
             {inventarioFiltroResumen}
@@ -821,20 +857,51 @@ export function InventarioScreen({ onBack }) {
             <FlatList
               data={gridRows}
               keyExtractor={(row, idx) => `row-${idx}-${row[0]?.id ?? 'e'}`}
-              contentContainerStyle={{ paddingHorizontal: GRID_H_PAD, paddingBottom: padBottom }}
+              contentContainerStyle={{
+                paddingHorizontal: GRID_H_PAD,
+                paddingBottom: sel.count ? 100 : padBottom,
+              }}
               renderItem={({ item: row }) => (
                 <View style={styles.gridRow}>
-                  {row.map((a) => (
-                    <TiendaProductCard
-                      key={a.id}
-                      width={cardW}
-                      product={rowToTiendaCard(a)}
-                      onPress={() => openEdit(a)}
-                      colors={c}
-                      isDark={isDark}
-                      compact
-                    />
-                  ))}
+                  {row.map((a) => {
+                    const picked = sel.isSelected(a.id);
+                    return (
+                      <TouchableOpacity
+                        key={a.id}
+                        activeOpacity={0.9}
+                        style={{ width: cardW, position: 'relative' }}
+                        onLongPress={() => {
+                          if (!sel.active) sel.setActive(true);
+                          sel.toggleId(a.id);
+                        }}
+                      >
+                        {sel.active ? (
+                          <View
+                            style={[
+                              styles.gridCheck,
+                              {
+                                borderColor: picked ? c.primary : c.cardBorder,
+                                backgroundColor: picked ? c.primary : c.card,
+                              },
+                            ]}
+                          >
+                            {picked ? <Check size={12} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+                          </View>
+                        ) : null}
+                        <TiendaProductCard
+                          width={cardW}
+                          product={rowToTiendaCard(a)}
+                          onPress={() => {
+                            if (sel.active) sel.toggleId(a.id);
+                            else openEdit(a);
+                          }}
+                          colors={c}
+                          isDark={isDark}
+                          compact
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               )}
               ListEmptyComponent={
@@ -845,6 +912,18 @@ export function InventarioScreen({ onBack }) {
             />
           )}
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={modalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalOpen(false)}>
@@ -1262,6 +1341,18 @@ function createStyles(c) {
       alignItems: 'flex-start',
       justifyContent: 'flex-start',
       gap: GAP,
+    },
+    gridCheck: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 3,
     },
     filterBackdrop: {
       flex: 1,

@@ -1,19 +1,20 @@
 -- =============================================================================
 -- AppSalon Pro — Foto de empleados (columna + Storage)
--- Ejecutar en Supabase → SQL Editor si la app no guarda o muestra la foto.
+-- Ejecutar en Supabase → SQL Editor si la app muestra "Bucket not found".
 -- =============================================================================
 
 ALTER TABLE public.empleados
   ADD COLUMN IF NOT EXISTS foto_url text;
 
 -- Bucket Storage "empleados" (fotos de fichas manuales)
+-- Si el INSERT falla, creá el bucket a mano: Storage → New bucket → id/name: empleados → Public
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'empleados',
   'empleados',
   true,
   5242880,
-  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']::text[]
 )
 ON CONFLICT (id) DO UPDATE SET
   public = EXCLUDED.public,

@@ -17,11 +17,31 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { X, UserPlus, ChevronRight, User, Image as ImageIcon } from 'lucide-react-native';
+import { X, UserPlus, ChevronRight, User, Image as ImageIcon, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useTheme } from '../theme/ThemeProvider';
 import { db, uploadEmpleadoFotoFromUri } from '@appsalon/shared-config';
+
+function mensajeErrorStorage(msg) {
+  const m = String(msg || '').toLowerCase();
+  if (m.includes('bucket not found') || m.includes('bucket') && m.includes('not found')) {
+    return (
+      'Falta el bucket «empleados» en Supabase Storage.\n\n' +
+      '1. Entrá a tu proyecto en supabase.com\n' +
+      '2. SQL Editor → pegá y ejecutá el archivo supabase-empleados-foto.sql (raíz del proyecto)\n' +
+      '   O en Storage → Create bucket → nombre: empleados → Public\n' +
+      '3. Volvé a la app y guardá de nuevo la foto.'
+    );
+  }
+  if (/foto_url|column.*does not exist/i.test(msg || '')) {
+    return `${msg}\n\nEjecutá también supabase-empleados-foto.sql (añade la columna foto_url).`;
+  }
+  return msg || 'No se pudo subir la foto.';
+}
 
 function guessExt(uri, mime) {
   if (mime?.includes('png')) return 'png';
@@ -48,6 +68,8 @@ export function EmpleadosScreen({ onBack }) {
   const [activoFiltro, setActivoFiltro] = useState('todos');
   const [empleados, setEmpleados] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const sel = useListSelection();
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
@@ -178,10 +200,7 @@ export function EmpleadosScreen({ onBack }) {
           contentType: localFoto.mimeType || 'image/jpeg',
         });
         if (upErr) {
-          throw new Error(
-            upErr.message ||
-              'No se pudo subir la foto. Ejecutá supabase-empleados-foto.sql en Supabase (columna + bucket).',
-          );
+          throw new Error(mensajeErrorStorage(upErr.message));
         }
         foto_url = publicUrl;
       }
@@ -212,9 +231,10 @@ export function EmpleadosScreen({ onBack }) {
 
   const confirmarEliminar = () => {
     if (!editingId) return;
+    const row = empleados.find((e) => String(e.id) === String(editingId));
     Alert.alert(
       'Eliminar empleado',
-      'Se borrará la ficha en empleados. Si tiene citas o ventas vinculadas, Supabase puede rechazar el borrado por FK.',
+      'Se borrará la ficha en empleados y se guardará una copia en Basurero. Si tiene citas o ventas vinculadas, Supabase puede rechazar el borrado.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -223,9 +243,10 @@ export function EmpleadosScreen({ onBack }) {
           onPress: async () => {
             setSaving(true);
             try {
-              const { error } = await db.empleados.delete(editingId);
-              if (error) {
-                Alert.alert('No se eliminó', error.message || 'Revisá dependencias en otras tablas.');
+              const snap = row || { id: editingId, nombre, rol, telefono, email, foto_url: remoteFoto };
+              const r = await deleteRowWithBasurero('empleados', snap, () => db.empleados.delete(editingId));
+              if (!r.ok) {
+                Alert.alert('No se eliminó', r.error || 'Revisá dependencias en otras tablas.');
                 return;
               }
               cerrarModalEmpleado();
@@ -235,6 +256,38 @@ export function EmpleadosScreen({ onBack }) {
             } finally {
               setSaving(false);
             }
+          },
+        },
+      ],
+    );
+  };
+
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar empleados',
+      `¿Eliminar ${sel.count} ficha(s)? Copia en Basurero antes del borrado en Supabase.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = empleados.find((e) => String(e.id) === String(id));
+              if (!row) continue;
+              const r = await deleteRowWithBasurero('empleados', row, () => db.empleados.delete(row.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await loadEmpleados();
+            setDeleteBusy(false);
+            if (errs.length) Alert.alert('Parcial', `Eliminados: ${ok}. Fallos: ${errs.length}.`);
+            else Alert.alert('Listo', ok === 1 ? 'Empleado eliminado.' : `Se eliminaron ${ok} fichas.`);
           },
         },
       ],
@@ -327,14 +380,13 @@ export function EmpleadosScreen({ onBack }) {
                 ? 'Cargando…'
                 : `${filtered.length} ficha${filtered.length === 1 ? '' : 's'} de ${empleados.length}`}
             </Text>
-            <TouchableOpacity
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Ordenar y filtros"
-              onPress={() => setModalFiltros(true)}
-            >
-              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle }}> · </Text>
+              <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
+                <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
             {resumenFiltros}
@@ -351,7 +403,7 @@ export function EmpleadosScreen({ onBack }) {
               <FlatList
                 data={filtered}
                 keyExtractor={(item) => String(item.id)}
-                contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
+                contentContainerStyle={{ paddingBottom: sel.count ? 100 : padBottom, flexGrow: 1 }}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                   <RefreshControl
@@ -367,14 +419,39 @@ export function EmpleadosScreen({ onBack }) {
                   const com = item.comision_porcentaje;
                   const comTxt =
                     com != null && com !== '' && Number(com) > 0 ? `Comisión ${Number(com)}%` : null;
+                  const picked = sel.isSelected(item.id);
                   return (
                     <TouchableOpacity
                       activeOpacity={0.7}
-                      onPress={() => openEditar(item)}
-                      style={[styles.row, { borderBottomColor: c.cardBorder }]}
+                      onPress={() => {
+                        if (sel.active) sel.toggleId(item.id);
+                        else openEditar(item);
+                      }}
+                      onLongPress={() => {
+                        if (!sel.active) sel.setActive(true);
+                        sel.toggleId(item.id);
+                      }}
+                      style={[
+                        styles.row,
+                        { borderBottomColor: c.cardBorder },
+                        picked && { backgroundColor: c.surfaceMuted },
+                      ]}
                       accessibilityRole="button"
-                      accessibilityLabel={`Editar ${item.nombre}`}
+                      accessibilityLabel={sel.active ? `Seleccionar ${item.nombre}` : `Editar ${item.nombre}`}
                     >
+                      {sel.active ? (
+                        <View
+                          style={[
+                            styles.check,
+                            {
+                              borderColor: picked ? c.primary : c.cardBorder,
+                              backgroundColor: picked ? c.primary : 'transparent',
+                            },
+                          ]}
+                        >
+                          {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+                        </View>
+                      ) : null}
                       {item.foto_url ? (
                         <Image source={{ uri: item.foto_url }} style={styles.avatar} resizeMode="cover" />
                       ) : (
@@ -400,7 +477,7 @@ export function EmpleadosScreen({ onBack }) {
                           </Text>
                         ) : null}
                       </View>
-                      <ChevronRight size={16} color={c.foregroundSubtle} />
+                      {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} /> : null}
                     </TouchableOpacity>
                   );
                 }}
@@ -411,6 +488,18 @@ export function EmpleadosScreen({ onBack }) {
             </View>
           )}
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={modalEmpleado} animationType="slide" transparent onRequestClose={cerrarModalEmpleado}>
@@ -731,6 +820,15 @@ function createStyles(c) {
       backgroundColor: 'rgba(0,0,0,0.55)',
       borderRadius: 12,
       padding: 4,
+    },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.xs,
     },
     rowBody: { flex: 1, minWidth: 0 },
     rowTop: {
