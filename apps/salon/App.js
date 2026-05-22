@@ -259,7 +259,7 @@ function SalonAdminShell({ onSignOut }) {
             showHomeBar
             searchValue={search}
             onSearchChange={setSearch}
-            placeholder="Buscar clientes, facturas, folios, teléfonos…"
+            placeholder="Buscar clientes, inventario, servicios, facturas, folios…"
             wrapStyle={styles.searchWrap}
           />
 

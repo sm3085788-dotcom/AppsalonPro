@@ -8,13 +8,24 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Minus, Plus, Trash2, User, Package, UserCog } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, registrarMontoVentaEnMeta } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton } from '../components/luxury';
+import {
+  db,
+  registrarMontoVentaEnMeta,
+  getArticuloTipo,
+  servicioUsaPreciosPorVolumen,
+  precioServicioPorVolumen,
+  getPreciosPorVolumenFromRow,
+  VOLUMEN_TRABAJO_OPCIONES,
+  volumenTrabajoLabel,
+} from '@appsalon/shared-config';
+import { SubScreenChrome, SalonButton, SalonSearchBar } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { printVentaTicket } from '../utils/ventaTicketPrint';
 
@@ -68,10 +79,28 @@ function nextNoFactura() {
   return `FAC-${y}${m}${day}-${r}`;
 }
 
-function qtyOnCart(lines, productoId, exceptLineId) {
+function qtyOnCart(lines, productoId, exceptLineId, volumenTrabajo = undefined) {
   return lines
-    .filter((l) => l.productoId === productoId && l.id !== exceptLineId)
+    .filter((l) => {
+      if (l.productoId !== productoId || l.id === exceptLineId) return false;
+      if (volumenTrabajo !== undefined) {
+        return (l.volumenTrabajo ?? null) === (volumenTrabajo ?? null);
+      }
+      return true;
+    })
     .reduce((s, l) => s + l.qty, 0);
+}
+
+function precioSugerenciaInventario(p) {
+  if (servicioUsaPreciosPorVolumen(p)) {
+    const tabla = getPreciosPorVolumenFromRow(p);
+    const vals = VOLUMEN_TRABAJO_OPCIONES.map((o) => tabla[o.id]).filter((n) => n != null && n > 0);
+    if (!vals.length) return formatQ(p.precio_venta);
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    return min === max ? formatQ(min) : `${formatQ(min)} – ${formatQ(max)}`;
+  }
+  return formatQ(p.precio_venta);
 }
 
 export function VenderScreen({ onBack }) {
@@ -94,6 +123,7 @@ export function VenderScreen({ onBack }) {
   const [efectivoRecibidoStr, setEfectivoRecibidoStr] = useState('');
   const [notas, setNotas] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [volumenPickProduct, setVolumenPickProduct] = useState(null);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -171,7 +201,9 @@ export function VenderScreen({ onBack }) {
     return inventario
       .filter((p) => {
         const blob = [p.nombre, p.categoria, p.barcode].filter(Boolean).join(' ').toLowerCase();
-        return blob.includes(q) && Number(p.stock_actual ?? 0) > 0;
+        if (!blob.includes(q)) return false;
+        if (getArticuloTipo(p) === 'servicio') return true;
+        return Number(p.stock_actual ?? 0) > 0;
       })
       .slice(0, 50);
   }, [inventario, productoSearch]);
@@ -206,26 +238,34 @@ export function VenderScreen({ onBack }) {
 
   const maxQtyForLine = useCallback(
     (line) => {
+      if (line.esServicio) return 99;
       const stock = stockById[line.productoId] ?? 0;
-      const other = qtyOnCart(lines, line.productoId, line.id);
+      const other = qtyOnCart(lines, line.productoId, line.id, line.volumenTrabajo);
       return Math.max(0, stock - other);
     },
     [lines, stockById],
   );
 
-  const addProduct = (p) => {
+  const pushLine = (p, { precio, volumenTrabajo = null, nombreExtra = null }) => {
+    const esServicio = getArticuloTipo(p) === 'servicio';
     const stock = Number(p.stock_actual ?? 0);
-    if (stock < 1) {
+    if (!esServicio && stock < 1) {
       Alert.alert('Stock', 'Este producto no tiene stock disponible.');
       return;
     }
-    const precio = Number(p.precio_venta ?? 0);
+    const baseNombre = p.nombre || (esServicio ? 'Servicio' : 'Producto');
+    const nombre = nombreExtra || baseNombre;
     setLines((prev) => {
-      const idx = prev.findIndex((l) => l.productoId === p.id);
+      const idx = prev.findIndex(
+        (l) =>
+          l.productoId === p.id && (l.volumenTrabajo ?? null) === (volumenTrabajo ?? null),
+      );
       if (idx >= 0) {
         const cur = prev[idx];
-        const other = qtyOnCart(prev, p.id, cur.id);
-        if (cur.qty + 1 > stock - other) return prev;
+        if (!esServicio) {
+          const other = qtyOnCart(prev, p.id, cur.id, volumenTrabajo);
+          if (cur.qty + 1 > stock - other) return prev;
+        }
         const next = [...prev];
         next[idx] = { ...cur, qty: cur.qty + 1 };
         return next;
@@ -233,23 +273,59 @@ export function VenderScreen({ onBack }) {
       return [
         ...prev,
         {
-          id: `${p.id}-${Date.now()}`,
+          id: `${p.id}-${volumenTrabajo || 'x'}-${Date.now()}`,
           productoId: p.id,
-          nombre: p.nombre || 'Producto',
+          nombre,
           precioUnit: precio,
           qty: 1,
+          esServicio,
+          volumenTrabajo,
         },
       ];
     });
     setProductoSearch('');
   };
 
+  const addProductWithVolumen = (p, volumenId) => {
+    const precio = precioServicioPorVolumen(p, volumenId);
+    if (!(precio > 0)) {
+      Alert.alert('Precio', 'Este nivel no tiene precio configurado en inventario.');
+      return;
+    }
+    const volLabel = volumenTrabajoLabel(volumenId);
+    pushLine(p, {
+      precio,
+      volumenTrabajo: volumenId,
+      nombreExtra: volLabel ? `${p.nombre} (${volLabel})` : p.nombre,
+    });
+  };
+
+  const addProduct = (p) => {
+    if (servicioUsaPreciosPorVolumen(p)) {
+      setVolumenPickProduct(p);
+      return;
+    }
+    const precio = Number(p.precio_venta ?? 0);
+    pushLine(p, { precio });
+  };
+
+  const closeVolumenPick = () => setVolumenPickProduct(null);
+
+  const onPickVolumen = (volumenId) => {
+    const p = volumenPickProduct;
+    closeVolumenPick();
+    if (p) addProductWithVolumen(p, volumenId);
+  };
+
   const setLineQty = (lineId, nextQty) => {
     setLines((prev) => {
       const line = prev.find((l) => l.id === lineId);
       if (!line) return prev;
-      const max = (stockById[line.productoId] ?? 0) - qtyOnCart(prev, line.productoId, lineId);
-      if (max < 1) return prev;
+      let max = 99;
+      if (!line.esServicio) {
+        max = (stockById[line.productoId] ?? 0) - qtyOnCart(prev, line.productoId, lineId, line.volumenTrabajo);
+        if (max < 1) return prev;
+      }
       const q = Math.max(1, Math.min(max, Math.floor(nextQty)));
       return prev.map((l) => (l.id === lineId ? { ...l, qty: q } : l));
     });
@@ -260,24 +336,30 @@ export function VenderScreen({ onBack }) {
   };
 
   const buildItemsPayload = () =>
-    lines.map((l) => ({
-      producto_id: l.productoId,
-      nombre: l.nombre,
-      cantidad: l.qty,
-      precio_unitario: l.precioUnit,
-      subtotal: Math.round(l.qty * l.precioUnit * 100) / 100,
-    }));
+    lines.map((l) => {
+      const item = {
+        producto_id: l.productoId,
+        nombre: l.nombre,
+        cantidad: l.qty,
+        precio_unitario: l.precioUnit,
+        subtotal: Math.round(l.qty * l.precioUnit * 100) / 100,
+      };
+      if (l.volumenTrabajo) item.volumen_trabajo = l.volumenTrabajo;
+      return item;
+    });
 
   const validateStock = () => {
     const byPid = {};
     for (const l of lines) {
-      byPid[l.productoId] = (byPid[l.productoId] || 0) + l.qty;
+      if (l.esServicio) continue;
+      const key = `${l.productoId}`;
+      byPid[key] = (byPid[key] || 0) + l.qty;
     }
-    for (const pid of Object.keys(byPid)) {
-      const need = byPid[pid];
-      const have = stockById[pid] ?? 0;
+    for (const key of Object.keys(byPid)) {
+      const need = byPid[key];
+      const have = stockById[key] ?? 0;
       if (need > have) {
-        const name = lines.find((x) => x.productoId === pid)?.nombre || pid;
+        const name = lines.find((x) => String(x.productoId) === key && !x.esServicio)?.nombre || key;
         return `Stock insuficiente para «${name}»: pedís ${need}, hay ${have}.`;
       }
     }
@@ -337,6 +419,7 @@ export function VenderScreen({ onBack }) {
       if (vErr) throw vErr;
 
       for (const l of lines) {
+        if (l.esServicio) continue;
         const { error: dErr } = await db.inventario.decrementarStock(l.productoId, l.qty);
         if (dErr) {
           Alert.alert(
@@ -414,19 +497,12 @@ export function VenderScreen({ onBack }) {
             </View>
             <Text style={[styles.sectionLabel, { color: c.foreground }]}>Cliente</Text>
           </View>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  borderColor: posAccent.inputBorder,
-                  color: c.foreground,
-                  backgroundColor: c.card,
-                },
-              ]}
-              placeholder="Buscar nombre, teléfono o correo…"
-              placeholderTextColor={c.foregroundSubtle}
+            <SalonSearchBar
               value={clienteSearch}
               onChangeText={setClienteSearch}
+              placeholder="Buscar cliente: nombre, teléfono o correo…"
+              accessibilityLabel="Buscar cliente"
+              style={{ borderColor: posAccent.inputBorder }}
             />
             {clienteSel ? (
               <View
@@ -482,19 +558,12 @@ export function VenderScreen({ onBack }) {
               </View>
               <Text style={[styles.sectionLabel, { color: c.foreground }]}>Profesional</Text>
             </View>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  borderColor: posAccent.inputBorder,
-                  color: c.foreground,
-                  backgroundColor: c.card,
-                },
-              ]}
-              placeholder="Buscar o escribir nombre del profesional…"
-              placeholderTextColor={c.foregroundSubtle}
+            <SalonSearchBar
               value={profesionalSearch}
               onChangeText={setProfesionalSearch}
+              placeholder="Buscar profesional por nombre o rol…"
+              accessibilityLabel="Buscar profesional"
+              style={{ borderColor: posAccent.inputBorder }}
             />
             {profesionalSel ? (
               <View
@@ -553,19 +622,12 @@ export function VenderScreen({ onBack }) {
               </View>
               <Text style={[styles.sectionLabel, { color: c.foreground }]}>Inventario</Text>
             </View>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  borderColor: posAccent.inputBorder,
-                  color: c.foreground,
-                  backgroundColor: c.card,
-                },
-              ]}
-              placeholder="Buscar producto, categoría o código…"
-              placeholderTextColor={c.foregroundSubtle}
+            <SalonSearchBar
               value={productoSearch}
               onChangeText={setProductoSearch}
+              placeholder="Buscar producto, servicio, categoría o código…"
+              accessibilityLabel="Buscar inventario para vender"
+              style={{ borderColor: posAccent.inputBorder }}
             />
             {productoSearch.trim().length > 0 ? (
               productosFiltrados.length > 0 ? (
@@ -581,7 +643,12 @@ export function VenderScreen({ onBack }) {
                           {item.nombre}
                         </Text>
                         <Text style={[styles.pickMeta, { color: c.foregroundMuted }]}>
-                          {formatQ(item.precio_venta)} · Stock {item.stock_actual ?? 0}
+                          {precioSugerenciaInventario(item)}
+                          {servicioUsaPreciosPorVolumen(item)
+                            ? ' · 4 precios (elegir al agregar)'
+                            : getArticuloTipo(item) === 'servicio'
+                              ? ' · Servicio'
+                              : ` · Stock ${item.stock_actual ?? 0}`}
                         </Text>
                       </View>
                       <View
@@ -597,7 +664,7 @@ export function VenderScreen({ onBack }) {
                 </View>
               ) : (
                 <Text style={[styles.hint, { color: c.foregroundMuted, marginBottom: spacing.sm }]}>
-                  Sin coincidencias con stock.
+                  Sin coincidencias. Los productos requieren stock; los servicios aparecen aunque el stock sea 0.
                 </Text>
               )
             ) : null}
@@ -620,7 +687,8 @@ export function VenderScreen({ onBack }) {
                       {line.nombre}
                     </Text>
                     <Text style={[styles.pickMeta, { color: c.foregroundMuted }]}>
-                      {formatQ(line.precioUnit)} c/u · máx. {maxQtyForLine(line)} u.
+                      {formatQ(line.precioUnit)} c/u
+                      {line.esServicio ? '' : ` · máx. ${maxQtyForLine(line)} u.`}
                     </Text>
                   </View>
                   <View style={styles.qtyRow}>
@@ -651,7 +719,7 @@ export function VenderScreen({ onBack }) {
               ))
             ) : productoSearch.trim().length === 0 ? (
               <Text style={[styles.hint, { color: c.foregroundMuted, marginBottom: 0 }]}>
-                Escribí en la búsqueda para elegir productos o servicios con stock.
+                Escribí en la búsqueda para agregar productos (con stock) o servicios.
               </Text>
             ) : null}
 
@@ -807,6 +875,42 @@ export function VenderScreen({ onBack }) {
             />
         </View>
       </SubScreenChrome>
+
+      <Modal
+        visible={!!volumenPickProduct}
+        transparent
+        animationType="fade"
+        onRequestClose={closeVolumenPick}
+      >
+        <Pressable style={styles.volOverlay} onPress={closeVolumenPick}>
+          <Pressable
+            style={[styles.volSheet, { backgroundColor: c.card, borderColor: c.cardBorder }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.volTitle, { color: c.foreground }]}>
+              {volumenPickProduct?.nombre || 'Servicio'}
+            </Text>
+            <Text style={[styles.volSub, { color: c.foregroundMuted }]}>
+              Elegí el volumen de trabajo (define el precio):
+            </Text>
+            {VOLUMEN_TRABAJO_OPCIONES.map((opt) => (
+              <TouchableOpacity
+                key={opt.id}
+                style={[styles.volOpt, { borderColor: c.cardBorder }]}
+                onPress={() => onPickVolumen(opt.id)}
+              >
+                <Text style={[styles.volOptLbl, { color: c.foreground }]}>{opt.label}</Text>
+                <Text style={[styles.volOptPrice, { color: c.primary }]}>
+                  {formatQ(precioServicioPorVolumen(volumenPickProduct, opt.id))}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.volCancel} onPress={closeVolumenPick}>
+              <Text style={[styles.volCancelTxt, { color: c.foregroundMuted }]}>Cancelar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
@@ -976,6 +1080,56 @@ function createStyles() {
     },
     trashBtn: {
       padding: spacing.xs,
+    },
+    volOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'center',
+      padding: spacing.lg,
+    },
+    volSheet: {
+      borderRadius: radii.lg,
+      borderWidth: 1,
+      padding: spacing.lg,
+      maxWidth: 400,
+      alignSelf: 'center',
+      width: '100%',
+    },
+    volTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 18,
+      marginBottom: spacing.xs,
+    },
+    volSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 14,
+      marginBottom: spacing.md,
+    },
+    volOpt: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: radii.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    volOptLbl: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 16,
+    },
+    volOptPrice: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 16,
+    },
+    volCancel: {
+      alignItems: 'center',
+      paddingTop: spacing.sm,
+    },
+    volCancelTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 15,
     },
     totalBlock: {
       marginTop: spacing.sm,

@@ -65,6 +65,7 @@ export function ClientesScreen({ onBack }) {
   const [filterTipo, setFilterTipo] = useState('todos');
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
+  const [email, setEmail] = useState('');
   const [direccion, setDireccion] = useState('');
   const [nacimiento, setNacimiento] = useState(() => {
     const d = new Date();
@@ -228,6 +229,7 @@ export function ClientesScreen({ onBack }) {
   const openManual = useCallback(() => {
     setNombre('');
     setTelefono('');
+    setEmail('');
     setDireccion('');
     const d = new Date();
     d.setFullYear(d.getFullYear() - 70);
@@ -256,16 +258,21 @@ export function ClientesScreen({ onBack }) {
       Alert.alert('Falta la dirección', 'Aunque sea zona o colonia, ayuda al equipo.');
       return;
     }
+    const em = email.trim().toLowerCase();
+    if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+      Alert.alert('Correo inválido', 'Revisá el formato del correo electrónico o dejalo vacío.');
+      return;
+    }
     const cumple = nacimiento.toISOString().split('T')[0];
     setSaving(true);
     try {
       const { error } = await db.clientes.create({
         nombre: nom,
         telefono: tel,
+        email: em || null,
         direccion: dir,
         cumpleanos: cumple,
         tipo_registro: 'manual_panel_tercera_edad',
-        email: null,
         notas: 'Alta manual desde panel salón (persona sin uso habitual de la app).',
         categoria: 'Nuevo',
       });
@@ -539,6 +546,18 @@ export function ClientesScreen({ onBack }) {
                 keyboardType="phone-pad"
               />
 
+              <Text style={styles.fieldLbl}>Correo electrónico (opcional)</Text>
+              <TextInput
+                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                placeholder="Ej. maria.lopez@correo.com"
+                placeholderTextColor={c.foregroundSubtle}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
               <Text style={styles.fieldLbl}>Dirección o zona</Text>
               <TextInput
                 style={[styles.fieldInp, styles.fieldArea, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
@@ -638,8 +657,6 @@ export function ClientesScreen({ onBack }) {
                       : 'Sin activar',
                   ],
                   ['Puntos', detailCliente.puntos_fidelidad != null ? String(detailCliente.puntos_fidelidad) : null],
-                  ['Origen', detailCliente.tipo_registro],
-                  ['Notas', detailCliente.notas],
                 ].map(([label, val]) =>
                   val ? (
                     <View key={label} style={styles.detailRow}>

@@ -12,12 +12,28 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { isSalonAdminRole } from './salonRoles.js';
-import { inventarioRowToAgendaServicio, inventarioRowToAgendaItem, splitNotas, sanitizeInventarioFechaVencimiento } from './inventarioMeta.js';
+import {
+  inventarioRowToAgendaServicio,
+  inventarioRowToAgendaItem,
+  splitNotas,
+  sanitizeInventarioFechaVencimiento,
+  parseDuracionMinutosFromMeta,
+} from './inventarioMeta.js';
 
 export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
 export {
   TIENDA_JSON_MARK,
   DEFAULT_TIENDA_META,
+  VOLUMEN_TRABAJO_OPCIONES,
+  volumenTrabajoLabel,
+  emptyPreciosPorVolumen,
+  normalizePreciosPorVolumen,
+  servicioUsaPreciosPorVolumen,
+  getPreciosPorVolumenFromRow,
+  precioServicioPorVolumen,
+  precioVentaReferencia,
+  inventarioSearchSubtitle,
+  parseDuracionMinutosFromMeta,
   splitNotas,
   getArticuloTipo,
   mergeNotas,
@@ -460,8 +476,17 @@ export const db = {
         .single();
     },
 
-    /** Tras guardar inventario tipo servicio, refleja en tabla servicios (agenda). */
+    /** Tras guardar inventario tipo servicio, refleja en tabla servicios (agenda) si existe. */
     syncFromInventario: async ({ nombre, precio_venta, notas }) => {
+      const serviciosTableMissing = (err) => {
+        const msg = String(err?.message || err || '');
+        return (
+          err?.code === 'PGRST205' ||
+          msg.includes('Could not find the table') ||
+          msg.includes("'public.servicios'")
+        );
+      };
+
       const { meta } = splitNotas(notas);
       if (meta.articuloTipo !== 'servicio') {
         return { data: null, error: null, skipped: true };
@@ -471,28 +496,39 @@ export const db = {
         return { error: { message: 'Nombre de servicio vacío' } };
       }
       const precio = Number(precio_venta) || 0;
-      const duracion_minutos = Math.max(15, Math.floor(Number(meta.duracion_minutos) || 60));
+      const duracion_minutos = parseDuracionMinutosFromMeta(meta);
 
       const { data: candidates, error: findErr } = await supabase
         .from('servicios')
         .select('id, nombre')
         .ilike('nombre', nombreTrim)
         .limit(10);
-      if (findErr) return { error: findErr };
+      if (findErr) {
+        if (serviciosTableMissing(findErr)) return { data: null, error: null, skipped: true };
+        return { error: findErr };
+      }
 
       const key = nombreTrim.toLowerCase();
       const existing = (candidates || []).find((r) => String(r.nombre || '').trim().toLowerCase() === key);
 
       if (existing?.id) {
-        return await supabase
+        const upd = await supabase
           .from('servicios')
           .update({ precio, duracion_minutos, nombre: nombreTrim })
           .eq('id', existing.id)
           .select('id, nombre, precio, duracion_minutos')
           .single();
+        if (upd.error && serviciosTableMissing(upd.error)) {
+          return { data: null, error: null, skipped: true };
+        }
+        return upd;
       }
 
-      return await db.servicios.create({ nombre: nombreTrim, precio, duracion_minutos });
+      const created = await db.servicios.create({ nombre: nombreTrim, precio, duracion_minutos });
+      if (created.error && serviciosTableMissing(created.error)) {
+        return { data: null, error: null, skipped: true };
+      }
+      return created;
     },
   },
 

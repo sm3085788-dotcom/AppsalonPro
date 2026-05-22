@@ -26,10 +26,10 @@ import { SubScreenChrome, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { db, supabase } from '@appsalon/shared-config';
+import { offerEnviarCitaWhatsApp } from '../utils/citaWhatsApp';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 
-const GT_PREFIX = '+502';
 const MEDICAL_ITEMS = [
   { key: 'allergy', label: 'Alergias conocidas' },
   { key: 'pregnancy', label: 'Embarazo / lactancia' },
@@ -100,8 +100,6 @@ export function AppointmentsScreen({ onBack }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [clientQuery, setClientQuery] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
-  const [fullName, setFullName] = useState('');
-  const [phoneLocal, setPhoneLocal] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
   const [selectedLines, setSelectedLines] = useState([]);
   const [appointmentDate, setAppointmentDate] = useState(new Date());
@@ -330,9 +328,14 @@ export function AppointmentsScreen({ onBack }) {
     setSelectedLines((prev) => prev.filter((l) => l.id !== id));
   };
 
+  const selectedEmployee = useMemo(
+    () => catalogEmpleados.find((e) => e.id === employeeId) ?? null,
+    [catalogEmpleados, employeeId],
+  );
+
   const staffFiltered = useMemo(() => {
     const q = staffSearch.trim().toLowerCase();
-    if (!q) return catalogEmpleados;
+    if (q.length < 2) return [];
     return catalogEmpleados.filter((e) => {
       const n = String(e.nombre || '').toLowerCase();
       const r = String(e.rol || '').toLowerCase();
@@ -345,8 +348,6 @@ export function AppointmentsScreen({ onBack }) {
     setComposerOpen(false);
     setClientQuery('');
     setSelectedClient(null);
-    setFullName('');
-    setPhoneLocal('');
     setServiceSearch('');
     setSelectedLines([]);
     setEmployeeId(null);
@@ -377,21 +378,12 @@ export function AppointmentsScreen({ onBack }) {
 
   const selectClient = (row) => {
     setSelectedClient(row);
-    setClientQuery(row.nombre || '');
-    setFullName(row.nombre || '');
-    const tel = String(row.telefono || '').replace(/\D/g, '');
-    if (tel.startsWith('502')) {
-      setPhoneLocal(tel.slice(3, 11));
-    } else {
-      setPhoneLocal(tel.slice(0, 8));
-    }
+    setClientQuery('');
   };
 
   const clearSelectedClient = () => {
     setSelectedClient(null);
     setClientQuery('');
-    setFullName('');
-    setPhoneLocal('');
   };
 
   const toggleMedical = (key) => {
@@ -425,14 +417,35 @@ export function AppointmentsScreen({ onBack }) {
     setUpdatingId(null);
     if (error) {
       Alert.alert('No se pudo actualizar', error.message || 'Intentá de nuevo.');
-      return;
+      return false;
     }
     await loadCitas();
+    return true;
   };
 
-  const confirmarCita = (id) => {
-    void solicitarActualizacionEstado(id, 'confirmado').then(() => {
+  const enviarWhatsAppCita = (cita, estado = 'pendiente') => {
+    if (!cita?.cliente?.telefono && !cita?.cliente_id) return;
+    void offerEnviarCitaWhatsApp({
+      telefono: cita.cliente?.telefono,
+      clienteNombre: cita.cliente?.nombre,
+      servicio: cita.servicio,
+      fechaHora: cita.fecha_hora,
+      profesionalNombre: cita.empleado?.nombre,
+      precio: cita.precio,
+      estado,
+    });
+  };
+
+  const confirmarCita = (citaOrId) => {
+    const cita =
+      typeof citaOrId === 'object' && citaOrId?.id
+        ? citaOrId
+        : citas.find((c) => c.id === citaOrId) || (detailCita?.id === citaOrId ? detailCita : null);
+    const id = cita?.id ?? citaOrId;
+    void solicitarActualizacionEstado(id, 'confirmado').then((ok) => {
+      if (!ok) return;
       setDetailCita((prev) => (prev?.id === id ? { ...prev, estado: 'confirmado' } : prev));
+      if (cita) enviarWhatsAppCita({ ...cita, estado: 'confirmado' }, 'confirmado');
     });
   };
 
@@ -455,8 +468,8 @@ export function AppointmentsScreen({ onBack }) {
       Alert.alert('Producto o servicio', 'Agregá al menos un ítem del inventario.');
       return;
     }
-    if (!fullName.trim()) {
-      Alert.alert('Nombre', 'Ingresá el nombre del cliente.');
+    if (!selectedClient?.id) {
+      Alert.alert('Cliente', 'Buscá y seleccioná un cliente de la lista.');
       return;
     }
     const dt = new Date(appointmentDate);
@@ -464,12 +477,6 @@ export function AppointmentsScreen({ onBack }) {
     const fecha_hora = dt.toISOString();
 
     const notasParts = [];
-    if (!selectedClient) {
-      notasParts.push('Alta manual (salón)');
-      if (fullName.trim()) notasParts.push(`Contacto: ${fullName.trim()}`);
-      const digits = phoneLocal.replace(/\D/g, '').slice(0, 8);
-      if (digits) notasParts.push(`Tel: ${GT_PREFIX}${digits}`);
-    }
     if (note.trim()) notasParts.push(note.trim());
     const med = MEDICAL_ITEMS.filter((i) => medicalFlags[i.key]).map((i) => i.label);
     if (med.length) notasParts.push(`Salud: ${med.join(', ')}`);
@@ -499,6 +506,15 @@ export function AppointmentsScreen({ onBack }) {
       return;
     }
     await loadCitas();
+    await offerEnviarCitaWhatsApp({
+      telefono: selectedClient.telefono,
+      clienteNombre: selectedClient.nombre,
+      servicio: itemsDesc,
+      fechaHora: dt,
+      profesionalNombre: selectedEmployee?.nombre,
+      precio: finalPrice,
+      estado: 'pendiente',
+    });
     Alert.alert('Cita registrada', 'La cita quedó guardada en la agenda como pendiente.');
     resetComposer();
   };
@@ -698,7 +714,7 @@ export function AppointmentsScreen({ onBack }) {
                         <TouchableOpacity
                           style={[styles.citaActBtn, styles.citaActBtnConfirm, { opacity: busy ? 0.5 : 1 }]}
                           disabled={busy}
-                          onPress={() => confirmarCita(item.id)}
+                          onPress={() => confirmarCita(item)}
                         >
                           <Text style={[styles.citaActBtnTxt, styles.citaActBtnTxtFilled]}>Confirmar</Text>
                         </TouchableOpacity>
@@ -867,11 +883,27 @@ export function AppointmentsScreen({ onBack }) {
                     </View>
                   ) : null}
                 </ScrollView>
+                {detailCita.cliente?.telefono ? (
+                  <SalonButton
+                    title="Enviar confirmación por WhatsApp"
+                    variant="outlineGray"
+                    fullWidth
+                    onPress={() =>
+                      enviarWhatsAppCita(
+                        detailCita,
+                        String(detailCita.estado || 'pendiente').toLowerCase() === 'confirmado'
+                          ? 'confirmado'
+                          : 'pendiente',
+                      )
+                    }
+                    style={{ marginTop: spacing.md }}
+                  />
+                ) : null}
                 {String(detailCita.estado || 'pendiente').toLowerCase() === 'pendiente' ? (
                   <View style={[styles.citaActions, { marginTop: spacing.md }]}>
                     <TouchableOpacity
                       style={[styles.citaActBtn, styles.citaActBtnConfirm]}
-                      onPress={() => confirmarCita(detailCita.id)}
+                      onPress={() => confirmarCita(detailCita)}
                     >
                       <Text style={[styles.citaActBtnTxt, styles.citaActBtnTxtFilled]}>Confirmar</Text>
                     </TouchableOpacity>
@@ -943,63 +975,60 @@ export function AppointmentsScreen({ onBack }) {
               </Text>
 
               <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Cliente (buscar existente)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Buscar por nombre, teléfono o correo"
-                placeholderTextColor={c.foregroundSubtle}
-                value={clientQuery}
-                onChangeText={(v) => {
-                  if (selectedClient) setSelectedClient(null);
-                  setClientQuery(v);
-                  setFullName(v);
-                }}
-              />
-              {clientQuery.trim().length > 0 && clientQuery.trim().length < 2 ? (
-                <Text style={subStyles.muted}>Escribí al menos 2 letras para buscar entre los clientes.</Text>
-              ) : null}
-              {clientMatches.length > 0 ? (
-                <View style={styles.suggestions}>
-                  {clientMatches.map((row) => (
-                    <TouchableOpacity
-                      key={row.id}
-                      style={styles.suggestionRow}
-                      onPress={() => selectClient(row)}
-                    >
-                      <Text style={styles.suggestionName}>{row.nombre}</Text>
-                      <Text style={subStyles.muted}>{row.telefono || 'Sin teléfono'}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
               {selectedClient ? (
-                <TouchableOpacity onPress={clearSelectedClient} style={styles.inlineBtn}>
-                  <Text style={styles.inlineBtnTxt}>Quitar cliente seleccionado</Text>
-                </TouchableOpacity>
-              ) : null}
-
-              <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Nombre completo</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Nombre y apellido"
-                placeholderTextColor={c.foregroundSubtle}
-                value={fullName}
-                onChangeText={setFullName}
-              />
-              <Text style={styles.formLabel}>Teléfono (Guatemala)</Text>
-              <View style={styles.phoneRow}>
-                <View style={styles.phonePrefix}>
-                  <Text style={styles.phonePrefixTxt}>{GT_PREFIX}</Text>
+                <View style={[styles.clientInfoCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                  <Text style={styles.suggestionName}>{selectedClient.nombre || 'Cliente'}</Text>
+                  {selectedClient.telefono ? (
+                    <Text style={[subStyles.muted, { marginTop: 4 }]}>Tel. {selectedClient.telefono}</Text>
+                  ) : null}
+                  {selectedClient.email ? (
+                    <Text style={[subStyles.muted, { marginTop: 2 }]}>{selectedClient.email}</Text>
+                  ) : null}
+                  {selectedClient.direccion ? (
+                    <Text style={[subStyles.muted, { marginTop: 2 }]}>{selectedClient.direccion}</Text>
+                  ) : null}
+                  {selectedClient.categoria ? (
+                    <Text style={[subStyles.muted, { marginTop: 2 }]}>Tipo: {selectedClient.categoria}</Text>
+                  ) : null}
+                  <TouchableOpacity onPress={clearSelectedClient} style={[styles.inlineBtn, { marginTop: spacing.sm }]}>
+                    <Text style={styles.inlineBtnTxt}>Cambiar cliente</Text>
+                  </TouchableOpacity>
                 </View>
-                <TextInput
-                  style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                  placeholder="########"
-                  placeholderTextColor={c.foregroundSubtle}
-                  keyboardType="number-pad"
-                  maxLength={8}
-                  value={phoneLocal}
-                  onChangeText={(v) => setPhoneLocal(v.replace(/\D/g, ''))}
-                />
-              </View>
+              ) : (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Buscar por nombre, teléfono o correo"
+                    placeholderTextColor={c.foregroundSubtle}
+                    value={clientQuery}
+                    onChangeText={setClientQuery}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                  {clientQuery.trim().length > 0 && clientQuery.trim().length < 2 ? (
+                    <Text style={subStyles.muted}>Escribí al menos 2 letras para buscar entre los clientes.</Text>
+                  ) : null}
+                  {clientQuery.trim().length >= 2 && clientMatches.length === 0 ? (
+                    <Text style={subStyles.muted}>Sin coincidencias para «{clientQuery.trim()}».</Text>
+                  ) : null}
+                  {clientMatches.length > 0 ? (
+                    <View style={styles.suggestions}>
+                      {clientMatches.map((row) => (
+                        <TouchableOpacity
+                          key={row.id}
+                          style={styles.suggestionRow}
+                          onPress={() => selectClient(row)}
+                        >
+                          <Text style={styles.suggestionName}>{row.nombre}</Text>
+                          <Text style={subStyles.muted}>
+                            {[row.telefono, row.email].filter(Boolean).join(' · ') || 'Sin contacto'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : null}
+                </>
+              )}
 
               <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Producto o servicio (inventario)</Text>
               <TextInput
@@ -1158,33 +1187,66 @@ export function AppointmentsScreen({ onBack }) {
               ) : null}
 
               <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Asignar profesional</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Buscar por nombre, rol o correo"
-                placeholderTextColor={c.foregroundSubtle}
-                value={staffSearch}
-                onChangeText={setStaffSearch}
-              />
-              {staffSearch.trim() !== '' && staffFiltered.length === 0 ? (
-                <Text style={subStyles.muted}>No hay coincidencias con la búsqueda.</Text>
-              ) : null}
-              {staffFiltered.length > 0 ? (
-                <View style={styles.staffList}>
-                  {staffFiltered.map((emp) => {
-                    const on = emp.id === employeeId;
-                    return (
-                      <TouchableOpacity
-                        key={emp.id}
-                        style={[styles.staffChip, on && styles.staffChipOn]}
-                        onPress={() => setEmployeeId(emp.id)}
-                      >
-                        <Text style={[styles.staffName, on && styles.staffNameOn]}>{emp.nombre}</Text>
-                        <Text style={[styles.staffRol, on && styles.staffNameOn]}>{emp.rol || 'Profesional'}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+              {selectedEmployee && staffSearch.trim().length < 2 ? (
+                <View style={[styles.clientInfoCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                  <Text style={styles.suggestionName}>{selectedEmployee.nombre}</Text>
+                  <Text style={[subStyles.muted, { marginTop: 4 }]}>
+                    {[selectedEmployee.rol, selectedEmployee.telefono, selectedEmployee.email]
+                      .filter(Boolean)
+                      .join(' · ') || 'Profesional'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEmployeeId(null);
+                      setStaffSearch('');
+                    }}
+                    style={[styles.inlineBtn, { marginTop: spacing.sm }]}
+                  >
+                    <Text style={styles.inlineBtnTxt}>Cambiar profesional</Text>
+                  </TouchableOpacity>
                 </View>
-              ) : null}
+              ) : (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Buscar por nombre, rol o correo"
+                    placeholderTextColor={c.foregroundSubtle}
+                    value={staffSearch}
+                    onChangeText={(v) => {
+                      setStaffSearch(v);
+                      if (employeeId) setEmployeeId(null);
+                    }}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                  {staffSearch.trim().length > 0 && staffSearch.trim().length < 2 ? (
+                    <Text style={subStyles.muted}>Escribí al menos 2 letras para buscar en el equipo.</Text>
+                  ) : null}
+                  {staffSearch.trim().length >= 2 && staffFiltered.length === 0 ? (
+                    <Text style={subStyles.muted}>No hay coincidencias con la búsqueda.</Text>
+                  ) : null}
+                  {staffFiltered.length > 0 ? (
+                    <View style={styles.staffList}>
+                      {staffFiltered.map((emp) => {
+                        const on = emp.id === employeeId;
+                        return (
+                          <TouchableOpacity
+                            key={emp.id}
+                            style={[styles.staffChip, on && styles.staffChipOn]}
+                            onPress={() => {
+                              setEmployeeId(emp.id);
+                              setStaffSearch('');
+                            }}
+                          >
+                            <Text style={[styles.staffName, on && styles.staffNameOn]}>{emp.nombre}</Text>
+                            <Text style={[styles.staffRol, on && styles.staffNameOn]}>{emp.rol || 'Profesional'}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                </>
+              )}
 
               <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Descuento manual (opcional)</Text>
               <View style={styles.discountRow}>
@@ -1579,6 +1641,14 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       color: c.foreground,
       fontSize: 14,
+    },
+    clientInfoCard: {
+      borderRadius: radii.md,
+      borderWidth: 1,
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+      borderLeftWidth: 3,
+      borderLeftColor: c.primary,
     },
     suggestions: {
       borderRadius: radii.sm,

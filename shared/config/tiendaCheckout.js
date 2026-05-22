@@ -1,6 +1,10 @@
 import { db } from './supabaseClient.js';
 import { registrarMontoVentaEnMeta } from './metaGlobal.js';
-import { splitNotas, DEFAULT_TIENDA_META } from './inventarioMeta.js';
+import { splitNotas, DEFAULT_TIENDA_META, servicioUsaPreciosPorVolumen } from './inventarioMeta.js';
+
+/** Texto en catálogo App Clientes para servicios con precios por volumen (solo salón). */
+export const PRECIO_VARIABLE_LABEL = 'Precio variable';
+export const PRECIO_VARIABLE_HINT = 'Según volumen de cabello · coordiná en salón';
 
 function formatQ(n) {
   const x = Number(n);
@@ -81,8 +85,8 @@ export function mapInventarioToTiendaProduct(row) {
   const imgs = Array.isArray(row.imagenes_urls) ? row.imagenes_urls.filter(Boolean) : [];
   const mainImg = row.imagen_url || imgs[0] || null;
   const allImgs = [...new Set([mainImg, ...imgs].filter(Boolean))];
-  const venta = Number(row.precio_venta || 0);
-  const costo = Number(row.precio_costo ?? row.costo ?? 0);
+  const precioVariable = servicioUsaPreciosPorVolumen(row);
+  const venta = precioVariable ? null : Number(row.precio_venta || 0);
   const tipo = meta.articuloTipo === 'servicio' ? 'servicio' : 'producto';
   const stock = Number(row.stock_actual ?? 0);
 
@@ -94,33 +98,36 @@ export function mapInventarioToTiendaProduct(row) {
     sku: row.barcode || null,
     imageUri: mainImg,
     imageUris: allImgs,
-    priceLabel: formatQ(venta),
-    priceAmount: venta,
-    compareAtLabel: costo > venta && venta > 0 ? formatQ(costo) : null,
-    stockHint:
-      stock > 0
+    precioVariable,
+    priceLabel: precioVariable ? PRECIO_VARIABLE_LABEL : formatQ(venta),
+    priceAmount: precioVariable ? null : venta,
+    compareAtLabel: null,
+    stockHint: precioVariable
+      ? PRECIO_VARIABLE_HINT
+      : stock > 0
         ? tipo === 'servicio'
-          ? 'Servicio disponible · agenda'
-          : `En stock · ${stock} u.`
+          ? 'Disponible para agendar'
+          : 'Disponible en salón'
         : tipo === 'servicio'
           ? 'Consultá disponibilidad en salón'
-          : 'Sin stock · consultá en salón',
-    stockActual: stock,
-    stockMinimo: Number(row.stock_minimo ?? 0),
+          : 'Consultá disponibilidad en salón',
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
     shippingLabel: meta.shippingLabel || DEFAULT_TIENDA_META.shippingLabel,
     badge: meta.badge?.trim() || null,
     descripcion: row.descripcion_tienda || '',
     articuloTipo: tipo,
-    duracionMinutos: Math.max(15, Math.floor(Number(meta.duracion_minutos) || 60)),
-    esConsumible: !!row.es_consumible,
-    fechaVencimiento: row.fecha_vencimiento || null,
-    ubicacion: row.ubicacion || null,
+    duracionAgenda:
+      tipo === 'servicio'
+        ? String(meta.duracion_agenda || '').trim() ||
+          (meta.duracion_minutos ? `${meta.duracion_minutos} min` : '')
+        : '',
   };
 }
 
-/** Ficha técnica (especificaciones + descripción) para detalle de tienda. */
+/**
+ * Ficha para App Clientes: solo datos públicos (sin stock interno, ubicación, SKU, etc.).
+ */
 export function buildTiendaProductFicha(product) {
   if (!product) return { specs: [], longCopy: '' };
   const specs = [];
@@ -129,22 +136,22 @@ export function buildTiendaProductFicha(product) {
     if (v) specs.push({ label, value: v });
   };
 
-  add('Tipo', product.articuloTipo === 'servicio' ? 'Servicio en salón' : 'Producto');
-  add('SKU / código', product.sku);
   if (product.articuloTipo === 'servicio') {
-    add('Duración en agenda', `${product.duracionMinutos || 60} min`);
+    add('Tipo', 'Servicio profesional');
+    if (product.duracionAgenda) add('Duración aproximada', product.duracionAgenda);
+  } else {
+    add('Tipo', 'Producto del salón');
   }
-  add('Precio', product.priceLabel);
-  if (product.compareAtLabel) add('Precio referencia', product.compareAtLabel);
-  add('Stock disponible', `${product.stockActual ?? 0} u.`);
-  add('Stock mínimo', `${product.stockMinimo ?? 0} u.`);
-  add('Consumible / insumo', product.esConsumible ? 'Sí' : 'No');
-  add('Fecha de vencimiento', product.fechaVencimiento);
-  add('Ubicación en salón', product.ubicacion);
-  add('Valoración', `${Number(product.rating || 0).toFixed(1)} / 5`);
-  add('Reseñas', `${product.reviewCount ?? 0}`);
-  add('Envío y retiro', product.shippingLabel);
-  if (product.badge) add('Insignia', product.badge);
+
+  if (product.precioVariable) {
+    add('Precio', `${PRECIO_VARIABLE_LABEL} · se confirma en el salón`);
+  } else if (product.priceLabel) {
+    add('Precio', product.priceLabel);
+  }
+
+  if (product.stockHint) add('Disponibilidad', product.stockHint);
+  if (product.shippingLabel) add('Envío y retiro', product.shippingLabel);
+  if (product.badge) add('Destacado', product.badge);
 
   const longCopy =
     product.descripcion?.trim() ||

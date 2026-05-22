@@ -10,6 +10,7 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +42,53 @@ function profesionalLabel(v) {
   return v?.vendedor?.nombre?.trim() || v?.profesional?.trim() || '';
 }
 
+function parseVentaItems(raw) {
+  if (raw == null) return [];
+  let data = raw;
+  if (typeof raw === 'string') {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(data)) return [];
+  return data.map((it, idx) => {
+    const qty = Number(it?.cantidad ?? it?.qty ?? 1);
+    const unit = Number(it?.precio_unitario ?? it?.precio ?? it?.precioUnit ?? 0);
+    const sub = Number(it?.subtotal ?? qty * unit);
+    return {
+      key: String(it?.producto_id ?? it?.id ?? idx),
+      nombre: String(it?.nombre || it?.descripcion || 'Artículo').trim() || 'Artículo',
+      cantidad: qty,
+      precio_unitario: unit,
+      subtotal: sub,
+    };
+  });
+}
+
+function formatFechaVenta(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('es-GT', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
+}
+
+function formatMetodoPago(m) {
+  const s = String(m || '').trim();
+  if (!s) return '—';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function PapeleriaScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -57,6 +105,7 @@ export function PapeleriaScreen({ onBack }) {
   const [filterVendedor, setFilterVendedor] = useState('todos');
   const [filterMetodo, setFilterMetodo] = useState('todos');
   const [filterFactura, setFilterFactura] = useState('todas');
+  const [detalleVenta, setDetalleVenta] = useState(null);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -125,6 +174,11 @@ export function PapeleriaScreen({ onBack }) {
     return `${orden} · ${vend} · ${met} · ${fac}`;
   }, [sortMode, filterVendedor, filterMetodo, filterFactura, vendedoresOpts]);
 
+  const detalleItems = useMemo(
+    () => (detalleVenta ? parseVentaItems(detalleVenta.items) : []),
+    [detalleVenta],
+  );
+
   const filtered = useMemo(() => {
     let rows = [...ventas];
     const q = query.trim().toLowerCase();
@@ -166,22 +220,7 @@ export function PapeleriaScreen({ onBack }) {
   }, [ventas, query, sortMode, filterVendedor, filterMetodo, filterFactura, vendedoresOpts]);
 
   const verDetalle = (v) => {
-    const lines = [
-      `Factura / folio: ${facturaLabel(v)}`,
-      `Fecha: ${v?.fecha ? new Date(v.fecha).toLocaleString('es-GT') : '—'}`,
-      `Cliente: ${v?.cliente?.nombre || v?.cliente_nombre || '—'}`,
-      `Vendedor: ${profesionalLabel(v) || '—'}`,
-      `Total: ${formatQ(montoVenta(v))}`,
-      `Pago: ${v?.metodo_pago || '—'}`,
-    ].join('\n');
-    let items = '';
-    try {
-      items = v?.items != null ? `\n\nÍtems (JSON):\n${JSON.stringify(v.items, null, 2)}` : '';
-    } catch {
-      items = '';
-    }
-    const body = `${lines}${items}`.slice(0, 8000);
-    Alert.alert('Detalle de venta', body, [{ text: 'Cerrar' }], { cancelable: true });
+    if (!sel.active) setDetalleVenta(v);
   };
 
   const confirmDeleteSelected = () => {
@@ -365,6 +404,114 @@ export function PapeleriaScreen({ onBack }) {
           />
         ) : null}
       </SubScreenChrome>
+
+      <Modal visible={!!detalleVenta} animationType="slide" transparent onRequestClose={() => setDetalleVenta(null)}>
+        <View style={styles.detailBackdrop}>
+          <View style={[styles.detailSheet, { backgroundColor: c.background }]}>
+            {detalleVenta ? (
+              <>
+                <View style={styles.detailHead}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.detailTitle, { color: c.foreground }]}>Detalle de venta</Text>
+                    <Text style={[styles.detailFolio, { color: c.primary }]} numberOfLines={2}>
+                      {facturaLabel(detalleVenta)}
+                    </Text>
+                    <Text style={[styles.detailFecha, { color: c.foregroundMuted }]}>
+                      {formatFechaVenta(detalleVenta.fecha)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setDetalleVenta(null)} hitSlop={12} accessibilityLabel="Cerrar">
+                    <X size={22} color={c.foregroundMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: insets.bottom + spacing.md }}
+                >
+                  <View style={[styles.detailTotalCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                    <Text style={[styles.detailTotalLbl, { color: c.foregroundMuted }]}>Total cobrado</Text>
+                    <Text style={[styles.detailTotalVal, { color: c.foreground }]}>
+                      {formatQ(montoVenta(detalleVenta))}
+                    </Text>
+                    <Text style={[styles.detailPago, { color: c.foregroundMuted }]}>
+                      Pago: {formatMetodoPago(detalleVenta.metodo_pago)}
+                    </Text>
+                    {Number(detalleVenta.descuento) > 0 ? (
+                      <Text style={[styles.detailPago, { color: c.primary }]}>
+                        Descuento: {formatQ(detalleVenta.descuento)}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View style={[styles.detailInfoCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                    {[
+                      ['Cliente', detalleVenta.cliente?.nombre || detalleVenta.cliente_nombre],
+                      ['Vendedor', profesionalLabel(detalleVenta)],
+                    ].map(([lbl, val]) => (
+                      <View key={lbl} style={[styles.detailInfoRow, { borderBottomColor: c.cardBorder }]}>
+                        <Text style={[styles.detailInfoLbl, { color: c.foregroundMuted }]}>{lbl}</Text>
+                        <Text style={[styles.detailInfoVal, { color: c.foreground }]} numberOfLines={2}>
+                          {val?.trim() ? String(val) : '—'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <Text style={[styles.detailSectionTitle, { color: c.foreground }]}>Productos y servicios</Text>
+                  {detalleItems.length === 0 ? (
+                    <Text style={[styles.detailEmptyItems, { color: c.foregroundMuted }]}>
+                      Sin líneas de detalle guardadas.
+                    </Text>
+                  ) : (
+                    <View style={[styles.itemsTable, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                      <View style={[styles.itemsHeadRow, { borderBottomColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
+                        <Text style={[styles.itemsHeadTxt, styles.itemsColName, { color: c.foregroundMuted }]}>
+                          Artículo
+                        </Text>
+                        <Text style={[styles.itemsHeadTxt, styles.itemsColQty, { color: c.foregroundMuted }]}>Cant.</Text>
+                        <Text style={[styles.itemsHeadTxt, styles.itemsColMoney, { color: c.foregroundMuted }]}>P. unit.</Text>
+                        <Text style={[styles.itemsHeadTxt, styles.itemsColMoney, { color: c.foregroundMuted }]}>Subtotal</Text>
+                      </View>
+                      {detalleItems.map((it) => (
+                        <View key={it.key} style={[styles.itemsRow, { borderBottomColor: c.cardBorder }]}>
+                          <Text style={[styles.itemsName, styles.itemsColName, { color: c.foreground }]} numberOfLines={2}>
+                            {it.nombre}
+                          </Text>
+                          <Text style={[styles.itemsQty, styles.itemsColQty, { color: c.foreground }]}>{it.cantidad}</Text>
+                          <Text style={[styles.itemsMoney, styles.itemsColMoney, { color: c.foregroundMuted }]}>
+                            {formatQ(it.precio_unitario)}
+                          </Text>
+                          <Text style={[styles.itemsMoney, styles.itemsColMoney, { color: c.primary }]}>
+                            {formatQ(it.subtotal)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {detalleVenta.notas?.trim() ? (
+                    <>
+                      <Text style={[styles.detailSectionTitle, { color: c.foreground }]}>Notas</Text>
+                      <View style={[styles.detailNotas, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                        <Text style={[styles.detailNotasTxt, { color: c.foregroundMuted }]}>{detalleVenta.notas.trim()}</Text>
+                      </View>
+                    </>
+                  ) : null}
+                </ScrollView>
+
+                <SalonButton
+                  title="Cerrar"
+                  variant="outlineGray"
+                  fullWidth
+                  onPress={() => setDetalleVenta(null)}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.filterBackdrop}>
@@ -620,5 +767,139 @@ function createStyles(c) {
       maxWidth: '100%',
     },
     chipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    detailBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
+    },
+    detailSheet: {
+      borderTopLeftRadius: radii.lg,
+      borderTopRightRadius: radii.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      maxHeight: '92%',
+    },
+    detailHead: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    detailTitle: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 22,
+      marginBottom: spacing.xs,
+    },
+    detailFolio: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 15,
+    },
+    detailFecha: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      marginTop: 4,
+    },
+    detailTotalCard: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      alignItems: 'center',
+    },
+    detailTotalLbl: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    detailTotalVal: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 28,
+      marginTop: spacing.xs,
+    },
+    detailPago: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      marginTop: spacing.xs,
+    },
+    detailInfoCard: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+      marginBottom: spacing.md,
+    },
+    detailInfoRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    detailInfoLbl: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      width: 72,
+    },
+    detailInfoVal: {
+      flex: 1,
+      fontFamily: typography.fontSans,
+      fontSize: 14,
+      textAlign: 'right',
+    },
+    detailSectionTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      marginBottom: spacing.sm,
+    },
+    detailEmptyItems: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      marginBottom: spacing.md,
+      fontStyle: 'italic',
+    },
+    itemsTable: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+      marginBottom: spacing.md,
+    },
+    itemsHeadRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    itemsHeadTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+      textTransform: 'uppercase',
+    },
+    itemsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    itemsColName: { flex: 1, minWidth: 0 },
+    itemsColQty: { width: 36, textAlign: 'center' },
+    itemsColMoney: { width: 64, textAlign: 'right' },
+    itemsName: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    itemsQty: { fontFamily: typography.fontSans, fontSize: 13 },
+    itemsMoney: { fontFamily: typography.fontSans, fontSize: 12 },
+    detailNotas: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+    },
+    detailNotasTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 18,
+    },
   });
 }

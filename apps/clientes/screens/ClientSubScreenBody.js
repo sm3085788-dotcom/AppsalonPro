@@ -107,7 +107,7 @@ function ContactoBody() {
         </Text>
         <View style={subStyles.divider} />
 
-        <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('https://wa.me/50257199107')}>
+        <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('https://wa.me/50247132123')}>
           <View style={{ flex: 1 }}>
             <Text style={subStyles.rowLabel}>WhatsApp</Text>
             <Text style={subStyles.rowSub}>Chat directo con recepción</Text>
@@ -116,10 +116,10 @@ function ContactoBody() {
         </TouchableOpacity>
         <View style={subStyles.divider} />
 
-        <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('tel:+50257199107')}>
+        <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('tel:+50247132123')}>
           <View style={{ flex: 1 }}>
             <Text style={subStyles.rowLabel}>Llamada telefónica</Text>
-            <Text style={subStyles.rowSub}>+502 5719-9107</Text>
+            <Text style={subStyles.rowSub}>+502 4713-2123</Text>
           </View>
           <Text style={chipText}>Llamar</Text>
         </TouchableOpacity>

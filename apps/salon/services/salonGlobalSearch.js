@@ -1,4 +1,4 @@
-import { db } from '@appsalon/shared-config';
+import { db, inventarioSearchSubtitle } from '@appsalon/shared-config';
 
 export const SALON_SEARCH_MIN_LEN = 2;
 const PER_SOURCE = 8;
@@ -153,8 +153,8 @@ export async function runSalonGlobalSearch(rawQuery) {
       id: `inv-${p.id}`,
       moduleId: 'inventory',
       category: 'Inventario',
-      title: p.nombre || 'Producto',
-      subtitle: [p.categoria, p.barcode, formatQ(p.precio)].filter(Boolean).join(' · '),
+      title: p.nombre || 'Artículo',
+      subtitle: inventarioSearchSubtitle(p) || p.categoria || '',
     });
   }
 

@@ -221,7 +221,14 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
               {product.compareAtLabel ? (
                 <Text style={styles.compareAt}>{product.compareAtLabel}</Text>
               ) : null}
-              <Text style={styles.priceLive}>{product.priceLabel}</Text>
+              <Text
+                style={[
+                  styles.priceLive,
+                  product.precioVariable && { fontSize: 13, fontFamily: typography.fontSansMedium },
+                ]}
+              >
+                {product.priceLabel}
+              </Text>
             </View>
 
             <View style={styles.ratingRow}>

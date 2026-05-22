@@ -29,6 +29,7 @@ import {
   Sparkles,
   X,
   FileText,
+  Check,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
@@ -37,14 +38,17 @@ import {
   uploadMensajeMediaFromUri,
   isClienteAppVerificado,
   isClienteManual,
-  CLIENTE_MANUAL_AURA,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
 import { useTheme } from '../theme/ThemeProvider';
 
 const BULK_CHUNK = 80;
 const INBOX_PREVIEW_TYPES = new Set(['chat', 'broadcast_promo', 'incident_report']);
 const INBOX_OPEN_HINT = 'Tocá para abrir Andreas Pro';
+/** Mismo verde que Clientes para fichas manuales (sin App Clientes). */
+const MINT = { chip: '#C8E6C9', chipText: '#1B5E20' };
 
 function inboxPreviewTime(iso) {
   if (!iso) return 0;
@@ -125,10 +129,15 @@ export function MensajesScreen({ onBack }) {
   const subStyles = useSubStyles();
   const styles = useMemo(() => createStyles(c), [c]);
   const listRef = useRef(null);
+  const sel = useListSelection();
 
   const [clients, setClients] = useState([]);
   const [inboxPreviews, setInboxPreviews] = useState([]);
   const [inboxQuery, setInboxQuery] = useState('');
+  const [modalFiltros, setModalFiltros] = useState(false);
+  const [sortMode, setSortMode] = useState('nombre_asc');
+  const [filterTipo, setFilterTipo] = useState('todos');
+  const [broadcastOnlyIds, setBroadcastOnlyIds] = useState(null);
   const [loadingInbox, setLoadingInbox] = useState(true);
   const [selectedClient, setSelectedClient] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -200,19 +209,52 @@ export function MensajesScreen({ onBack }) {
     };
   }, []);
 
-  const verifiedClients = useMemo(() => clients.filter((c) => isClienteAppVerificado(c)), [clients]);
+  const verifiedClients = useMemo(() => clients.filter((cl) => isClienteAppVerificado(cl)), [clients]);
+
+  const inboxRowsBase = useMemo(
+    () => buildInboxRows(clients, inboxPreviews),
+    [clients, inboxPreviews],
+  );
 
   const inboxRows = useMemo(() => {
-    const rows = buildInboxRows(clients, inboxPreviews);
+    let rows = inboxRowsBase;
+    if (filterTipo === 'manual') rows = rows.filter((r) => isClienteManual(r.client));
+    if (filterTipo === 'app') rows = rows.filter((r) => isClienteAppVerificado(r.client));
+
     const q = inboxQuery.trim().toLowerCase();
-    if (!q) return rows;
-    return rows
-      .filter((r) => {
+    if (q) {
+      rows = rows.filter((r) => {
         const blob = [r.client.nombre, r.client.telefono, r.client.email, r.preview].join(' ').toLowerCase();
         return blob.includes(q);
-      })
-      .sort(compareInboxRows);
-  }, [clients, inboxPreviews, inboxQuery]);
+      });
+    }
+
+    const sorted = [...rows];
+    if (sortMode === 'nombre_asc') {
+      sorted.sort((a, b) =>
+        String(a.client?.nombre || '').localeCompare(String(b.client?.nombre || ''), 'es', { sensitivity: 'base' }),
+      );
+    } else if (sortMode === 'nombre_desc') {
+      sorted.sort((a, b) =>
+        String(b.client?.nombre || '').localeCompare(String(a.client?.nombre || ''), 'es', { sensitivity: 'base' }),
+      );
+    } else if (sortMode === 'reciente') {
+      sorted.sort(compareInboxRows);
+    }
+    return sorted;
+  }, [inboxRowsBase, filterTipo, inboxQuery, sortMode]);
+
+  const filtroResumen = useMemo(() => {
+    const orden =
+      sortMode === 'nombre_desc' ? 'Nombre Z → A' : sortMode === 'reciente' ? 'Más recientes' : 'Nombre A → Z';
+    const tipo =
+      filterTipo === 'manual'
+        ? 'Solo manual'
+        : filterTipo === 'app'
+          ? 'Solo verificados'
+          : 'Todos los orígenes';
+    return `${orden} · ${tipo}`;
+  }, [sortMode, filterTipo]);
 
   const openClientChat = useCallback((client) => {
     if (!isClienteAppVerificado(client)) {
@@ -227,19 +269,17 @@ export function MensajesScreen({ onBack }) {
 
   const inboxListEmpty = useMemo(() => {
     const q = inboxQuery.trim();
-    if (q && clients.length > 0) {
-      return (
-        <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
-          Ningún resultado con la búsqueda actual.
-        </Text>
-      );
-    }
+    const hasFilter = filterTipo !== 'todos' || Boolean(q);
     return (
       <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
-        {clients.length === 0 ? 'No hay clientes registrados.' : 'Ningún resultado con la búsqueda actual.'}
+        {clients.length === 0
+          ? 'No hay clientes registrados.'
+          : hasFilter
+            ? 'Ningún resultado con la búsqueda o filtros actuales.'
+            : 'Ningún resultado.'}
       </Text>
     );
-  }, [clients.length, inboxQuery, c.foregroundMuted]);
+  }, [clients.length, filterTipo, inboxQuery, c.foregroundMuted]);
 
   const loadChat = useCallback(async (clientId) => {
     setLoadingChat(true);
@@ -412,8 +452,10 @@ export function MensajesScreen({ onBack }) {
         mediaUrl = publicUrl;
         mediaKind = 'image';
       }
-      const targets = verifiedClients;
-      const skipped = clients.length - targets.length;
+      const targets = broadcastOnlyIds?.size
+        ? verifiedClients.filter((cl) => broadcastOnlyIds.has(String(cl.id)))
+        : verifiedClients;
+      const skipped = clients.length - verifiedClients.length;
       if (!targets.length) {
         Alert.alert(
           'Pulso masivo',
@@ -445,6 +487,7 @@ export function MensajesScreen({ onBack }) {
         skipped > 0 ? ` (${skipped} ficha${skipped === 1 ? '' : 's'} manual omitida${skipped === 1 ? '' : 's'})` : '';
       Alert.alert('Pulso masivo', `Se encolaron ${targets.length} mensajes para clientes con App Clientes${skipNote}.`);
       setBroadcastOpen(false);
+      setBroadcastOnlyIds(null);
       setPromoTitle('');
       setPromoBody('');
       setPromoImage(null);
@@ -456,11 +499,36 @@ export function MensajesScreen({ onBack }) {
     }
   };
 
+  const confirmSelection = useCallback(() => {
+    const picked = inboxRows.filter((r) => sel.isSelected(r.client.id));
+    const verified = picked.filter((r) => isClienteAppVerificado(r.client));
+    if (!verified.length) {
+      Alert.alert(
+        'Selección',
+        picked.length
+          ? 'Las fichas manuales no reciben mensajes. Elegí clientes verificados con App Clientes.'
+          : 'Elegí al menos un cliente.',
+      );
+      return;
+    }
+    if (verified.length === 1) {
+      sel.exitSelectMode();
+      setSelectedClient(verified[0].client);
+      return;
+    }
+    setBroadcastOnlyIds(new Set(verified.map((r) => String(r.client.id))));
+    sel.exitSelectMode();
+    setBroadcastOpen(true);
+  }, [inboxRows, sel]);
+
   const broadcastBtn = useMemo(
     () => (
       <TouchableOpacity
         style={[styles.addPersonCircle, isDark && styles.addPersonCircleDark]}
-        onPress={() => setBroadcastOpen(true)}
+        onPress={() => {
+          setBroadcastOnlyIds(null);
+          setBroadcastOpen(true);
+        }}
         accessibilityLabel="Pulso masivo"
         hitSlop={10}
         activeOpacity={0.85}
@@ -478,33 +546,51 @@ export function MensajesScreen({ onBack }) {
       const fechaTxt = lastAt
         ? new Date(lastAt).toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })
         : null;
-      const subLine = manual
-        ? 'Sin cuenta en App Clientes'
-        : [preview !== INBOX_OPEN_HINT ? preview : null, fechaTxt].filter(Boolean).join(' · ') ||
-          'Sin mensajes';
+      const subParts = manual
+        ? ['Sin cuenta en App Clientes']
+        : [
+            client.telefono,
+            preview !== INBOX_OPEN_HINT ? preview : null,
+            fechaTxt,
+          ].filter(Boolean);
+      const picked = sel.isSelected(client.id);
 
       return (
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => openClientChat(client)}
+          onPress={() => {
+            if (sel.active) sel.toggleId(client.id);
+            else openClientChat(client);
+          }}
+          onLongPress={() => {
+            if (!sel.active) {
+              sel.setActive(true);
+              sel.toggleId(client.id);
+            }
+          }}
           style={[
             styles.row,
-            {
-              borderBottomColor: manual ? CLIENTE_MANUAL_AURA.border : c.cardBorder,
-              backgroundColor: manual ? CLIENTE_MANUAL_AURA.bg : 'transparent',
-            },
+            { borderBottomColor: c.cardBorder },
+            picked && { backgroundColor: c.surfaceMuted },
           ]}
           accessibilityRole="button"
         >
-          <View style={styles.rowAvatarWrap}>
+          {sel.active ? (
             <View
               style={[
-                styles.rowAvatar,
-                styles.rowAvatarEmpty,
-                { backgroundColor: manual ? CLIENTE_MANUAL_AURA.chip : c.surfaceMuted },
+                styles.check,
+                {
+                  borderColor: picked ? c.primary : c.cardBorder,
+                  backgroundColor: picked ? c.primary : 'transparent',
+                },
               ]}
             >
-              <Text style={[styles.rowAvatarLetter, { color: manual ? CLIENTE_MANUAL_AURA.chipText : c.foregroundMuted }]}>
+              {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+            </View>
+          ) : null}
+          <View style={styles.rowAvatarWrap}>
+            <View style={[styles.rowAvatar, styles.rowAvatarEmpty, { backgroundColor: c.surfaceMuted }]}>
+              <Text style={[styles.rowAvatarLetter, { color: c.foregroundMuted }]}>
                 {initials(client.nombre)}
               </Text>
             </View>
@@ -514,21 +600,23 @@ export function MensajesScreen({ onBack }) {
               <Text style={[styles.rowName, { color: c.foreground }]} numberOfLines={1}>
                 {client.nombre || 'Sin nombre'}
               </Text>
-              <View style={[styles.chip, { backgroundColor: manual ? CLIENTE_MANUAL_AURA.chip : c.surfaceMuted }]}>
-                <Text style={[styles.chipTxt, { color: manual ? CLIENTE_MANUAL_AURA.chipText : c.foregroundMuted }]}>
-                  {manual ? 'Manual' : 'App'}
-                </Text>
+              <View style={styles.rowChips}>
+                <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
+                  <Text style={[styles.chipTxt, { color: manual ? MINT.chipText : c.foregroundMuted }]}>
+                    {manual ? 'Manual' : 'App'}
+                  </Text>
+                </View>
               </View>
             </View>
             <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
-              {subLine}
+              {subParts.length ? subParts.join(' · ') : 'Sin contacto'}
             </Text>
           </View>
-          <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
+          {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} /> : null}
         </TouchableOpacity>
       );
     },
-    [c.cardBorder, c.foreground, c.foregroundMuted, c.foregroundSubtle, c.surfaceMuted, openClientChat, styles],
+    [c, isDark, openClientChat, sel, styles],
   );
 
   const renderBubble = ({ item }) => {
@@ -778,11 +866,16 @@ export function MensajesScreen({ onBack }) {
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
               {loadingInbox ? '…' : `${inboxRows.length} cliente${inboxRows.length === 1 ? '' : 's'}`}
             </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle }}> · </Text>
+              <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
+                <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={[styles.filtroResumen, { color: c.foregroundSubtle }]} numberOfLines={1}>
-            {clients.length - verifiedClients.length > 0
-              ? `${verifiedClients.length} con App · ${clients.length - verifiedClients.length} manual (verde, sin mensajes)`
-              : 'Todos con App Clientes · mensajes habilitados'}
+            {filtroResumen}
           </Text>
 
           {loadingInbox ? (
@@ -796,7 +889,10 @@ export function MensajesScreen({ onBack }) {
                 refreshControl={
                   <RefreshControl refreshing={false} onRefresh={loadInbox} tintColor={c.primary} />
                 }
-                contentContainerStyle={{ paddingBottom: padList, flexGrow: inboxRows.length === 0 ? 1 : 0 }}
+                contentContainerStyle={{
+                  paddingBottom: sel.count ? 100 : padList,
+                  flexGrow: inboxRows.length === 0 ? 1 : 0,
+                }}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 ListEmptyComponent={inboxListEmpty}
@@ -808,8 +904,74 @@ export function MensajesScreen({ onBack }) {
           )}
         </View>
       </SubScreenChrome>
+      <ListSelectionActionBar
+        count={sel.count}
+        onCancel={sel.exitSelectMode}
+        onConfirm={confirmSelection}
+        confirmLabel={sel.count === 1 ? 'Abrir chat' : 'Pulso masivo'}
+        bottomInset={insets.bottom}
+        colors={c}
+      />
     </View>
     {broadcastModal}
+
+    <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+          <View style={styles.filterModalHead}>
+            <Text style={[styles.filterModalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
+            <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12} accessibilityLabel="Cerrar">
+              <X size={22} color={c.foregroundMuted} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.fieldLbl, { color: c.foreground }]}>Orden</Text>
+          <View style={styles.chipRow}>
+            {[
+              { id: 'nombre_asc', label: 'Nombre A → Z' },
+              { id: 'nombre_desc', label: 'Nombre Z → A' },
+              { id: 'reciente', label: 'Más recientes' },
+            ].map((opt) => {
+              const on = sortMode === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.filterChip,
+                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                  ]}
+                  onPress={() => setSortMode(opt.id)}
+                >
+                  <Text style={[styles.filterChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={[styles.fieldLbl, { color: c.foreground }]}>Origen</Text>
+          <View style={styles.chipRow}>
+            {[
+              { id: 'todos', label: 'Todos' },
+              { id: 'manual', label: 'Solo manual' },
+              { id: 'app', label: 'Solo verificados' },
+            ].map((opt) => {
+              const on = filterTipo === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.filterChip,
+                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                  ]}
+                  onPress={() => setFilterTipo(opt.id)}
+                >
+                  <Text style={[styles.filterChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalFiltros(false)} />
+        </View>
+      </View>
+    </Modal>
     </Fragment>
   );
 }
@@ -846,6 +1008,10 @@ function createStyles(c) {
       marginBottom: 2,
     },
     toolbarMeta: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    toolbarLink: {
       fontFamily: typography.fontSansMedium,
       fontSize: 12,
     },
@@ -895,6 +1061,12 @@ function createStyles(c) {
       justifyContent: 'space-between',
       gap: spacing.xs,
     },
+    rowChips: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      flexShrink: 0,
+    },
     rowAvatarWrap: {
       width: 34,
       height: 34,
@@ -936,6 +1108,53 @@ function createStyles(c) {
     },
     rowChev: {
       flexShrink: 0,
+    },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    modalBackdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+    filterModalCard: {
+      borderTopLeftRadius: radii.lg,
+      borderTopRightRadius: radii.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.xl,
+    },
+    filterModalHead: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.sm,
+    },
+    filterModalTitle: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 22,
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginBottom: spacing.lg,
+    },
+    filterChip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
+    },
+    filterChipTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
     },
     chatHeader: {
       flexDirection: 'row',

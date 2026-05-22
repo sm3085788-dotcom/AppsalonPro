@@ -214,8 +214,10 @@ export function AgendarCitaForm({ clienteRow, onClose, onGoTab, onCitasChanged }
                 >
                   <Text style={styles.svcName}>{s.nombre}</Text>
                   <Text style={styles.svcMeta}>
-                    Q{Number(s.precio || 0).toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{' '}
-                    · {Number(s.duracion_minutos) || 30} min
+                    {s.precioVariable || !(Number(s.precio) > 0)
+                      ? 'Precio variable · según volumen'
+                      : `Q${Number(s.precio).toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}{' '}
+                    · {s.duracion_agenda?.trim() || `${Number(s.duracion_minutos) || 30} min`}
                   </Text>
                 </TouchableOpacity>
               );

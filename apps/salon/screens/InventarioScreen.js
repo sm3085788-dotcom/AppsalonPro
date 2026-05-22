@@ -18,7 +18,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, Search, Star, Truck, X, Image as ImageIcon, Check } from 'lucide-react-native';
+import { Plus, Star, Truck, X, Image as ImageIcon, Check } from 'lucide-react-native';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -27,11 +27,19 @@ import {
   db,
   uploadInventarioMediaFromUri,
   DEFAULT_TIENDA_META,
+  VOLUMEN_TRABAJO_OPCIONES,
+  emptyPreciosPorVolumen,
+  normalizePreciosPorVolumen,
+  precioVentaReferencia,
   splitNotas,
   getArticuloTipo,
   mergeNotas,
+  parseDuracionMinutosFromMeta,
+  parseMontoInput,
+  formatMontoInputLive,
+  montoInputFromNumber,
 } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton, SalonSearchBar, useSubStyles } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
 const GAP = 6;
@@ -69,17 +77,41 @@ function parseFechaVencimiento(raw) {
   return { value: s, invalid: false };
 }
 
+function preciosPorVolumenToForm(precios) {
+  const p = normalizePreciosPorVolumen(precios);
+  return {
+    corto: p.corto != null ? montoInputFromNumber(p.corto) : '',
+    medio: p.medio != null ? montoInputFromNumber(p.medio) : '',
+    largo: p.largo != null ? montoInputFromNumber(p.largo) : '',
+    muy_largo: p.muy_largo != null ? montoInputFromNumber(p.muy_largo) : '',
+  };
+}
+
 function rowToTiendaCard(row) {
   const { meta } = splitNotas(row.notas);
   const venta = Number(row.precio_venta || 0);
-  const costo = Number(row.precio_costo ?? row.costo ?? 0);
-  const priceLabel = formatQ(venta);
-  const compareAtLabel = costo > venta && venta > 0 ? formatQ(costo) : null;
+  const esServicio = meta.articuloTipo === 'servicio';
+  let priceLabel = esServicio ? formatQ(venta) : String(venta);
+  if (meta.volumenTrabajoActivo && meta.preciosPorVolumen) {
+    const vals = VOLUMEN_TRABAJO_OPCIONES.map((o) => meta.preciosPorVolumen[o.id]).filter((n) => n != null && n > 0);
+    if (vals.length) {
+      const minV = Math.min(...vals);
+      const maxV = Math.max(...vals);
+      priceLabel =
+        minV === maxV
+          ? formatQ(minV)
+          : `${formatQ(minV)} – ${formatQ(maxV)}`;
+    }
+  } else if (!esServicio && venta > 0) {
+    priceLabel = venta.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   const brandLine = String(row.categoria || (meta.articuloTipo === 'servicio' ? 'Servicio' : 'Producto')).toUpperCase();
   const stock = Number(row.stock_actual ?? 0);
   const stockHint =
     meta.articuloTipo === 'servicio'
-      ? 'Servicio en salón · agenda'
+      ? meta.volumenTrabajoActivo
+        ? '4 precios · Vender'
+        : 'Servicio en salón · agenda'
       : stock > 0
         ? `En stock · ${stock} u.`
         : 'Sin stock';
@@ -89,7 +121,6 @@ function rowToTiendaCard(row) {
     brandLine,
     title: row.nombre,
     priceLabel,
-    compareAtLabel,
     badge: meta.badge?.trim() || null,
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
@@ -316,8 +347,21 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           color: colors.foregroundMuted,
           lineHeight: compact ? 10 : 14,
         },
+        volumenPill: {
+          alignSelf: 'flex-start',
+          marginTop: compact ? 4 : 6,
+          paddingHorizontal: compact ? 6 : 8,
+          paddingVertical: compact ? 2 : 3,
+          borderRadius: compact ? 4 : 6,
+          backgroundColor: isDark ? 'rgba(201,169,98,0.22)' : 'rgba(201,169,98,0.18)',
+        },
+        volumenPillTxt: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: compact ? 8 : 11,
+          color: colors.primary,
+        },
         stockHint: {
-          marginTop: compact ? 2 : 6,
+          marginTop: compact ? 2 : 4,
           fontFamily: typography.fontSans,
           fontSize: compact ? 7 : 10,
           color: colors.primary,
@@ -365,9 +409,6 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           {product.title}
         </Text>
         <View style={styles.priceRow}>
-          {product.compareAtLabel ? (
-            <Text style={styles.compareAt}>{product.compareAtLabel}</Text>
-          ) : null}
           <Text style={styles.priceLive}>{product.priceLabel}</Text>
         </View>
         <View style={styles.ratingRow}>
@@ -402,7 +443,6 @@ const emptyForm = () => ({
   categoria: '',
   barcode: '',
   precio_venta: '',
-  precio_costo: '',
   stock_actual: '',
   stock_minimo: '5',
   es_consumible: false,
@@ -416,7 +456,9 @@ const emptyForm = () => ({
   rating: '4.5',
   reviewCount: '0',
   articuloTipo: 'producto',
-  duracion_minutos: '60',
+  duracion_agenda: '60 min',
+  volumenTrabajoActivo: false,
+  preciosPorVolumen: emptyPreciosPorVolumen(),
   localMain: null,
   localGallery: [],
   remoteMain: '',
@@ -542,8 +584,7 @@ export function InventarioScreen({ onBack }) {
       nombre: row.nombre || '',
       categoria: row.categoria || '',
       barcode: row.barcode || '',
-      precio_venta: row.precio_venta != null ? String(row.precio_venta) : '',
-      precio_costo: row.precio_costo != null ? String(row.precio_costo) : row.costo != null ? String(row.costo) : '',
+      precio_venta: montoInputFromNumber(row.precio_venta),
       stock_actual: String(row.stock_actual ?? 0),
       stock_minimo: String(row.stock_minimo ?? 5),
       es_consumible: !!row.es_consumible,
@@ -557,7 +598,11 @@ export function InventarioScreen({ onBack }) {
       rating: String(meta.rating ?? 4.5),
       reviewCount: String(meta.reviewCount ?? 0),
       articuloTipo: meta.articuloTipo || 'producto',
-      duracion_minutos: String(meta.duracion_minutos ?? 60),
+      duracion_agenda: meta.duracion_agenda || (meta.duracion_minutos ? `${meta.duracion_minutos} min` : '60 min'),
+      volumenTrabajoActivo: !!meta.volumenTrabajoActivo,
+      preciosPorVolumen: preciosPorVolumenToForm(
+        meta.volumenTrabajoActivo ? meta.preciosPorVolumen : emptyPreciosPorVolumen(),
+      ),
       localMain: null,
       localGallery: [],
       remoteMain: main,
@@ -607,6 +652,11 @@ export function InventarioScreen({ onBack }) {
     return Number.isFinite(n) ? n : 0;
   };
 
+  const parsePrecioInput = (s) => {
+    const n = parseMontoInput(s);
+    return Number.isFinite(n) ? n : 0;
+  };
+
   const save = async () => {
     if (!form.nombre.trim()) {
       Alert.alert('Nombre', 'El nombre del artículo es obligatorio.');
@@ -620,7 +670,31 @@ export function InventarioScreen({ onBack }) {
       );
       return;
     }
-    if (form.visible_en_tienda && !(parseNum(form.precio_venta) > 0)) {
+    const preciosVol = normalizePreciosPorVolumen(
+      form.articuloTipo === 'servicio' && form.volumenTrabajoActivo
+        ? {
+            corto: parsePrecioInput(form.preciosPorVolumen.corto),
+            medio: parsePrecioInput(form.preciosPorVolumen.medio),
+            largo: parsePrecioInput(form.preciosPorVolumen.largo),
+            muy_largo: parsePrecioInput(form.preciosPorVolumen.muy_largo),
+          }
+        : null,
+    );
+    if (form.articuloTipo === 'servicio' && form.volumenTrabajoActivo) {
+      const faltan = VOLUMEN_TRABAJO_OPCIONES.filter((o) => !(preciosVol[o.id] > 0)).map((o) => o.label);
+      if (faltan.length) {
+        Alert.alert('Precios por volumen', `Completá un precio mayor a 0 para: ${faltan.join(', ')}.`);
+        return;
+      }
+    } else if (!(parsePrecioInput(form.precio_venta) > 0)) {
+      Alert.alert('Precio', 'Indicá el precio de venta.');
+      return;
+    }
+    if (
+      form.visible_en_tienda &&
+      !(parsePrecioInput(form.precio_venta) > 0) &&
+      !form.volumenTrabajoActivo
+    ) {
       Alert.alert('Tienda', 'Para publicar en App Clientes, indicá un precio de venta mayor a 0.');
       return;
     }
@@ -651,16 +725,32 @@ export function InventarioScreen({ onBack }) {
         rating: parseNum(form.rating) || 4.5,
         reviewCount: Math.max(0, Math.floor(parseNum(form.reviewCount))),
         articuloTipo: form.articuloTipo === 'servicio' ? 'servicio' : 'producto',
-        duracion_minutos: Math.max(15, Math.floor(parseNum(form.duracion_minutos) || 60)),
+        duracion_agenda:
+          form.articuloTipo === 'servicio' ? String(form.duracion_agenda || '').trim() : '',
+        duracion_minutos:
+          form.articuloTipo === 'servicio'
+            ? parseDuracionMinutosFromMeta({ duracion_agenda: form.duracion_agenda })
+            : DEFAULT_TIENDA_META.duracion_minutos,
+        volumenTrabajoActivo:
+          form.articuloTipo === 'servicio' ? !!form.volumenTrabajoActivo : false,
+        volumenTrabajo: null,
+        preciosPorVolumen:
+          form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? preciosVol : null,
       };
       const notas = mergeNotas(form.notasStaff, meta);
+      const precioVentaCol =
+        form.articuloTipo === 'servicio' && form.volumenTrabajoActivo
+          ? form.visible_en_tienda
+            ? null
+            : precioVentaReferencia(meta, preciosVol.medio)
+          : parsePrecioInput(form.precio_venta) || null;
 
       const payload = {
         nombre: form.nombre.trim(),
         categoria: form.categoria.trim() || null,
         barcode: form.barcode.trim() || null,
-        precio_venta: parseNum(form.precio_venta) || null,
-        precio_costo: parseNum(form.precio_costo) || null,
+        precio_venta: precioVentaCol,
+        precio_costo: null,
         stock_actual: Math.max(0, Math.floor(parseNum(form.stock_actual))),
         stock_minimo: Math.max(0, Math.floor(parseNum(form.stock_minimo))),
         es_consumible: !!form.es_consumible,
@@ -709,15 +799,15 @@ export function InventarioScreen({ onBack }) {
       }
 
       if (meta.articuloTipo === 'servicio') {
-        const { error: syncErr } = await db.servicios.syncFromInventario({
+        const { error: syncErr, skipped } = await db.servicios.syncFromInventario({
           nombre: payload.nombre,
           precio_venta: payload.precio_venta,
           notas: payload.notas,
         });
-        if (syncErr) {
+        if (syncErr && !skipped) {
           Alert.alert(
             'Guardado con aviso',
-            `El artículo quedó en inventario, pero no se pudo sincronizar con la agenda (tabla servicios): ${syncErr.message || syncErr}`,
+            `El artículo quedó en inventario, pero no se pudo sincronizar con la agenda: ${syncErr.message || syncErr}`,
           );
         }
       }
@@ -818,16 +908,12 @@ export function InventarioScreen({ onBack }) {
       >
         <View style={{ flex: 1 }}>
           <View style={styles.invHeaderPad}>
-          <View style={[styles.searchWrap, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-            <Search size={18} color={c.foregroundMuted} />
-            <TextInput
-              style={[styles.searchIn, { color: c.foreground }]}
-              placeholder="Buscar nombre, categoría, SKU…"
-              placeholderTextColor={c.foregroundSubtle}
-              value={query}
-              onChangeText={setQuery}
-            />
-          </View>
+          <SalonSearchBar
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Buscar nombre, categoría, código, servicio…"
+            accessibilityLabel="Buscar en inventario"
+          />
 
           <View style={styles.invToolbar}>
             <Text style={[styles.invToolbarMeta, { color: c.foregroundMuted }]}>
@@ -952,7 +1038,13 @@ export function InventarioScreen({ onBack }) {
                     styles.chip,
                     { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
                   ]}
-                  onPress={() => setForm((f) => ({ ...f, articuloTipo: opt.id }))}
+                  onPress={() =>
+                    setForm((f) => ({
+                      ...f,
+                      articuloTipo: opt.id,
+                      volumenTrabajoActivo: opt.id === 'servicio' ? f.volumenTrabajoActivo : false,
+                    }))
+                  }
                 >
                   <Text style={{ color: on ? c.primary : c.foreground, fontFamily: typography.fontSansMedium }}>
                     {opt.label}
@@ -990,44 +1082,95 @@ export function InventarioScreen({ onBack }) {
             />
           </Field>
 
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Field label="Precio venta (GTQ) *" c={c}>
-                <TextInput
-                  style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                  value={form.precio_venta}
-                  onChangeText={(t) => setForm((f) => ({ ...f, precio_venta: t }))}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  placeholderTextColor={c.foregroundSubtle}
-                />
-              </Field>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Field label="Precio costo / lista (GTQ)" c={c}>
-                <TextInput
-                  style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                  value={form.precio_costo}
-                  onChangeText={(t) => setForm((f) => ({ ...f, precio_costo: t }))}
-                  keyboardType="decimal-pad"
-                  placeholder="Para tachar si es mayor"
-                  placeholderTextColor={c.foregroundSubtle}
-                />
-              </Field>
-            </View>
-          </View>
-
-          {form.articuloTipo === 'servicio' ? (
-            <Field label="Duración en agenda (minutos)" c={c}>
-              <TextInput
-                style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                value={form.duracion_minutos}
-                onChangeText={(t) => setForm((f) => ({ ...f, duracion_minutos: t }))}
-                keyboardType="number-pad"
-                placeholder="60"
-                placeholderTextColor={c.foregroundSubtle}
+          {form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? null : (
+            <Field
+              label={form.articuloTipo === 'servicio' ? 'Precio venta (GTQ) *' : 'Precio venta (Q) *'}
+              c={c}
+            >
+              <PrecioGtqInput
+                c={c}
+                value={form.precio_venta}
+                onChangeText={(t) => setForm((f) => ({ ...f, precio_venta: t }))}
               />
             </Field>
+          )}
+
+          {form.articuloTipo === 'servicio' ? (
+            <>
+              <Field label="Duración en agenda" c={c}>
+                <TextInput
+                  style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                  value={form.duracion_agenda}
+                  onChangeText={(t) => setForm((f) => ({ ...f, duracion_agenda: t }))}
+                  placeholder="Ej. 60 min, 1 hora, media mañana"
+                  placeholderTextColor={c.foregroundSubtle}
+                />
+              </Field>
+
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                  <Text style={{ color: c.foreground, fontFamily: typography.fontSansMedium, fontSize: 14 }}>
+                    Volumen de trabajo
+                  </Text>
+                  <Text style={{ color: c.foregroundMuted, fontFamily: typography.fontSans, fontSize: 12, marginTop: 4 }}>
+                    Cuatro precios en GTQ; en Vender el cajero elige el nivel al cobrar.
+                  </Text>
+                </View>
+                <Switch
+                  value={form.volumenTrabajoActivo}
+                  onValueChange={(v) => setForm((f) => ({ ...f, volumenTrabajoActivo: v }))}
+                  trackColor={{ false: c.cardBorder, true: `${c.primary}88` }}
+                  thumbColor={form.volumenTrabajoActivo ? c.primary : c.foregroundSubtle}
+                />
+              </View>
+
+              {form.volumenTrabajoActivo ? (
+                <>
+                  <Text style={[subStyles.rowLabel, { marginTop: spacing.sm, marginBottom: spacing.xs }]}>
+                    Precios por volumen (GTQ) *
+                  </Text>
+                  <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.sm }]}>
+                    En Vender el cajero elige Corto, Medio, Largo o Muy largo al agregar este servicio.
+                  </Text>
+                  <View style={styles.row2}>
+                    {VOLUMEN_TRABAJO_OPCIONES.slice(0, 2).map((opt) => (
+                      <View key={opt.id} style={{ flex: 1 }}>
+                        <Field label={opt.label} c={c}>
+                          <PrecioGtqInput
+                            c={c}
+                            value={form.preciosPorVolumen[opt.id]}
+                            onChangeText={(t) =>
+                              setForm((f) => ({
+                                ...f,
+                                preciosPorVolumen: { ...f.preciosPorVolumen, [opt.id]: t },
+                              }))
+                            }
+                          />
+                        </Field>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={styles.row2}>
+                    {VOLUMEN_TRABAJO_OPCIONES.slice(2).map((opt) => (
+                      <View key={opt.id} style={{ flex: 1 }}>
+                        <Field label={opt.label} c={c}>
+                          <PrecioGtqInput
+                            c={c}
+                            value={form.preciosPorVolumen[opt.id]}
+                            onChangeText={(t) =>
+                              setForm((f) => ({
+                                ...f,
+                                preciosPorVolumen: { ...f.preciosPorVolumen, [opt.id]: t },
+                              }))
+                            }
+                          />
+                        </Field>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+            </>
           ) : null}
 
           <View style={styles.row2}>
@@ -1067,7 +1210,14 @@ export function InventarioScreen({ onBack }) {
             />
           </View>
           <View style={styles.switchRow}>
-            <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>Visible en tienda (clientes)</Text>
+            <View style={{ flex: 1, paddingRight: spacing.sm }}>
+              <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>Visible en tienda (clientes)</Text>
+              {form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? (
+                <Text style={{ color: c.foregroundMuted, fontFamily: typography.fontSans, fontSize: 12, marginTop: 4 }}>
+                  En la app verán «Precio variable» (sin monto fijo). Los 4 precios solo se usan en Vender.
+                </Text>
+              ) : null}
+            </View>
             <Switch
               value={form.visible_en_tienda}
               onValueChange={(v) => setForm((f) => ({ ...f, visible_en_tienda: v }))}
@@ -1279,6 +1429,49 @@ export function InventarioScreen({ onBack }) {
           </View>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+function PrecioGtqInput({ value, onChangeText, c, placeholder = '0' }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: c.cardBorder,
+        borderRadius: radii.md,
+        backgroundColor: c.card,
+        minHeight: 46,
+      }}
+    >
+      <Text
+        style={{
+          paddingLeft: spacing.md,
+          fontFamily: typography.fontSansMedium,
+          fontSize: 15,
+          color: c.primary,
+        }}
+      >
+        Q
+      </Text>
+      <TextInput
+        style={{
+          flex: 1,
+          paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+          paddingHorizontal: spacing.sm,
+          paddingRight: spacing.md,
+          fontFamily: typography.fontSans,
+          fontSize: 15,
+          color: c.foreground,
+        }}
+        value={value}
+        onChangeText={(t) => onChangeText(formatMontoInputLive(t))}
+        keyboardType="decimal-pad"
+        placeholder={placeholder}
+        placeholderTextColor={c.foregroundSubtle}
+      />
     </View>
   );
 }

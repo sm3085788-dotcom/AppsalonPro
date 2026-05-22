@@ -137,6 +137,13 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
 
   const addToCart = (product, quantity = 1) => {
     if (!product || quantity < 1) return;
+    if (product.precioVariable) {
+      Alert.alert(
+        'Precio variable',
+        'Este servicio se cotiza en el salón según el volumen de tu cabello. Agendá tu cita para conocer el precio.',
+      );
+      return;
+    }
     setCartItems((prev) => {
       const idx = prev.findIndex((i) => i.id === product.id);
       if (idx >= 0) {
@@ -311,11 +318,22 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
           ) : null}
 
           <View style={styles.priceBlock}>
-            {selected.compareAtLabel ? (
+            {selected.id === 'sample-keratin-kit' && selected.compareAtLabel ? (
               <Text style={styles.compareAt}>{selected.compareAtLabel}</Text>
             ) : null}
-            <Text style={styles.priceBig}>{selected.priceLabel}</Text>
-            <Text style={styles.sku}>SKU · {selected.sku ?? '—'}</Text>
+            <Text
+              style={[
+                styles.priceBig,
+                selected.precioVariable && { fontSize: 20, letterSpacing: 0.2 },
+              ]}
+            >
+              {selected.priceLabel}
+            </Text>
+            {selected.precioVariable ? (
+              <Text style={styles.precioVariableNote}>
+                El precio depende del volumen de tu cabello. En el salón te indican el monto antes del servicio.
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.shipInline}>
@@ -340,7 +358,7 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
                 accessibilityRole="button"
                 accessibilityLabel="Mostrar u ocultar especificaciones"
               >
-                <Text style={subStyles.rowLabel}>Ficha técnica</Text>
+                <Text style={subStyles.rowLabel}>Más información</Text>
                 <Text style={styles.specToggleTxt}>{specsExpanded ? 'Ocultar' : 'Ver'}</Text>
               </TouchableOpacity>
               {specsExpanded
@@ -351,51 +369,62 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
             </View>
           ) : null}
 
-          <Text style={[subStyles.rowLabel, { marginTop: spacing.md }]}>Cantidad</Text>
-          <View style={styles.qtyRow}>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => bumpQty(-1)}
-              accessibilityRole="button"
-              accessibilityLabel="Menos"
-            >
-              <Text style={styles.qtyBtnTxt}>−</Text>
-            </TouchableOpacity>
-            <Text style={styles.qtyVal}>{qty}</Text>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => bumpQty(1)}
-              accessibilityRole="button"
-              accessibilityLabel="Más"
-            >
-              <Text style={styles.qtyBtnTxt}>+</Text>
-            </TouchableOpacity>
-          </View>
+          {selected.precioVariable ? (
+            <View style={[subStyles.card, { marginTop: spacing.md }]}>
+              <Text style={subStyles.bullets}>
+                Este servicio no se compra con precio fijo en la tienda. Agendá tu cita en Inicio y el salón te
+                confirmará el precio según tu cabello.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[subStyles.rowLabel, { marginTop: spacing.md }]}>Cantidad</Text>
+              <View style={styles.qtyRow}>
+                <TouchableOpacity
+                  style={styles.qtyBtn}
+                  onPress={() => bumpQty(-1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Menos"
+                >
+                  <Text style={styles.qtyBtnTxt}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.qtyVal}>{qty}</Text>
+                <TouchableOpacity
+                  style={styles.qtyBtn}
+                  onPress={() => bumpQty(1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Más"
+                >
+                  <Text style={styles.qtyBtnTxt}>+</Text>
+                </TouchableOpacity>
+              </View>
 
-          {cartHint ? (
-            <Text style={styles.cartBanner}>Añadido al carrito (sin persistencia aún)</Text>
-          ) : null}
+              {cartHint ? (
+                <Text style={styles.cartBanner}>Añadido al carrito (sin persistencia aún)</Text>
+              ) : null}
 
-          <SalonButton
-            title="Añadir al carrito"
-            variant="outlineGray"
-            fullWidth
-            style={{ marginTop: spacing.md }}
-            onPress={() => {
-              addToCart(selected, qty);
-              setCartHint(true);
-            }}
-          />
-          <SalonButton
-            title="Comprar ahora"
-            variant="heroGold"
-            fullWidth
-            style={{ marginTop: spacing.sm }}
-            onPress={() => {
-              addToCart(selected, qty);
-              setPhase('cart');
-            }}
-          />
+              <SalonButton
+                title="Añadir al carrito"
+                variant="outlineGray"
+                fullWidth
+                style={{ marginTop: spacing.md }}
+                onPress={() => {
+                  addToCart(selected, qty);
+                  setCartHint(true);
+                }}
+              />
+              <SalonButton
+                title="Comprar ahora"
+                variant="heroGold"
+                fullWidth
+                style={{ marginTop: spacing.sm }}
+                onPress={() => {
+                  addToCart(selected, qty);
+                  setPhase('cart');
+                }}
+              />
+            </>
+          )}
         </View>
       ) : null}
 
@@ -730,12 +759,12 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
               </Text>
               <TouchableOpacity
                 style={styles.savedCardRow}
-                onPress={() => Linking.openURL('tel:+50257199107').catch(() => {})}
+                onPress={() => Linking.openURL('tel:+50247132123').catch(() => {})}
                 activeOpacity={0.86}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.choiceTitle}>Llamar al salón</Text>
-                  <Text style={styles.choiceSub}>+502 5719-9107</Text>
+                  <Text style={styles.choiceSub}>+502 4713-2123</Text>
                 </View>
                 <Text style={styles.cardPickText}>Llamar</Text>
               </TouchableOpacity>
@@ -1094,6 +1123,13 @@ function createTiendaStyles(c) {
     fontFamily: typography.fontSansMedium,
     fontSize: 28,
     color: c.foreground,
+  },
+  precioVariableNote: {
+    marginTop: spacing.xs,
+    fontFamily: typography.fontSans,
+    fontSize: 14,
+    lineHeight: 20,
+    color: c.foregroundMuted,
   },
   sku: {
     marginTop: 6,
