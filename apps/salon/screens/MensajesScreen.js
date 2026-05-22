@@ -39,7 +39,7 @@ import {
   isClienteAppVerificado,
   isClienteManual,
 } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { useTheme } from '../theme/ThemeProvider';
@@ -693,7 +693,10 @@ export function MensajesScreen({ onBack }) {
               Solo llega a clientes con App Clientes verificada ({verifiedClients.length} de {clients.length}).
             </Text>
           </LinearGradient>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: spacing.lg }}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ padding: spacing.lg, paddingBottom: modalScrollBottomPad(insets) }}
+          >
             <Text style={[styles.fieldLbl, { color: c.foreground }]}>Título (opcional)</Text>
             <TextInput
               style={[styles.fieldIn, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
@@ -808,7 +811,7 @@ export function MensajesScreen({ onBack }) {
               {
                 borderTopColor: c.cardBorder,
                 backgroundColor: c.background,
-                paddingBottom: Math.max(insets.bottom, spacing.md) + spacing.sm,
+                paddingBottom: modalSheetBottomPad(insets),
               },
             ]}
           >
@@ -917,7 +920,7 @@ export function MensajesScreen({ onBack }) {
 
     <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
       <View style={styles.modalBackdrop}>
-        <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+        <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
           <View style={styles.filterModalHead}>
             <Text style={[styles.filterModalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
             <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12} accessibilityLabel="Cerrar">

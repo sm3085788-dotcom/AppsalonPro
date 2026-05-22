@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -407,7 +407,7 @@ export function PapeleriaScreen({ onBack }) {
 
       <Modal visible={!!detalleVenta} animationType="slide" transparent onRequestClose={() => setDetalleVenta(null)}>
         <View style={styles.detailBackdrop}>
-          <View style={[styles.detailSheet, { backgroundColor: c.background }]}>
+          <View style={[styles.detailSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             {detalleVenta ? (
               <>
                 <View style={styles.detailHead}>
@@ -427,7 +427,7 @@ export function PapeleriaScreen({ onBack }) {
 
                 <ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{ paddingBottom: insets.bottom + spacing.md }}
+                  contentContainerStyle={{ paddingBottom: modalScrollBottomPad(insets) }}
                 >
                   <View style={[styles.detailTotalCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
                     <Text style={[styles.detailTotalLbl, { color: c.foregroundMuted }]}>Total cobrado</Text>
@@ -515,7 +515,7 @@ export function PapeleriaScreen({ onBack }) {
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background }]}>
+          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.filterHead}>
               <Text style={[styles.filterTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>

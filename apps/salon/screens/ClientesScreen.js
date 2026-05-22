@@ -20,7 +20,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { UserPlus, Calendar, X, ChevronRight, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, MEMBRESIA_TIERS, membresiaLabel, isClienteAppVerificado } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -521,9 +521,9 @@ export function ClientesScreen({ onBack }) {
         <View style={styles.modalBackdrop}>
           <ScrollView
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.modalPad, { paddingBottom: insets.bottom + spacing.xl }]}
+            contentContainerStyle={[styles.modalPad, { paddingBottom: modalScrollBottomPad(insets) }]}
           >
-            <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+            <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
               <Text style={styles.modalTitle}>Cliente manual</Text>
 
               <Text style={styles.fieldLbl}>Nombre completo</Text>
@@ -623,9 +623,9 @@ export function ClientesScreen({ onBack }) {
 
       <Modal visible={!!detailCliente} animationType="slide" transparent onRequestClose={() => setDetailCliente(null)}>
         <View style={styles.modalBackdrop}>
-          <ScrollView contentContainerStyle={[styles.modalPad, { paddingBottom: insets.bottom + spacing.xl }]}>
+          <ScrollView contentContainerStyle={[styles.modalPad, { paddingBottom: modalScrollBottomPad(insets) }]}>
             {detailCliente ? (
-              <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+              <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
                 <View style={styles.filterModalHead}>
                   <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Ficha de cliente</Text>
                   <TouchableOpacity onPress={() => setDetailCliente(null)} hitSlop={12}>
@@ -771,7 +771,7 @@ export function ClientesScreen({ onBack }) {
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+          <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.filterModalHead}>
               <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12} accessibilityLabel="Cerrar">

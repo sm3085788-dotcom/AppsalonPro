@@ -25,7 +25,7 @@ import {
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
-import { SubScreenChrome, useSubStyles, SalonButton } from '../components/luxury';
+import { SubScreenChrome, useSubStyles, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   clearCajaSession,
@@ -793,7 +793,7 @@ export function CajaScreen({ onBack }) {
             style={styles.modalScrollFrame}
             contentContainerStyle={[
               styles.modalScrollContent,
-              { paddingBottom: spacing.md + spacing.lg + Math.max(insets.bottom, spacing.md) },
+              { paddingBottom: modalScrollBottomPad(insets) },
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -869,7 +869,7 @@ export function CajaScreen({ onBack }) {
             style={styles.modalScrollFrame}
             contentContainerStyle={[
               styles.modalScrollContent,
-              { paddingBottom: spacing.md + spacing.lg + Math.max(insets.bottom, spacing.md) },
+              { paddingBottom: modalScrollBottomPad(insets) },
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -942,7 +942,7 @@ export function CajaScreen({ onBack }) {
       {modalDev ? (
         <Modal visible animationType="slide" transparent onRequestClose={() => setModalDev(false)}>
           <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: c.card }]}>
+            <View style={[styles.modalCard, { backgroundColor: c.card, paddingBottom: modalSheetBottomPad(insets) }]}>
               <Text style={styles.modalTitle}>Devoluciones</Text>
               <Text style={subStyles.muted}>Ingresá factura y activá el lector QR.</Text>
               <TextInput
@@ -972,7 +972,7 @@ export function CajaScreen({ onBack }) {
       {modalCambio ? (
         <Modal visible animationType="slide" transparent onRequestClose={() => setModalCambio(false)}>
           <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: c.card }]}>
+            <View style={[styles.modalCard, { backgroundColor: c.card, paddingBottom: modalSheetBottomPad(insets) }]}>
               <Text style={styles.modalTitle}>Cambio</Text>
               <Text style={subStyles.muted}>Ingresá factura y activá el lector QR.</Text>
               <TextInput
@@ -1005,7 +1005,7 @@ export function CajaScreen({ onBack }) {
 
       <Modal visible={modalCierre} animationType="fade" transparent onRequestClose={() => setModalCierre(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: c.card }]}>
+          <View style={[styles.modalCard, { backgroundColor: c.card, paddingBottom: modalSheetBottomPad(insets) }]}>
             <Text style={styles.modalTitle}>Cierre de caja</Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm }]}>
               Completá quién firma como gerente y como administrador. El PDF incluye líneas de firma para ambos.

@@ -23,7 +23,7 @@ import { db, uploadTendenciaMediaFromUri } from '@appsalon/shared-config';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useListSelection } from '../hooks/useListSelection';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton, useSubStyles, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
 /** Máximo de diapositivas activas en el carrusel de inicio (App Clientes). */
@@ -225,7 +225,7 @@ export function MarketingScreen({ onBack }) {
   );
   const [heroCta, setHeroCta] = useState('Agendar ahora');
 
-  const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
+  const padBottom = modalScrollBottomPad(insets);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);

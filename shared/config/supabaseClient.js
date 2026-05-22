@@ -2217,6 +2217,85 @@ export const db = {
     },
   },
 
+  /** Ingresos de stock por lote (tabla inventario_lotes). */
+  inventarioLotes: {
+    getByInventarioId: async (inventarioId) => {
+      return await supabase
+        .from('inventario_lotes')
+        .select('*')
+        .eq('inventario_id', inventarioId)
+        .order('fecha_ingreso', { ascending: false })
+        .order('created_at', { ascending: false });
+    },
+
+    getByInventarioDateRange: async (inventarioId, fromDateIso, toDateIso) => {
+      const from = String(fromDateIso || '').slice(0, 10);
+      const to = String(toDateIso || '').slice(0, 10);
+      return await supabase
+        .from('inventario_lotes')
+        .select('*')
+        .eq('inventario_id', inventarioId)
+        .gte('fecha_ingreso', from)
+        .lte('fecha_ingreso', to)
+        .order('fecha_ingreso', { ascending: false });
+    },
+
+    registrarIngreso: async ({ inventario_id, numero_lote, fecha_ingreso, cantidad }) => {
+      const qty = Math.max(1, Math.floor(Number(cantidad) || 0));
+      const loteNum = String(numero_lote || '').trim();
+      if (!inventario_id || !loteNum) {
+        return { data: null, error: { message: 'Producto y número de lote son obligatorios.' } };
+      }
+      const fecha = String(fecha_ingreso || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+        return { data: null, error: { message: 'Fecha de ingreso inválida.' } };
+      }
+
+      const { data: producto, error: pErr } = await supabase
+        .from('inventario')
+        .select('id, nombre, stock_actual')
+        .eq('id', inventario_id)
+        .single();
+
+      if (pErr || !producto) {
+        return { data: null, error: pErr || { message: 'Producto no encontrado' } };
+      }
+
+      const stockAntes = Math.max(0, Math.floor(Number(producto.stock_actual ?? 0)));
+      const stockDespues = stockAntes + qty;
+
+      const { data: lote, error: lErr } = await supabase
+        .from('inventario_lotes')
+        .insert({
+          inventario_id,
+          numero_lote: loteNum,
+          fecha_ingreso: fecha,
+          cantidad: qty,
+          stock_antes: stockAntes,
+          stock_despues: stockDespues,
+        })
+        .select()
+        .single();
+
+      if (lErr) return { data: null, error: lErr };
+
+      const { error: sErr } = await supabase
+        .from('inventario')
+        .update({
+          stock_actual: stockDespues,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', inventario_id);
+
+      if (sErr) return { data: null, error: sErr };
+
+      return {
+        data: { lote, stockAntes, stockDespues, producto },
+        error: null,
+      };
+    },
+  },
+
   // ==================== PROVEEDORES (compañías / marcas) ====================
   proveedores: {
     getAll: async () => {

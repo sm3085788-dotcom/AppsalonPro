@@ -18,7 +18,8 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, Star, Truck, X, Image as ImageIcon, Check } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Plus, Star, Truck, X, Image as ImageIcon, Check, ChevronRight } from 'lucide-react-native';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -39,12 +40,25 @@ import {
   formatMontoInputLive,
   montoInputFromNumber,
 } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, SalonSearchBar, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton, SalonSearchBar, useSubStyles, modalSheetBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
 const GAP = 6;
-const GRID_COLS = 3;
 const GRID_H_PAD = spacing.sm;
+/** Laptop / BlueStacks horizontal: más columnas y tarjetas más chicas. */
+const MAX_INV_CONTENT_WIDTH = 1120;
+const MAX_INV_CARD_WIDTH = 172;
+const MIN_INV_GRID_COLS = 2;
+const MAX_INV_GRID_COLS = 6;
+
+function computeInventoryGridLayout(windowWidth) {
+  const effectiveW = Math.min(windowWidth, MAX_INV_CONTENT_WIDTH);
+  const inner = Math.max(0, effectiveW - GRID_H_PAD * 2);
+  let cols = Math.floor((inner + GAP) / (MAX_INV_CARD_WIDTH + GAP));
+  cols = Math.max(MIN_INV_GRID_COLS, Math.min(MAX_INV_GRID_COLS, cols));
+  const cardW = (inner - GAP * (cols - 1)) / cols;
+  return { cols, cardW };
+}
 const IMAGE_ASPECT = 1;
 const IMAGE_ASPECT_COMPACT = 1;
 const MAX_GALERIA = 4;
@@ -479,12 +493,26 @@ export function InventarioScreen({ onBack }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [modalFiltros, setModalFiltros] = useState(false);
+  const [modalStockFiltros, setModalStockFiltros] = useState(false);
   const [sortInv, setSortInv] = useState('nombre_asc');
   const [filterInv, setFilterInv] = useState('todos');
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [stockPhase, setStockPhase] = useState('pick');
+  const [stockQuery, setStockQuery] = useState('');
+  const [stockFilter, setStockFilter] = useState('todos');
+  const [stockPickProduct, setStockPickProduct] = useState(null);
+  const [loteForm, setLoteForm] = useState(() => ({
+    numero_lote: '',
+    cantidad: '',
+    fecha_ingreso: new Date(),
+  }));
+  const [showLoteDatePicker, setShowLoteDatePicker] = useState(false);
+  const [stockSaving, setStockSaving] = useState(false);
   const sel = useListSelection();
 
-  const cardW = (winW - GRID_H_PAD * 2 - GAP * (GRID_COLS - 1)) / GRID_COLS;
+  const isNuevoStock = !form.id && form.articuloTipo === 'nuevo_stock';
+
+  const { cols: gridCols, cardW } = useMemo(() => computeInventoryGridLayout(winW), [winW]);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -563,15 +591,102 @@ export function InventarioScreen({ onBack }) {
 
   const gridRows = useMemo(() => {
     const out = [];
-    for (let i = 0; i < filtered.length; i += GRID_COLS) {
-      out.push(filtered.slice(i, i + GRID_COLS));
+    for (let i = 0; i < filtered.length; i += gridCols) {
+      out.push(filtered.slice(i, i + gridCols));
     }
     return out;
-  }, [filtered]);
+  }, [filtered, gridCols]);
+
+  const resetStockFlow = () => {
+    setStockPhase('pick');
+    setStockQuery('');
+    setStockFilter('todos');
+    setStockPickProduct(null);
+    setLoteForm({ numero_lote: '', cantidad: '', fecha_ingreso: new Date() });
+    setShowLoteDatePicker(false);
+  };
+
+  const closeArticleModal = () => {
+    setModalOpen(false);
+    resetStockFlow();
+  };
 
   const openNew = () => {
     setForm(emptyForm());
+    resetStockFlow();
     setModalOpen(true);
+  };
+
+  const stockProducts = useMemo(() => {
+    const q = stockQuery.trim().toLowerCase();
+    let rows = items.filter((r) => getArticuloTipo(r) === 'producto');
+    if (q) {
+      rows = rows.filter((r) => {
+        const blob = [r.nombre, r.categoria, r.barcode, r.ubicacion].filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    if (stockFilter === 'bajo_stock') {
+      rows = rows.filter((r) => {
+        const st = Number(r.stock_actual ?? 0);
+        const min = Number(r.stock_minimo ?? 0);
+        return st <= min;
+      });
+    }
+    rows.sort((a, b) =>
+      String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }),
+    );
+    return rows;
+  }, [items, stockQuery, stockFilter]);
+
+  const stockFiltroResumen = useMemo(() => {
+    const f = stockFilter === 'bajo_stock' ? 'Bajo stock' : 'Todos los productos';
+    return f;
+  }, [stockFilter]);
+
+  const confirmStockLote = async () => {
+    if (!stockPickProduct?.id) {
+      Alert.alert('Nuevo stock', 'Elegí un producto de la lista.');
+      return;
+    }
+    const numero = loteForm.numero_lote.trim();
+    const cant = Math.max(0, Math.floor(parseNum(loteForm.cantidad)));
+    if (!numero) {
+      Alert.alert('Nuevo stock', 'Ingresá el número de lote.');
+      return;
+    }
+    if (cant < 1) {
+      Alert.alert('Nuevo stock', 'La cantidad debe ser al menos 1.');
+      return;
+    }
+    setStockSaving(true);
+    try {
+      const { data, error } = await db.inventarioLotes.registrarIngreso({
+        inventario_id: stockPickProduct.id,
+        numero_lote: numero,
+        fecha_ingreso: loteForm.fecha_ingreso.toISOString(),
+        cantidad: cant,
+      });
+      if (error) throw error;
+      await load();
+      Alert.alert(
+        'Stock actualizado',
+        `«${stockPickProduct.nombre}»\nLote ${numero}: +${cant} u.\nStock: ${data?.stockAntes ?? '—'} → ${data?.stockDespues ?? '—'}`,
+      );
+      closeArticleModal();
+    } catch (e) {
+      const msg = e?.message || 'No se pudo registrar el lote.';
+      if (String(msg).toLowerCase().includes('inventario_lotes') || String(msg).includes('does not exist')) {
+        Alert.alert(
+          'Tabla de lotes',
+          'Ejecutá en Supabase el script supabase-inventario-lotes-setup.sql y volvé a intentar.',
+        );
+      } else {
+        Alert.alert('Nuevo stock', msg);
+      }
+    } finally {
+      setStockSaving(false);
+    }
   };
 
   const openEdit = (row) => {
@@ -658,6 +773,7 @@ export function InventarioScreen({ onBack }) {
   };
 
   const save = async () => {
+    if (form.articuloTipo === 'nuevo_stock') return;
     if (!form.nombre.trim()) {
       Alert.alert('Nombre', 'El nombre del artículo es obligatorio.');
       return;
@@ -941,6 +1057,7 @@ export function InventarioScreen({ onBack }) {
             <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
           ) : (
             <FlatList
+              key={`inv-grid-${gridCols}`}
               data={gridRows}
               keyExtractor={(row, idx) => `row-${idx}-${row[0]?.id ?? 'e'}`}
               contentContainerStyle={{
@@ -1012,47 +1129,256 @@ export function InventarioScreen({ onBack }) {
         ) : null}
       </SubScreenChrome>
 
-      <Modal visible={modalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalOpen(false)}>
+      <Modal visible={modalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeArticleModal}>
         <View style={[styles.modalShell, { backgroundColor: c.background }]}>
         <View style={[styles.modalHead, { borderBottomColor: c.cardBorder, paddingTop: insets.top + spacing.sm }]}>
-          <Text style={[styles.modalTitle, { color: c.foreground }]}>{form.id ? 'Editar artículo' : 'Nuevo artículo'}</Text>
-          <TouchableOpacity onPress={() => setModalOpen(false)} hitSlop={12}>
+          <Text style={[styles.modalTitle, { color: c.foreground }]}>
+            {form.id
+              ? 'Editar artículo'
+              : isNuevoStock
+                ? stockPhase === 'lote'
+                  ? 'Ingresar lote'
+                  : 'Nuevo stock'
+                : 'Nuevo artículo'}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              if (isNuevoStock && stockPhase === 'lote') {
+                setStockPhase('pick');
+                setStockPickProduct(null);
+                return;
+              }
+              closeArticleModal();
+            }}
+            hitSlop={12}
+          >
             <X size={24} color={c.foreground} />
           </TouchableOpacity>
         </View>
+
+        {!form.id ? (
+          <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+            <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Tipo</Text>
+            <View style={styles.chipRow}>
+              {[
+                { id: 'producto', label: 'Producto' },
+                { id: 'servicio', label: 'Servicio' },
+                { id: 'nuevo_stock', label: 'Nuevo stock' },
+              ].map((opt) => {
+                const on = form.articuloTipo === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.chip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => {
+                      if (opt.id === 'nuevo_stock') {
+                        setForm((f) => ({ ...f, articuloTipo: 'nuevo_stock' }));
+                        resetStockFlow();
+                        return;
+                      }
+                      setForm((f) => ({
+                        ...f,
+                        articuloTipo: opt.id,
+                        volumenTrabajoActivo: opt.id === 'servicio' ? f.volumenTrabajoActivo : false,
+                      }));
+                      resetStockFlow();
+                    }}
+                  >
+                    <Text style={{ color: on ? c.primary : c.foreground, fontFamily: typography.fontSansMedium }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+
+        {isNuevoStock ? (
+          <View style={{ flex: 1, paddingHorizontal: spacing.lg }}>
+            {stockPhase === 'pick' ? (
+              <>
+                <SalonSearchBar
+                  value={stockQuery}
+                  onChangeText={setStockQuery}
+                  placeholder="Buscar producto por nombre, categoría o código…"
+                  accessibilityLabel="Buscar producto para ingreso de stock"
+                />
+                <View style={styles.stockToolbar}>
+                  <Text style={[styles.stockToolbarMeta, { color: c.foregroundMuted }]}>
+                    {stockProducts.length} producto{stockProducts.length === 1 ? '' : 's'}
+                  </Text>
+                  <TouchableOpacity hitSlop={12} onPress={() => setModalStockFiltros(true)}>
+                    <Text style={[styles.invToolbarLink, { color: c.primary }]}>Filtros</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={[styles.stockFiltroResumen, { color: c.foregroundSubtle }]} numberOfLines={1}>
+                  {stockFiltroResumen}
+                </Text>
+                <View style={[styles.stockListShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                  <FlatList
+                    data={stockProducts}
+                    keyExtractor={(item) => String(item.id)}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{
+                      paddingBottom: padBottom + spacing.lg,
+                      flexGrow: stockProducts.length === 0 ? 1 : 0,
+                    }}
+                    renderItem={({ item }) => {
+                      const st = Number(item.stock_actual ?? 0);
+                      const min = Number(item.stock_minimo ?? 0);
+                      const sub = [
+                        item.categoria,
+                        item.barcode ? `Cód. ${item.barcode}` : null,
+                        `Stock ${st}${min > 0 ? ` · mín. ${min}` : ''}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ');
+                      return (
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          style={[styles.stockRow, { borderBottomColor: c.cardBorder }]}
+                          onPress={() => {
+                            setStockPickProduct(item);
+                            setStockPhase('lote');
+                            setLoteForm({ numero_lote: '', cantidad: '', fecha_ingreso: new Date() });
+                          }}
+                        >
+                          <View style={styles.stockRowBody}>
+                            <Text style={[styles.stockRowName, { color: c.foreground }]} numberOfLines={1}>
+                              {item.nombre || 'Sin nombre'}
+                            </Text>
+                            <Text style={[styles.stockRowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+                              {sub || '—'}
+                            </Text>
+                          </View>
+                          <ChevronRight size={16} color={c.foregroundSubtle} />
+                        </TouchableOpacity>
+                      );
+                    }}
+                    ListEmptyComponent={
+                      <Text style={[subStyles.muted, { padding: spacing.md, textAlign: 'center' }]}>
+                        No hay productos. Creá uno con tipo «Producto» primero.
+                      </Text>
+                    }
+                  />
+                </View>
+              </>
+            ) : (
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: padBottom + 80, paddingTop: spacing.md }}
+              >
+                <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>
+                  Producto:{' '}
+                  <Text style={{ color: c.foreground, fontFamily: typography.fontSansMedium }}>
+                    {stockPickProduct?.nombre || '—'}
+                  </Text>
+                  {' · Stock actual: '}
+                  {Number(stockPickProduct?.stock_actual ?? 0)}
+                </Text>
+                <Text style={[subStyles.rowLabel, { marginBottom: spacing.lg }]}>Ingresar nuevo lote</Text>
+                <Field label="Número de lote *" c={c}>
+                  <TextInput
+                    style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                    value={loteForm.numero_lote}
+                    onChangeText={(t) => setLoteForm((f) => ({ ...f, numero_lote: t }))}
+                    placeholder="Ej. L-2026-0042"
+                    placeholderTextColor={c.foregroundSubtle}
+                    autoCapitalize="characters"
+                  />
+                </Field>
+                <Field label="Fecha de ingreso *" c={c}>
+                  <TouchableOpacity
+                    style={[styles.inp, styles.dateTouch, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+                    onPress={() => setShowLoteDatePicker(true)}
+                  >
+                    <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>
+                      {loteForm.fecha_ingreso.toLocaleDateString('es-GT', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </Text>
+                  </TouchableOpacity>
+                  {showLoteDatePicker ? (
+                    <DateTimePicker
+                      value={loteForm.fecha_ingreso}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(_, d) => {
+                        setShowLoteDatePicker(Platform.OS === 'ios');
+                        if (d) setLoteForm((f) => ({ ...f, fecha_ingreso: d }));
+                      }}
+                    />
+                  ) : null}
+                </Field>
+                <Field label="Cantidad *" c={c}>
+                  <TextInput
+                    style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                    value={loteForm.cantidad}
+                    onChangeText={(t) => setLoteForm((f) => ({ ...f, cantidad: t.replace(/[^0-9]/g, '') }))}
+                    keyboardType="number-pad"
+                    placeholder="Unidades a sumar al stock"
+                    placeholderTextColor={c.foregroundSubtle}
+                  />
+                </Field>
+                <SalonButton
+                  title={stockSaving ? 'Guardando…' : 'Confirmar ingreso'}
+                  variant="heroGold"
+                  fullWidth
+                  loading={stockSaving}
+                  onPress={confirmStockLote}
+                  style={{ marginTop: spacing.lg }}
+                />
+              </ScrollView>
+            )}
+          </View>
+        ) : (
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: padBottom + 80 }}
         >
-          <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Tipo</Text>
-          <View style={styles.chipRow}>
-            {[
-              { id: 'producto', label: 'Producto' },
-              { id: 'servicio', label: 'Servicio' },
-            ].map((opt) => {
-              const on = form.articuloTipo === opt.id;
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={[
-                    styles.chip,
-                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
-                  ]}
-                  onPress={() =>
-                    setForm((f) => ({
-                      ...f,
-                      articuloTipo: opt.id,
-                      volumenTrabajoActivo: opt.id === 'servicio' ? f.volumenTrabajoActivo : false,
-                    }))
-                  }
-                >
-                  <Text style={{ color: on ? c.primary : c.foreground, fontFamily: typography.fontSansMedium }}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {!form.id ? (
+            <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Datos del artículo</Text>
+          ) : null}
+
+          {form.id ? (
+            <>
+              <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Tipo</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { id: 'producto', label: 'Producto' },
+                  { id: 'servicio', label: 'Servicio' },
+                ].map((opt) => {
+                  const on = form.articuloTipo === opt.id;
+                  return (
+                    <TouchableOpacity
+                      key={opt.id}
+                      style={[
+                        styles.chip,
+                        { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                      ]}
+                      onPress={() =>
+                        setForm((f) => ({
+                          ...f,
+                          articuloTipo: opt.id,
+                          volumenTrabajoActivo: opt.id === 'servicio' ? f.volumenTrabajoActivo : false,
+                        }))
+                      }
+                    >
+                      <Text style={{ color: on ? c.primary : c.foreground, fontFamily: typography.fontSansMedium }}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
 
           <Field label="Nombre (título en tienda) *" c={c}>
             <TextInput
@@ -1362,12 +1688,49 @@ export function InventarioScreen({ onBack }) {
 
           <SalonButton title={saving ? 'Guardando…' : 'Guardar'} variant="heroGold" fullWidth loading={saving} onPress={save} style={{ marginTop: spacing.lg }} />
         </ScrollView>
+        )}
+        </View>
+      </Modal>
+
+      <Modal visible={modalStockFiltros} animationType="slide" transparent onRequestClose={() => setModalStockFiltros(false)}>
+        <View style={styles.filterBackdrop}>
+          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
+            <View style={styles.filterHead}>
+              <Text style={[styles.filterTitle, { color: c.foreground }]}>Filtrar productos</Text>
+              <TouchableOpacity onPress={() => setModalStockFiltros(false)} hitSlop={12}>
+                <X size={22} color={c.foregroundMuted} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.invFilterChipRow}>
+              {[
+                { id: 'todos', label: 'Todos' },
+                { id: 'bajo_stock', label: 'Bajo stock' },
+              ].map((opt) => {
+                const on = stockFilter === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.chip,
+                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    ]}
+                    onPress={() => setStockFilter(opt.id)}
+                  >
+                    <Text style={{ color: on ? c.primary : c.foreground, fontFamily: typography.fontSansMedium, fontSize: 13 }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <SalonButton title="Aplicar" variant="heroGold" fullWidth onPress={() => setModalStockFiltros(false)} />
+          </View>
         </View>
       </Modal>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.filterHead}>
               <Text style={[styles.filterTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
@@ -1584,7 +1947,35 @@ function createStyles(c) {
       borderBottomWidth: StyleSheet.hairlineWidth,
     },
     modalTitle: { fontFamily: typography.fontDisplay, fontSize: 22 },
-    chipRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+    stockToolbar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: spacing.sm,
+      marginBottom: 4,
+    },
+    stockToolbarMeta: { fontFamily: typography.fontSans, fontSize: 13 },
+    stockFiltroResumen: { fontFamily: typography.fontSans, fontSize: 11, marginBottom: spacing.sm },
+    stockListShell: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      overflow: 'hidden',
+      marginTop: spacing.xs,
+    },
+    stockRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.sm,
+    },
+    stockRowBody: { flex: 1, minWidth: 0 },
+    stockRowName: { fontFamily: typography.fontSansMedium, fontSize: 14 },
+    stockRowSub: { fontFamily: typography.fontSans, fontSize: 11, lineHeight: 15, marginTop: 2 },
+    dateTouch: { justifyContent: 'center' },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
     chip: {
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,

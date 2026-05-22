@@ -18,12 +18,13 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FDFBF7"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.appsalon.pro.salon",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Esta app necesita acceso a la cámara para escanear códigos, tomar fotos de productos y servicios.",
         "NSMicrophoneUsageDescription": "Esta app necesita acceso al micrófono para grabar notas de voz.",
         "NSPhotoLibraryUsageDescription": "Esta app necesita acceso a la galería para seleccionar fotos.",
@@ -40,7 +41,7 @@
       "package": "com.appsalon.pro.salon",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FDFBF7"
+        "backgroundColor": "#000000"
       },
       "permissions": [
         "android.permission.CAMERA",

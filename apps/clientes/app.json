@@ -22,6 +22,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.appsalon.pro.clientes",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Usamos la cámara para tomar tu foto de perfil y compartir looks con el salón.",
         "NSMicrophoneUsageDescription": "Esta app necesita acceso al micrófono para grabar notas de voz.",
         "NSPhotoLibraryUsageDescription": "Esta app necesita acceso a la galería para seleccionar fotos.",

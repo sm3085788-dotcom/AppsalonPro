@@ -22,7 +22,7 @@ import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { SubScreenChrome, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { db, supabase } from '@appsalon/shared-config';
@@ -749,7 +749,7 @@ export function AppointmentsScreen({ onBack }) {
 
       <Modal visible={agendaFiltersOpen} animationType="slide" transparent onRequestClose={() => setAgendaFiltersOpen(false)}>
         <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background }]}>
+          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.filterHead}>
               <Text style={styles.filterTitle}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setAgendaFiltersOpen(false)} hitSlop={12} accessibilityLabel="Cerrar">
@@ -808,7 +808,7 @@ export function AppointmentsScreen({ onBack }) {
 
       <Modal visible={!!detailCita} animationType="slide" transparent onRequestClose={() => setDetailCita(null)}>
         <View style={styles.filterBackdrop}>
-          <View style={[styles.detailSheet, { backgroundColor: c.background }]}>
+          <View style={[styles.detailSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             {detailCita ? (
               <>
                 <View style={styles.filterHead}>
@@ -817,7 +817,10 @@ export function AppointmentsScreen({ onBack }) {
                     <X size={22} color={c.foregroundMuted} />
                   </TouchableOpacity>
                 </View>
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailScroll}>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={[styles.detailScroll, { paddingBottom: modalScrollBottomPad(insets) }]}
+                >
                   <View style={styles.detailEstadoRow}>
                     <View
                       style={[

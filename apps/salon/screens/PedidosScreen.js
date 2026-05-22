@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Megaphone, MessageCircle, Package, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, confirmarCobroPedidoSalon } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 
 const TABS = [
@@ -471,7 +471,7 @@ export function PedidosScreen({ onBack }) {
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.modalHead}>
               <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
@@ -530,7 +530,7 @@ export function PedidosScreen({ onBack }) {
 
       <Modal visible={detail != null} animationType="slide" transparent onRequestClose={() => setDetail(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.modalHead}>
               <Text style={[styles.modalTitle, { color: c.foreground }]}>Detalle</Text>
               <TouchableOpacity onPress={() => setDetail(null)} hitSlop={12}>

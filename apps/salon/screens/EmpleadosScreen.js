@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { X, UserPlus, ChevronRight, User, Image as ImageIcon, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -506,9 +506,9 @@ export function EmpleadosScreen({ onBack }) {
         <View style={styles.modalBackdrop}>
           <ScrollView
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.modalPad, { paddingBottom: insets.bottom + spacing.xl }]}
+            contentContainerStyle={[styles.modalPad, { paddingBottom: modalScrollBottomPad(insets) }]}
           >
-            <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+            <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
               <Text style={[styles.modalTitle, { color: c.foreground, marginBottom: spacing.md }]}>
                 {editingId ? 'Editar empleado' : 'Nuevo empleado'}
               </Text>
@@ -658,7 +658,7 @@ export function EmpleadosScreen({ onBack }) {
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.modalHead}>
               <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>

@@ -8,6 +8,11 @@ import {
   TouchableOpacity,
   useWindowDimensions,
 } from 'react-native';
+
+const hasSupabaseEnv = Boolean(
+  process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim(),
+);
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
@@ -49,6 +54,21 @@ import { SalonAdminSignInScreen } from './screens/SalonAdminSignInScreen';
 import { db, supabase, isSalonAdminRole } from '@appsalon/shared-config';
 
 const MAX_CONTENT_WIDTH = 1120;
+/** Ancho máximo de cada tarjeta del grid (evita cuadros gigantes en horizontal / BlueStacks). */
+const MAX_MODULE_TILE_WIDTH = 156;
+const MIN_MODULE_COLS = 3;
+const MAX_MODULE_COLS = 8;
+
+function computeModuleGridLayout(windowWidth) {
+  const horizontalPad = spacing.lg;
+  const gap = spacing.sm;
+  const effectiveW = Math.min(windowWidth, MAX_CONTENT_WIDTH);
+  const innerWidth = Math.max(0, effectiveW - horizontalPad * 2);
+  let cols = Math.floor((innerWidth + gap) / (MAX_MODULE_TILE_WIDTH + gap));
+  cols = Math.max(MIN_MODULE_COLS, Math.min(MAX_MODULE_COLS, cols));
+  const tileWidth = (innerWidth - gap * (cols - 1)) / cols;
+  return { cols, tileWidth, gap };
+}
 const ROW_ACCENTS = [
   { border: '#2E7D32', bg: '#EAF6EC', icon: '#2E7D32' }, // verde
   { border: '#C5A12C', bg: '#FCF6E2', icon: '#A88512' }, // amarillo
@@ -81,12 +101,7 @@ function SalonAdminShell({ onSignOut }) {
   );
   const { colors: c, isDark, setScheme } = useTheme();
 
-  const cols = 3;
-  const horizontalPad = spacing.lg;
-  const gap = spacing.sm;
-  const effectiveW = Math.min(winW, MAX_CONTENT_WIDTH);
-  const innerWidth = effectiveW - horizontalPad * 2;
-  const tileWidth = (innerWidth - gap * (cols - 1)) / cols;
+  const { cols, tileWidth, gap } = useMemo(() => computeModuleGridLayout(winW), [winW]);
 
   const modules = useMemo(
     () => filterModulesBySearch(SALON_MODULES, search),
@@ -390,6 +405,7 @@ function buildStyles(c) {
 }
 
 async function resolveSalonAuthPhase() {
+  if (!hasSupabaseEnv) return { phase: 'signin', message: 'Supabase no configurado en este build.' };
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user?.id) return { phase: 'signin' };
   const { data: profile, error } = await db.profiles.getById(session.user.id);
@@ -473,7 +489,33 @@ function SalonAppWithAuth() {
   return <SalonAdminShell onSignOut={handleSignOut} />;
 }
 
+function MissingConfigScreen() {
+  return (
+    <View
+      style={{
+        flex: 1,
+        justifyContent: 'center',
+        padding: 24,
+        backgroundColor: '#FDFBF7',
+      }}
+    >
+      <Text style={{ fontSize: 18, fontWeight: '600', color: '#1a1a1a', marginBottom: 12 }}>
+        App no configurada
+      </Text>
+      <Text style={{ fontSize: 15, lineHeight: 22, color: '#444' }}>
+        Este APK se generó sin las claves de Supabase (EXPO_PUBLIC_SUPABASE_URL y
+        EXPO_PUBLIC_SUPABASE_ANON_KEY). Hay que volver a compilar con eas env en Expo y
+        reinstalar el APK nuevo.
+      </Text>
+    </View>
+  );
+}
+
 export default function App() {
+  if (!hasSupabaseEnv) {
+    return <MissingConfigScreen />;
+  }
+
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,

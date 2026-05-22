@@ -14,7 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink } from '../components/ListSelectionBar';
 import { useTheme } from '../theme/ThemeProvider';
 import { useListSelection } from '../hooks/useListSelection';
@@ -388,7 +388,7 @@ export function BasureroScreen({ onBack }) {
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+          <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.modalHead}>
               <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>

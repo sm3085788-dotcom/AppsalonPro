@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { spacing, typography } from '@appsalon/design-tokens';
-import { SalonButton } from './luxury';
+import { SalonButton, modalSheetBottomPad } from './luxury';
 
 /**
  * Barra de modo selección: enlace en toolbar + acciones inferiores.
@@ -33,7 +33,7 @@ export function ListSelectionActionBar({
         {
           borderTopColor: colors.cardBorder,
           backgroundColor: colors.card,
-          paddingBottom: Math.max(bottomInset, spacing.sm),
+          paddingBottom: modalSheetBottomPad({ bottom: bottomInset }),
         },
       ]}
     >

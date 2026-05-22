@@ -23,7 +23,7 @@ import * as Sharing from 'expo-sharing';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, supabase } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { addReporte, loadReportes, subscribeReportesStorage } from '../services/salonReportesStorage';
 
@@ -287,7 +287,200 @@ function enrichInventarioRow(r) {
   };
 }
 
+function parseReportDate(iso) {
+  if (!iso) return null;
+  const s = String(iso).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T12:00:00`);
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isInventarioHistorialItem(item) {
+  if (item?.inventarioModo === 'historial_producto') return true;
+  if (item?.inventarioProductoId) return true;
+  if (String(item?.summary || '').includes('Historial «')) return true;
+  return (item?.rows || []).some(
+    (r) => r?.tipo_evento || /^Ingreso lote\b/i.test(String(r?.nombre || '')),
+  );
+}
+
+/** Filas guardadas antes de tipo_evento (AsyncStorage). */
+function normalizeLegacyHistorialRow(r) {
+  if (!r || r.tipo_evento) return r;
+  const nombre = String(r.nombre || '').trim();
+  const desc = String(r.descripcion || '').trim();
+  const ingreso = nombre.match(/^Ingreso lote\s+(.+)$/i);
+  if (ingreso) {
+    const det = desc.match(/\+(\d+)\s*u\.\s*·\s*Stock\s*([^→]+)→\s*(.+)/i);
+    return {
+      ...r,
+      tipo_evento: 'ingreso_lote',
+      nombre: ingreso[1].trim(),
+      descripcion: desc.includes('Stock') ? desc : 'Ingreso de stock al inventario',
+      cantidad: det ? Number(det[1]) : r.cantidad,
+      stockAntes: det ? det[2].trim() : r.stockAntes,
+      stockDespues: det ? det[3].trim() : r.stockDespues,
+    };
+  }
+  return r;
+}
+
+function fmtFechaSolo(iso) {
+  const d = parseReportDate(iso);
+  if (!d) return '—';
+  try {
+    return d.toLocaleDateString('es-GT', { day: '2-digit', month: 'numeric', year: 'numeric' });
+  } catch {
+    return String(iso);
+  }
+}
+
+async function fetchInventarioHistorialRows(inventarioId, startIso, endIso, prodFallback = null) {
+  const fromDay = String(startIso).slice(0, 10);
+  const toDay = String(endIso).slice(0, 10);
+  const { data: lotes, error: lErr } = await db.inventarioLotes.getByInventarioDateRange(
+    inventarioId,
+    fromDay,
+    toDay,
+  );
+  const { data: devAll, error: dErr } = await db.devoluciones.getByProducto(inventarioId);
+  const devFiltered = filterByRange(devAll || [], startIso, endIso);
+  const { data: current, error: cErr } = await db.inventario.getById(inventarioId);
+  const error = lErr || dErr || cErr;
+  const prod = current || prodFallback;
+
+  const eventRows = [
+    ...(lotes || []).map((l) => ({
+      id: `lote-${l.id}`,
+      nombre: l.numero_lote || '—',
+      descripcion: 'Ingreso de stock al inventario',
+      fecha: l.fecha_ingreso || l.created_at,
+      tipo_evento: 'ingreso_lote',
+      cantidad: l.cantidad,
+      stockAntes: l.stock_antes,
+      stockDespues: l.stock_despues,
+      numero_lote: l.numero_lote,
+    })),
+    ...devFiltered.map((d) => ({
+      id: `dev-${d.id}`,
+      nombre: `Devolución${d.venta?.no_factura ? ` · ${d.venta.no_factura}` : ''}`,
+      descripcion: `${d.cantidad != null ? `${d.cantidad} u.` : '—'} · ${d.motivo || d.estado_producto || '—'}`,
+      fecha: d.fecha,
+      tipo_evento: 'devolucion',
+    })),
+  ].sort((a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime());
+
+  const stockActual = prod?.stock_actual ?? prodFallback?.stock_actual ?? '—';
+  const nombre = prod?.nombre || prodFallback?.nombre || 'Producto';
+  return {
+    rows: eventRows,
+    error,
+    summary: `Historial «${nombre}»: ${eventRows.length} movimiento(s) en el rango · Stock actual: ${stockActual}`,
+    inventarioProductoNombre: nombre,
+  };
+}
+
+async function resolveInventarioReportForPrint(item) {
+  if (!isInventarioHistorialItem(item)) return item;
+
+  const productoId = item.inventarioProductoId;
+  if (productoId) {
+    try {
+      const fresh = await fetchInventarioHistorialRows(
+        productoId,
+        item.fromIso,
+        item.toIso,
+        item.inventarioProductoNombre ? { nombre: item.inventarioProductoNombre } : null,
+      );
+      if (!fresh.error) {
+        const legacy = (item.rows || []).map(normalizeLegacyHistorialRow);
+        const rows = fresh.rows.length > 0 ? fresh.rows : legacy;
+        return {
+          ...item,
+          inventarioModo: 'historial_producto',
+          rows,
+          summary: fresh.summary || item.summary,
+          inventarioProductoNombre: fresh.inventarioProductoNombre || item.inventarioProductoNombre,
+          total: rows.length,
+        };
+      }
+    } catch {
+      /* fallback a filas guardadas */
+    }
+  }
+
+  const rows = (item.rows || []).map(normalizeLegacyHistorialRow);
+  return {
+    ...item,
+    inventarioModo: 'historial_producto',
+    rows,
+    total: rows.length,
+  };
+}
+
+function buildInventarioHistorialHtml(item) {
+  const rows = (item.rows || []).map(normalizeLegacyHistorialRow);
+  const totalIngreso = rows
+    .filter((r) => r.tipo_evento === 'ingreso_lote')
+    .reduce((s, r) => s + Number(r.cantidad ?? 0), 0);
+  const rowsHtml = rows
+    .map((r) => {
+      const tipo =
+        r.tipo_evento === 'ingreso_lote' ? 'Ingreso lote' : r.tipo_evento === 'devolucion' ? 'Devolución' : 'Movimiento';
+      const stockCol =
+        r.tipo_evento === 'ingreso_lote' && (r.stockAntes != null || r.stockDespues != null)
+          ? `${r.stockAntes ?? '—'} → ${r.stockDespues ?? '—'}`
+          : '—';
+      const cant = r.cantidad != null ? `${r.cantidad} u.` : '—';
+      return `<tr>
+        <td>${escHtml(tipo)}</td>
+        <td>${escHtml(r.nombre)}</td>
+        <td>${escHtml(r.descripcion)}</td>
+        <td class="num">${escHtml(cant)}</td>
+        <td class="num">${escHtml(stockCol)}</td>
+        <td>${escHtml(fmtFechaSolo(r.fecha))}</td>
+      </tr>`;
+    })
+    .join('');
+
+  const titulo = item.inventarioProductoNombre
+    ? `Historial de producto · ${item.inventarioProductoNombre}`
+    : 'Historial de producto';
+
+  return `<!doctype html><html><head><meta charset="utf-8"/><style>
+    body{font-family:system-ui;padding:16px;color:#222;font-size:11px}
+    h1{font-size:18px;margin:0 0 6px}
+    .meta{font-size:10px;color:#555;margin:2px 0}
+    table{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}
+    th,td{border:1px solid #ccc;padding:4px 6px;vertical-align:top}
+    th{text-align:left;background:#f5f5f5}
+    td.num{text-align:right}
+  </style></head><body>
+    <h1>${escHtml(titulo)}</h1>
+    <div class="meta">Rango consulta: ${escHtml(new Date(item.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
+      new Date(item.toIso).toLocaleDateString('es-GT'),
+    )}</div>
+    <div class="meta">${escHtml(item.summary || '')}</div>
+    <div class="meta">Movimientos: ${rows.length} · Unidades ingresadas (lotes): ${totalIngreso}</div>
+    <table>
+      <thead><tr>
+        <th>Tipo</th>
+        <th>Referencia</th>
+        <th>Detalle</th>
+        <th class="num">Cantidad</th>
+        <th class="num">Stock (antes → después)</th>
+        <th>Fecha</th>
+      </tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="6">Sin movimientos en el rango</td></tr>'}</tbody>
+    </table>
+  </body></html>`;
+}
+
 function buildInventarioReportHtml(item) {
+  if (isInventarioHistorialItem(item)) {
+    return buildInventarioHistorialHtml(item);
+  }
+
   const rows = (item.rows || []).map(enrichInventarioRow);
   const rowsHtml = rows
     .map(
@@ -567,6 +760,15 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       };
     }
     case 'inventario': {
+      if (options.inventarioModo === 'historial_producto') {
+        const prod = options.inventarioProducto;
+        if (!prod?.id) {
+          return { rows: [], error: { message: 'Seleccioná un producto.' }, summary: '' };
+        }
+        const { rows, error, summary } = await fetchInventarioHistorialRows(prod.id, startIso, endIso, prod);
+        return { rows, error, summary };
+      }
+
       const { data: invRows, error: invErr } = await db.inventario.getAll();
       let rows = (invRows || []).map(enrichInventarioRow);
       let summary = `Inventario global: ${rows.length} artículos`;
@@ -693,13 +895,19 @@ function buildCajaReportHtml(item) {
 }
 
 async function printReport(item) {
+  try {
+  let resolved = item;
+  if (item.typeId === 'inventario') {
+    resolved = await resolveInventarioReportForPrint(item);
+  }
+
   let html;
-  if (item.typeId === 'caja') {
-    html = buildCajaReportHtml(item);
-  } else if (item.typeId === 'inventario') {
-    html = buildInventarioReportHtml(item);
+  if (resolved.typeId === 'caja') {
+    html = buildCajaReportHtml(resolved);
+  } else if (resolved.typeId === 'inventario') {
+    html = buildInventarioReportHtml(resolved);
   } else {
-    const previewRows = (item.rows || []).slice(0, 80);
+    const previewRows = (resolved.rows || []).slice(0, 80);
     const rowsHtml = previewRows
       .map(
         (r) => `<tr><td>${escHtml(r.nombre || r.tipo || '-')}</td><td>${escHtml(
@@ -717,12 +925,12 @@ async function printReport(item) {
       th,td{border:1px solid #ccc;padding:4px 6px}
       th{text-align:left;background:#f5f5f5}
     </style></head><body>
-      <h1>Reporte ${escHtml(item.typeLabel)}</h1>
-      <div class="meta">Rango: ${escHtml(new Date(item.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
-        new Date(item.toIso).toLocaleDateString('es-GT'),
+      <h1>Reporte ${escHtml(resolved.typeLabel)}</h1>
+      <div class="meta">Rango: ${escHtml(new Date(resolved.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
+        new Date(resolved.toIso).toLocaleDateString('es-GT'),
       )}</div>
-      <div class="meta">${escHtml(item.summary || '')}</div>
-      <div class="meta">Registros: ${item.total}</div>
+      <div class="meta">${escHtml(resolved.summary || '')}</div>
+      <div class="meta">Registros: ${resolved.total}</div>
       <table><thead><tr><th>Concepto</th><th>Detalle</th><th>Monto</th><th>Fecha</th></tr></thead><tbody>${rowsHtml}</tbody></table>
     </body></html>`;
   }
@@ -732,6 +940,9 @@ async function printReport(item) {
     await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: '.pdf', dialogTitle: 'Imprimir / Compartir reporte' });
   } else {
     Alert.alert('Reporte listo', `PDF generado: ${uri}`);
+  }
+  } catch (e) {
+    Alert.alert('Reporte', e?.message || 'No se pudo generar el PDF.');
   }
 }
 
@@ -758,6 +969,9 @@ export function ReportesScreen({ onBack }) {
   const [loading, setLoading] = useState(false);
   const [inventarioModo, setInventarioModo] = useState('global');
   const [itemNombre, setItemNombre] = useState('');
+  const [inventarioProductoSearch, setInventarioProductoSearch] = useState('');
+  const [inventarioProductoResults, setInventarioProductoResults] = useState([]);
+  const [inventarioProductoSelected, setInventarioProductoSelected] = useState(null);
   const [clientesModo, setClientesModo] = useState('general');
   const [proveedorNombre, setProveedorNombre] = useState('');
   const [vendedorSearch, setVendedorSearch] = useState('');
@@ -770,6 +984,7 @@ export function ReportesScreen({ onBack }) {
   const [agendaClienteSearch, setAgendaClienteSearch] = useState('');
   const [agendaClienteResults, setAgendaClienteResults] = useState([]);
   const [agendaClienteSelected, setAgendaClienteSelected] = useState(null);
+  const [printingId, setPrintingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -835,6 +1050,30 @@ export function ReportesScreen({ onBack }) {
   }, [typeId, clienteVentasSearch]);
 
   useEffect(() => {
+    if (typeId !== 'inventario' || inventarioModo !== 'historial_producto') {
+      setInventarioProductoResults([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const q = sanitizeSearchQuery(inventarioProductoSearch);
+    if (q.length < 2) {
+      setInventarioProductoResults([]);
+      return undefined;
+    }
+    const t = setTimeout(async () => {
+      const { data, error } = await db.inventario.search(q);
+      if (!cancelled && !error) {
+        const soloProductos = (data || []).filter((r) => getArticuloTipo(r) === 'producto');
+        setInventarioProductoResults(soloProductos);
+      } else if (!cancelled) setInventarioProductoResults([]);
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [typeId, inventarioModo, inventarioProductoSearch]);
+
+  useEffect(() => {
     if (typeId !== 'agenda' || agendaModo !== 'por_cliente') {
       setAgendaClienteResults([]);
       return undefined;
@@ -888,6 +1127,10 @@ export function ReportesScreen({ onBack }) {
       Alert.alert('Ventas por cliente', 'Buscá y elegí un cliente para exportar su ficha y compras.');
       return;
     }
+    if (typeId === 'inventario' && inventarioModo === 'historial_producto' && !inventarioProductoSelected) {
+      Alert.alert('Historial de producto', 'Buscá y elegí un producto para ver ingresos de lote y movimientos.');
+      return;
+    }
     if (typeId === 'agenda' && agendaModo === 'por_cliente' && !agendaClienteSelected) {
       Alert.alert('Agenda', 'Elegí un cliente para ver sus visitas, o cambiá a “General”.');
       return;
@@ -897,6 +1140,7 @@ export function ReportesScreen({ onBack }) {
     const endIso = toEndIso(toDate);
     const options = {
       inventarioModo,
+      inventarioProducto: inventarioProductoSelected,
       itemNombre,
       clientesModo,
       proveedorNombre,
@@ -923,6 +1167,15 @@ export function ReportesScreen({ onBack }) {
       rows,
       cajaSessions: cajaSessions || null,
       summary,
+      inventarioModo: typeId === 'inventario' ? inventarioModo : undefined,
+      inventarioProductoId:
+        typeId === 'inventario' && inventarioModo === 'historial_producto'
+          ? inventarioProductoSelected?.id
+          : undefined,
+      inventarioProductoNombre:
+        typeId === 'inventario' && inventarioModo === 'historial_producto'
+          ? inventarioProductoSelected?.nombre
+          : undefined,
       generatedAt: new Date().toISOString(),
       status: 'Generado',
     };
@@ -960,8 +1213,17 @@ export function ReportesScreen({ onBack }) {
                 renderItem={({ item: r }) => (
                   <TouchableOpacity
                     style={[styles.row, { borderBottomColor: c.cardBorder }]}
-                    onPress={() => printReport(r)}
+                    onPress={async () => {
+                      if (printingId) return;
+                      setPrintingId(r.id);
+                      try {
+                        await printReport(r);
+                      } finally {
+                        setPrintingId(null);
+                      }
+                    }}
                     activeOpacity={0.7}
+                    disabled={!!printingId}
                   >
                     <View style={styles.rowBody}>
                       <View style={styles.rowTop}>
@@ -969,7 +1231,7 @@ export function ReportesScreen({ onBack }) {
                           {r.typeLabel}
                         </Text>
                         <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
-                          {r.total} reg.
+                          {printingId === r.id ? 'Preparando…' : `${r.total} reg.`}
                         </Text>
                       </View>
                       <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
@@ -1004,7 +1266,7 @@ export function ReportesScreen({ onBack }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={insets.bottom + spacing.md}
         >
-          <View style={[styles.modalCard, { backgroundColor: c.background }]}>
+          <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.modalHead}>
               <Text style={styles.modalTitle}>Generar reporte</Text>
               <TouchableOpacity onPress={() => setModalOpen(false)} hitSlop={12}>
@@ -1014,7 +1276,7 @@ export function ReportesScreen({ onBack }) {
 
             <ScrollView
               style={{ maxHeight: modalScrollMaxHeight }}
-              contentContainerStyle={{ paddingBottom: spacing.lg + insets.bottom }}
+              contentContainerStyle={{ paddingBottom: modalScrollBottomPad(insets) }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
               nestedScrollEnabled
@@ -1101,6 +1363,7 @@ export function ReportesScreen({ onBack }) {
                     {[
                       { id: 'global', label: 'Global' },
                       { id: 'producto_servicio', label: 'Producto / servicio' },
+                      { id: 'historial_producto', label: 'Historial producto' },
                     ].map((opt) => {
                       const on = inventarioModo === opt.id;
                       return (
@@ -1113,7 +1376,11 @@ export function ReportesScreen({ onBack }) {
                               backgroundColor: on ? c.surfaceMuted : c.card,
                             },
                           ]}
-                          onPress={() => setInventarioModo(opt.id)}
+                          onPress={() => {
+                            setInventarioModo(opt.id);
+                            if (opt.id !== 'historial_producto') setInventarioProductoSelected(null);
+                            if (opt.id !== 'producto_servicio') setItemNombre('');
+                          }}
                         >
                           <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
                         </TouchableOpacity>
@@ -1128,6 +1395,68 @@ export function ReportesScreen({ onBack }) {
                       value={itemNombre}
                       onChangeText={setItemNombre}
                     />
+                  ) : null}
+                  {inventarioModo === 'historial_producto' ? (
+                    <>
+                      <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12 }]}>
+                        Ingresos de lote y devoluciones del producto en el rango de fechas.
+                      </Text>
+                      <Text style={styles.fieldLbl}>Producto</Text>
+                      <View style={[styles.searchBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                        <Search size={18} color={c.foregroundMuted} />
+                        <TextInput
+                          style={[styles.searchInput, { color: c.foreground }]}
+                          placeholder="Nombre, categoría o código (mín. 2 letras)"
+                          placeholderTextColor={c.foregroundSubtle}
+                          value={inventarioProductoSearch}
+                          onChangeText={(t) => {
+                            setInventarioProductoSearch(t);
+                            setInventarioProductoSelected(null);
+                          }}
+                          editable={!inventarioProductoSelected}
+                        />
+                      </View>
+                      {inventarioProductoSelected ? (
+                        <TouchableOpacity
+                          style={[styles.invPickPill, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}
+                          onPress={() => {
+                            setInventarioProductoSelected(null);
+                            setInventarioProductoSearch('');
+                            setInventarioProductoResults([]);
+                          }}
+                        >
+                          <Text style={[styles.invPickPillTxt, { color: c.foreground }]} numberOfLines={1}>
+                            {inventarioProductoSelected.nombre}
+                            <Text style={{ color: c.foregroundMuted }}>
+                              {' '}
+                              · Stock {Number(inventarioProductoSelected.stock_actual ?? 0)} u.
+                            </Text>
+                          </Text>
+                          <Text style={[styles.invPickClear, { color: c.foregroundMuted }]}>Quitar</Text>
+                        </TouchableOpacity>
+                      ) : inventarioProductoResults.length > 0 ? (
+                        <View style={[styles.invSuggest, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                          {inventarioProductoResults.slice(0, 8).map((p) => (
+                            <TouchableOpacity
+                              key={p.id}
+                              style={styles.invSuggestRow}
+                              onPress={() => {
+                                setInventarioProductoSelected(p);
+                                setInventarioProductoSearch('');
+                                setInventarioProductoResults([]);
+                              }}
+                            >
+                              <Text style={[styles.invSuggestName, { color: c.foreground }]} numberOfLines={2}>
+                                {p.nombre}
+                              </Text>
+                              <Text style={[styles.invSuggestMeta, { color: c.foregroundMuted }]}>
+                                Stock {Number(p.stock_actual ?? 0)} · {p.categoria || 'Producto'}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ) : null}
+                    </>
                   ) : null}
                 </>
               ) : null}

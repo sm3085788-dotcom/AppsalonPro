@@ -19,7 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Building2, Plus, X, Image as ImageIcon, ChevronRight, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, uploadProveedorLogoFromUri } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useListSelection } from '../hooks/useListSelection';
@@ -66,7 +66,7 @@ export function ProveedoresScreen({ onBack }) {
   const [sortMode, setSortMode] = useState('nombre_asc');
   const [filterLogo, setFilterLogo] = useState('todos');
 
-  const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
+  const padBottom = modalScrollBottomPad(insets);
 
   const load = useCallback(async (isRefresh) => {
     if (isRefresh) setRefreshing(true);
@@ -608,7 +608,7 @@ export function ProveedoresScreen({ onBack }) {
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.filterModalCard, { backgroundColor: c.background }]}>
+          <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.filterHead}>
               <Text style={[styles.filterTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
