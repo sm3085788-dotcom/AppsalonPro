@@ -11,15 +11,15 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
-  Switch,
   Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { X, UserPlus, ChevronRight, User, Image as ImageIcon, Check } from 'lucide-react-native';
+import { X, UserPlus, ChevronRight, User, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad } from '../components/luxury';
+import { SalonFichaSheet } from '../components/SalonFichaSheet';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -57,6 +57,46 @@ function parseComision(str) {
   return n;
 }
 
+function emptyEmpleado() {
+  return {
+    id: null,
+    nombre: '',
+    rol: '',
+    telefono: '',
+    email: '',
+    comision_porcentaje: 0,
+    direccion: '',
+    contacto_emergencia: '',
+    tel_emergencia: '',
+    activo: true,
+    foto_url: '',
+  };
+}
+
+const EMPLEADO_FICHA_FIELDS = [
+  { key: 'nombre', label: 'Nombre', getValue: (r) => r.nombre, required: true, alwaysShow: true, autoCapitalize: 'words' },
+  { key: 'rol', label: 'Rol', getValue: (r) => r.rol, alwaysShow: true, placeholder: 'Ej. Estilista, Recepción' },
+  { key: 'telefono', label: 'Teléfono', getValue: (r) => r.telefono, alwaysShow: true, keyboardType: 'phone-pad' },
+  { key: 'email', label: 'Email', getValue: (r) => r.email, alwaysShow: true, keyboardType: 'email-address', autoCapitalize: 'none', autoCorrect: false },
+  {
+    key: 'comision_porcentaje',
+    label: 'Comisión',
+    getValue: (r) => r.comision_porcentaje,
+    alwaysShow: true,
+    keyboardType: 'decimal-pad',
+    parse: (s) => parseComision(s),
+    formatDisplay: (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? `${n}%` : '0%';
+    },
+    getEditDraft: (r) => String(r.comision_porcentaje ?? 0),
+  },
+  { key: 'direccion', label: 'Dirección', getValue: (r) => r.direccion, alwaysShow: true, multiline: true },
+  { key: 'contacto_emergencia', label: 'Contacto de emergencia', getValue: (r) => r.contacto_emergencia, alwaysShow: true },
+  { key: 'tel_emergencia', label: 'Teléfono de emergencia', getValue: (r) => r.tel_emergencia, alwaysShow: true, keyboardType: 'phone-pad' },
+  { key: 'activo', label: 'Activo', type: 'switch', getValue: (r) => r.activo !== false, alwaysShow: true },
+];
+
 export function EmpleadosScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -73,20 +113,9 @@ export function EmpleadosScreen({ onBack }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
-  const [modalEmpleado, setModalEmpleado] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [nombre, setNombre] = useState('');
-  const [rol, setRol] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [email, setEmail] = useState('');
-  const [comisionStr, setComisionStr] = useState('0');
-  const [direccion, setDireccion] = useState('');
-  const [contactoEmergencia, setContactoEmergencia] = useState('');
-  const [telEmergencia, setTelEmergencia] = useState('');
-  const [activo, setActivo] = useState(true);
-  const [localFoto, setLocalFoto] = useState(null);
-  const [remoteFoto, setRemoteFoto] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [detailEmpleado, setDetailEmpleado] = useState(null);
+  const [savingKey, setSavingKey] = useState(null);
+  const [fotoUploading, setFotoUploading] = useState(false);
 
   const loadEmpleados = useCallback(async () => {
     setLoadError(null);
@@ -117,121 +146,134 @@ export function EmpleadosScreen({ onBack }) {
     loadEmpleados();
   }, [loadEmpleados]);
 
-  const resetForm = useCallback(() => {
-    setEditingId(null);
-    setNombre('');
-    setRol('');
-    setTelefono('');
-    setEmail('');
-    setComisionStr('0');
-    setDireccion('');
-    setContactoEmergencia('');
-    setTelEmergencia('');
-    setActivo(true);
-    setLocalFoto(null);
-    setRemoteFoto('');
-  }, []);
+  const closeDetail = useCallback(() => setDetailEmpleado(null), []);
 
   const openNuevo = useCallback(() => {
-    resetForm();
-    setModalEmpleado(true);
-  }, [resetForm]);
-
-  const openEditar = useCallback((item) => {
-    setEditingId(item.id);
-    setNombre(String(item.nombre || ''));
-    setRol(String(item.rol || ''));
-    setTelefono(String(item.telefono || ''));
-    setEmail(String(item.email || ''));
-    const com = item.comision_porcentaje;
-    setComisionStr(com != null && com !== '' ? String(com) : '0');
-    setDireccion(String(item.direccion || ''));
-    setContactoEmergencia(String(item.contacto_emergencia || ''));
-    setTelEmergencia(String(item.tel_emergencia || ''));
-    setActivo(item.activo !== false);
-    setLocalFoto(null);
-    setRemoteFoto(item.foto_url || '');
-    setModalEmpleado(true);
+    setDetailEmpleado(emptyEmpleado());
   }, []);
 
-  const pickFoto = async () => {
+  const openEditar = useCallback((item) => {
+    setDetailEmpleado({ ...item });
+  }, []);
+
+  const syncEmpleadoInList = useCallback((updated) => {
+    setDetailEmpleado(updated);
+    setEmpleados((prev) => {
+      if (!updated?.id) return prev;
+      const ix = prev.findIndex((e) => String(e.id) === String(updated.id));
+      if (ix < 0) return [updated, ...prev];
+      const next = [...prev];
+      next[ix] = updated;
+      return next;
+    });
+  }, []);
+
+  const saveEmpleadoField = useCallback(
+    async (key, value, field) => {
+      const cur = detailEmpleado;
+      if (!cur) return { ok: false };
+
+      if (field?.required && (value == null || String(value).trim() === '')) {
+        Alert.alert('Dato obligatorio', `Completá ${field.label.toLowerCase()}.`);
+        return { ok: false };
+      }
+
+      setSavingKey(key);
+      try {
+        if (!cur.id) {
+          if (key !== 'nombre') {
+            Alert.alert('Primero el nombre', 'Creá la ficha tocando Nombre y guardando el nombre completo.');
+            return { ok: false };
+          }
+          const nom = String(value || '').trim();
+          if (!nom) {
+            Alert.alert('Falta el nombre', 'El nombre es obligatorio.');
+            return { ok: false };
+          }
+          const { data, error } = await db.empleados.create({
+            nombre: nom,
+            rol: null,
+            telefono: null,
+            email: null,
+            comision_porcentaje: 0,
+            direccion: null,
+            contacto_emergencia: null,
+            tel_emergencia: null,
+            activo: true,
+            foto_url: null,
+            tipo_registro: 'manual',
+          });
+          if (error) {
+            Alert.alert('No se creó', error.message || 'Revisá permisos RLS.');
+            return { ok: false, error: error.message };
+          }
+          syncEmpleadoInList(data);
+          return { ok: true, record: data };
+        }
+
+        const patch = { [key]: value };
+        if (key === 'nombre') patch.nombre = String(value || '').trim();
+        if (key === 'rol' || key === 'telefono' || key === 'email' || key === 'direccion') {
+          patch[key] = value != null && String(value).trim() !== '' ? String(value).trim() : null;
+        }
+        if (key === 'contacto_emergencia' || key === 'tel_emergencia') {
+          patch[key] = value != null && String(value).trim() !== '' ? String(value).trim() : null;
+        }
+
+        const { data, error } = await db.empleados.update(cur.id, patch);
+        if (error) {
+          Alert.alert('No se guardó', error.message || 'Revisá permisos RLS.');
+          return { ok: false, error: error.message };
+        }
+        const updated = data || { ...cur, ...patch };
+        syncEmpleadoInList(updated);
+        return { ok: true, record: updated };
+      } catch (e) {
+        Alert.alert('Error', e?.message || 'Intentá de nuevo.');
+        return { ok: false, error: e?.message };
+      } finally {
+        setSavingKey(null);
+      }
+    },
+    [detailEmpleado, syncEmpleadoInList],
+  );
+
+  const pickFoto = useCallback(async () => {
+    const cur = detailEmpleado;
+    if (!cur?.id) {
+      Alert.alert('Foto', 'Primero guardá el nombre para crear la ficha; después podés agregar la foto.');
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permisos', 'Se necesita acceso a la galería para la foto.');
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.88 });
-    if (!res.canceled && res.assets?.[0]) setLocalFoto(res.assets[0]);
-  };
+    if (res.canceled || !res.assets?.[0]) return;
 
-  const clearLocalFoto = () => setLocalFoto(null);
-  const removeRemoteFoto = () => setRemoteFoto('');
-
-  const cerrarModalEmpleado = useCallback(() => {
-    setModalEmpleado(false);
-    resetForm();
-  }, [resetForm]);
-
-  const guardarEmpleado = async () => {
-    const nom = nombre.trim();
-    if (!nom) {
-      Alert.alert('Falta el nombre', 'El nombre es obligatorio en la tabla empleados.');
-      return;
-    }
-    const basePayload = {
-      nombre: nom,
-      rol: rol.trim() || null,
-      telefono: telefono.trim() || null,
-      email: email.trim() || null,
-      comision_porcentaje: parseComision(comisionStr),
-      direccion: direccion.trim() || null,
-      contacto_emergencia: contactoEmergencia.trim() || null,
-      tel_emergencia: telEmergencia.trim() || null,
-      activo,
-    };
-
-    setSaving(true);
+    setFotoUploading(true);
     try {
-      let foto_url = remoteFoto?.trim() || null;
-      if (localFoto?.uri) {
-        const ext = guessExt(localFoto.uri, localFoto.mimeType);
-        const { publicUrl, error: upErr } = await uploadEmpleadoFotoFromUri(localFoto.uri, {
-          extension: ext,
-          contentType: localFoto.mimeType || 'image/jpeg',
-        });
-        if (upErr) {
-          throw new Error(mensajeErrorStorage(upErr.message));
-        }
-        foto_url = publicUrl;
-      }
-      const payload = { ...basePayload, foto_url };
-
-      if (editingId) {
-        const { error } = await db.empleados.update(editingId, payload);
-        if (error) {
-          Alert.alert('No se guardó', error.message || 'Revisá permisos RLS (admin).');
-          return;
-        }
-      } else {
-        const { error } = await db.empleados.create({ ...payload, tipo_registro: 'manual' });
-        if (error) {
-          Alert.alert('No se guardó', error.message || 'Revisá permisos RLS (admin).');
-          return;
-        }
-      }
-      cerrarModalEmpleado();
-      await loadEmpleados();
-      Alert.alert('Listo', editingId ? 'Cambios guardados en Supabase.' : 'Empleado creado. Podés verificarlo en Table Editor.');
+      const asset = res.assets[0];
+      const ext = guessExt(asset.uri, asset.mimeType);
+      const { publicUrl, error: upErr } = await uploadEmpleadoFotoFromUri(asset.uri, {
+        extension: ext,
+        contentType: asset.mimeType || 'image/jpeg',
+      });
+      if (upErr) throw new Error(mensajeErrorStorage(upErr.message));
+      const { data, error } = await db.empleados.update(cur.id, { foto_url: publicUrl });
+      if (error) throw new Error(error.message);
+      syncEmpleadoInList(data || { ...cur, foto_url: publicUrl });
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Intentá de nuevo.');
+      Alert.alert('Foto', e?.message || 'No se pudo subir.');
     } finally {
-      setSaving(false);
+      setFotoUploading(false);
     }
-  };
+  }, [detailEmpleado, syncEmpleadoInList]);
 
   const confirmarEliminar = () => {
-    if (!editingId) return;
-    const row = empleados.find((e) => String(e.id) === String(editingId));
+    if (!detailEmpleado?.id) return;
+    const row = empleados.find((e) => String(e.id) === String(detailEmpleado.id)) || detailEmpleado;
     Alert.alert(
       'Eliminar empleado',
       'Se borrará la ficha en empleados y se guardará una copia en Basurero. Si tiene citas o ventas vinculadas, Supabase puede rechazar el borrado.',
@@ -241,20 +283,19 @@ export function EmpleadosScreen({ onBack }) {
           text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
-            setSaving(true);
+            setSavingKey('delete');
             try {
-              const snap = row || { id: editingId, nombre, rol, telefono, email, foto_url: remoteFoto };
-              const r = await deleteRowWithBasurero('empleados', snap, () => db.empleados.delete(editingId));
+              const r = await deleteRowWithBasurero('empleados', row, () => db.empleados.delete(row.id));
               if (!r.ok) {
                 Alert.alert('No se eliminó', r.error || 'Revisá dependencias en otras tablas.');
                 return;
               }
-              cerrarModalEmpleado();
+              closeDetail();
               await loadEmpleados();
             } catch (e) {
               Alert.alert('Error', e?.message || 'Intentá de nuevo.');
             } finally {
-              setSaving(false);
+              setSavingKey(null);
             }
           },
         },
@@ -338,16 +379,15 @@ export function EmpleadosScreen({ onBack }) {
     return rows;
   }, [empleados, search, sortMode, rolFiltro, activoFiltro]);
 
-  const addIconColor = isDark ? '#141414' : c.foreground;
   const rightAction = (
     <TouchableOpacity
-      style={[styles.addCircle, isDark && styles.addCircleDark]}
+      style={[styles.addCircle, isDark && styles.addCircleDark, { backgroundColor: c.card, borderColor: c.cardBorder }]}
       onPress={openNuevo}
       accessibilityRole="button"
       accessibilityLabel="Nuevo empleado"
       activeOpacity={0.85}
     >
-      <UserPlus size={22} color={addIconColor} strokeWidth={2.2} />
+      <UserPlus size={22} color={c.foreground} strokeWidth={2.2} />
     </TouchableOpacity>
   );
 
@@ -502,163 +542,52 @@ export function EmpleadosScreen({ onBack }) {
         ) : null}
       </SubScreenChrome>
 
-      <Modal visible={modalEmpleado} animationType="slide" transparent onRequestClose={cerrarModalEmpleado}>
-        <View style={styles.modalBackdrop}>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.modalPad, { paddingBottom: modalScrollBottomPad(insets) }]}
-          >
-            <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
-              <Text style={[styles.modalTitle, { color: c.foreground, marginBottom: spacing.md }]}>
-                {editingId ? 'Editar empleado' : 'Nuevo empleado'}
-              </Text>
-
-              <Text style={[styles.fieldLbl, { color: c.foreground }]}>Foto</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.md }}>
-                {localFoto?.uri ? (
-                  <View>
-                    <Image source={{ uri: localFoto.uri }} style={styles.thumb} />
-                    <TouchableOpacity onPress={clearLocalFoto} style={styles.thumbX}>
-                      <X size={14} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ) : remoteFoto ? (
-                  <View>
-                    <Image source={{ uri: remoteFoto }} style={styles.thumb} />
-                    <TouchableOpacity onPress={removeRemoteFoto} style={styles.thumbX}>
-                      <X size={14} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={[styles.thumbPh, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
-                    <ImageIcon size={28} color={c.foregroundSubtle} strokeWidth={1.4} />
-                  </View>
-                )}
-              </View>
+      <SalonFichaSheet
+        visible={!!detailEmpleado}
+        onClose={closeDetail}
+        title={detailEmpleado?.id ? 'Ficha de empleado' : 'Nuevo empleado'}
+        colors={c}
+        insets={insets}
+        record={detailEmpleado}
+        fields={EMPLEADO_FICHA_FIELDS}
+        onSaveField={saveEmpleadoField}
+        savingKey={fotoUploading ? 'foto' : savingKey}
+        photo={{
+          uri: detailEmpleado?.foto_url || undefined,
+          onPress: pickFoto,
+        }}
+        footer={
+          <>
+            {detailEmpleado?.id ? (
               <SalonButton
-                title="Elegir foto (galería)"
-                variant="outlineGray"
-                onPress={pickFoto}
-                style={{ marginBottom: spacing.md }}
-              />
-
-              <Text style={styles.fieldLbl}>Nombre</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Nombre completo"
-                placeholderTextColor={c.foregroundSubtle}
-                value={nombre}
-                onChangeText={setNombre}
-                autoCapitalize="words"
-              />
-
-              <Text style={styles.fieldLbl}>Rol (texto libre)</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Ej. Estilista, Recepción"
-                placeholderTextColor={c.foregroundSubtle}
-                value={rol}
-                onChangeText={setRol}
-              />
-
-              <Text style={styles.fieldLbl}>Teléfono</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Opcional"
-                placeholderTextColor={c.foregroundSubtle}
-                value={telefono}
-                onChangeText={setTelefono}
-                keyboardType="phone-pad"
-              />
-
-              <Text style={styles.fieldLbl}>Email</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Opcional (no inicia sesión)"
-                placeholderTextColor={c.foregroundSubtle}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-
-              <Text style={styles.fieldLbl}>Comisión %</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="0"
-                placeholderTextColor={c.foregroundSubtle}
-                value={comisionStr}
-                onChangeText={setComisionStr}
-                keyboardType="decimal-pad"
-              />
-
-              <Text style={styles.fieldLbl}>Dirección</Text>
-              <TextInput
-                style={[styles.fieldInp, styles.fieldArea, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Opcional"
-                placeholderTextColor={c.foregroundSubtle}
-                value={direccion}
-                onChangeText={setDireccion}
-                multiline
-              />
-
-              <Text style={styles.fieldLbl}>Contacto de emergencia</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Nombre"
-                placeholderTextColor={c.foregroundSubtle}
-                value={contactoEmergencia}
-                onChangeText={setContactoEmergencia}
-              />
-
-              <Text style={styles.fieldLbl}>Teléfono de emergencia</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Opcional"
-                placeholderTextColor={c.foregroundSubtle}
-                value={telEmergencia}
-                onChangeText={setTelEmergencia}
-                keyboardType="phone-pad"
-              />
-
-              <View style={styles.switchRow}>
-                <Text style={[styles.fieldLbl, { marginBottom: 0, flex: 1 }]}>Activo</Text>
-                <Switch value={activo} onValueChange={setActivo} trackColor={{ false: c.cardBorder, true: c.primary }} />
-              </View>
-
-              <SalonButton
-                title={saving ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Crear empleado'}
-                variant="heroGold"
-                fullWidth
-                disabled={saving}
-                onPress={guardarEmpleado}
-              />
-              {editingId ? (
-                <SalonButton
-                  title="Eliminar ficha"
-                  variant="outlineGray"
-                  fullWidth
-                  disabled={saving}
-                  onPress={confirmarEliminar}
-                  style={{ marginTop: spacing.sm }}
-                />
-              ) : null}
-              <SalonButton
-                title="Cancelar"
+                title="Eliminar ficha"
                 variant="outlineGray"
                 fullWidth
-                onPress={cerrarModalEmpleado}
-                style={{ marginTop: spacing.sm }}
+                disabled={!!savingKey}
+                onPress={confirmarEliminar}
+                style={{ marginTop: spacing.md }}
+                textStyle={{ color: c.error }}
               />
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
+            ) : null}
+            <SalonButton
+              title="Cerrar"
+              variant="outlineGray"
+              fullWidth
+              onPress={closeDetail}
+              style={{ marginTop: spacing.sm }}
+            />
+          </>
+        }
+      />
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
+          <View
+            style={[
+              styles.filterModalCard,
+              { backgroundColor: c.background, borderColor: c.cardBorder, paddingBottom: modalSheetBottomPad(insets) },
+            ]}
+          >
             <View style={styles.modalHead}>
               <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
@@ -862,11 +791,9 @@ function createStyles(c) {
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: '#FFFFFF',
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: c.cardBorder,
       elevation: 3,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
@@ -874,7 +801,7 @@ function createStyles(c) {
       shadowRadius: 4,
     },
     addCircleDark: {
-      borderColor: 'rgba(255,255,255,0.35)',
+      shadowOpacity: 0.28,
     },
     modalBackdrop: {
       flex: 1,
@@ -885,6 +812,7 @@ function createStyles(c) {
     modalPad: { padding: spacing.md },
     filterModalCard: {
       borderRadius: radii.lg,
+      borderWidth: 1,
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.lg,
       paddingBottom: spacing.sm,
@@ -898,16 +826,19 @@ function createStyles(c) {
     },
     modalCard: {
       borderRadius: radii.lg,
+      borderWidth: 1,
       padding: spacing.lg,
       overflow: 'hidden',
     },
     modalTitle: {
       fontFamily: typography.fontDisplay,
       fontSize: 20,
+      color: c.foreground,
     },
     fieldLbl: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
+      color: c.foreground,
       marginTop: spacing.xs,
       marginBottom: spacing.xs,
     },

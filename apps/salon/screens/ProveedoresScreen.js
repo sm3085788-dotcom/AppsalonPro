@@ -8,18 +8,17 @@ import {
   FlatList,
   Image,
   Modal,
-  ScrollView,
   Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Building2, Plus, X, Image as ImageIcon, ChevronRight, Check } from 'lucide-react-native';
+import { Building2, Plus, X, ChevronRight, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, uploadProveedorLogoFromUri } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad } from '../components/luxury';
+import { SalonFichaSheet } from '../components/SalonFichaSheet';
 import { useTheme } from '../theme/ThemeProvider';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useListSelection } from '../hooks/useListSelection';
@@ -32,25 +31,93 @@ function guessExt(uri, mime) {
   return m ? m[1].toLowerCase() : 'jpg';
 }
 
-const emptyForm = () => ({
-  id: null,
-  nombre_compania: '',
-  nit: '',
-  telefono: '',
-  nombre_agente: '',
-  telefono_agente: '',
-  email: '',
-  sitio_web: '',
-  direccion: '',
-  notas: '',
-  localLogo: null,
-  remoteLogo: '',
-});
+function emptyProveedor() {
+  return {
+    id: null,
+    nombre_compania: '',
+    nit: '',
+    telefono: '',
+    nombre_agente: '',
+    telefono_agente: '',
+    email: '',
+    sitio_web: '',
+    direccion: '',
+    notas: '',
+    logo_url: '',
+  };
+}
+
+function proveedorPayloadFrom(record, patch = {}) {
+  const m = { ...record, ...patch };
+  return {
+    nombre_compania: String(m.nombre_compania || '').trim(),
+    nit: m.nit != null && String(m.nit).trim() !== '' ? String(m.nit).trim() : null,
+    telefono: m.telefono != null && String(m.telefono).trim() !== '' ? String(m.telefono).trim() : null,
+    nombre_agente:
+      m.nombre_agente != null && String(m.nombre_agente).trim() !== ''
+        ? String(m.nombre_agente).trim()
+        : null,
+    telefono_agente:
+      m.telefono_agente != null && String(m.telefono_agente).trim() !== ''
+        ? String(m.telefono_agente).trim()
+        : null,
+    email: m.email != null && String(m.email).trim() !== '' ? String(m.email).trim() : null,
+    sitio_web: m.sitio_web != null && String(m.sitio_web).trim() !== '' ? String(m.sitio_web).trim() : null,
+    direccion: m.direccion != null && String(m.direccion).trim() !== '' ? String(m.direccion).trim() : null,
+    notas: m.notas != null && String(m.notas).trim() !== '' ? String(m.notas).trim() : null,
+    logo_url: m.logo_url != null && String(m.logo_url).trim() !== '' ? String(m.logo_url).trim() : null,
+  };
+}
+
+const PROVEEDOR_FICHA_FIELDS = [
+  {
+    key: 'nombre_compania',
+    label: 'Compañía',
+    getValue: (r) => r.nombre_compania,
+    required: true,
+    alwaysShow: true,
+  },
+  { key: 'nit', label: 'NIT / tax ID', getValue: (r) => r.nit, alwaysShow: true },
+  { key: 'telefono', label: 'Teléfono compañía', getValue: (r) => r.telefono, alwaysShow: true, keyboardType: 'phone-pad' },
+  { key: 'nombre_agente', label: 'Agente (contacto)', getValue: (r) => r.nombre_agente, alwaysShow: true },
+  {
+    key: 'telefono_agente',
+    label: 'Teléfono agente',
+    getValue: (r) => r.telefono_agente,
+    alwaysShow: true,
+    keyboardType: 'phone-pad',
+  },
+  {
+    key: 'email',
+    label: 'Correo',
+    getValue: (r) => r.email,
+    alwaysShow: true,
+    keyboardType: 'email-address',
+    autoCapitalize: 'none',
+    autoCorrect: false,
+  },
+  {
+    key: 'sitio_web',
+    label: 'Sitio web',
+    getValue: (r) => r.sitio_web,
+    alwaysShow: true,
+    autoCapitalize: 'none',
+    placeholder: 'https://…',
+  },
+  { key: 'direccion', label: 'Dirección / bodega', getValue: (r) => r.direccion, alwaysShow: true, multiline: true },
+  {
+    key: 'notas',
+    label: 'Notas internas',
+    getValue: (r) => r.notas,
+    alwaysShow: true,
+    multiline: true,
+    placeholder: 'Condiciones de pago, vendedor…',
+  },
+];
 
 export function ProveedoresScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const subStyles = useSubStyles();
   const styles = useMemo(() => createStyles(c), [c]);
 
   const [items, setItems] = useState([]);
@@ -59,14 +126,14 @@ export function ProveedoresScreen({ onBack }) {
   const sel = useListSelection();
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
+  const [detailProveedor, setDetailProveedor] = useState(null);
   const [modalFiltros, setModalFiltros] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const [savingKey, setSavingKey] = useState(null);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [sortMode, setSortMode] = useState('nombre_asc');
   const [filterLogo, setFilterLogo] = useState('todos');
 
-  const padBottom = modalScrollBottomPad(insets);
+  const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
   const load = useCallback(async (isRefresh) => {
     if (isRefresh) setRefreshing(true);
@@ -137,79 +204,128 @@ export function ProveedoresScreen({ onBack }) {
     return rows;
   }, [items, query, sortMode, filterLogo]);
 
-  const openNew = () => {
-    setForm(emptyForm());
-    setModalOpen(true);
-  };
+  const closeDetail = useCallback(() => setDetailProveedor(null), []);
 
-  const openEdit = (row) => {
-    setForm({
-      id: row.id,
-      nombre_compania: row.nombre_compania || '',
-      nit: row.nit || '',
-      telefono: row.telefono || '',
-      nombre_agente: row.nombre_agente || '',
-      telefono_agente: row.telefono_agente || '',
-      email: row.email || '',
-      sitio_web: row.sitio_web || '',
-      direccion: row.direccion || '',
-      notas: row.notas || '',
-      localLogo: null,
-      remoteLogo: row.logo_url || '',
+  const openNew = useCallback(() => setDetailProveedor(emptyProveedor()), []);
+
+  const openEdit = useCallback((row) => setDetailProveedor({ ...row }), []);
+
+  const syncProveedorInList = useCallback((updated) => {
+    setDetailProveedor(updated);
+    setItems((prev) => {
+      if (!updated?.id) return prev;
+      const ix = prev.findIndex((p) => String(p.id) === String(updated.id));
+      if (ix < 0) return [updated, ...prev];
+      const next = [...prev];
+      next[ix] = updated;
+      return next;
     });
-    setModalOpen(true);
-  };
+  }, []);
 
-  const pickLogo = async () => {
+  const saveProveedorField = useCallback(
+    async (key, value, field) => {
+      const cur = detailProveedor;
+      if (!cur) return { ok: false };
+
+      if (field?.required && (value == null || String(value).trim() === '')) {
+        Alert.alert('Dato obligatorio', `Completá ${field.label.toLowerCase()}.`);
+        return { ok: false };
+      }
+
+      setSavingKey(key);
+      try {
+        if (!cur.id) {
+          if (key !== 'nombre_compania') {
+            Alert.alert('Primero la compañía', 'Creá la ficha tocando Compañía y guardando el nombre.');
+            return { ok: false };
+          }
+          const nom = String(value || '').trim();
+          if (!nom) {
+            Alert.alert('Nombre', 'El nombre de la compañía es obligatorio.');
+            return { ok: false };
+          }
+          const { data, error } = await db.proveedores.create(proveedorPayloadFrom({ ...cur, nombre_compania: nom }));
+          if (error) throw error;
+          syncProveedorInList(data);
+          return { ok: true, record: data };
+        }
+
+        const merged = { ...cur, [key]: value };
+        const payload = proveedorPayloadFrom(merged);
+        const { data, error } = await db.proveedores.update(cur.id, payload);
+        if (error) throw error;
+        const updated = data || { ...cur, ...merged, logo_url: payload.logo_url };
+        syncProveedorInList(updated);
+        return { ok: true, record: updated };
+      } catch (e) {
+        const hint =
+          'Si falla por tabla o columnas, ejecutá supabase-proveedores-setup.sql en Supabase SQL Editor.';
+        Alert.alert('Guardar', `${e?.message || 'Error'}\n\n${hint}`);
+        return { ok: false, error: e?.message };
+      } finally {
+        setSavingKey(null);
+      }
+    },
+    [detailProveedor, syncProveedorInList],
+  );
+
+  const pickLogo = useCallback(async () => {
+    const cur = detailProveedor;
+    if (!cur?.id) {
+      Alert.alert('Logo', 'Primero guardá el nombre de la compañía; después podés subir el logo.');
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permisos', 'Se necesita acceso a la galería para el logo.');
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.88 });
-    if (!res.canceled && res.assets?.[0]) setForm((f) => ({ ...f, localLogo: res.assets[0] }));
-  };
+    if (res.canceled || !res.assets?.[0]) return;
 
-  const clearLocalLogo = () => setForm((f) => ({ ...f, localLogo: null }));
-  const removeRemoteLogo = () => setForm((f) => ({ ...f, remoteLogo: '' }));
+    setLogoUploading(true);
+    try {
+      const asset = res.assets[0];
+      const ext = guessExt(asset.uri, asset.mimeType);
+      const { publicUrl, error: upErr } = await uploadProveedorLogoFromUri(asset.uri, {
+        extension: ext,
+        contentType: asset.mimeType || 'image/jpeg',
+      });
+      if (upErr) throw new Error(upErr.message);
+      const payload = proveedorPayloadFrom(cur, { logo_url: publicUrl });
+      const { data, error } = await db.proveedores.update(cur.id, payload);
+      if (error) throw error;
+      syncProveedorInList(data || { ...cur, logo_url: publicUrl });
+    } catch (e) {
+      Alert.alert('Logo', e?.message || 'No se pudo subir.');
+    } finally {
+      setLogoUploading(false);
+    }
+  }, [detailProveedor, syncProveedorInList]);
 
   const eliminar = () => {
-    if (!form.id) return;
-    const snap = {
-      id: form.id,
-      nombre_compania: form.nombre_compania,
-      nit: form.nit,
-      telefono: form.telefono,
-      nombre_agente: form.nombre_agente,
-      telefono_agente: form.telefono_agente,
-      email: form.email,
-      sitio_web: form.sitio_web,
-      direccion: form.direccion,
-      notas: form.notas,
-      logo_url: form.remoteLogo,
-      remoteLogo: form.remoteLogo,
-    };
+    if (!detailProveedor?.id) return;
+    const row = items.find((p) => String(p.id) === String(detailProveedor.id)) || detailProveedor;
     Alert.alert(
       'Eliminar proveedor',
-      `¿Borrar "${form.nombre_compania.trim()}"? Se guardará copia en Basurero.`,
+      `¿Borrar «${row.nombre_compania || 'proveedor'}»? Se guardará copia en Basurero.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
-            setSaving(true);
+            setSavingKey('delete');
             try {
-              const r = await deleteRowWithBasurero('proveedores', snap, () => db.proveedores.delete(form.id));
+              const r = await deleteRowWithBasurero('proveedores', row, () => db.proveedores.delete(row.id));
               if (!r.ok) throw new Error(r.error);
-              setModalOpen(false);
-              setForm(emptyForm());
+              closeDetail();
               load(false);
               Alert.alert('Listo', 'Proveedor eliminado.');
             } catch (e) {
               Alert.alert('Error', e?.message || 'No se pudo eliminar.');
             } finally {
-              setSaving(false);
+              setSavingKey(null);
             }
           },
         },
@@ -217,74 +333,15 @@ export function ProveedoresScreen({ onBack }) {
     );
   };
 
-  const guardar = async () => {
-    if (!form.nombre_compania.trim()) {
-      Alert.alert('Nombre', 'El nombre de la compañía es obligatorio.');
-      return;
-    }
-    setSaving(true);
-    try {
-      let logo_url = form.remoteLogo?.trim() || null;
-      if (form.localLogo?.uri) {
-        const ext = guessExt(form.localLogo.uri, form.localLogo.mimeType);
-        const { publicUrl, error: upErr } = await uploadProveedorLogoFromUri(form.localLogo.uri, {
-          extension: ext,
-          contentType: form.localLogo.mimeType || 'image/jpeg',
-        });
-        if (upErr) {
-          throw new Error(
-            upErr.message ||
-              'No se pudo subir el logo. Creá el bucket Storage "proveedores" y políticas para staff.',
-          );
-        }
-        logo_url = publicUrl;
-      }
-
-      const payload = {
-        nombre_compania: form.nombre_compania.trim(),
-        nit: form.nit.trim() || null,
-        telefono: form.telefono.trim() || null,
-        nombre_agente: form.nombre_agente.trim() || null,
-        telefono_agente: form.telefono_agente.trim() || null,
-        email: form.email.trim() || null,
-        sitio_web: form.sitio_web.trim() || null,
-        direccion: form.direccion.trim() || null,
-        notas: form.notas.trim() || null,
-        logo_url,
-      };
-
-      if (form.id) {
-        const { error } = await db.proveedores.update(form.id, payload);
-        if (error) throw error;
-      } else {
-        const { error } = await db.proveedores.create(payload);
-        if (error) throw error;
-      }
-
-      setModalOpen(false);
-      setForm(emptyForm());
-      load(false);
-      Alert.alert('Listo', form.id ? 'Proveedor actualizado.' : 'Proveedor creado.');
-    } catch (e) {
-      const hint =
-        'Si falla por tabla o columnas, en Supabase SQL Editor ejecutá:\n\nsupabase-proveedores-setup.sql\n\n(raíz del proyecto AppSalon Pro)';
-      Alert.alert('Guardar', `${e?.message || 'Error'}\n\n${hint}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const addIconColor = isDark ? '#141414' : c.foreground;
-
   const rightAction = (
     <TouchableOpacity
       onPress={openNew}
-      style={[styles.addCircle, isDark && styles.addCircleDark]}
+      style={[styles.addCircle, isDark && styles.addCircleDark, { backgroundColor: c.card, borderColor: c.cardBorder }]}
       hitSlop={12}
       accessibilityLabel="Nuevo proveedor"
       activeOpacity={0.85}
     >
-      <Plus size={22} color={addIconColor} strokeWidth={2.2} />
+      <Plus size={22} color={c.foreground} strokeWidth={2.2} />
     </TouchableOpacity>
   );
 
@@ -461,150 +518,44 @@ export function ProveedoresScreen({ onBack }) {
         ) : null}
       </SubScreenChrome>
 
-      <Modal visible={modalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalOpen(false)}>
-        <View style={[styles.modalHead, { borderBottomColor: c.cardBorder, paddingTop: insets.top + spacing.sm }]}>
-          <Text style={[styles.modalTitle, { color: c.foreground }]}>
-            {form.id ? 'Editar compañía' : 'Nueva compañía'}
-          </Text>
-          <TouchableOpacity onPress={() => setModalOpen(false)} hitSlop={12}>
-            <X size={24} color={c.foreground} />
-          </TouchableOpacity>
-        </View>
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: padBottom + 40 }}
-        >
-          <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Logo</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.md }}>
-            {form.localLogo?.uri ? (
-              <View>
-                <Image source={{ uri: form.localLogo.uri }} style={styles.thumb} />
-                <TouchableOpacity onPress={clearLocalLogo} style={styles.thumbX}>
-                  <X size={14} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            ) : form.remoteLogo ? (
-              <View>
-                <Image source={{ uri: form.remoteLogo }} style={styles.thumb} />
-                <TouchableOpacity onPress={removeRemoteLogo} style={styles.thumbX}>
-                  <X size={14} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={[styles.thumbPh, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
-                <ImageIcon size={28} color={c.foregroundSubtle} strokeWidth={1.4} />
-              </View>
-            )}
-          </View>
-          <SalonButton title="Elegir logo (galería)" variant="outlineGray" onPress={pickLogo} />
-
-          <Field label="Nombre de la compañía *" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.nombre_compania}
-              onChangeText={(t) => setForm((f) => ({ ...f, nombre_compania: t }))}
-              placeholder="Ej. Distribuidora Keraplús"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="NIT / tax ID" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.nit}
-              onChangeText={(t) => setForm((f) => ({ ...f, nit: t }))}
-              placeholder="Opcional"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="Teléfono de la compañía" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.telefono}
-              onChangeText={(t) => setForm((f) => ({ ...f, telefono: t }))}
-              keyboardType="phone-pad"
-              placeholder="Central / recepción del proveedor"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="Nombre del agente (contacto)" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.nombre_agente}
-              onChangeText={(t) => setForm((f) => ({ ...f, nombre_agente: t }))}
-              placeholder="Ej. vendedor o ejecutivo de cuenta"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="Teléfono del agente" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.telefono_agente}
-              onChangeText={(t) => setForm((f) => ({ ...f, telefono_agente: t }))}
-              keyboardType="phone-pad"
-              placeholder="Móvil o directo del contacto"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="Correo" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.email}
-              onChangeText={(t) => setForm((f) => ({ ...f, email: t }))}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="Sitio web" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.sitio_web}
-              onChangeText={(t) => setForm((f) => ({ ...f, sitio_web: t }))}
-              autoCapitalize="none"
-              placeholder="https://…"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="Dirección / bodega" c={c}>
-            <TextInput
-              style={[styles.inp, styles.area, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.direccion}
-              onChangeText={(t) => setForm((f) => ({ ...f, direccion: t }))}
-              multiline
-              textAlignVertical="top"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-          <Field label="Notas internas" c={c}>
-            <TextInput
-              style={[styles.inp, styles.area, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.notas}
-              onChangeText={(t) => setForm((f) => ({ ...f, notas: t }))}
-              multiline
-              textAlignVertical="top"
-              placeholder="Condiciones de pago, vendedor asignado…"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
-
-          {form.id ? (
+      <SalonFichaSheet
+        visible={!!detailProveedor}
+        onClose={closeDetail}
+        title={detailProveedor?.id ? 'Ficha de proveedor' : 'Nueva compañía'}
+        colors={c}
+        insets={insets}
+        record={detailProveedor}
+        fields={PROVEEDOR_FICHA_FIELDS}
+        onSaveField={saveProveedorField}
+        savingKey={logoUploading ? 'logo' : savingKey}
+        photo={{
+          uri: detailProveedor?.logo_url || undefined,
+          letter: (detailProveedor?.nombre_compania || '?').trim().charAt(0).toUpperCase(),
+          onPress: pickLogo,
+        }}
+        footer={
+          <>
+            {detailProveedor?.id ? (
+              <SalonButton
+                title="Eliminar proveedor"
+                variant="outlineGray"
+                fullWidth
+                disabled={!!savingKey}
+                onPress={eliminar}
+                style={{ marginTop: spacing.md }}
+                textStyle={{ color: c.error }}
+              />
+            ) : null}
             <SalonButton
-              title="Eliminar proveedor"
+              title="Cerrar"
               variant="outlineGray"
               fullWidth
-              onPress={eliminar}
-              style={{ marginBottom: spacing.sm }}
+              onPress={closeDetail}
+              style={{ marginTop: spacing.sm }}
             />
-          ) : null}
-          <SalonButton
-            title={saving ? 'Guardando…' : 'Guardar'}
-            variant="heroGold"
-            fullWidth
-            loading={saving}
-            onPress={guardar}
-          />
-        </ScrollView>
-      </Modal>
+          </>
+        }
+      />
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
@@ -662,15 +613,6 @@ export function ProveedoresScreen({ onBack }) {
           </View>
         </View>
       </Modal>
-    </View>
-  );
-}
-
-function Field({ label, children, c }) {
-  return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={{ fontFamily: typography.fontSansMedium, fontSize: 13, color: c.foreground, marginBottom: 6 }}>{label}</Text>
-      {children}
     </View>
   );
 }
@@ -801,6 +743,7 @@ function createStyles(c) {
       paddingBottom: spacing.sm,
       maxHeight: '92%',
     },
+    modalShell: { flex: 1 },
     modalHead: {
       flexDirection: 'row',
       alignItems: 'center',

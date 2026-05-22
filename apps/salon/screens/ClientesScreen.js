@@ -21,6 +21,7 @@ import { UserPlus, Calendar, X, ChevronRight, Check } from 'lucide-react-native'
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, MEMBRESIA_TIERS, membresiaLabel, isClienteAppVerificado } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
+import { SalonFichaSheet } from '../components/SalonFichaSheet';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -45,6 +46,28 @@ function isManualProfile(row) {
   const t = String(row?.tipo_registro || '').toLowerCase();
   return t.includes('manual');
 }
+
+const CLIENTE_FICHA_FIELDS = [
+  { key: 'nombre', label: 'Nombre', getValue: (r) => r.nombre, required: true, alwaysShow: true, autoCapitalize: 'words' },
+  { key: 'email', label: 'Email', getValue: (r) => r.email, alwaysShow: true, keyboardType: 'email-address', autoCapitalize: 'none', autoCorrect: false },
+  { key: 'telefono', label: 'Teléfono', getValue: (r) => r.telefono, alwaysShow: true, keyboardType: 'phone-pad' },
+  { key: 'direccion', label: 'Dirección', getValue: (r) => r.direccion, alwaysShow: true, multiline: true },
+  { key: 'cumpleanos', label: 'Cumpleaños', getValue: (r) => r.cumpleanos, alwaysShow: true, placeholder: 'Ej. 1990-05-15' },
+  { key: 'categoria', label: 'Categoría', getValue: (r) => r.categoria, alwaysShow: true },
+  {
+    key: 'puntos_fidelidad',
+    label: 'Puntos',
+    getValue: (r) => r.puntos_fidelidad,
+    alwaysShow: true,
+    keyboardType: 'number-pad',
+    parse: (s) => {
+      const n = parseInt(String(s || '').replace(/\D/g, ''), 10);
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    },
+    formatDisplay: (v) => (v != null && v !== '' ? String(v) : '0'),
+    getEditDraft: (r) => String(r.puntos_fidelidad ?? 0),
+  },
+];
 
 export function ClientesScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
@@ -80,6 +103,7 @@ export function ClientesScreen({ onBack }) {
   const [nivelCodigo, setNivelCodigo] = useState('bronce');
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
   const [asignandoMembresia, setAsignandoMembresia] = useState(false);
+  const [savingClienteKey, setSavingClienteKey] = useState(null);
 
   const loadClientes = useCallback(async () => {
     setLoadError(null);
@@ -190,6 +214,42 @@ export function ClientesScreen({ onBack }) {
     setClientes((prev) => prev.map((c) => (c.id === actualizado.id ? { ...c, ...actualizado } : c)));
     Alert.alert('Listo', `Membresía ${membresiaLabel(nivelCodigo)} asignada en la ficha (sin código).`);
   };
+
+  const syncClienteInList = useCallback((updated) => {
+    setDetailCliente(updated);
+    setClientes((prev) => prev.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)));
+  }, []);
+
+  const saveClienteField = useCallback(
+    async (key, value, field) => {
+      if (!detailCliente?.id) return { ok: false };
+      if (field?.required && (value == null || String(value).trim() === '')) {
+        Alert.alert('Dato obligatorio', `Completá ${field.label.toLowerCase()}.`);
+        return { ok: false };
+      }
+      setSavingClienteKey(key);
+      try {
+        const patch = { [key]: value };
+        if (key === 'nombre') patch.nombre = String(value || '').trim();
+        if (['email', 'telefono', 'direccion', 'cumpleanos', 'categoria'].includes(key)) {
+          patch[key] = value != null && String(value).trim() !== '' ? String(value).trim() : null;
+        }
+        const { data, error } = await db.clientes.update(detailCliente.id, patch);
+        if (error) {
+          Alert.alert('No se guardó', error.message || 'Intentá de nuevo.');
+          return { ok: false, error: error.message };
+        }
+        syncClienteInList(data || { ...detailCliente, ...patch });
+        return { ok: true, record: data };
+      } catch (e) {
+        Alert.alert('Error', e?.message || 'Intentá de nuevo.');
+        return { ok: false, error: e?.message };
+      } finally {
+        setSavingClienteKey(null);
+      }
+    },
+    [detailCliente, syncClienteInList],
+  );
 
   const generarCodigoMembresia = async () => {
     if (!detailCliente?.id) return;
@@ -621,153 +681,138 @@ export function ClientesScreen({ onBack }) {
         </View>
       </Modal>
 
-      <Modal visible={!!detailCliente} animationType="slide" transparent onRequestClose={() => setDetailCliente(null)}>
-        <View style={styles.modalBackdrop}>
-          <ScrollView contentContainerStyle={[styles.modalPad, { paddingBottom: modalScrollBottomPad(insets) }]}>
-            {detailCliente ? (
-              <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
-                <View style={styles.filterModalHead}>
-                  <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Ficha de cliente</Text>
-                  <TouchableOpacity onPress={() => setDetailCliente(null)} hitSlop={12}>
-                    <X size={22} color={c.foregroundMuted} />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.detailPhotoWrap}>
-                  {detailCliente.photo_url ? (
-                    <Image source={{ uri: detailCliente.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.detailPhoto, styles.rowAvatarEmpty, { backgroundColor: c.surfaceMuted }]}>
-                      <Text style={styles.detailPhotoLetter}>
-                        {(detailCliente.nombre || '?').trim().charAt(0).toUpperCase()}
-                      </Text>
+      <SalonFichaSheet
+        visible={!!detailCliente}
+        onClose={() => setDetailCliente(null)}
+        title="Ficha de cliente"
+        colors={c}
+        insets={insets}
+        record={detailCliente}
+        fields={CLIENTE_FICHA_FIELDS}
+        onSaveField={saveClienteField}
+        savingKey={savingClienteKey}
+        photo={{
+          uri: detailCliente?.photo_url || undefined,
+          letter: (detailCliente?.nombre || '?').trim().charAt(0).toUpperCase(),
+        }}
+        extraContent={
+          detailCliente ? (
+            <>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLbl}>Membresía</Text>
+                <Text style={styles.detailVal}>
+                  {detailCliente.membresia_nivel
+                    ? membresiaLabel(detailCliente.membresia_nivel)
+                    : 'Sin activar'}
+                </Text>
+              </View>
+              {(() => {
+                const conApp = isClienteAppVerificado(detailCliente);
+                return (
+                  <View style={[styles.membresiaBlock, { borderColor: c.cardBorder }]}>
+                    <Text style={[styles.membresiaBlockTitle, { color: c.foreground }]}>
+                      {conApp ? 'Membresía · App Clientes' : 'Membresía · ficha manual'}
+                    </Text>
+                    <Text style={[styles.membresiaBlockHint, { color: c.foregroundMuted }]}>
+                      {conApp
+                        ? 'Generá un código para que el cliente lo active en App Clientes → Membresías.'
+                        : 'Cliente sin cuenta en la app: asigná el nivel directo en la ficha (no usa código).'}
+                    </Text>
+                    <View style={styles.chipRow}>
+                      {MEMBRESIA_TIERS.map((t) => {
+                        const on = nivelCodigo === t.id;
+                        return (
+                          <TouchableOpacity
+                            key={t.id}
+                            style={[
+                              styles.filterChip,
+                              {
+                                borderColor: on ? t.accent : c.cardBorder,
+                                backgroundColor: on ? `${t.accent}18` : c.card,
+                              },
+                            ]}
+                            onPress={() => setNivelCodigo(t.id)}
+                          >
+                            <Text style={[styles.filterChipTxt, { color: on ? t.accent : c.foreground }]}>
+                              {t.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  )}
-                </View>
-                {[
-                  ['Nombre', detailCliente.nombre],
-                  ['Email', detailCliente.email],
-                  ['Teléfono', detailCliente.telefono],
-                  ['Dirección', detailCliente.direccion],
-                  ['Cumpleaños', detailCliente.cumpleanos],
-                  ['Categoría', detailCliente.categoria],
-                  [
-                    'Membresía',
-                    detailCliente.membresia_nivel
-                      ? membresiaLabel(detailCliente.membresia_nivel)
-                      : 'Sin activar',
-                  ],
-                  ['Puntos', detailCliente.puntos_fidelidad != null ? String(detailCliente.puntos_fidelidad) : null],
-                ].map(([label, val]) =>
-                  val ? (
-                    <View key={label} style={styles.detailRow}>
-                      <Text style={styles.detailLbl}>{label}</Text>
-                      <Text style={styles.detailVal}>{String(val)}</Text>
-                    </View>
-                  ) : null,
-                )}
-                {(() => {
-                  const conApp = isClienteAppVerificado(detailCliente);
-                  return (
-                    <View style={[styles.membresiaBlock, { borderColor: c.cardBorder }]}>
-                      <Text style={[styles.membresiaBlockTitle, { color: c.foreground }]}>
-                        {conApp ? 'Membresía · App Clientes' : 'Membresía · ficha manual'}
-                      </Text>
-                      <Text style={[styles.membresiaBlockHint, { color: c.foregroundMuted }]}>
-                        {conApp
-                          ? 'Generá un código para que el cliente lo active en App Clientes → Membresías.'
-                          : 'Cliente sin cuenta en la app: asigná el nivel directo en la ficha (no usa código).'}
-                      </Text>
-                      <View style={styles.chipRow}>
-                        {MEMBRESIA_TIERS.map((t) => {
-                          const on = nivelCodigo === t.id;
-                          return (
-                            <TouchableOpacity
-                              key={t.id}
-                              style={[
-                                styles.filterChip,
-                                {
-                                  borderColor: on ? t.accent : c.cardBorder,
-                                  backgroundColor: on ? `${t.accent}18` : c.card,
-                                },
-                              ]}
-                              onPress={() => setNivelCodigo(t.id)}
-                            >
-                              <Text style={[styles.filterChipTxt, { color: on ? t.accent : c.foreground }]}>
-                                {t.label}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                      {conApp ? (
-                        <>
-                          <SalonButton
-                            title={
-                              generandoCodigo ? 'Generando…' : `Generar código ${membresiaLabel(nivelCodigo) || ''}`
-                            }
-                            variant="heroGold"
-                            fullWidth
-                            disabled={generandoCodigo || asignandoMembresia}
-                            onPress={() => void generarCodigoMembresia()}
-                            style={{ marginTop: spacing.xs }}
-                          />
-                          {codigosPendientes.length > 0 ? (
-                            <View style={{ marginTop: spacing.sm }}>
-                              <Text
-                                style={[styles.membresiaBlockHint, { color: c.foregroundMuted, marginBottom: 4 }]}
-                              >
-                                Códigos pendientes de activar:
-                              </Text>
-                              {codigosPendientes.map((row) => (
-                                <Text
-                                  key={row.id}
-                                  style={[styles.codigoPendiente, { color: c.primary }]}
-                                  selectable
-                                >
-                                  {row.codigo} · {membresiaLabel(row.nivel)}
-                                </Text>
-                              ))}
-                            </View>
-                          ) : null}
-                        </>
-                      ) : (
+                    {conApp ? (
+                      <>
                         <SalonButton
                           title={
-                            asignandoMembresia
-                              ? 'Guardando…'
-                              : `Asignar membresía ${membresiaLabel(nivelCodigo) || ''}`
+                            generandoCodigo ? 'Generando…' : `Generar código ${membresiaLabel(nivelCodigo) || ''}`
                           }
                           variant="heroGold"
                           fullWidth
-                          disabled={asignandoMembresia || generandoCodigo}
-                          onPress={() => void asignarMembresiaManual()}
+                          disabled={generandoCodigo || asignandoMembresia}
+                          onPress={() => void generarCodigoMembresia()}
                           style={{ marginTop: spacing.xs }}
                         />
-                      )}
-                    </View>
-                  );
-                })()}
-
-                <SalonButton
-                  title={exportingId === detailCliente.id ? 'Generando PDF…' : 'Exportar PDF (ficha y foto)'}
-                  variant="outlineGold"
-                  fullWidth
-                  disabled={exportingId === detailCliente.id}
-                  onPress={() => void exportarCliente(detailCliente)}
-                  style={{ marginTop: spacing.md }}
-                />
-                <SalonButton
-                  title="Cerrar"
-                  variant="outlineGray"
-                  fullWidth
-                  onPress={() => setDetailCliente(null)}
-                  style={{ marginTop: spacing.sm }}
-                />
-              </View>
-            ) : null}
-          </ScrollView>
-        </View>
-      </Modal>
+                        {codigosPendientes.length > 0 ? (
+                          <View style={{ marginTop: spacing.sm }}>
+                            <Text
+                              style={[styles.membresiaBlockHint, { color: c.foregroundMuted, marginBottom: 4 }]}
+                            >
+                              Códigos pendientes de activar:
+                            </Text>
+                            {codigosPendientes.map((row) => (
+                              <Text
+                                key={row.id}
+                                style={[styles.codigoPendiente, { color: c.primary }]}
+                                selectable
+                              >
+                                {row.codigo} · {membresiaLabel(row.nivel)}
+                              </Text>
+                            ))}
+                          </View>
+                        ) : null}
+                      </>
+                    ) : (
+                      <SalonButton
+                        title={
+                          asignandoMembresia
+                            ? 'Guardando…'
+                            : `Asignar membresía ${membresiaLabel(nivelCodigo) || ''}`
+                        }
+                        variant="heroGold"
+                        fullWidth
+                        disabled={asignandoMembresia || generandoCodigo}
+                        onPress={() => void asignarMembresiaManual()}
+                        style={{ marginTop: spacing.xs }}
+                      />
+                    )}
+                  </View>
+                );
+              })()}
+            </>
+          ) : null
+        }
+        footer={
+          detailCliente ? (
+            <>
+              <SalonButton
+                title={exportingId === detailCliente.id ? 'Generando PDF…' : 'Exportar PDF (ficha y foto)'}
+                variant="outlineGold"
+                fullWidth
+                disabled={exportingId === detailCliente.id}
+                onPress={() => void exportarCliente(detailCliente)}
+                style={{ marginTop: spacing.md }}
+              />
+              <SalonButton
+                title="Cerrar"
+                variant="outlineGray"
+                fullWidth
+                onPress={() => setDetailCliente(null)}
+                style={{ marginTop: spacing.sm }}
+              />
+            </>
+          ) : null
+        }
+      />
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.modalBackdrop}>
