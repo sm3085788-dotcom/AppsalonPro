@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,14 +10,12 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
-  Platform,
   Alert,
   Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { UserPlus, Calendar, X, ChevronRight, Check } from 'lucide-react-native';
+import { UserPlus, X, ChevronRight, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, MEMBRESIA_TIERS, membresiaLabel, isClienteAppVerificado } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
@@ -69,6 +67,21 @@ const CLIENTE_FICHA_FIELDS = [
   },
 ];
 
+function emptyCliente() {
+  return {
+    id: null,
+    nombre: '',
+    email: '',
+    telefono: '',
+    direccion: '',
+    cumpleanos: null,
+    categoria: 'Nuevo',
+    puntos_fidelidad: 0,
+    membresia_nivel: null,
+    photo_url: null,
+  };
+}
+
 export function ClientesScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -82,22 +95,11 @@ export function ClientesScreen({ onBack }) {
   const [loadError, setLoadError] = useState(null);
   const [search, setSearch] = useState('');
 
-  const [modalManual, setModalManual] = useState(false);
   const [modalFiltros, setModalFiltros] = useState(false);
   const [sortMode, setSortMode] = useState('nombre_asc');
   const [filterTipo, setFilterTipo] = useState('todos');
-  const [nombre, setNombre] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [email, setEmail] = useState('');
-  const [direccion, setDireccion] = useState('');
-  const [nacimiento, setNacimiento] = useState(() => {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 70);
-    return d;
-  });
-  const [showNacPicker, setShowNacPicker] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [detailCliente, setDetailCliente] = useState(null);
+  const creatingRef = useRef(false);
   const [exportingId, setExportingId] = useState(null);
   const [codigosPendientes, setCodigosPendientes] = useState([]);
   const [nivelCodigo, setNivelCodigo] = useState('bronce');
@@ -217,29 +219,53 @@ export function ClientesScreen({ onBack }) {
 
   const syncClienteInList = useCallback((updated) => {
     setDetailCliente(updated);
-    setClientes((prev) => prev.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)));
+    if (!updated?.id) return;
+    setClientes((prev) => {
+      const ix = prev.findIndex((c) => String(c.id) === String(updated.id));
+      if (ix >= 0) {
+        return prev.map((row) => (String(row.id) === String(updated.id) ? { ...row, ...updated } : row));
+      }
+      return [updated, ...prev];
+    });
   }, []);
 
   const saveClienteField = useCallback(
     async (key, value, field) => {
-      if (!detailCliente?.id) return { ok: false };
-      if (field?.required && (value == null || String(value).trim() === '')) {
-        Alert.alert('Dato obligatorio', `Completá ${field.label.toLowerCase()}.`);
-        return { ok: false };
+      const cur = detailCliente;
+      if (!cur) return { ok: false };
+
+      if (!cur.id) {
+        let val = value;
+        if (key === 'nombre') val = String(value || '').trim();
+        if (key === 'direccion') {
+          val = value != null && String(value).trim() !== '' ? String(value).trim() : '';
+        } else if (key === 'puntos_fidelidad') {
+          val = field?.parse ? field.parse(String(value ?? '')) : 0;
+        } else if (['email', 'telefono', 'cumpleanos', 'categoria'].includes(key)) {
+          val = value != null && String(value).trim() !== '' ? String(value).trim() : '';
+        }
+        const merged = { ...cur, [key]: val };
+        setDetailCliente(merged);
+        return { ok: true, record: merged };
       }
+
       setSavingClienteKey(key);
       try {
         const patch = { [key]: value };
         if (key === 'nombre') patch.nombre = String(value || '').trim();
-        if (['email', 'telefono', 'direccion', 'cumpleanos', 'categoria'].includes(key)) {
+        if (key === 'direccion') {
+          patch.direccion = value != null && String(value).trim() !== '' ? String(value).trim() : null;
+        } else if (key === 'puntos_fidelidad') {
+          patch.puntos_fidelidad = field?.parse ? field.parse(String(value ?? '')) : 0;
+        } else if (['email', 'telefono', 'cumpleanos', 'categoria'].includes(key)) {
           patch[key] = value != null && String(value).trim() !== '' ? String(value).trim() : null;
         }
-        const { data, error } = await db.clientes.update(detailCliente.id, patch);
+        const { data, error } = await db.clientes.update(cur.id, patch);
         if (error) {
           Alert.alert('No se guardó', error.message || 'Intentá de nuevo.');
           return { ok: false, error: error.message };
         }
-        syncClienteInList(data || { ...detailCliente, ...patch });
+        syncClienteInList(data || { ...cur, ...patch });
         return { ok: true, record: data };
       } catch (e) {
         Alert.alert('Error', e?.message || 'Intentá de nuevo.');
@@ -250,6 +276,59 @@ export function ClientesScreen({ onBack }) {
     },
     [detailCliente, syncClienteInList],
   );
+
+  const crearCliente = useCallback(async () => {
+    const cur = detailCliente;
+    if (!cur || cur.id || creatingRef.current || savingClienteKey) return;
+    const nom = String(cur.nombre || '').trim();
+    const tel = String(cur.telefono || '').trim();
+    const dir = cur.direccion != null ? String(cur.direccion).trim() : '';
+    if (!nom) {
+      Alert.alert('Falta el nombre', 'Completá el nombre y tocá «Crear cliente».');
+      return;
+    }
+    if (!tel) {
+      Alert.alert('Falta el teléfono', 'Completá el teléfono de contacto.');
+      return;
+    }
+    if (!dir) {
+      Alert.alert('Falta la dirección', 'Completá dirección o zona (tocá Guardar en ese campo).');
+      return;
+    }
+    const em = String(cur.email || '').trim().toLowerCase();
+    if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+      Alert.alert('Correo inválido', 'Revisá el formato del correo o dejalo vacío.');
+      return;
+    }
+    creatingRef.current = true;
+    setSavingClienteKey('create');
+    try {
+      const { data, error } = await db.clientes.create({
+        nombre: nom,
+        telefono: tel,
+        email: em || null,
+        direccion: dir,
+        cumpleanos: cur.cumpleanos?.trim() || null,
+        tipo_registro: 'manual_panel_tercera_edad',
+        notas: 'Alta manual desde panel salón (persona sin uso habitual de la app).',
+        categoria: cur.categoria?.trim() || 'Nuevo',
+        puntos_fidelidad: Number(cur.puntos_fidelidad) || 0,
+      });
+      if (error) {
+        Alert.alert('No se guardó', error.message || 'Revisá permisos en Supabase.');
+        return;
+      }
+      setDetailCliente(data);
+      setNivelCodigo(String(data.membresia_nivel || 'bronce').toLowerCase());
+      await loadClientes();
+      Alert.alert('Listo', 'Cliente registrado.');
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Intentá de nuevo.');
+    } finally {
+      creatingRef.current = false;
+      setSavingClienteKey(null);
+    }
+  }, [detailCliente, loadClientes, savingClienteKey]);
 
   const generarCodigoMembresia = async () => {
     if (!detailCliente?.id) return;
@@ -286,69 +365,11 @@ export function ClientesScreen({ onBack }) {
     );
   };
 
-  const openManual = useCallback(() => {
-    setNombre('');
-    setTelefono('');
-    setEmail('');
-    setDireccion('');
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 70);
-    setNacimiento(d);
-    setModalManual(true);
+  const openNuevoCliente = useCallback(() => {
+    setDetailCliente(emptyCliente());
+    setNivelCodigo('bronce');
+    setCodigosPendientes([]);
   }, []);
-
-  const closeManual = useCallback(() => {
-    setModalManual(false);
-    setShowNacPicker(false);
-  }, []);
-
-  const guardarManual = async () => {
-    const nom = nombre.trim();
-    const tel = telefono.trim();
-    const dir = direccion.trim();
-    if (!nom) {
-      Alert.alert('Falta el nombre', 'Escribí el nombre completo de la persona.');
-      return;
-    }
-    if (!tel) {
-      Alert.alert('Falta el teléfono', 'Ingresá un número de contacto.');
-      return;
-    }
-    if (!dir) {
-      Alert.alert('Falta la dirección', 'Aunque sea zona o colonia, ayuda al equipo.');
-      return;
-    }
-    const em = email.trim().toLowerCase();
-    if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
-      Alert.alert('Correo inválido', 'Revisá el formato del correo electrónico o dejalo vacío.');
-      return;
-    }
-    const cumple = nacimiento.toISOString().split('T')[0];
-    setSaving(true);
-    try {
-      const { error } = await db.clientes.create({
-        nombre: nom,
-        telefono: tel,
-        email: em || null,
-        direccion: dir,
-        cumpleanos: cumple,
-        tipo_registro: 'manual_panel_tercera_edad',
-        notas: 'Alta manual desde panel salón (persona sin uso habitual de la app).',
-        categoria: 'Nuevo',
-      });
-      if (error) {
-        Alert.alert('No se guardó', error.message || 'Revisá permisos en Supabase.');
-        return;
-      }
-      closeManual();
-      await loadClientes();
-      Alert.alert('Listo', 'La ficha quedó registrada. Aparecerá en la lista.');
-    } catch (e) {
-      Alert.alert('Error', e?.message || 'Intentá de nuevo.');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const exportarCliente = async (item) => {
     if (!item) return;
@@ -475,7 +496,7 @@ export function ClientesScreen({ onBack }) {
   const rightAction = (
     <TouchableOpacity
       style={[styles.addPersonCircle, isDark && styles.addPersonCircleDark]}
-      onPress={openManual}
+      onPress={openNuevoCliente}
       accessibilityRole="button"
       accessibilityLabel="Agregar cliente manual"
       activeOpacity={0.85}
@@ -577,126 +598,25 @@ export function ClientesScreen({ onBack }) {
         ) : null}
       </SubScreenChrome>
 
-      <Modal visible={modalManual} animationType="slide" transparent onRequestClose={closeManual}>
-        <View style={styles.modalBackdrop}>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.modalPad, { paddingBottom: modalScrollBottomPad(insets) }]}
-          >
-            <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
-              <Text style={styles.modalTitle}>Cliente manual</Text>
-
-              <Text style={styles.fieldLbl}>Nombre completo</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Ej. María Concepción López de Pérez"
-                placeholderTextColor={c.foregroundSubtle}
-                value={nombre}
-                onChangeText={setNombre}
-                autoCapitalize="words"
-              />
-
-              <Text style={styles.fieldLbl}>Teléfono</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Ej. 55123456"
-                placeholderTextColor={c.foregroundSubtle}
-                value={telefono}
-                onChangeText={setTelefono}
-                keyboardType="phone-pad"
-              />
-
-              <Text style={styles.fieldLbl}>Correo electrónico (opcional)</Text>
-              <TextInput
-                style={[styles.fieldInp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Ej. maria.lopez@correo.com"
-                placeholderTextColor={c.foregroundSubtle}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-
-              <Text style={styles.fieldLbl}>Dirección o zona</Text>
-              <TextInput
-                style={[styles.fieldInp, styles.fieldArea, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Colonia, calle, zona o referencia"
-                placeholderTextColor={c.foregroundSubtle}
-                value={direccion}
-                onChangeText={setDireccion}
-                multiline
-              />
-
-              <Text style={styles.fieldLbl}>Fecha de nacimiento (para calcular edad)</Text>
-              <TouchableOpacity
-                style={[styles.dateRow, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-                onPress={() => setShowNacPicker(true)}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.dateTxt, { color: c.foreground }]}>
-                  {nacimiento.toLocaleDateString('es-GT', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                  })}
-                </Text>
-                <Calendar size={18} color={c.primary} strokeWidth={2} />
-              </TouchableOpacity>
-              {showNacPicker ? (
-                <>
-                  <DateTimePicker
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    value={nacimiento}
-                    maximumDate={new Date()}
-                    minimumDate={new Date(1920, 0, 1)}
-                    onChange={(ev, date) => {
-                      if (Platform.OS !== 'ios') setShowNacPicker(false);
-                      if (date) setNacimiento(date);
-                    }}
-                  />
-                  {Platform.OS === 'ios' ? (
-                    <SalonButton title="Listo" variant="outlineGold" fullWidth onPress={() => setShowNacPicker(false)} />
-                  ) : null}
-                </>
-              ) : null}
-
-              <SalonButton
-                title={saving ? 'Guardando…' : 'Guardar ficha'}
-                variant="heroGold"
-                fullWidth
-                disabled={saving}
-                onPress={guardarManual}
-              />
-              <SalonButton
-                title="Cancelar"
-                variant="outlineGray"
-                fullWidth
-                onPress={closeManual}
-                style={{ marginTop: spacing.sm }}
-              />
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
-
       <SalonFichaSheet
         visible={!!detailCliente}
         onClose={() => setDetailCliente(null)}
-        title="Ficha de cliente"
+        title={detailCliente?.id ? 'Ficha de cliente' : 'Nuevo cliente'}
         colors={c}
         insets={insets}
         record={detailCliente}
         fields={CLIENTE_FICHA_FIELDS}
         onSaveField={saveClienteField}
         savingKey={savingClienteKey}
+        isNew={!!detailCliente && !detailCliente.id}
+        initialEditKey="nombre"
+        newHint="Completá los datos (tocá Guardar en cada campo) y luego «Crear cliente». Nombre, teléfono y dirección son obligatorios."
         photo={{
           uri: detailCliente?.photo_url || undefined,
           letter: (detailCliente?.nombre || '?').trim().charAt(0).toUpperCase(),
         }}
         extraContent={
-          detailCliente ? (
+          detailCliente?.id ? (
             <>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLbl}>Membresía</Text>
@@ -794,14 +714,25 @@ export function ClientesScreen({ onBack }) {
         footer={
           detailCliente ? (
             <>
-              <SalonButton
-                title={exportingId === detailCliente.id ? 'Generando PDF…' : 'Exportar PDF (ficha y foto)'}
-                variant="outlineGold"
-                fullWidth
-                disabled={exportingId === detailCliente.id}
-                onPress={() => void exportarCliente(detailCliente)}
-                style={{ marginTop: spacing.md }}
-              />
+              {!detailCliente.id ? (
+                <SalonButton
+                  title={savingClienteKey === 'create' ? 'Creando…' : 'Crear cliente'}
+                  variant="heroGold"
+                  fullWidth
+                  disabled={!!savingClienteKey}
+                  onPress={() => void crearCliente()}
+                  style={{ marginTop: spacing.md }}
+                />
+              ) : (
+                <SalonButton
+                  title={exportingId === detailCliente.id ? 'Generando PDF…' : 'Exportar PDF (ficha y foto)'}
+                  variant="outlineGold"
+                  fullWidth
+                  disabled={exportingId === detailCliente.id}
+                  onPress={() => void exportarCliente(detailCliente)}
+                  style={{ marginTop: spacing.md }}
+                />
+              )}
               <SalonButton
                 title="Cerrar"
                 variant="outlineGray"

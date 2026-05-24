@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -130,6 +130,7 @@ export function ProveedoresScreen({ onBack }) {
   const [modalFiltros, setModalFiltros] = useState(false);
   const [savingKey, setSavingKey] = useState(null);
   const [logoUploading, setLogoUploading] = useState(false);
+  const creatingRef = useRef(false);
   const [sortMode, setSortMode] = useState('nombre_asc');
   const [filterLogo, setFilterLogo] = useState('todos');
 
@@ -212,13 +213,15 @@ export function ProveedoresScreen({ onBack }) {
 
   const syncProveedorInList = useCallback((updated) => {
     setDetailProveedor(updated);
+    if (!updated?.id) return;
     setItems((prev) => {
-      if (!updated?.id) return prev;
       const ix = prev.findIndex((p) => String(p.id) === String(updated.id));
-      if (ix < 0) return [updated, ...prev];
-      const next = [...prev];
-      next[ix] = updated;
-      return next;
+      if (ix >= 0) {
+        const next = [...prev];
+        next[ix] = { ...next[ix], ...updated };
+        return next;
+      }
+      return [updated, ...prev];
     });
   }, []);
 
@@ -227,6 +230,12 @@ export function ProveedoresScreen({ onBack }) {
       const cur = detailProveedor;
       if (!cur) return { ok: false };
 
+      if (!cur.id) {
+        const merged = { ...cur, [key]: value };
+        setDetailProveedor(merged);
+        return { ok: true, record: merged };
+      }
+
       if (field?.required && (value == null || String(value).trim() === '')) {
         Alert.alert('Dato obligatorio', `Completá ${field.label.toLowerCase()}.`);
         return { ok: false };
@@ -234,22 +243,6 @@ export function ProveedoresScreen({ onBack }) {
 
       setSavingKey(key);
       try {
-        if (!cur.id) {
-          if (key !== 'nombre_compania') {
-            Alert.alert('Primero la compañía', 'Creá la ficha tocando Compañía y guardando el nombre.');
-            return { ok: false };
-          }
-          const nom = String(value || '').trim();
-          if (!nom) {
-            Alert.alert('Nombre', 'El nombre de la compañía es obligatorio.');
-            return { ok: false };
-          }
-          const { data, error } = await db.proveedores.create(proveedorPayloadFrom({ ...cur, nombre_compania: nom }));
-          if (error) throw error;
-          syncProveedorInList(data);
-          return { ok: true, record: data };
-        }
-
         const merged = { ...cur, [key]: value };
         const payload = proveedorPayloadFrom(merged);
         const { data, error } = await db.proveedores.update(cur.id, payload);
@@ -268,6 +261,33 @@ export function ProveedoresScreen({ onBack }) {
     },
     [detailProveedor, syncProveedorInList],
   );
+
+  const crearProveedor = useCallback(async () => {
+    const cur = detailProveedor;
+    if (!cur || cur.id || creatingRef.current || savingKey) return;
+    const nom = String(cur.nombre_compania || '').trim();
+    if (!nom) {
+      Alert.alert('Falta el nombre', 'Completá el nombre de la compañía y tocá «Crear compañía».');
+      return;
+    }
+    creatingRef.current = true;
+    setSavingKey('create');
+    try {
+      const payload = proveedorPayloadFrom({ ...cur, nombre_compania: nom });
+      const { data, error } = await db.proveedores.create(payload);
+      if (error) throw error;
+      setDetailProveedor(data);
+      await load(false);
+      Alert.alert('Listo', 'Proveedor creado.');
+    } catch (e) {
+      const hint =
+        'Si falla por tabla o columnas, ejecutá supabase-proveedores-setup.sql en Supabase SQL Editor.';
+      Alert.alert('Guardar', `${e?.message || 'Error'}\n\n${hint}`);
+    } finally {
+      creatingRef.current = false;
+      setSavingKey(null);
+    }
+  }, [detailProveedor, load, savingKey]);
 
   const pickLogo = useCallback(async () => {
     const cur = detailProveedor;
@@ -528,13 +548,26 @@ export function ProveedoresScreen({ onBack }) {
         fields={PROVEEDOR_FICHA_FIELDS}
         onSaveField={saveProveedorField}
         savingKey={logoUploading ? 'logo' : savingKey}
+        isNew={!!detailProveedor && !detailProveedor.id}
+        initialEditKey="nombre_compania"
+        newHint="Completá los datos (se guardan en esta pantalla) y tocá «Crear compañía» para registrar en Supabase."
         photo={{
           uri: detailProveedor?.logo_url || undefined,
           letter: (detailProveedor?.nombre_compania || '?').trim().charAt(0).toUpperCase(),
-          onPress: pickLogo,
+          onPress: detailProveedor?.id ? pickLogo : undefined,
         }}
         footer={
           <>
+            {detailProveedor && !detailProveedor.id ? (
+              <SalonButton
+                title={savingKey === 'create' ? 'Creando…' : 'Crear compañía'}
+                variant="heroGold"
+                fullWidth
+                disabled={!!savingKey}
+                onPress={() => void crearProveedor()}
+                style={{ marginTop: spacing.md }}
+              />
+            ) : null}
             {detailProveedor?.id ? (
               <SalonButton
                 title="Eliminar proveedor"

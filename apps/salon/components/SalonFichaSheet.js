@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,9 @@ import { modalSheetBottomPad, modalScrollBottomPad } from './luxury';
  * @param {React.ReactNode} [props.extraContent]
  * @param {React.ReactNode} [props.footer]
  * @param {string} [props.emptyDisplay]
+ * @param {boolean} [props.isNew] - ficha sin id en base de datos
+ * @param {string} [props.initialEditKey] - abre ese campo al abrir (ej. nombre)
+ * @param {string} [props.newHint] - texto bajo el título para altas nuevas
  */
 export function SalonFichaSheet({
   visible,
@@ -47,17 +50,38 @@ export function SalonFichaSheet({
   extraContent = null,
   footer = null,
   emptyDisplay = '—',
+  isNew = false,
+  initialEditKey = null,
+  newHint = null,
 }) {
   const styles = useMemo(() => createFichaStyles(c), [c]);
   const [editingKey, setEditingKey] = useState(null);
   const [draft, setDraft] = useState('');
+  const committingRef = useRef(false);
 
   useEffect(() => {
     if (!visible) {
       setEditingKey(null);
       setDraft('');
+      return;
     }
-  }, [visible]);
+    if (isNew && initialEditKey && record) {
+      const field = fields.find((f) => f.key === initialEditKey);
+      if (field) {
+        const raw = field.getValue(record);
+        const display =
+          field.getEditDraft != null
+            ? field.getEditDraft(record)
+            : field.formatDisplay != null
+              ? field.formatDisplay(raw)
+              : raw != null && raw !== ''
+                ? String(raw)
+                : '';
+        setEditingKey(initialEditKey);
+        setDraft(display);
+      }
+    }
+  }, [visible, isNew, initialEditKey, record, fields]);
 
   if (!record) return null;
 
@@ -92,22 +116,25 @@ export function SalonFichaSheet({
   };
 
   const commitEdit = async (field) => {
-    let parsed = draft;
-    if (field.parse) {
-      parsed = field.parse(draft);
-    } else {
-      const t = String(draft ?? '').trim();
-      parsed = t.length ? t : null;
-    }
-    if (field.required && (parsed == null || parsed === '')) {
+    if (committingRef.current) return;
+    committingRef.current = true;
+    try {
+      let parsed = draft;
+      if (field.parse) {
+        parsed = field.parse(draft);
+      } else if (field.multiline) {
+        const t = String(draft ?? '');
+        parsed = t.trim().length ? t.trim() : null;
+      } else {
+        const t = String(draft ?? '').trim();
+        parsed = t.length ? t : null;
+      }
       setEditingKey(null);
       setDraft('');
       await onSaveField(field.key, parsed, field);
-      return;
+    } finally {
+      committingRef.current = false;
     }
-    setEditingKey(null);
-    setDraft('');
-    await onSaveField(field.key, parsed, field);
   };
 
   const letter =
@@ -122,7 +149,8 @@ export function SalonFichaSheet({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <ScrollView
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="on-drag"
           contentContainerStyle={[styles.pad, { paddingBottom: modalScrollBottomPad(insets) }]}
         >
           <View style={[styles.card, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
@@ -132,6 +160,10 @@ export function SalonFichaSheet({
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
+
+            {isNew && newHint ? (
+              <Text style={[styles.newHint, { color: c.foregroundMuted }]}>{newHint}</Text>
+            ) : null}
 
             {photo !== false ? (
               <TouchableOpacity
@@ -197,48 +229,61 @@ export function SalonFichaSheet({
               }
 
               return (
-                <TouchableOpacity
+                <View
                   key={field.key}
                   style={[styles.row, isEditing && { backgroundColor: c.surfaceMuted, borderRadius: radii.sm }]}
-                  onPress={() => !isEditing && beginEdit(field)}
-                  disabled={isEditing || isSaving}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Editar ${field.label}`}
                 >
                   <Text style={styles.lbl}>{field.label}</Text>
                   {isEditing ? (
-                    <TextInput
-                      style={[
-                        styles.inp,
-                        field.multiline && styles.inpArea,
-                        { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
-                      ]}
-                      value={draft}
-                      onChangeText={setDraft}
-                      placeholder={field.placeholder || `Editar ${field.label.toLowerCase()}`}
-                      placeholderTextColor={c.foregroundSubtle}
-                      autoFocus
-                      multiline={!!field.multiline}
-                      keyboardType={field.keyboardType || 'default'}
-                      autoCapitalize={field.autoCapitalize ?? 'sentences'}
-                      autoCorrect={field.autoCorrect ?? true}
-                      onBlur={() => void commitEdit(field)}
-                      onSubmitEditing={() => void commitEdit(field)}
-                      returnKeyType={field.multiline ? 'default' : 'done'}
-                    />
+                    <>
+                      <TextInput
+                        style={[
+                          styles.inp,
+                          field.multiline && styles.inpArea,
+                          { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
+                        ]}
+                        value={draft}
+                        onChangeText={setDraft}
+                        placeholder={field.placeholder || `Editar ${field.label.toLowerCase()}`}
+                        placeholderTextColor={c.foregroundSubtle}
+                        autoFocus
+                        multiline={!!field.multiline}
+                        blurOnSubmit={!field.multiline}
+                        keyboardType={field.keyboardType || 'default'}
+                        autoCapitalize={field.autoCapitalize ?? 'sentences'}
+                        autoCorrect={field.autoCorrect ?? true}
+                        onSubmitEditing={field.multiline ? undefined : () => void commitEdit(field)}
+                        returnKeyType={field.multiline ? 'default' : 'done'}
+                      />
+                      <TouchableOpacity
+                        style={[styles.saveFieldBtn, { borderColor: c.primary }]}
+                        onPress={() => void commitEdit(field)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Guardar ${field.label}`}
+                      >
+                        <Text style={[styles.saveFieldBtnTxt, { color: c.primary }]}>Guardar</Text>
+                      </TouchableOpacity>
+                    </>
                   ) : (
-                    <View style={styles.valRow}>
-                      <Text style={[styles.val, displayVal === emptyDisplay && { color: c.foregroundSubtle }]}>
-                        {displayVal}
-                      </Text>
-                      {isSaving ? <ActivityIndicator color={c.primary} size="small" style={{ marginLeft: 8 }} /> : null}
-                    </View>
+                    <TouchableOpacity
+                      onPress={() => beginEdit(field)}
+                      disabled={isSaving}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Editar ${field.label}`}
+                    >
+                      <View style={styles.valRow}>
+                        <Text style={[styles.val, displayVal === emptyDisplay && { color: c.foregroundSubtle }]}>
+                          {displayVal}
+                        </Text>
+                        {isSaving ? (
+                          <ActivityIndicator color={c.primary} size="small" style={{ marginLeft: 8 }} />
+                        ) : null}
+                      </View>
+                      <Text style={[styles.tapHint, { color: c.foregroundSubtle }]}>Tocá para editar</Text>
+                    </TouchableOpacity>
                   )}
-                  {!isEditing ? (
-                    <Text style={[styles.tapHint, { color: c.foregroundSubtle }]}>Tocá para editar</Text>
-                  ) : null}
-                </TouchableOpacity>
+                </View>
               );
             })}
 
@@ -276,6 +321,12 @@ function createFichaStyles(c) {
       color: c.foreground,
       flex: 1,
       marginRight: spacing.sm,
+    },
+    newHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 19,
+      marginBottom: spacing.md,
     },
     photoWrap: {
       alignItems: 'center',
@@ -349,6 +400,18 @@ function createFichaStyles(c) {
       fontFamily: typography.fontSans,
       fontSize: 10,
       marginTop: 2,
+    },
+    saveFieldBtn: {
+      alignSelf: 'flex-start',
+      borderWidth: 1,
+      borderRadius: radii.pill,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      marginTop: spacing.xs,
+    },
+    saveFieldBtnTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
     },
   });
 }

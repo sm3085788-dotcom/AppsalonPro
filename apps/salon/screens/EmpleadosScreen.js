@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -116,6 +116,7 @@ export function EmpleadosScreen({ onBack }) {
   const [detailEmpleado, setDetailEmpleado] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
   const [fotoUploading, setFotoUploading] = useState(false);
+  const creatingRef = useRef(false);
 
   const loadEmpleados = useCallback(async () => {
     setLoadError(null);
@@ -158,13 +159,15 @@ export function EmpleadosScreen({ onBack }) {
 
   const syncEmpleadoInList = useCallback((updated) => {
     setDetailEmpleado(updated);
+    if (!updated?.id) return;
     setEmpleados((prev) => {
-      if (!updated?.id) return prev;
       const ix = prev.findIndex((e) => String(e.id) === String(updated.id));
-      if (ix < 0) return [updated, ...prev];
-      const next = [...prev];
-      next[ix] = updated;
-      return next;
+      if (ix >= 0) {
+        const next = [...prev];
+        next[ix] = { ...next[ix], ...updated };
+        return next;
+      }
+      return [updated, ...prev];
     });
   }, []);
 
@@ -173,6 +176,21 @@ export function EmpleadosScreen({ onBack }) {
       const cur = detailEmpleado;
       if (!cur) return { ok: false };
 
+      if (!cur.id) {
+        let val = value;
+        if (key === 'nombre') val = String(value || '').trim();
+        if (key === 'comision_porcentaje') val = parseComision(String(value ?? ''));
+        if (key === 'activo') val = value === true || value === 'true' || value === 1;
+        if (key === 'direccion') {
+          val = value != null && String(value).trim() !== '' ? String(value).trim() : '';
+        } else if (['rol', 'telefono', 'email', 'contacto_emergencia', 'tel_emergencia'].includes(key)) {
+          val = value != null && String(value).trim() !== '' ? String(value).trim() : '';
+        }
+        const merged = { ...cur, [key]: val };
+        setDetailEmpleado(merged);
+        return { ok: true, record: merged };
+      }
+
       if (field?.required && (value == null || String(value).trim() === '')) {
         Alert.alert('Dato obligatorio', `Completá ${field.label.toLowerCase()}.`);
         return { ok: false };
@@ -180,45 +198,18 @@ export function EmpleadosScreen({ onBack }) {
 
       setSavingKey(key);
       try {
-        if (!cur.id) {
-          if (key !== 'nombre') {
-            Alert.alert('Primero el nombre', 'Creá la ficha tocando Nombre y guardando el nombre completo.');
-            return { ok: false };
-          }
-          const nom = String(value || '').trim();
-          if (!nom) {
-            Alert.alert('Falta el nombre', 'El nombre es obligatorio.');
-            return { ok: false };
-          }
-          const { data, error } = await db.empleados.create({
-            nombre: nom,
-            rol: null,
-            telefono: null,
-            email: null,
-            comision_porcentaje: 0,
-            direccion: null,
-            contacto_emergencia: null,
-            tel_emergencia: null,
-            activo: true,
-            foto_url: null,
-            tipo_registro: 'manual',
-          });
-          if (error) {
-            Alert.alert('No se creó', error.message || 'Revisá permisos RLS.');
-            return { ok: false, error: error.message };
-          }
-          syncEmpleadoInList(data);
-          return { ok: true, record: data };
-        }
-
         const patch = { [key]: value };
         if (key === 'nombre') patch.nombre = String(value || '').trim();
-        if (key === 'rol' || key === 'telefono' || key === 'email' || key === 'direccion') {
+        if (key === 'comision_porcentaje') patch.comision_porcentaje = parseComision(String(value ?? ''));
+        if (key === 'direccion') {
+          patch.direccion = value != null && String(value).trim() !== '' ? String(value).trim() : null;
+        } else if (key === 'rol' || key === 'telefono' || key === 'email') {
           patch[key] = value != null && String(value).trim() !== '' ? String(value).trim() : null;
         }
         if (key === 'contacto_emergencia' || key === 'tel_emergencia') {
           patch[key] = value != null && String(value).trim() !== '' ? String(value).trim() : null;
         }
+        if (key === 'activo') patch.activo = value === true || value === 'true' || value === 1;
 
         const { data, error } = await db.empleados.update(cur.id, patch);
         if (error) {
@@ -237,6 +228,45 @@ export function EmpleadosScreen({ onBack }) {
     },
     [detailEmpleado, syncEmpleadoInList],
   );
+
+  const crearEmpleado = useCallback(async () => {
+    const cur = detailEmpleado;
+    if (!cur || cur.id || creatingRef.current || savingKey) return;
+    const nom = String(cur.nombre || '').trim();
+    if (!nom) {
+      Alert.alert('Falta el nombre', 'Completá el nombre del empleado y tocá «Crear empleado».');
+      return;
+    }
+    creatingRef.current = true;
+    setSavingKey('create');
+    try {
+      const { data, error } = await db.empleados.create({
+        nombre: nom,
+        rol: cur.rol?.trim() || null,
+        telefono: cur.telefono?.trim() || null,
+        email: cur.email?.trim() || null,
+        comision_porcentaje: parseComision(String(cur.comision_porcentaje ?? 0)),
+        direccion: cur.direccion != null && String(cur.direccion).trim() !== '' ? String(cur.direccion).trim() : null,
+        contacto_emergencia: cur.contacto_emergencia?.trim() || null,
+        tel_emergencia: cur.tel_emergencia?.trim() || null,
+        activo: cur.activo !== false,
+        foto_url: null,
+        tipo_registro: 'manual',
+      });
+      if (error) {
+        Alert.alert('No se creó', error.message || 'Revisá permisos RLS.');
+        return;
+      }
+      setDetailEmpleado(data);
+      await loadEmpleados();
+      Alert.alert('Listo', 'Empleado creado.');
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Intentá de nuevo.');
+    } finally {
+      creatingRef.current = false;
+      setSavingKey(null);
+    }
+  }, [detailEmpleado, loadEmpleados, savingKey]);
 
   const pickFoto = useCallback(async () => {
     const cur = detailEmpleado;
@@ -552,12 +582,25 @@ export function EmpleadosScreen({ onBack }) {
         fields={EMPLEADO_FICHA_FIELDS}
         onSaveField={saveEmpleadoField}
         savingKey={fotoUploading ? 'foto' : savingKey}
+        isNew={!!detailEmpleado && !detailEmpleado.id}
+        initialEditKey="nombre"
+        newHint="Completá los datos (se guardan en esta pantalla) y tocá «Crear empleado» para registrar en Supabase."
         photo={{
           uri: detailEmpleado?.foto_url || undefined,
-          onPress: pickFoto,
+          onPress: detailEmpleado?.id ? pickFoto : undefined,
         }}
         footer={
           <>
+            {detailEmpleado && !detailEmpleado.id ? (
+              <SalonButton
+                title={savingKey === 'create' ? 'Creando…' : 'Crear empleado'}
+                variant="heroGold"
+                fullWidth
+                disabled={!!savingKey}
+                onPress={() => void crearEmpleado()}
+                style={{ marginTop: spacing.md }}
+              />
+            ) : null}
             {detailEmpleado?.id ? (
               <SalonButton
                 title="Eliminar ficha"
