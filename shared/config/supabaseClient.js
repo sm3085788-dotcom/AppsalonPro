@@ -21,6 +21,17 @@ import {
 } from './inventarioMeta.js';
 
 export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
+
+/** PostgREST: `.single()` con 0 o varias filas (p. ej. sin caja abierta o RLS). */
+export function isPostgrestSingleRowError(error) {
+  if (!error) return false;
+  const msg = String(error.message || '');
+  return (
+    error.code === 'PGRST116' ||
+    /Cannot coerce the result to a single JSON object/i.test(msg) ||
+    /JSON object requested, multiple \(or no\) rows returned/i.test(msg)
+  );
+}
 export {
   TIENDA_JSON_MARK,
   DEFAULT_TIENDA_META,
@@ -1781,31 +1792,38 @@ export const db = {
         .single();
     },
 
-    // Crear venta
-    create: async (data) => {
-      return await supabase
+    // Crear venta (`minimalReturn`: solo id — evita fallo .single() si el SELECT con joins no devuelve fila)
+    create: async (data, options = {}) => {
+      const payload = {
+        cliente_id: data.cliente_id || null,
+        cliente_nombre: data.cliente_nombre || null,
+        profesional: data.profesional || null,
+        total: data.total || 0,
+        monto: data.monto || data.total || 0,
+        metodo_pago: data.metodo_pago || null,
+        items: data.items || null, // JSONB
+        notas: data.notas || null,
+        detalles_pago: data.detalles_pago || null,
+        no_factura: data.no_factura || null,
+        descuento: data.descuento || 0,
+        vendedor_id: data.vendedor_id || null,
+        caja_id: data.caja_id || null,
+      };
+      if (options.minimalReturn) {
+        return await supabase.from('ventas').insert(payload).select('id').maybeSingle();
+      }
+      const { data: row, error } = await supabase
         .from('ventas')
-        .insert({
-          cliente_id: data.cliente_id || null,
-          cliente_nombre: data.cliente_nombre || null,
-          profesional: data.profesional || null,
-          total: data.total || 0,
-          monto: data.monto || data.total || 0,
-          metodo_pago: data.metodo_pago || null,
-          items: data.items || null, // JSONB
-          notas: data.notas || null,
-          detalles_pago: data.detalles_pago || null,
-          no_factura: data.no_factura || null,
-          descuento: data.descuento || 0,
-          vendedor_id: data.vendedor_id || null,
-          caja_id: data.caja_id || null,
-        })
+        .insert(payload)
         .select(`
           *,
           cliente:clientes(id, nombre, telefono),
           vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
         `)
-        .single();
+        .maybeSingle();
+      if (row) return { data: row, error: null };
+      if (error && !isPostgrestSingleRowError(error)) return { data: null, error };
+      return await supabase.from('ventas').insert(payload).select('id').maybeSingle();
     },
 
     // Actualizar venta
@@ -2112,25 +2130,26 @@ export const db = {
 
     // Decrementar stock
     decrementarStock: async (id, cantidad) => {
-      const { data: producto } = await supabase
+      const { data: producto, error: readErr } = await supabase
         .from('inventario')
         .select('stock_actual')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-      if (!producto) return { error: 'Producto no encontrado' };
+      if (readErr && !isPostgrestSingleRowError(readErr)) return { error: readErr };
+      if (!producto) return { error: { message: 'Producto no encontrado' } };
 
       const nuevoStock = Math.max(0, producto.stock_actual - cantidad);
 
-      return await supabase
+      const { error: patchErr } = await supabase
         .from('inventario')
         .update({
           stock_actual: nuevoStock,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
+      if (patchErr) return { error: patchErr };
+      return { data: { id, stock_actual: nuevoStock }, error: null };
     },
 
     // Cambiar visibilidad en tienda
@@ -2361,30 +2380,69 @@ export const db = {
 
   // ==================== E-COMMERCE ORDERS ====================
   orders: {
-    // Obtener todas las órdenes
+    // Obtener todas las órdenes (salón: RLS staff o RPC salon_pedidos_inbox)
     getAll: async () => {
-      return await supabase
+      const direct = await supabase
         .from('ecommerce_orders')
         .select('*')
         .order('created_at', { ascending: false });
+      if (!direct.error && Array.isArray(direct.data) && direct.data.length > 0) {
+        return direct;
+      }
+      const { data: rpcData, error: rpcError } = await supabase.rpc('salon_pedidos_inbox', {
+        p_limit: 500,
+      });
+      if (!rpcError && Array.isArray(rpcData)) {
+        return { data: rpcData, error: null };
+      }
+      return direct;
     },
 
     // Obtener órdenes por estado
     getByStatus: async (status) => {
-      return await supabase
+      const direct = await supabase
         .from('ecommerce_orders')
         .select('*')
         .eq('status', status)
         .order('created_at', { ascending: false });
+      if (!direct.error && Array.isArray(direct.data) && direct.data.length > 0) {
+        return direct;
+      }
+      if (status !== 'pending') return direct;
+      const { data: rpcData, error: rpcError } = await supabase.rpc('salon_pedidos_inbox', {
+        p_limit: 500,
+      });
+      if (!rpcError && Array.isArray(rpcData)) {
+        return { data: rpcData.filter((o) => String(o.status) === status), error: null };
+      }
+      return direct;
     },
 
-    // Obtener orden por ID
+    // Obtener orden por ID (fallback inbox RPC si RLS directo no devuelve fila)
     getById: async (id) => {
-      return await supabase
+      const direct = await supabase
         .from('ecommerce_orders')
         .select('*')
         .eq('id', id)
-        .single();
+        .maybeSingle();
+      if (direct.data) return { data: direct.data, error: null };
+      if (direct.error && !isPostgrestSingleRowError(direct.error)) {
+        return { data: null, error: direct.error };
+      }
+      const { data: inbox, error: rpcErr } = await supabase.rpc('salon_pedidos_inbox', {
+        p_limit: 1000,
+      });
+      if (!rpcErr && Array.isArray(inbox)) {
+        const found = inbox.find((o) => String(o.id) === String(id));
+        if (found) return { data: found, error: null };
+      }
+      return {
+        data: null,
+        error: {
+          message:
+            'Pedido no encontrado o sin permisos de salón. Ejecutá supabase-ecommerce-orders-salon.sql en Supabase.',
+        },
+      };
     },
 
     // Obtener orden por tracking code
@@ -2439,15 +2497,24 @@ export const db = {
 
     // Actualizar orden
     update: async (id, data) => {
-      return await supabase
+      const updates = {
+        ...data,
+        updated_at: new Date().toISOString(),
+      };
+      const { data: row, error } = await supabase
         .from('ecommerce_orders')
-        .update({
-          ...data,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updates)
         .eq('id', id)
-        .select()
-        .single();
+        .select('*')
+        .maybeSingle();
+      if (row) return { data: row, error: null };
+      if (error && !isPostgrestSingleRowError(error)) return { data: null, error };
+      const { error: patchErr } = await supabase
+        .from('ecommerce_orders')
+        .update(updates)
+        .eq('id', id);
+      if (patchErr) return { data: null, error: patchErr };
+      return await supabase.from('ecommerce_orders').select('*').eq('id', id).maybeSingle();
     },
 
     // Actualizar estado de orden
@@ -4465,7 +4532,7 @@ export const db = {
         .eq('estado', 'abierta')
         .order('fecha_apertura', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       return { data, error };
     },
 

@@ -1,5 +1,35 @@
-import { db } from './supabaseClient.js';
+import { db, supabase, isPostgrestSingleRowError } from './supabaseClient.js';
 import { registrarMontoVentaEnMeta } from './metaGlobal.js';
+import { requireCajaAbierta } from './cajaGuard.js';
+
+function friendlyOrderDbError(err) {
+  const msg = String(err?.message || '');
+  if (isPostgrestSingleRowError(err)) {
+    return {
+      message:
+        'No se pudo completar la operación. Verificá que la caja esté abierta y que ejecutaste supabase-ecommerce-orders-salon.sql en Supabase.',
+    };
+  }
+  if (/permission denied for table ecommerce_orders/i.test(msg)) {
+    return {
+      message:
+        'Permisos de pedidos incompletos. Ejecutá supabase-ecommerce-orders-clientes.sql y supabase-ecommerce-orders-salon.sql en Supabase.',
+    };
+  }
+  if (/row-level security/i.test(msg) && /ecommerce_order/i.test(msg)) {
+    return {
+      message:
+        'No se pudo registrar el pedido con tu sesión. Cerrá sesión, volvé a entrar en App Clientes e intentá de nuevo.',
+    };
+  }
+  return err;
+}
+
+async function resolveClientUserId(clientUserId) {
+  if (clientUserId) return clientUserId;
+  const { data } = await supabase.auth.getUser();
+  return data?.user?.id || null;
+}
 
 function mapFulfillment(shipId, homeAddressType) {
   if (shipId === 'ship-home') {
@@ -44,6 +74,16 @@ export async function crearPedidoEfectivo({
 
   const subtotal = lines.reduce((s, l) => s + Number(l.priceAmount || 0) * Number(l.qty || 0), 0);
   const fulfillment = mapFulfillment(shipId, homeAddressType);
+  const uid = await resolveClientUserId(clientUserId);
+  if (!uid) {
+    return {
+      ok: false,
+      error: {
+        message:
+          'Iniciá sesión en App Clientes para enviar el pedido al salón (el pedido debe vincularse a tu cuenta).',
+      },
+    };
+  }
 
   const { data: order, error: oErr } = await db.orders.create({
     customer_name: clienteNombre?.trim() || 'Cliente tienda',
@@ -52,13 +92,13 @@ export async function crearPedidoEfectivo({
     status: 'pending',
     total_amount: subtotal,
     payment_method: 'efectivo',
-    client_user_id: clientUserId || null,
+    client_user_id: uid,
     fulfillment_type: fulfillment.fulfillment_type,
     delivery_reference: fulfillment.delivery_reference,
   });
 
   if (oErr || !order) {
-    return { ok: false, error: oErr || { message: 'No se pudo crear el pedido.' } };
+    return { ok: false, error: friendlyOrderDbError(oErr) || { message: 'No se pudo crear el pedido.' } };
   }
 
   const bulk = lines.map((l) => ({
@@ -72,7 +112,7 @@ export async function crearPedidoEfectivo({
   const { error: iErr } = await db.ecommerceOrderItems.createBulk(bulk);
   if (iErr) {
     await db.orders.cancelar(order.id, 'Error al guardar líneas del pedido');
-    return { ok: false, error: iErr };
+    return { ok: false, error: friendlyOrderDbError(iErr) };
   }
 
   return { ok: true, order, trackingCode: order.tracking_code, total: subtotal };
@@ -81,10 +121,19 @@ export async function crearPedidoEfectivo({
 /**
  * Salón confirma que el cliente pagó en efectivo: venta, stock y meta.
  */
-export async function confirmarCobroPedidoSalon(orderId) {
-  const { data: order, error: oErr } = await db.orders.getById(orderId);
-  if (oErr || !order) {
-    return { ok: false, error: oErr || { message: 'Pedido no encontrado.' } };
+export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload } = {}) {
+  const { caja, error: cajaErr } = await requireCajaAbierta();
+  if (cajaErr || !caja?.id) {
+    return { ok: false, error: friendlyOrderDbError(cajaErr) || { message: 'No hay caja abierta.' } };
+  }
+
+  let order = orderPreload;
+  if (!order) {
+    const { data, error: oErr } = await db.orders.getById(orderId);
+    if (oErr || !data) {
+      return { ok: false, error: friendlyOrderDbError(oErr) || { message: 'Pedido no encontrado.' } };
+    }
+    order = data;
   }
   if (String(order.status) !== 'pending') {
     return { ok: false, error: { message: `El pedido ya está en estado «${order.status}».` } };
@@ -120,19 +169,23 @@ export async function confirmarCobroPedidoSalon(orderId) {
 
   const noFactura = order.tracking_code || `PED-${String(orderId).slice(0, 8)}`;
 
-  const { error: vErr } = await db.ventas.create({
-    cliente_nombre: order.customer_name,
-    total: subtotal,
-    monto: subtotal,
-    metodo_pago: 'efectivo',
-    items: ventaItems,
-    no_factura: noFactura,
-    descuento: 0,
-    notas: `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
-    detalles_pago: 'Efectivo (app clientes)',
-  });
+  const { error: vErr } = await db.ventas.create(
+    {
+      cliente_nombre: order.customer_name,
+      total: subtotal,
+      monto: subtotal,
+      metodo_pago: 'efectivo',
+      items: ventaItems,
+      no_factura: noFactura,
+      descuento: 0,
+      caja_id: caja.id,
+      notas: `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
+      detalles_pago: 'Efectivo (app clientes)',
+    },
+    { minimalReturn: true },
+  );
 
-  if (vErr) return { ok: false, error: vErr };
+  if (vErr) return { ok: false, error: friendlyOrderDbError(vErr) };
 
   for (const line of items) {
     const { error: dErr } = await db.inventario.decrementarStock(line.product_id, line.qty);
@@ -152,7 +205,7 @@ export async function confirmarCobroPedidoSalon(orderId) {
     delivered_at: new Date().toISOString(),
   });
 
-  if (uErr) return { ok: false, error: uErr };
+  if (uErr) return { ok: false, error: friendlyOrderDbError(uErr) };
 
   return { ok: true, noFactura, total: subtotal };
 }

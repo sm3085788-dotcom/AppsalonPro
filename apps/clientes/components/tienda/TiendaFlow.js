@@ -1,17 +1,25 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
 import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, Building2, QrCode } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SalonButton } from '../luxury/SalonButton';
 import { createSubStyles } from '../luxury/SubScreenChrome';
 import { useTheme } from '../../theme/ThemeProvider';
+import { useTiendaCart } from '../../context/TiendaCartContext';
 import { TiendaCatalogGrid } from './TiendaCatalogGrid';
 import { ProductImageStrip } from './ProductImageStrip';
+import { PickupQrDisplay } from './PickupQrDisplay';
 import {
   TIENDA_SAMPLE_SPECS,
   TIENDA_SAMPLE_LONG_COPY,
 } from '../../data/tiendaPlaceholders';
-import { confirmarCompraConTarjeta, crearPedidoEfectivo, buildTiendaProductFicha } from '@appsalon/shared-config';
+import {
+  confirmarCompraConTarjeta,
+  crearPedidoEfectivo,
+  buildTiendaProductFicha,
+  db,
+  mapInventarioToTiendaProduct,
+} from '@appsalon/shared-config';
 
 const STAR_GOLD = '#FFB800';
 const STAR_EMPTY = '#E3E3E3';
@@ -71,16 +79,26 @@ function SpecRow({ label, value }) {
  * Catálogo → ficha → resumen → envío → pago → venta cerrada.
  * Compra con tarjeta: venta real, descuenta stock y suma unidades a la meta global.
  */
-export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono, clientUserId }) {
+export function TiendaFlow({
+  onClose,
+  clienteId,
+  clienteNombre,
+  clienteTelefono,
+  clientUserId,
+  initialProductId = null,
+  initialPhase = null,
+  onPurchaseComplete,
+  onPedidosChanged,
+}) {
   const { colors: tc, isDark } = useTheme();
   const styles = useTiendaStyles();
   const subStyles = useMemo(() => createSubStyles(tc), [tc]);
   const reviewStarEmpty = isDark ? '#525252' : STAR_EMPTY;
-  const [phase, setPhase] = useState('catalog');
+  const { cartItems, setCartItems } = useTiendaCart();
+  const [phase, setPhase] = useState(initialPhase || 'catalog');
   const [selected, setSelected] = useState(null);
   const [qty, setQty] = useState(1);
   const [cartHint, setCartHint] = useState(false);
-  const [cartItems, setCartItems] = useState([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewType, setReviewType] = useState('compra_verificada');
@@ -97,6 +115,38 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
   const [cardSavedToast, setCardSavedToast] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [gridCartToast, setGridCartToast] = useState(null);
+  const deepLinkDone = useRef(false);
+  const gridToastTimer = useRef(null);
+
+  useEffect(() => {
+    if (initialPhase) setPhase(initialPhase);
+  }, [initialPhase]);
+
+  useEffect(
+    () => () => {
+      if (gridToastTimer.current) clearTimeout(gridToastTimer.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!initialProductId || deepLinkDone.current) return undefined;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await db.inventario.getById(initialProductId);
+      if (cancelled || error || !data) return;
+      const product = mapInventarioToTiendaProduct(data);
+      if (!product) return;
+      deepLinkDone.current = true;
+      setSelected(product);
+      setQty(1);
+      setPhase('detail');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialProductId]);
 
   const specsAndCopy = useMemo(() => {
     if (selected?.id === 'sample-keratin-kit') {
@@ -117,6 +167,17 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
     setSelected(null);
     setQty(1);
     setCartHint(false);
+  };
+
+  const showGridCartToast = (title) => {
+    if (gridToastTimer.current) clearTimeout(gridToastTimer.current);
+    setGridCartToast(title || 'Producto');
+    gridToastTimer.current = setTimeout(() => setGridCartToast(null), 2200);
+  };
+
+  const quickAddToCart = (product) => {
+    addToCart(product, 1);
+    showGridCartToast(product?.title);
   };
 
   const openProduct = (product) => {
@@ -196,7 +257,12 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
   return (
     <View style={styles.wrap}>
       {phase === 'catalog' && (
-        <TiendaCatalogGrid onProductPress={openProduct} />
+        <>
+          {gridCartToast ? (
+            <Text style={styles.cartBanner}>✓ {gridCartToast} · añadido al carrito</Text>
+          ) : null}
+          <TiendaCatalogGrid onProductPress={openProduct} onAddToCart={quickAddToCart} />
+        </>
       )}
 
       {phase === 'detail' && selected ? (
@@ -400,7 +466,7 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
               </View>
 
               {cartHint ? (
-                <Text style={styles.cartBanner}>Añadido al carrito (sin persistencia aún)</Text>
+                <Text style={styles.cartBanner}>✓ Añadido al carrito</Text>
               ) : null}
 
               <SalonButton
@@ -621,20 +687,22 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
             </View>
           ) : (
             <View style={[subStyles.card, styles.shipScenarioCard]}>
-              <Text style={subStyles.rowLabel}>QR de retiro en salón</Text>
+              <Text style={subStyles.rowLabel}>Retiro en salón</Text>
               <Text style={styles.choiceSub}>
-                Muéstralo al recoger. Puede retirarlo cualquier persona que presente este QR.
+                Al confirmar el pedido en efectivo recibirás un código QR único en esta app. El salón lo escaneará
+                al cobrarte.
               </Text>
-
-              <View style={styles.qrCard}>
-                <View style={styles.qrSquare}>
-                  <QrCode size={78} color={tc.foreground} strokeWidth={1.8} />
-                </View>
-                <Text style={styles.qrCodeText}>APS-RET-2026-882041</Text>
-                <Text style={styles.qrMeta}>Pedido listo · válido por 24 horas</Text>
-              </View>
-
-              <Text style={styles.shipOkMsg}>QR generado · listo para pasar a pago.</Text>
+              {!pickupQrIssued ? (
+                <SalonButton
+                  title="Entendido · continuar"
+                  variant="outlineGold"
+                  fullWidth
+                  onPress={() => setPickupQrIssued(true)}
+                  style={{ marginTop: spacing.sm }}
+                />
+              ) : (
+                <Text style={styles.shipOkMsg}>Listo · podés pasar a pago.</Text>
+              )}
             </View>
           )}
 
@@ -835,15 +903,23 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
                     shipId === 'ship-home'
                       ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
                       : 'Retiro en salón con QR',
-                  qrCode: shipId === 'ship-salon' ? 'APS-RET-2026-882041' : null,
+                  qrCode: null,
                   realSale: true,
                 });
                 setPhase('success');
                 setCartItems([]);
+                onPurchaseComplete?.();
                 return;
               }
 
               if (payId === 'pay-cash') {
+                if (!clientUserId) {
+                  Alert.alert(
+                    'Sesión requerida',
+                    'Cerrá sesión y volvé a entrar con tu correo y contraseña para enviar el pedido al salón.',
+                  );
+                  return;
+                }
                 if (!cartItems.length) {
                   Alert.alert('Carrito', 'Agregá productos antes de confirmar.');
                   return;
@@ -885,6 +961,8 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
                 });
                 setPhase('success');
                 setCartItems([]);
+                onPurchaseComplete?.();
+                onPedidosChanged?.();
                 return;
               }
 
@@ -902,7 +980,7 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
                 total: cartSubtotal,
                 paymentSummary,
                 shippingSummary,
-                qrCode: shipId === 'ship-salon' ? 'APS-RET-2026-882041' : null,
+                qrCode: null,
                 realSale: false,
               });
               setPhase('success');
@@ -944,12 +1022,16 @@ export function TiendaFlow({ onClose, clienteId, clienteNombre, clienteTelefono,
               <View style={subStyles.divider} />
               <RowAmt label="Envío" value={lastOrder.shippingSummary} muted />
               <RowAmt label="Pago" value={lastOrder.paymentSummary} muted />
-              {lastOrder.qrCode ? (
-                <RowAmt label="QR retiro" value={lastOrder.qrCode} muted />
-              ) : null}
               <View style={subStyles.divider} />
               <RowAmt label="Total" value={formatQ(lastOrder.total)} bold />
             </View>
+          ) : null}
+
+          {lastOrder?.qrCode && lastOrder?.realSale === 'pending_cash' ? (
+            <PickupQrDisplay
+              trackingCode={lastOrder.qrCode}
+              hint="Revisá Pedidos en Inicio: ahí se encuentra el QR de esta compra."
+            />
           ) : null}
 
           <SalonButton

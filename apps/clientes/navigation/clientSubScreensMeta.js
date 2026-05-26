@@ -40,6 +40,8 @@ export function getSubScreenTitles(id) {
       return { title: 'Premios', subtitle: 'Puntos, referidos y recompensas Aura.' };
     case CLIENT_SUB.CARRITO:
       return { title: 'Carrito', subtitle: 'Productos seleccionados.' };
+    case CLIENT_SUB.MIS_PEDIDOS:
+      return { title: 'Mis pedidos', subtitle: 'QR de retiro, efectivo y envío a domicilio.' };
     case CLIENT_SUB.MEMBRESIAS:
       return { title: 'Membresías', subtitle: 'Bronce, Plata y VIP · beneficios por nivel.' };
     case CLIENT_SUB.MENSAJES:

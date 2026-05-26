@@ -50,28 +50,46 @@ export async function markClientAuraDelivered(messageIds = []) {
   return { data: ids.length, error: null };
 }
 
-export async function sendClientAuraChat(content, clientMeta = {}) {
+export async function sendClientAuraChat(content, clientMeta = {}, media = {}) {
   const text = String(content || '').trim();
-  if (!text) return { data: null, error: { message: 'Escribí un mensaje.' } };
+  const mediaUrl = media?.mediaUrl || null;
+  const mediaKind = media?.mediaKind || null;
+  if (!text && !mediaUrl) return { data: null, error: { message: 'Escribí un mensaje.' } };
+
   const { data: rpcRow, error: rpcError } = await supabase.rpc('client_send_aura_chat', {
-    p_content: text,
+    p_content: text || (mediaUrl ? 'Imagen' : ''),
     p_client_name: clientMeta.clientName || null,
     p_client_phone: clientMeta.clientPhone || null,
+    p_media_url: mediaUrl,
+    p_media_kind: mediaKind,
   });
   if (!rpcError && rpcRow) return { data: rpcRow, error: null };
+
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData?.session?.user?.id;
   if (!uid) return { data: null, error: { message: 'Iniciá sesión para chatear.' } };
   const { data: cliente } = await db.clientes.getByUserId(uid);
   if (!cliente?.id) return { data: null, error: { message: 'Sin ficha de cliente' } };
-  return db.marketingDirectMessages.create({
+  const { data, error } = await db.marketingDirectMessages.create({
     client_id: cliente.id,
     client_name: clientMeta.clientName || cliente.nombre || 'Cliente',
     client_phone: clientMeta.clientPhone || cliente.telefono || null,
-    content: text,
+    content: text || (mediaUrl ? 'Imagen' : ''),
     content_type: 'chat',
+    media_url: mediaUrl,
+    media_kind: mediaKind,
     status: 'delivered',
     created_by: uid,
     created_by_name: clientMeta.clientName || cliente.nombre || 'Cliente',
   });
+  if (error?.message?.includes('row-level security')) {
+    return {
+      data: null,
+      error: {
+        message:
+          'Permiso denegado. Ejecutá supabase-aura-line-client-chat-media.sql en Supabase.',
+      },
+    };
+  }
+  return { data, error };
 }

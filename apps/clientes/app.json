@@ -11,6 +11,7 @@
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
+    "scheme": "appsalonclientes",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -99,7 +100,14 @@
       "expo-calendar",
       "expo-location",
       "expo-av",
-      "expo-media-library",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Permite ver fotos del chat.",
+          "savePhotosPermission": "Permite guardar imágenes del chat en tu galería.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
       "expo-font",
       "@react-native-community/datetimepicker",
       "expo-video"

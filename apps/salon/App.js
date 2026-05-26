@@ -3,11 +3,13 @@ import {
   View,
   Text,
   ScrollView,
+  RefreshControl,
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
   useWindowDimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const hasSupabaseEnv = Boolean(
   process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
@@ -81,6 +83,16 @@ const BROWN_MODULE_IDS = new Set(['incidentes', 'inventory', 'basurero']);
 
 /** Modulos con badge de notificaciones (contador rojo). Sustituir por API cuando exista. */
 const BADGE_MODULE_IDS = ['agenda', 'cajas', 'clients', 'mensajes', 'inventory'];
+const SALON_MESSAGES_LAST_SEEN_KEY = '@appsalon/salon/mensajes_last_seen_at';
+const SALON_PEDIDOS_LAST_SEEN_KEY = '@appsalon/salon/pedidos_last_seen_at';
+
+function isPendingCashOrder(order) {
+  const pay = String(order?.payment_method || '').toLowerCase();
+  return (
+    String(order?.status || '') === 'pending' &&
+    ['efectivo', 'cash', 'efectivo_al_retirar'].includes(pay)
+  );
+}
 
 function SalonAdminShell({ onSignOut }) {
   const insets = useSafeAreaInsets();
@@ -89,6 +101,9 @@ function SalonAdminShell({ onSignOut }) {
   const [search, setSearch] = useState('');
   const [searchHits, setSearchHits] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [hasNewMensajes, setHasNewMensajes] = useState(false);
+  const [hasNewPedidos, setHasNewPedidos] = useState(false);
+  const [homeRefreshing, setHomeRefreshing] = useState(false);
   const searchTimerRef = useRef(null);
   const searchGenRef = useRef(0);
   const badgeCounts = useMemo(
@@ -112,13 +127,120 @@ function SalonAdminShell({ onSignOut }) {
 
   const openedModule = openedModuleId ? getModuleById(openedModuleId) : null;
 
-  const openModule = useCallback((id) => setOpenedModuleId(id), []);
+  const refreshMensajesAlert = useCallback(async () => {
+    try {
+      const [{ data: authData }, { data: recentRes, error }] = await Promise.all([
+        supabase.auth.getUser(),
+        db.marketingDirectMessages.getRecentForInbox(500),
+      ]);
+      if (error) return;
+      const uid = authData?.user?.id ? String(authData.user.id) : '';
+      const lastSeenAt = (await AsyncStorage.getItem(SALON_MESSAGES_LAST_SEEN_KEY)) || '';
+      const lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+      const hasNew = (recentRes || []).some((m) => {
+        if (!m?.client_id) return false;
+        const by = m?.created_by ? String(m.created_by) : '';
+        const createdMs = new Date(m.created_at).getTime();
+        const isFromClient = Boolean(by && uid && by !== uid);
+        return isFromClient && Number.isFinite(createdMs) && createdMs > lastSeenMs;
+      });
+      setHasNewMensajes(hasNew);
+    } catch {
+      // noop
+    }
+  }, []);
+
+  const refreshPedidosAlert = useCallback(async () => {
+    try {
+      const [{ data: pendingRes, error }, lastSeenAt] = await Promise.all([
+        db.orders.getByStatus('pending'),
+        AsyncStorage.getItem(SALON_PEDIDOS_LAST_SEEN_KEY),
+      ]);
+      if (error) return;
+      const lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+      const hasNew = (pendingRes || []).filter(isPendingCashOrder).some((o) => {
+        const createdMs = new Date(o.created_at).getTime();
+        return Number.isFinite(createdMs) && createdMs > lastSeenMs;
+      });
+      setHasNewPedidos(hasNew);
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMensajesAlert();
+    refreshPedidosAlert();
+  }, [refreshMensajesAlert, refreshPedidosAlert]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('salon-home-mensajes-alert')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'marketing_direct_messages' },
+        () => {
+          void refreshMensajesAlert();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshMensajesAlert]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('salon-home-pedidos-alert')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ecommerce_orders' },
+        () => {
+          void refreshPedidosAlert();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshPedidosAlert]);
+
+  const openModule = useCallback(async (id) => {
+    if (id === 'mensajes') {
+      const nowIso = new Date().toISOString();
+      await AsyncStorage.setItem(SALON_MESSAGES_LAST_SEEN_KEY, nowIso);
+      setHasNewMensajes(false);
+    }
+    if (id === 'pedidos') {
+      const nowIso = new Date().toISOString();
+      await AsyncStorage.setItem(SALON_PEDIDOS_LAST_SEEN_KEY, nowIso);
+      setHasNewPedidos(false);
+    }
+    setOpenedModuleId(id);
+  }, []);
+  const onHomeRefresh = useCallback(async () => {
+    setHomeRefreshing(true);
+    try {
+      const q = search.trim();
+      await Promise.all([refreshMensajesAlert(), refreshPedidosAlert()]);
+      if (q.length >= SALON_SEARCH_MIN_LEN) {
+        const gen = searchGenRef.current + 1;
+        searchGenRef.current = gen;
+        const hits = await runSalonGlobalSearch(q);
+        if (searchGenRef.current === gen) setSearchHits(hits);
+      }
+    } finally {
+      setHomeRefreshing(false);
+    }
+  }, [search, refreshMensajesAlert, refreshPedidosAlert]);
+
   const closeModule = useCallback(() => {
     setOpenedModuleId(null);
     setSearch('');
     setSearchHits([]);
     setSearchLoading(false);
-  }, []);
+    void refreshPedidosAlert();
+  }, [refreshPedidosAlert]);
 
   useEffect(() => {
     const q = search.trim();
@@ -226,6 +348,15 @@ function SalonAdminShell({ onSignOut }) {
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: scrollBottom }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={homeRefreshing}
+            onRefresh={onHomeRefresh}
+            tintColor={c.primary}
+            colors={[c.primary]}
+            progressBackgroundColor={c.card}
+          />
+        }
       >
         <View style={styles.contentWrap}>
           <View style={[styles.headerTop, { paddingTop: insets.top + spacing.md }]}>
@@ -306,6 +437,9 @@ function SalonAdminShell({ onSignOut }) {
                   width={tileWidth}
                   accent={accent}
                   badgeCount={BADGE_MODULE_IDS.includes(m.id) ? badgeCounts[m.id] ?? 0 : 0}
+                  showAlertBell={
+                    (m.id === 'mensajes' && hasNewMensajes) || (m.id === 'pedidos' && hasNewPedidos)
+                  }
                   onPress={() => openModule(m.id)}
                 />
               );

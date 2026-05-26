@@ -8,28 +8,33 @@ import {
   FlatList,
   Modal,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Alert,
   Image,
   ActivityIndicator,
   ScrollView,
   RefreshControl,
+  Animated,
+  Easing,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ArrowLeft,
   ChevronRight,
   Image as ImageIcon,
   Megaphone,
-  Radio,
+  Bell,
   Send,
   Sparkles,
   X,
   FileText,
   Check,
+  Download,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
@@ -38,13 +43,64 @@ import {
   uploadMensajeMediaFromUri,
   isClienteAppVerificado,
   isClienteManual,
+  formatBroadcastContent,
+  parseBroadcastContent,
+  broadcastPreviewText,
+  mapInventarioToTiendaProduct,
+  BROADCAST_LINK_TYPES,
 } from '@appsalon/shared-config';
+import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
+import { BroadcastPromoCard } from '../../clientes/components/mensajes/BroadcastPromoCard';
 import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { useTheme } from '../theme/ThemeProvider';
+import { saveChatImageWithAlert } from '../utils/saveChatImage';
+
+function chatBubbleText(item) {
+  const ct = String(item.content_type || '');
+  if (ct.includes('broadcast')) {
+    const preview = broadcastPreviewText(item.content);
+    if (preview) return preview;
+  }
+  const t = String(item.content || '').trim();
+  if (item.media_url && item.media_kind === 'image' && /^imagen$/i.test(t)) return '';
+  return t;
+}
+
+function ChatBubbleImage({ uri, style, saveBtnStyle }) {
+  const [saving, setSaving] = useState(false);
+  const onSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await saveChatImageWithAlert(uri);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <View style={{ position: 'relative', marginTop: spacing.sm }}>
+      <Image source={{ uri }} style={style} resizeMode="cover" />
+      <TouchableOpacity
+        style={saveBtnStyle}
+        onPress={onSave}
+        disabled={saving}
+        accessibilityRole="button"
+        accessibilityLabel="Guardar imagen"
+      >
+        {saving ? (
+          <ActivityIndicator size="small" color="#FFFFFF" />
+        ) : (
+          <Download size={16} color="#FFFFFF" strokeWidth={2.2} />
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 const BULK_CHUNK = 80;
+const MENSAJES_SEEN_BY_CLIENT_KEY = '@appsalon/salon/mensajes_seen_by_client';
 const INBOX_PREVIEW_TYPES = new Set(['chat', 'broadcast_promo', 'incident_report']);
 const INBOX_OPEN_HINT = 'Tocá para abrir Andreas Pro';
 /** Mismo verde que Clientes para fichas manuales (sin App Clientes). */
@@ -97,6 +153,39 @@ function initials(name) {
   return '?';
 }
 
+function NewMessageBell({ size = 14 }) {
+  const swing = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(swing, { toValue: -1, duration: 110, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 1, duration: 160, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -0.8, duration: 140, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 0, duration: 1200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [swing]);
+
+  return (
+    <Animated.View
+      style={{
+        transform: [
+          {
+            rotate: swing.interpolate({
+              inputRange: [-1, 1],
+              outputRange: ['-14deg', '14deg'],
+            }),
+          },
+        ],
+      }}
+    >
+      <Bell size={size} color="#FFFFFF" strokeWidth={2.4} />
+    </Animated.View>
+  );
+}
+
 function buildInboxRows(allClients, previews) {
   const lastBy = new Map();
   for (const m of previews || []) {
@@ -109,7 +198,11 @@ function buildInboxRows(allClients, previews) {
     const last = lastBy.get(c.id);
     return {
       client: c,
-      preview: last?.content || INBOX_OPEN_HINT,
+      preview: last
+        ? String(last.content_type || '').includes('broadcast')
+          ? broadcastPreviewText(last.content) || INBOX_OPEN_HINT
+          : last.content || INBOX_OPEN_HINT
+        : INBOX_OPEN_HINT,
       lastAt: last?.created_at || null,
     };
   });
@@ -145,21 +238,117 @@ export function MensajesScreen({ onBack }) {
   const [draft, setDraft] = useState('');
   const [pendingImage, setPendingImage] = useState(null);
   const [sending, setSending] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [promoTitle, setPromoTitle] = useState('');
   const [promoBody, setPromoBody] = useState('');
   const [promoImage, setPromoImage] = useState(null);
+  const [promoLink, setPromoLink] = useState(null);
+  const [promoCatalog, setPromoCatalog] = useState([]);
+  const [promoCatalogLoading, setPromoCatalogLoading] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
   const [staffUserId, setStaffUserId] = useState(null);
+  const [seenByClient, setSeenByClient] = useState({});
+  const [unreadClientIds, setUnreadClientIds] = useState(() => new Set());
 
   const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
   const padBottom = padList;
+  const composerPadBottom = isKeyboardVisible ? spacing.xs : Math.max(insets.bottom, spacing.xs);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setStaffUserId(user?.id ?? null);
     });
+  }, []);
+
+  useEffect(() => {
+    if (!broadcastOpen) return undefined;
+    let cancelled = false;
+    setPromoCatalogLoading(true);
+    (async () => {
+      const { data, error } = await db.inventario.getVisiblesEnTienda();
+      if (cancelled) return;
+      if (!error && Array.isArray(data)) {
+        setPromoCatalog(
+          data.map((row) => {
+            const mapped = mapInventarioToTiendaProduct(row);
+            const tipo = getArticuloTipo(row);
+            return {
+              row,
+              tipo: tipo === 'servicio' ? BROADCAST_LINK_TYPES.SERVICE : BROADCAST_LINK_TYPES.PRODUCT,
+              mapped,
+            };
+          }),
+        );
+      } else {
+        setPromoCatalog([]);
+      }
+      setPromoCatalogLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [broadcastOpen]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(MENSAJES_SEEN_BY_CLIENT_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          setSeenByClient(parsed);
+        }
+      } catch {
+        // noop
+      }
+    });
+  }, []);
+
+  const markClientSeen = useCallback(async (clientId) => {
+    const id = String(clientId || '');
+    if (!id) return;
+    const nowIso = new Date().toISOString();
+    setSeenByClient((prev) => {
+      const next = { ...prev, [id]: nowIso };
+      void AsyncStorage.setItem(MENSAJES_SEEN_BY_CLIENT_KEY, JSON.stringify(next));
+      return next;
+    });
+    setUnreadClientIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const refreshUnreadByClient = useCallback(async () => {
+    if (!staffUserId) return;
+    const { data, error } = await db.marketingDirectMessages.getRecentForInbox(700);
+    if (error) return;
+    const next = new Set();
+    for (const row of data || []) {
+      if (!row?.client_id) continue;
+      const by = row.created_by ? String(row.created_by) : '';
+      const isInbound = Boolean(by && by !== String(staffUserId));
+      if (!isInbound) continue;
+      const clientId = String(row.client_id);
+      const createdMs = new Date(row.created_at).getTime();
+      const seenMs = seenByClient?.[clientId] ? new Date(seenByClient[clientId]).getTime() : 0;
+      if (!Number.isFinite(createdMs)) continue;
+      if (!seenMs || createdMs > seenMs) next.add(clientId);
+    }
+    setUnreadClientIds(next);
+  }, [seenByClient, staffUserId]);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = Keyboard.addListener(showEvt, () => setIsKeyboardVisible(true));
+    const onHide = Keyboard.addListener(hideEvt, () => setIsKeyboardVisible(false));
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
   }, []);
 
   const loadInbox = useCallback(async () => {
@@ -188,6 +377,10 @@ export function MensajesScreen({ onBack }) {
   }, [loadInbox]);
 
   useEffect(() => {
+    void refreshUnreadByClient();
+  }, [refreshUnreadByClient]);
+
+  useEffect(() => {
     const channel = supabase
       .channel('andreas-pro-inbox')
       .on(
@@ -201,6 +394,7 @@ export function MensajesScreen({ onBack }) {
           const row = payload.new;
           if (!row?.client_id) return;
           setInboxPreviews((prev) => mergeInboxPreview(prev, row));
+          void refreshUnreadByClient();
         },
       )
       .subscribe();
@@ -256,7 +450,7 @@ export function MensajesScreen({ onBack }) {
     return `${orden} · ${tipo}`;
   }, [sortMode, filterTipo]);
 
-  const openClientChat = useCallback((client) => {
+  const openClientChat = useCallback(async (client) => {
     if (!isClienteAppVerificado(client)) {
       Alert.alert(
         'Sin App Clientes',
@@ -264,8 +458,9 @@ export function MensajesScreen({ onBack }) {
       );
       return;
     }
+    await markClientSeen(client.id);
     setSelectedClient(client);
-  }, []);
+  }, [markClientSeen]);
 
   const inboxListEmpty = useMemo(() => {
     const q = inboxQuery.trim();
@@ -281,6 +476,12 @@ export function MensajesScreen({ onBack }) {
     );
   }, [clients.length, filterTipo, inboxQuery, c.foregroundMuted]);
 
+  const scrollChatToEnd = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  }, [refreshUnreadByClient]);
+
   const loadChat = useCallback(async (clientId) => {
     setLoadingChat(true);
     try {
@@ -288,13 +489,14 @@ export function MensajesScreen({ onBack }) {
       if (error) throw error;
       const sorted = [...(data || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       setMessages(sorted);
+      scrollChatToEnd(false);
     } catch (e) {
       Alert.alert('Chat', e?.message || 'No se pudieron cargar los mensajes.');
       setMessages([]);
     } finally {
       setLoadingChat(false);
     }
-  }, []);
+  }, [scrollChatToEnd]);
 
   useEffect(() => {
     if (!selectedClient?.id) {
@@ -319,13 +521,14 @@ export function MensajesScreen({ onBack }) {
             if (prev.some((m) => m.id === row.id)) return prev;
             return [...prev, row].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
           });
+          scrollChatToEnd(true);
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedClient?.id, loadChat]);
+  }, [selectedClient?.id, loadChat, scrollChatToEnd]);
 
   const getSenderMeta = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -362,7 +565,7 @@ export function MensajesScreen({ onBack }) {
         if (upErr) {
           Alert.alert(
             'Adjunto',
-            `${upErr.message || 'Error al subir'}\n\nCreá el bucket Storage "mensajes" y políticas para cuentas con acceso (admin).`,
+            `${upErr.message || 'Error al subir'}\n\nEjecutá supabase-mensajes-storage.sql en Supabase (bucket "mensajes" + políticas).`,
           );
           setSending(false);
           return;
@@ -390,6 +593,7 @@ export function MensajesScreen({ onBack }) {
           return [...prev, data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         });
         setInboxPreviews((prev) => mergeInboxPreview(prev, data));
+        scrollChatToEnd(true);
       }
       setDraft('');
       setPendingImage(null);
@@ -432,7 +636,14 @@ export function MensajesScreen({ onBack }) {
       Alert.alert('Pulso masivo', 'Escribí el texto de la promoción.');
       return;
     }
-    const content = title ? `**${title}**\n${body}` : body;
+    const content = formatBroadcastContent({
+      title,
+      body,
+      linkType: promoLink?.type || null,
+      linkId: promoLink?.id || null,
+      linkName: promoLink?.name || null,
+      linkPriceLabel: promoLink?.priceLabel || null,
+    });
     setBroadcasting(true);
     try {
       const sender = await getSenderMeta();
@@ -445,7 +656,10 @@ export function MensajesScreen({ onBack }) {
           contentType: promoImage.mimeType || 'image/jpeg',
         });
         if (upErr) {
-          Alert.alert('Adjunto', upErr.message || 'No se pudo subir la imagen de la campaña.');
+          Alert.alert(
+            'Adjunto',
+            `${upErr.message || 'No se pudo subir la imagen de la campaña.'}\n\nEjecutá supabase-mensajes-storage.sql en Supabase.`,
+          );
           setBroadcasting(false);
           return;
         }
@@ -491,6 +705,7 @@ export function MensajesScreen({ onBack }) {
       setPromoTitle('');
       setPromoBody('');
       setPromoImage(null);
+      setPromoLink(null);
       loadInbox();
     } catch (e) {
       Alert.alert('Pulso masivo', e?.message || 'Error al difundir.');
@@ -554,6 +769,7 @@ export function MensajesScreen({ onBack }) {
             fechaTxt,
           ].filter(Boolean);
       const picked = sel.isSelected(client.id);
+      const hasUnread = !manual && unreadClientIds.has(String(client.id));
 
       return (
         <TouchableOpacity
@@ -606,6 +822,11 @@ export function MensajesScreen({ onBack }) {
                     {manual ? 'Manual' : 'App'}
                   </Text>
                 </View>
+                {hasUnread ? (
+                  <View style={styles.rowBellBadge}>
+                    <NewMessageBell size={11} />
+                  </View>
+                ) : null}
               </View>
             </View>
             <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
@@ -616,7 +837,35 @@ export function MensajesScreen({ onBack }) {
         </TouchableOpacity>
       );
     },
-    [c, isDark, openClientChat, sel, styles],
+    [c, isDark, openClientChat, sel, styles, unreadClientIds],
+  );
+
+  const promoDraftItem = useMemo(() => {
+    const content = formatBroadcastContent({
+      title: promoTitle,
+      body: promoBody,
+      linkType: promoLink?.type || null,
+      linkId: promoLink?.id || null,
+      linkName: promoLink?.name || null,
+      linkPriceLabel: promoLink?.priceLabel || null,
+    });
+    return {
+      content,
+      content_type: 'broadcast_promo',
+      media_url: promoImage?.uri || null,
+      media_kind: promoImage ? 'image' : null,
+      created_at: new Date().toISOString(),
+      created_by_name: 'Vista previa',
+    };
+  }, [promoTitle, promoBody, promoLink, promoImage]);
+
+  const promoProducts = useMemo(
+    () => promoCatalog.filter((e) => e.tipo === BROADCAST_LINK_TYPES.PRODUCT),
+    [promoCatalog],
+  );
+  const promoServices = useMemo(
+    () => promoCatalog.filter((e) => e.tipo === BROADCAST_LINK_TYPES.SERVICE),
+    [promoCatalog],
   );
 
   const renderBubble = ({ item }) => {
@@ -629,6 +878,16 @@ export function MensajesScreen({ onBack }) {
       (item.created_by && staffUserId && item.created_by !== staffUserId && !isBroadcast);
     const interestSource =
       ct === 'carousel_interest' ? 'Carrusel inicio' : ct === 'tendencias_interest' ? 'Tendencias' : null;
+
+    if (isBroadcast && !isInbound) {
+      const when = `${new Date(item.created_at).toLocaleString('es-GT', { hour: '2-digit', minute: '2-digit' })} · ${item.created_by_name || 'Salón'}`;
+      return (
+        <View style={styles.postWrap}>
+          <BroadcastPromoCard item={item} createdAtLabel={when} readOnly />
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.bubbleWrap, isInbound ? styles.bubbleIn : styles.bubbleOut]}>
         {isInbound ? (
@@ -639,9 +898,11 @@ export function MensajesScreen({ onBack }) {
                 <Text style={[styles.badgeTxt, { color: c.primary }]}>Interés · {interestSource}</Text>
               </View>
             ) : null}
-            <Text style={[styles.bubbleTextIn, { color: c.foreground }]}>{item.content}</Text>
+            {chatBubbleText(item) ? (
+              <Text style={[styles.bubbleTextIn, { color: c.foreground }]}>{chatBubbleText(item)}</Text>
+            ) : null}
             {item.media_url && item.media_kind === 'image' ? (
-              <Image source={{ uri: item.media_url }} style={styles.bubbleImg} resizeMode="cover" />
+              <ChatBubbleImage uri={item.media_url} style={styles.bubbleImg} saveBtnStyle={styles.saveImgBtn} />
             ) : null}
             <Text style={[styles.bubbleMetaIn, { color: c.foregroundMuted }]}>
               {new Date(item.created_at).toLocaleString('es-GT', { hour: '2-digit', minute: '2-digit' })} ·{' '}
@@ -650,26 +911,20 @@ export function MensajesScreen({ onBack }) {
           </View>
         ) : (
           <LinearGradient
-            colors={isBroadcast ? ['#B8860B', '#D4AF37', '#C9A227'] : isIncident ? ['#5c1f33', '#7a2d45', '#9a3d58'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
+            colors={isIncident ? ['#5c1f33', '#7a2d45', '#9a3d58'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.bubbleGrad}
           >
-            {isBroadcast ? (
-              <View style={styles.badgeRow}>
-                <Radio size={14} color="#1a1024" />
-                <Text style={styles.badgeTxt}>Difusión</Text>
-              </View>
-            ) : null}
             {isIncident ? (
               <View style={styles.badgeRow}>
                 <FileText size={14} color="#fff" />
                 <Text style={[styles.badgeTxt, { color: '#fff' }]}>Reporte incidente</Text>
               </View>
             ) : null}
-            <Text style={styles.bubbleText}>{item.content}</Text>
+            {chatBubbleText(item) ? <Text style={styles.bubbleText}>{chatBubbleText(item)}</Text> : null}
             {item.media_url && item.media_kind === 'image' ? (
-              <Image source={{ uri: item.media_url }} style={styles.bubbleImg} resizeMode="cover" />
+              <ChatBubbleImage uri={item.media_url} style={styles.bubbleImg} saveBtnStyle={styles.saveImgBtn} />
             ) : null}
             <Text style={styles.bubbleMeta}>
               {new Date(item.created_at).toLocaleString('es-GT', { hour: '2-digit', minute: '2-digit' })} ·{' '}
@@ -723,6 +978,113 @@ export function MensajesScreen({ onBack }) {
             {promoImage ? (
               <Image source={{ uri: promoImage.uri }} style={styles.promoPreview} resizeMode="cover" />
             ) : null}
+
+            <Text style={[styles.fieldLbl, { color: c.foreground, marginTop: spacing.xs }]}>
+              Vincular producto o servicio (inventario · visible en tienda)
+            </Text>
+            <Text style={[styles.promoLinkHint, { color: c.foregroundMuted }]}>
+              Creá el artículo en Inventario y marcá «visible en tienda». El botón Comprar o Agendar llevará al cliente
+              directo a ese artículo.
+            </Text>
+            {promoCatalogLoading ? (
+              <ActivityIndicator style={{ marginVertical: spacing.md }} color={c.primary} />
+            ) : (
+              <>
+                {promoProducts.length ? (
+                  <>
+                    <Text style={[styles.promoLinkSection, { color: c.foreground }]}>Productos</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.promoLinkScroll}>
+                      {promoProducts.map((entry) => {
+                        const on =
+                          promoLink?.type === BROADCAST_LINK_TYPES.PRODUCT &&
+                          String(promoLink.id) === String(entry.row.id);
+                        return (
+                          <TouchableOpacity
+                            key={String(entry.row.id)}
+                            style={[
+                              styles.promoLinkChip,
+                              { borderColor: c.cardBorder, backgroundColor: c.card },
+                              on && { borderColor: c.primary, backgroundColor: c.surfaceMuted },
+                            ]}
+                            onPress={() =>
+                              setPromoLink(
+                                on
+                                  ? null
+                                  : {
+                                      type: BROADCAST_LINK_TYPES.PRODUCT,
+                                      id: entry.row.id,
+                                      name: entry.mapped?.title || entry.row.nombre,
+                                      priceLabel: entry.mapped?.priceLabel || null,
+                                    },
+                              )
+                            }
+                          >
+                            <Text style={[styles.promoLinkChipTxt, { color: c.foreground }]} numberOfLines={2}>
+                              {entry.mapped?.title || entry.row.nombre}
+                            </Text>
+                            {entry.mapped?.priceLabel ? (
+                              <Text style={[styles.promoLinkChipSub, { color: c.foregroundMuted }]}>
+                                {entry.mapped.priceLabel}
+                              </Text>
+                            ) : null}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                ) : null}
+                {promoServices.length ? (
+                  <>
+                    <Text style={[styles.promoLinkSection, { color: c.foreground }]}>Servicios</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.promoLinkScroll}>
+                      {promoServices.map((entry) => {
+                        const on =
+                          promoLink?.type === BROADCAST_LINK_TYPES.SERVICE &&
+                          String(promoLink.id) === String(entry.row.id);
+                        return (
+                          <TouchableOpacity
+                            key={`svc-${entry.row.id}`}
+                            style={[
+                              styles.promoLinkChip,
+                              { borderColor: c.cardBorder, backgroundColor: c.card },
+                              on && { borderColor: c.primary, backgroundColor: c.surfaceMuted },
+                            ]}
+                            onPress={() =>
+                              setPromoLink(
+                                on
+                                  ? null
+                                  : {
+                                      type: BROADCAST_LINK_TYPES.SERVICE,
+                                      id: entry.row.id,
+                                      name: entry.mapped?.title || entry.row.nombre,
+                                      priceLabel: entry.mapped?.priceLabel || null,
+                                    },
+                              )
+                            }
+                          >
+                            <Text style={[styles.promoLinkChipTxt, { color: c.foreground }]} numberOfLines={2}>
+                              {entry.mapped?.title || entry.row.nombre}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                ) : null}
+                {!promoProducts.length && !promoServices.length ? (
+                  <Text style={[styles.promoLinkHint, { color: c.foregroundMuted, marginBottom: spacing.md }]}>
+                    No hay artículos visibles en tienda. Publicá productos o servicios desde Inventario.
+                  </Text>
+                ) : null}
+              </>
+            )}
+
+            {(promoTitle.trim() || promoBody.trim() || promoImage || promoLink) ? (
+              <View style={{ marginTop: spacing.md, marginBottom: spacing.md }}>
+                <Text style={[styles.promoLiveLbl, { color: c.foregroundMuted }]}>Vista previa · post publicitario</Text>
+                <BroadcastPromoCard item={promoDraftItem} readOnly />
+              </View>
+            ) : null}
             <SalonButton
               title={broadcasting ? 'Enviando…' : `Difundir a ${verifiedClients.length} clientes verificados`}
               variant="heroGold"
@@ -775,8 +1137,8 @@ export function MensajesScreen({ onBack }) {
 
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={insets.bottom + 8}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 72 : 0}
         >
           {loadingChat ? (
             <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
@@ -784,10 +1146,19 @@ export function MensajesScreen({ onBack }) {
             <FlatList
               ref={listRef}
               data={messages}
-              inverted
               keyExtractor={(m) => String(m.id)}
               renderItem={renderBubble}
-              contentContainerStyle={{ paddingHorizontal: spacing.md, paddingTop: padBottom, paddingBottom: spacing.md }}
+              style={{ flex: 1 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              contentContainerStyle={{
+                paddingHorizontal: spacing.md,
+                paddingTop: spacing.md,
+                paddingBottom: spacing.sm,
+                flexGrow: 1,
+                justifyContent: 'flex-end',
+              }}
+              onContentSizeChange={() => scrollChatToEnd(false)}
               ListEmptyComponent={
                 <Text style={[subStyles.muted, { textAlign: 'center', marginTop: spacing.xl }]}>
                   Aún no hay mensajes. Escribí el primero para {selectedClient.nombre}.
@@ -811,7 +1182,7 @@ export function MensajesScreen({ onBack }) {
               {
                 borderTopColor: c.cardBorder,
                 backgroundColor: c.background,
-                paddingBottom: modalSheetBottomPad(insets),
+                paddingBottom: composerPadBottom,
               },
             ]}
           >
@@ -1070,6 +1441,16 @@ function createStyles(c) {
       gap: 4,
       flexShrink: 0,
     },
+    rowBellBadge: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      backgroundColor: '#E53935',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: '#FFFFFF',
+    },
     rowAvatarWrap: {
       width: 34,
       height: 34,
@@ -1178,6 +1559,11 @@ function createStyles(c) {
       color: 'rgba(255,255,255,0.75)',
       marginTop: 2,
     },
+    postWrap: {
+      width: '100%',
+      alignSelf: 'stretch',
+      marginVertical: spacing.md,
+    },
     bubbleWrap: {
       maxWidth: '92%',
       marginBottom: spacing.sm,
@@ -1208,6 +1594,13 @@ function createStyles(c) {
       color: '#1a1024',
       textTransform: 'uppercase',
     },
+    broadcastTitle: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 22,
+      lineHeight: 28,
+      color: '#1a1024',
+      marginBottom: 4,
+    },
     bubbleText: {
       fontFamily: typography.fontSans,
       fontSize: 15,
@@ -1223,7 +1616,17 @@ function createStyles(c) {
       width: '100%',
       height: 160,
       borderRadius: radii.md,
-      marginTop: spacing.sm,
+    },
+    saveImgBtn: {
+      position: 'absolute',
+      right: 8,
+      bottom: 8,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     bubbleMeta: {
       fontFamily: typography.fontSans,
@@ -1341,6 +1744,33 @@ function createStyles(c) {
       height: 160,
       borderRadius: radii.md,
       marginBottom: spacing.md,
+    },
+    promoLinkHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 18,
+      marginBottom: spacing.sm,
+    },
+    promoLinkSection: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      marginBottom: spacing.xs,
+      marginTop: spacing.xs,
+    },
+    promoLinkScroll: { marginBottom: spacing.sm, maxHeight: 88 },
+    promoLinkChip: {
+      width: 148,
+      marginRight: spacing.sm,
+      padding: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
+    },
+    promoLinkChipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
+    promoLinkChipSub: { fontFamily: typography.fontSans, fontSize: 11, marginTop: 4 },
+    promoLiveLbl: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      marginBottom: spacing.sm,
     },
   });
 }

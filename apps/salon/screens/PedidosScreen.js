@@ -15,9 +15,11 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Megaphone, MessageCircle, Package, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, confirmarCobroPedidoSalon } from '@appsalon/shared-config';
+import { db, supabase, confirmarCobroPedidoSalon } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
+import { PickupQrDisplay } from '../components/PickupQrDisplay';
+import { PedidoQrScannerModal } from '../components/PedidoQrScannerModal';
 
 const TABS = [
   { id: 'todos', label: 'Todos' },
@@ -65,6 +67,33 @@ function interestRowTitle(msg) {
   return msg?.client_name || interestField(msg?.content, 'Cliente') || 'Cliente';
 }
 
+function isCashOrder(o) {
+  const pay = String(o?.payment_method || '').toLowerCase();
+  return ['efectivo', 'cash', 'efectivo_al_retirar'].includes(pay);
+}
+
+function orderCardStyle(o, c, isDark) {
+  const st = String(o?.status || '');
+  if (st === 'delivered') {
+    return {
+      backgroundColor: isDark ? 'rgba(46,125,50,0.18)' : '#E8F5E9',
+      borderLeftWidth: 3,
+      borderLeftColor: '#2E7D32',
+    };
+  }
+  if (st === 'pending' && isCashOrder(o)) {
+    return {
+      backgroundColor: isDark ? 'rgba(212,175,55,0.14)' : '#FFF8E1',
+      borderLeftWidth: 3,
+      borderLeftColor: '#D4AF37',
+    };
+  }
+  if (st === 'cancelled') {
+    return { opacity: 0.55 };
+  }
+  return { backgroundColor: c.card };
+}
+
 export function PedidosScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -83,6 +112,8 @@ export function PedidosScreen({ onBack }) {
   const [detailItems, setDetailItems] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [loadHint, setLoadHint] = useState('');
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -96,7 +127,13 @@ export function PedidosScreen({ onBack }) {
         db.marketingDirectMessages.listPedidosInterest(400),
       ]);
       if (oRes.error) throw oRes.error;
-      setOrders(Array.isArray(oRes.data) ? oRes.data : []);
+      const orderRows = Array.isArray(oRes.data) ? oRes.data : [];
+      setOrders(orderRows);
+      setLoadHint(
+        orderRows.length
+          ? ''
+          : 'Si hay pedidos en App Clientes y no aparecen aquí, ejecutá supabase-ecommerce-orders-salon.sql en Supabase (permisos del salón).',
+      );
       if (!cRes.error && Array.isArray(cRes.data)) {
         setComments(cRes.data.filter((row) => isTrendsPost(row.marketing_posts)));
       } else {
@@ -105,8 +142,15 @@ export function PedidosScreen({ onBack }) {
       if (!iRes.error && Array.isArray(iRes.data)) setInterests(iRes.data);
       else setInterests([]);
     } catch (e) {
-      Alert.alert('Pedidos', e?.message || 'No se pudo cargar la bandeja.');
+      const msg = String(e?.message || '');
+      Alert.alert(
+        'Pedidos',
+        msg.includes('permission denied') || msg.includes('row-level security')
+          ? `${msg}\n\nEjecutá supabase-ecommerce-orders-salon.sql en Supabase SQL Editor.`
+          : msg || 'No se pudo cargar la bandeja.',
+      );
       setOrders([]);
+      setLoadHint('');
       setComments([]);
       setInterests([]);
     } finally {
@@ -117,6 +161,22 @@ export function PedidosScreen({ onBack }) {
 
   useEffect(() => {
     load(false);
+  }, [load]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('salon-pedidos-inbox')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ecommerce_orders' },
+        () => {
+          load(true);
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [load]);
 
   const filtroResumen = useMemo(() => {
@@ -202,45 +262,59 @@ export function PedidosScreen({ onBack }) {
     setDetailLoading(false);
   }, []);
 
-  const confirmarPagoEfectivo = useCallback(async () => {
+  const ejecutarCobro = useCallback(async () => {
+    if (!detail || detail.kind !== 'compra') return;
+    const o = detail.data;
+    setConfirmBusy(true);
+    const res = await confirmarCobroPedidoSalon(o.id, { order: o });
+    setConfirmBusy(false);
+    if (!res.ok) {
+      Alert.alert('Error', res.error?.message || 'No se pudo confirmar.');
+      return;
+    }
+    Alert.alert('Listo', `Cobro registrado · folio ${res.noFactura}. La venta ya aparece en Caja.`);
+    setDetail(null);
+    setScannerOpen(false);
+    load(true);
+  }, [detail, load]);
+
+  const confirmarPagoEfectivo = useCallback(() => {
     if (!detail || detail.kind !== 'compra') return;
     const o = detail.data;
     if (String(o.status) !== 'pending') {
       Alert.alert('Pedido', 'Este pedido ya no está pendiente.');
       return;
     }
+    if (!o.tracking_code) {
+      Alert.alert('Pedido', 'Este pedido no tiene código de seguimiento para validar el QR.');
+      return;
+    }
+    setScannerOpen(true);
+  }, [detail]);
+
+  const onQrVerified = useCallback(() => {
+    if (!detail || detail.kind !== 'compra') return;
+    const o = detail.data;
+    setScannerOpen(false);
     Alert.alert(
       'Confirmar pago en efectivo',
-      `¿El cliente pagó Q${Number(o.total_amount || 0).toFixed(2)}?\n\nSe registrará la venta, descontará stock y sumará a la meta global.`,
+      `QR correcto · Q${Number(o.total_amount || 0).toFixed(2)}\n\nSe registrará la venta en la caja abierta, descontará stock y sumará a la meta.`,
       [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmar cobro',
-          onPress: async () => {
-            setConfirmBusy(true);
-            const res = await confirmarCobroPedidoSalon(o.id);
-            setConfirmBusy(false);
-            if (!res.ok) {
-              Alert.alert('Error', res.error?.message || 'No se pudo confirmar.');
-              return;
-            }
-            Alert.alert('Listo', `Cobro registrado · folio ${res.noFactura}`);
-            setDetail(null);
-            load(true);
-          },
-        },
+        { text: 'Cancelar', style: 'cancel', onPress: () => setScannerOpen(false) },
+        { text: 'Confirmar cobro', onPress: ejecutarCobro },
       ],
     );
-  }, [detail, load]);
+  }, [detail, ejecutarCobro]);
 
   const renderItem = ({ item }) => {
     if (item.kind === 'compra') {
       const o = item.data;
+      const cardBg = orderCardStyle(o, c, isDark);
       return (
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => openDetail(item)}
-          style={[styles.row, { borderBottomColor: c.cardBorder }]}
+          style={[styles.row, { borderBottomColor: c.cardBorder }, cardBg]}
           accessibilityRole="button"
         >
           <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
@@ -445,6 +519,9 @@ export function PedidosScreen({ onBack }) {
           <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
             {filtroResumen}
           </Text>
+          {loadHint ? (
+            <Text style={[styles.loadHint, { color: c.foregroundMuted }]}>{loadHint}</Text>
+          ) : null}
 
           {loading ? (
             <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
@@ -543,11 +620,21 @@ export function PedidosScreen({ onBack }) {
             >
               {detail ? detailBody() : ''}
             </Text>
+            {detail?.kind === 'compra' && detail.data.tracking_code ? (
+              <PickupQrDisplay
+                trackingCode={detail.data.tracking_code}
+                hint={
+                  String(detail.data.status) === 'delivered'
+                    ? 'Pedido cobrado y cerrado.'
+                    : 'El cliente muestra este QR en App Clientes. Escanealo al cobrar.'
+                }
+              />
+            ) : null}
             {detail?.kind === 'compra' &&
             String(detail.data.status) === 'pending' &&
-            ['efectivo', 'cash', 'efectivo_al_retirar'].includes(String(detail.data.payment_method || '').toLowerCase()) ? (
+            isCashOrder(detail.data) ? (
               <SalonButton
-                title={confirmBusy ? 'Confirmando…' : 'Confirmar pago en efectivo recibido'}
+                title={confirmBusy ? 'Confirmando…' : 'Escanear QR y confirmar cobro'}
                 variant="heroGold"
                 fullWidth
                 disabled={confirmBusy}
@@ -565,6 +652,13 @@ export function PedidosScreen({ onBack }) {
           </View>
         </View>
       </Modal>
+
+      <PedidoQrScannerModal
+        visible={scannerOpen}
+        expectedTracking={detail?.kind === 'compra' ? detail.data.tracking_code : ''}
+        onClose={() => setScannerOpen(false)}
+        onVerified={onQrVerified}
+      />
     </View>
   );
 }
@@ -597,6 +691,13 @@ function createStyles(c) {
       fontFamily: typography.fontSans,
       fontSize: 12,
       lineHeight: 17,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.xs,
+    },
+    loadHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 18,
       marginBottom: spacing.sm,
       paddingHorizontal: spacing.xs,
     },

@@ -17,6 +17,8 @@ export const CLIENT_SUB = {
   TENDENCIAS: 'tendencias',
   PREMIOS: 'premios',
   CARRITO: 'carrito',
+  /** Pedidos de tienda del cliente (QR, efectivo, envío). */
+  MIS_PEDIDOS: 'mis_pedidos',
   MEMBRESIAS: 'membresias',
   MENSAJES: 'mensajes',
   /** Compras/servicios facturados (misma fila `ventas` que Papelería en App Salón). */

@@ -14,6 +14,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Trash2, Calendar, ArrowUpDown, ListOrdered, ChevronDown, ChevronUp, Search } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   purgeCitas,
@@ -208,6 +209,23 @@ export function ControlPanelScreen({ onBack }) {
     };
   }, [expandedId, moduleSearch]);
 
+  const reloadPanel = useCallback(async () => {
+    if (!expandedId || !moduleSupportsSearch(expandedId)) return;
+    const q = moduleSearch.trim();
+    if (!moduleListsOnExpand(expandedId) && q.length < 2) return;
+    setSearchBusy(true);
+    try {
+      const rows = await listModuleItems(expandedId, q);
+      setSearchResults(rows);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearchBusy(false);
+    }
+  }, [expandedId, moduleSearch]);
+
+  const { refreshing, onRefresh } = useSalonPullRefresh(reloadPanel);
+
   const toggleExpanded = useCallback((actionId) => {
     setExpandedId((prev) => {
       if (prev === actionId) return null;
@@ -398,6 +416,8 @@ export function ControlPanelScreen({ onBack }) {
         title="Panel de control"
         subtitle="Borrado masivo de datos. Irreversible."
         onBack={onBack}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       >
         <View style={[styles.filterCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
           <Text style={[styles.filterHead, { color: c.foreground }]}>Ordenar y filtrar</Text>

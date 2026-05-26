@@ -41,6 +41,7 @@ import {
   montoInputFromNumber,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar, useSubStyles, modalSheetBottomPad } from '../components/luxury';
+import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 
 const GAP = 6;
@@ -533,6 +534,8 @@ export function InventarioScreen({ onBack }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const { refreshControl } = useSalonPullRefresh(load);
 
   const inventarioFiltroResumen = useMemo(() => {
     const sortLabel =
@@ -1060,6 +1063,7 @@ export function InventarioScreen({ onBack }) {
               key={`inv-grid-${gridCols}`}
               data={gridRows}
               keyExtractor={(row, idx) => `row-${idx}-${row[0]?.id ?? 'e'}`}
+              refreshControl={refreshControl}
               contentContainerStyle={{
                 paddingHorizontal: GRID_H_PAD,
                 paddingBottom: sel.count ? 100 : padBottom,

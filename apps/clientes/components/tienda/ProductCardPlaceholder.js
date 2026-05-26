@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useMemo } from 'react';
-import { Image as ImageIcon, Star, Truck } from 'lucide-react-native';
+import { Image as ImageIcon, Plus, Star, Truck } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { ProductImageStrip } from './ProductImageStrip';
@@ -42,7 +42,7 @@ function RatingStars({ rating }) {
   );
 }
 
-export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
+export function ProductCardPlaceholder({ width, slotIndex, product, onPress, onAddPress }) {
   const { colors: c, isDark } = useTheme();
   const hasProduct = product != null;
   const skelColor = isDark ? '#3A3A3A' : '#EDEDED';
@@ -168,9 +168,27 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
           fontSize: 10,
           color: c.primary,
         },
+        addBtn: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          marginHorizontal: spacing.sm,
+          marginBottom: spacing.sm,
+          paddingVertical: 10,
+          borderRadius: radii.sm,
+          backgroundColor: c.primary,
+        },
+        addBtnTxt: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 13,
+          color: c.primaryForegroundOnGold,
+        },
       }),
     [c, imageZoneBg, skelColor],
   );
+
+  const canQuickAdd = hasProduct && onAddPress && !product.precioVariable;
 
   const galleryUris = hasProduct
     ? product.imageUris?.length
@@ -281,6 +299,19 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress }) {
           </>
         )}
       </TouchableOpacity>
+
+      {canQuickAdd ? (
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => onAddPress(product)}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel={`Agregar ${product.title} al carrito`}
+        >
+          <Plus size={16} color={c.primaryForegroundOnGold} strokeWidth={2.2} />
+          <Text style={styles.addBtnTxt}>Agregar</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }

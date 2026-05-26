@@ -24,6 +24,7 @@ import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useListSelection } from '../hooks/useListSelection';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { SubScreenChrome, SalonButton, useSubStyles, modalScrollBottomPad } from '../components/luxury';
+import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 
 /** Máximo de diapositivas activas en el carrusel de inicio (App Clientes). */
@@ -274,6 +275,8 @@ export function MarketingScreen({ onBack }) {
   useEffect(() => {
     loadPosts();
   }, [loadPosts]);
+
+  const { refreshControl } = useSalonPullRefresh(loadPosts);
 
   const openPicker = async (kind) => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -777,6 +780,7 @@ export function MarketingScreen({ onBack }) {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: padBottom }}
             keyboardShouldPersistTaps="handled"
+            refreshControl={refreshControl}
           >
             <Text style={[subStyles.muted, styles.hint]}>{CAPACITY_HINT}</Text>
             <View style={styles.selectToolbar}>

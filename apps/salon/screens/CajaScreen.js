@@ -24,8 +24,9 @@ import {
   Lock,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db } from '@appsalon/shared-config';
+import { db, supabase } from '@appsalon/shared-config';
 import { SubScreenChrome, useSubStyles, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
+import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   clearCajaSession,
@@ -124,6 +125,8 @@ export function CajaScreen({ onBack }) {
   const [feedExpanded, setFeedExpanded] = useState(false);
   const [abriendo, setAbriendo] = useState(false);
   const [restoring, setRestoring] = useState(true);
+  const [highlightTxIds, setHighlightTxIds] = useState(() => new Set());
+  const prevTxIdsRef = useRef(new Set());
 
   const cajaId = metaApertura?.cajaId ?? null;
 
@@ -131,11 +134,54 @@ export function CajaScreen({ onBack }) {
     if (!id) return;
     try {
       const rows = await loadCajaTxs(id);
+      const prev = prevTxIdsRef.current;
+      const nuevasVentas = rows.filter((r) => r.kind === 'venta_producto' && !prev.has(r.id));
+      if (nuevasVentas.length) {
+        setHighlightTxIds((h) => {
+          const next = new Set(h);
+          nuevasVentas.forEach((r) => next.add(r.id));
+          return next;
+        });
+        setTimeout(() => {
+          setHighlightTxIds((h) => {
+            const next = new Set(h);
+            nuevasVentas.forEach((r) => next.delete(r.id));
+            return next;
+          });
+        }, 5000);
+      }
+      prevTxIdsRef.current = new Set(rows.map((r) => r.id));
       setTxs(rows);
     } catch (e) {
       if (__DEV__) console.warn('Caja refresh', e);
     }
   }, []);
+
+  const reloadCajaScreen = useCallback(async () => {
+    try {
+      const { data: caja } = await db.cajas.getCajaActual();
+      if (caja?.id && caja.estado === 'abierta') {
+        const session = await getCajaSession();
+        const nombre = caja.responsable_apertura || caja.responsable || session?.nombre || '—';
+        const monto = Number(caja.monto_apertura ?? session?.monto ?? 0);
+        setMetaApertura({
+          cajaId: caja.id,
+          nombre,
+          monto,
+          abierto: session?.abierto || nowLabel(),
+        });
+        setView('dash');
+        await refreshTxsFromDb(caja.id);
+      } else {
+        const chica = await getCajaChicaSaldo();
+        setCajaChicaStr(chica > 0 ? String(chica) : '');
+      }
+    } catch (e) {
+      if (__DEV__) console.warn('Caja pull refresh', e);
+    }
+  }, [refreshTxsFromDb]);
+
+  const { refreshControl } = useSalonPullRefresh(reloadCajaScreen);
 
   const pushTx = useCallback(
     (row) => {
@@ -184,8 +230,25 @@ export function CajaScreen({ onBack }) {
     if (view !== 'dash' || !cajaId) return undefined;
     const id = setInterval(() => {
       refreshTxsFromDb(cajaId);
-    }, 8000);
+    }, 4000);
     return () => clearInterval(id);
+  }, [view, cajaId, refreshTxsFromDb]);
+
+  useEffect(() => {
+    if (view !== 'dash' || !cajaId) return undefined;
+    const channel = supabase
+      .channel(`caja-ventas-live-${cajaId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ventas', filter: `caja_id=eq.${cajaId}` },
+        () => {
+          void refreshTxsFromDb(cajaId);
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [view, cajaId, refreshTxsFromDb]);
 
   const totalEntrante = useMemo(() => {
@@ -563,6 +626,7 @@ export function CajaScreen({ onBack }) {
             contentContainerStyle={{ paddingBottom: padBottom }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            refreshControl={refreshControl}
           >
             <View style={[subStyles.card, { marginTop: spacing.sm }]}>
               <View style={styles.gateHead}>
@@ -652,6 +716,7 @@ export function CajaScreen({ onBack }) {
           contentContainerStyle={{ paddingBottom: padBottom }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          refreshControl={refreshControl}
         >
           <View style={[styles.incomingCard, { borderColor: c.primary, backgroundColor: c.card }]}>
             <Text style={styles.incomingLabel}>Dinero entrante (efectivo estimado)</Text>
@@ -729,8 +794,19 @@ export function CajaScreen({ onBack }) {
               <>
                 {feedTxs.map((t) => {
                   const b = kindBadge(t.kind);
+                  const highlighted = highlightTxIds.has(t.id);
                   return (
-                    <View key={t.id} style={[styles.txRow, { borderColor: c.cardBorder }]}>
+                    <View
+                      key={t.id}
+                      style={[
+                        styles.txRow,
+                        { borderColor: c.cardBorder },
+                        highlighted && {
+                          backgroundColor: isDark ? 'rgba(46,125,50,0.22)' : '#E8F5E9',
+                          borderColor: '#2E7D32',
+                        },
+                      ]}
+                    >
                       <View style={[styles.badge, { backgroundColor: b.bg }]}>
                         <Text style={[styles.badgeTxt, { color: b.fg }]}>{b.txt}</Text>
                       </View>

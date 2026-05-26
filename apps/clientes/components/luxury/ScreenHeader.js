@@ -9,12 +9,20 @@ import { useTheme } from '../../theme/ThemeProvider';
  * - Perfil (solo si pasas profileFirstName): «Bienvenida» + primer nombre.
  * - Resto: nada.
  */
+function formatBadgeCount(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x <= 0) return null;
+  return x > 99 ? '99+' : String(x);
+}
+
 export function ScreenHeader({
   searchValue = '',
   onSearchChange,
   placeholder = 'Buscar servicios, tendencias…',
   showHomeBar = false,
   onCartPress,
+  /** Total de unidades en el carrito de tienda. */
+  cartBadgeCount = 0,
   /** Solo pestaña Perfil: primer nombre para saludo */
   profileFirstName,
   /** Estilo extra del contenedor (p. ej. menos margen cuando va fijo arriba). */
@@ -62,6 +70,25 @@ export function ScreenHeader({
           borderColor: c.cardBorder,
           alignItems: 'center',
           justifyContent: 'center',
+          position: 'relative',
+        },
+        cartBadge: {
+          position: 'absolute',
+          top: -3,
+          right: -3,
+          minWidth: 18,
+          height: 18,
+          borderRadius: 9,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 4,
+          borderWidth: 2,
+          borderColor: c.background,
+        },
+        cartBadgeTxt: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 10,
+          color: '#FFFFFF',
         },
         profileCopy: {
           gap: 2,
@@ -86,6 +113,7 @@ export function ScreenHeader({
   );
 
   if (showHomeBar) {
+    const cartLabel = formatBadgeCount(cartBadgeCount);
     return (
       <View style={[styles.wrap, wrapStyle]}>
         <View style={styles.row}>
@@ -105,10 +133,17 @@ export function ScreenHeader({
             style={styles.cartBtn}
             onPress={onCartPress ?? (() => {})}
             accessibilityRole="button"
-            accessibilityLabel="Carrito"
+            accessibilityLabel={
+              cartLabel ? `Carrito, ${cartLabel} productos` : 'Carrito'
+            }
             hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
           >
             <ShoppingCart size={23} color={c.foreground} strokeWidth={1.85} />
+            {cartLabel ? (
+              <View style={[styles.cartBadge, { backgroundColor: c.error }]}>
+                <Text style={styles.cartBadgeTxt}>{cartLabel}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
       </View>

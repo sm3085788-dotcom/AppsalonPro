@@ -11,7 +11,7 @@ const GAP = 10;
 /**
  * Catálogo en rejilla. Si hay productos en inventario con `visible_en_tienda`, los muestra; si no, placeholders.
  */
-export function TiendaCatalogGrid({ onProductPress, products: productsProp }) {
+export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: productsProp }) {
   const { colors: c } = useTheme();
   const { width: winW } = useWindowDimensions();
   const outerPad = spacing.lg * 2;
@@ -90,13 +90,6 @@ export function TiendaCatalogGrid({ onProductPress, products: productsProp }) {
           flexWrap: 'wrap',
           justifyContent: 'space-between',
         },
-        footnote: {
-          marginTop: spacing.md,
-          fontFamily: typography.fontSans,
-          fontSize: 11,
-          color: c.foregroundSubtle,
-          lineHeight: 16,
-        },
       }),
     [c],
   );
@@ -130,15 +123,14 @@ export function TiendaCatalogGrid({ onProductPress, products: productsProp }) {
                 ? () => onProductPress(slot.product)
                 : undefined
             }
+            onAddPress={
+              slot.product && onAddToCart && !slot.product.precioVariable
+                ? () => onAddToCart(slot.product)
+                : undefined
+            }
           />
         ))}
       </View>
-
-      <Text style={styles.footnote}>
-        {catalogProducts.length
-          ? 'Productos con stock del inventario del salón (visible en tienda).'
-          : 'Sin productos en tienda todavía: el salón debe marcar artículos como visibles en inventario.'}
-      </Text>
     </View>
   );
 }

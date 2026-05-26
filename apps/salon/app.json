@@ -89,7 +89,14 @@
       "expo-document-picker",
       "expo-calendar",
       "expo-location",
-      "expo-media-library",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Permite ver fotos del chat.",
+          "savePhotosPermission": "Permite guardar imágenes del chat en tu galería.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
       "expo-video"
     ]
   }

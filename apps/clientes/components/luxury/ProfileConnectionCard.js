@@ -8,10 +8,7 @@ import {
 } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 
-function estadoLine(hasSupabaseEnv, session, perfilLoading, perfilMeta, clienteRow) {
-  if (!hasSupabaseEnv) {
-    return 'Estado: pendiente configuración';
-  }
+function estadoLine(session, perfilLoading, perfilMeta, clienteRow) {
   if (!session?.user) {
     return 'Estado: sin sesión iniciada';
   }
@@ -30,13 +27,7 @@ function estadoLine(hasSupabaseEnv, session, perfilLoading, perfilMeta, clienteR
 /**
  * Solo presentación; misma información que antes, estilo tipo capturas.
  */
-export function ProfileConnectionCard({
-  hasSupabaseEnv,
-  session,
-  perfilLoading,
-  perfilMeta,
-  clienteRow,
-}) {
+export function ProfileConnectionCard({ session, perfilLoading, perfilMeta, clienteRow }) {
   const { colors: c } = useTheme();
   const styles = useMemo(
     () =>
@@ -102,13 +93,7 @@ export function ProfileConnectionCard({
     [c],
   );
 
-  const status = estadoLine(
-    hasSupabaseEnv,
-    session,
-    perfilLoading,
-    perfilMeta,
-    clienteRow,
-  );
+  const status = estadoLine(session, perfilLoading, perfilMeta, clienteRow);
 
   return (
     <View style={styles.card}>
@@ -117,9 +102,9 @@ export function ProfileConnectionCard({
           <Database size={22} color={c.foregroundMuted} strokeWidth={1.75} />
         </View>
         <View style={styles.textCol}>
-          <Text style={styles.title}>Conexión Supabase</Text>
+          <Text style={styles.title}>Tu cuenta</Text>
           <Text style={styles.status}>{status}</Text>
-          {hasSupabaseEnv && session?.user && perfilLoading ? (
+          {session?.user && perfilLoading ? (
             <ActivityIndicator
               style={styles.spinner}
               color={c.primary}
@@ -127,20 +112,10 @@ export function ProfileConnectionCard({
             />
           ) : (
             <>
-              {!hasSupabaseEnv ? (
-                <Text style={styles.hint}>
-                  Configura EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY en
-                  .env
-                </Text>
-              ) : null}
-              {hasSupabaseEnv && session?.user && !perfilLoading && perfilMeta?.error ? (
+              {session?.user && !perfilLoading && perfilMeta?.error ? (
                 <Text style={styles.err}>Detalle: {perfilMeta.error}</Text>
               ) : null}
-              {hasSupabaseEnv &&
-              session?.user &&
-              !perfilLoading &&
-              !perfilMeta?.error &&
-              clienteRow ? (
+              {session?.user && !perfilLoading && !perfilMeta?.error && clienteRow ? (
                 <Text style={styles.hint}>
                   {clienteRow.nombre}
                   {clienteRow.email ? ` · ${clienteRow.email}` : ''}

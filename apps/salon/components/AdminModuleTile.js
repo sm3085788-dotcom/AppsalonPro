@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import { TouchableOpacity, Text, View, StyleSheet } from 'react-native';
+import { useEffect, useMemo, useRef } from 'react';
+import { TouchableOpacity, Text, View, StyleSheet, Animated, Easing } from 'react-native';
+import { Bell } from 'lucide-react-native';
 import { typography, spacing, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -14,6 +15,7 @@ export function AdminModuleTile({
   width,
   accent,
   badgeCount = 0,
+  showAlertBell = false,
 }) {
   const { colors: c, isDark } = useTheme();
   const hasAccent = Boolean(accent);
@@ -73,9 +75,41 @@ export function AdminModuleTile({
           color: '#FFFFFF',
           lineHeight: 13,
         },
+        bellWrap: {
+          position: 'absolute',
+          top: 6,
+          right: 6,
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor: '#E53935',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 2,
+          borderColor: '#FFFFFF',
+        },
       }),
     [c, titleColor, subtitleColor, accent, isDark],
   );
+
+  const shake = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!showAlertBell) {
+      shake.stopAnimation();
+      shake.setValue(0);
+      return;
+    }
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shake, { toValue: -1, duration: 110, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 1, duration: 160, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: -0.8, duration: 140, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 0, duration: 1200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [showAlertBell, shake]);
 
   return (
     <View style={styles.wrap}>
@@ -85,7 +119,7 @@ export function AdminModuleTile({
         activeOpacity={0.88}
         accessibilityRole="button"
         accessibilityLabel={
-          badgeCount > 0 ? `${title}, ${badgeCount} notificaciones` : title
+          showAlertBell ? `${title}, hay mensajes nuevos` : badgeCount > 0 ? `${title}, ${badgeCount} notificaciones` : title
         }
       >
         <View style={styles.iconRow}>
@@ -102,6 +136,17 @@ export function AdminModuleTile({
         <View style={styles.badge} pointerEvents="none">
           <Text style={styles.badgeTxt}>{badgeCount > 99 ? '99+' : String(badgeCount)}</Text>
         </View>
+      ) : null}
+      {showAlertBell ? (
+        <Animated.View
+          style={[
+            styles.bellWrap,
+            { transform: [{ rotate: shake.interpolate({ inputRange: [-1, 1], outputRange: ['-14deg', '14deg'] }) }] },
+          ]}
+          pointerEvents="none"
+        >
+          <Bell size={12} color="#FFFFFF" strokeWidth={2.4} />
+        </Animated.View>
       ) : null}
     </View>
   );

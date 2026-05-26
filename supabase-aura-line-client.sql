@@ -77,7 +77,9 @@ $$;
 CREATE OR REPLACE FUNCTION public.client_send_aura_chat(
   p_content text,
   p_client_name text DEFAULT NULL,
-  p_client_phone text DEFAULT NULL
+  p_client_phone text DEFAULT NULL,
+  p_media_url text DEFAULT NULL,
+  p_media_kind text DEFAULT NULL
 )
 RETURNS public.marketing_direct_messages
 LANGUAGE plpgsql
@@ -96,14 +98,25 @@ BEGIN
     RAISE EXCEPTION 'Sin ficha de cliente';
   END IF;
   INSERT INTO marketing_direct_messages (
-    client_id, client_name, client_phone, content, content_type, status, created_by, created_by_name
+    client_id,
+    client_name,
+    client_phone,
+    content,
+    content_type,
+    media_url,
+    media_kind,
+    status,
+    created_by,
+    created_by_name
   )
   VALUES (
     cid,
     COALESCE(NULLIF(trim(p_client_name), ''), 'Cliente'),
     NULLIF(trim(p_client_phone), ''),
-    trim(p_content),
+    COALESCE(NULLIF(trim(p_content), ''), CASE WHEN p_media_url IS NOT NULL THEN 'Imagen' ELSE '' END),
     'chat',
+    NULLIF(trim(p_media_url), ''),
+    NULLIF(trim(p_media_kind), ''),
     'delivered',
     auth.uid(),
     COALESCE(NULLIF(trim(p_client_name), ''), 'Cliente')
@@ -113,10 +126,26 @@ BEGIN
 END;
 $$;
 
+DROP POLICY IF EXISTS marketing_direct_messages_client_chat_insert ON public.marketing_direct_messages;
+CREATE POLICY marketing_direct_messages_client_chat_insert
+ON public.marketing_direct_messages
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  content_type = 'chat'
+  AND client_id IS NOT NULL
+  AND created_by = auth.uid()
+  AND EXISTS (
+    SELECT 1 FROM public.clientes c
+    WHERE c.id = marketing_direct_messages.client_id
+      AND c.user_id = auth.uid()
+  )
+);
+
 GRANT EXECUTE ON FUNCTION public.client_aura_messages(integer) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.client_aura_unread_count() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.client_mark_aura_delivered(bigint[]) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.client_send_aura_chat(text, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.client_send_aura_chat(text, text, text, text, text) TO anon, authenticated;
 
 -- Bandeja salón: último mensaje por cliente (orden tipo WhatsApp)
 CREATE OR REPLACE FUNCTION public.salon_inbox_client_preview()

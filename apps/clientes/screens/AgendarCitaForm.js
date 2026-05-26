@@ -27,7 +27,14 @@ function defaultNextSlot() {
 /**
  * Solicitud de cita desde la app clientes: queda en estado `pendiente` hasta que el salón confirme o rechace.
  */
-export function AgendarCitaForm({ clienteRow, onClose, onGoTab, onCitasChanged }) {
+export function AgendarCitaForm({
+  clienteRow,
+  onClose,
+  onGoTab,
+  onCitasChanged,
+  initialServicioNombre = null,
+  onCitaBooked,
+}) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
   const [servicios, setServicios] = useState([]);
@@ -56,6 +63,15 @@ export function AgendarCitaForm({ clienteRow, onClose, onGoTab, onCitasChanged }
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    const want = String(initialServicioNombre || '')
+      .trim()
+      .toLowerCase();
+    if (!want || !servicios.length) return;
+    const hit = servicios.find((s) => String(s.nombre || '').trim().toLowerCase() === want);
+    if (hit) setServicioSel(hit);
+  }, [initialServicioNombre, servicios]);
 
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -147,6 +163,7 @@ export function AgendarCitaForm({ clienteRow, onClose, onGoTab, onCitasChanged }
       return;
     }
     onCitasChanged?.();
+    onCitaBooked?.();
     Alert.alert('Solicitud enviada', 'El salón verá tu cita en pendiente y te confirmará pronto.', [
       {
         text: 'OK',
@@ -156,7 +173,7 @@ export function AgendarCitaForm({ clienteRow, onClose, onGoTab, onCitasChanged }
         },
       },
     ]);
-  }, [clienteRow?.id, servicioSel, fechaHora, onCitasChanged, onClose, onGoTab]);
+  }, [clienteRow?.id, servicioSel, fechaHora, onCitasChanged, onCitaBooked, onClose, onGoTab]);
 
   if (!clienteRow?.id) {
     return (

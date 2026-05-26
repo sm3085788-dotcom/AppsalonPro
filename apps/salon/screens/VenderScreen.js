@@ -26,6 +26,7 @@ import {
   volumenTrabajoLabel,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar } from '../components/luxury';
+import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 import { printVentaTicket } from '../utils/ventaTicketPrint';
 
@@ -164,6 +165,8 @@ export function VenderScreen({ onBack }) {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  const { refreshing, onRefresh } = useSalonPullRefresh(loadAll);
 
   const stockById = useMemo(() => {
     const m = {};
@@ -397,7 +400,14 @@ export function VenderScreen({ onBack }) {
     setSubmitting(true);
     try {
       const { data: cajaAbierta } = await db.cajas.getCajaActual();
-      const cajaId = cajaAbierta?.id ?? null;
+      if (!cajaAbierta?.id || String(cajaAbierta.estado) !== 'abierta') {
+        Alert.alert(
+          'Caja cerrada',
+          'Abrí la caja en el módulo Cajas antes de registrar una venta.',
+        );
+        return;
+      }
+      const cajaId = cajaAbierta.id;
 
       const profNombre = profesionalSel?.nombre?.trim() || profesionalSearch.trim() || null;
 
@@ -489,7 +499,13 @@ export function VenderScreen({ onBack }) {
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={c.background} />
-      <SubScreenChrome hideTitles onBack={onBack} bottomPadding={padBottom}>
+      <SubScreenChrome
+        hideTitles
+        onBack={onBack}
+        bottomPadding={padBottom}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         <View style={styles.page}>
           <View style={styles.labelRow}>
             <View style={[styles.sectionIconWrap, { backgroundColor: c.card }]}>

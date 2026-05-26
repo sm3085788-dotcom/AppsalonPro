@@ -23,6 +23,7 @@ import { Camera, FileText, X, Search, User, Send } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, supabase, uploadIncidenteMediaFromUri, sendIncidentReportToClient } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, useSubStyles } from '../components/luxury';
+import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 
 const MAX_FOTOS = 3;
@@ -310,6 +311,8 @@ export function IncidentesScreen({ onBack }) {
     loadRecent();
   }, [loadRecent]);
 
+  const { refreshing, onRefresh } = useSalonPullRefresh(loadRecent);
+
   useEffect(() => {
     void (async () => {
       const { data } = await db.clientes.getAll();
@@ -580,6 +583,8 @@ export function IncidentesScreen({ onBack }) {
         onBack={onBack}
         bottomPadding={padBottom}
         edgeToEdge
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       >
         <LinearGradient colors={['#5c1f33', '#7a2d45', '#9a3d58']} style={styles.hero}>
           <FileText size={26} color="#fff" strokeWidth={2} />

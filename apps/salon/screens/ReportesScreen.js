@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, supabase } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
+import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 import { addReporte, loadReportes, subscribeReportesStorage } from '../services/salonReportesStorage';
 
@@ -986,6 +987,14 @@ export function ReportesScreen({ onBack }) {
   const [agendaClienteSelected, setAgendaClienteSelected] = useState(null);
   const [printingId, setPrintingId] = useState(null);
 
+  const refreshReportList = useCallback(async () => {
+    const list = await loadReportes();
+    setGenerated(list);
+    setReportsLoading(false);
+  }, []);
+
+  const { refreshControl } = useSalonPullRefresh(refreshReportList);
+
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
@@ -1209,6 +1218,7 @@ export function ReportesScreen({ onBack }) {
                 data={generated}
                 keyExtractor={(r) => String(r.id)}
                 showsVerticalScrollIndicator={false}
+                refreshControl={refreshControl}
                 contentContainerStyle={{ paddingBottom: padBottom }}
                 renderItem={({ item: r }) => (
                   <TouchableOpacity

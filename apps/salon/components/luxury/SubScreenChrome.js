@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  RefreshControl,
 } from 'react-native';
 import { ChevronLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -152,6 +153,9 @@ export function SubScreenChrome({
   hideTitles = false,
   /** Sin padding horizontal en el cuerpo (pantalla completa al ancho). */
   edgeToEdge = false,
+  /** Pull-to-refresh en el cuerpo con scroll. */
+  refreshing = false,
+  onRefresh,
 }) {
   const { colors: c } = useTheme();
   const styles = useMemo(() => createChromeStyles(c), [c]);
@@ -200,6 +204,17 @@ export function SubScreenChrome({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           nestedScrollEnabled
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl
+                refreshing={Boolean(refreshing)}
+                onRefresh={onRefresh}
+                tintColor={c.primary}
+                colors={[c.primary]}
+                progressBackgroundColor={c.card}
+              />
+            ) : undefined
+          }
         >
           {children}
         </ScrollView>

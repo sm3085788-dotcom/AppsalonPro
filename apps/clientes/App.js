@@ -16,6 +16,9 @@ import {
 } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
+import { TiendaCartProvider, useTiendaCart } from './context/TiendaCartContext';
+import { TiendaCartButton } from './components/tienda/TiendaCartButton';
+import { countActivePedidos } from './utils/pedidosBadge';
 import {
   Sparkles,
   Calendar,
@@ -41,6 +44,10 @@ import {
   registerMarketingInterest,
   MARKETING_INTEREST_TYPES,
   fetchClientAuraUnreadCount,
+  sendClientAuraChat,
+  buildBroadcastActionMessage,
+  BROADCAST_PROMO_ACTIONS,
+  parseBroadcastContent,
 } from '@appsalon/shared-config';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
 import {
@@ -77,13 +84,14 @@ import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import {
   setIntroDone,
   setTourDone,
-  clearLocalOnboarding,
-  clearLocalProfile,
-  getLocalProfile,
+  clearLegacyLocalSession,
   getIntroDone,
   getTourDone,
 } from './onboarding/onboardingStorage';
 import { ClientAuthScreen } from './onboarding/ClientAuthScreen';
+import { SupabaseConfigScreen } from './onboarding/SupabaseConfigScreen';
+import { completeAuthFromRedirectUrl } from './utils/clientAuthEmail';
+import * as Linking from 'expo-linking';
 import { PostLoginIntroScreen } from './onboarding/PostLoginIntroScreen';
 import { AppTourScreen } from './onboarding/AppTourScreen';
 import {
@@ -236,7 +244,7 @@ function formatGtq(n) {
   return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
-function AppMain({ localProfile, onLogout }) {
+function AppMain({ onLogout }) {
   const insets = useSafeAreaInsets();
   const scrollBottom = paddingForTabBar(insets);
   const [tab, setTab] = useState(TABS.INICIO);
@@ -251,14 +259,76 @@ function AppMain({ localProfile, onLogout }) {
   const [inicioHeroSlides, setInicioHeroSlides] = useState(null);
   const [notifPrefs, setNotifPrefs] = useState(DEFAULT_CLIENT_NOTIF_PREFS);
   const [auraUnread, setAuraUnread] = useState(0);
+  const [pedidosActivos, setPedidosActivos] = useState(0);
+  const { cartCount } = useTiendaCart();
   const [openedSub, setOpenedSub] = useState(null);
-  const openSub = useCallback((id) => setOpenedSub(id), []);
+  const [subPayload, setSubPayload] = useState(null);
+  const openSub = useCallback((id, payload = null) => {
+    setSubPayload(payload);
+    setOpenedSub(id);
+  }, []);
+
+  const notifyPromoFollowUp = useCallback(
+    async (action, promoItem, extra = '') => {
+      const msg = buildBroadcastActionMessage(action, promoItem, extra);
+      if (!msg || !clienteRow?.id) return;
+      const { error } = await sendClientAuraChat(msg, {
+        clientName: clienteRow.nombre || 'Cliente',
+        clientPhone: clienteRow.telefono || null,
+      });
+      if (error) Alert.alert('Andreas Pro', error.message || 'No se pudo avisar al salón.');
+    },
+    [clienteRow],
+  );
+
+  const handlePromoAction = useCallback(
+    (action, promoItem) => {
+      const parsed = parseBroadcastContent(promoItem?.content);
+      const payload = { promoItem, parsed };
+
+      if (action === BROADCAST_PROMO_ACTIONS.CALL) {
+        Alert.alert(
+          '¿Pedir que te llamen?',
+          'Solo si confirmás, el salón verá tu solicitud en Mensajes.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Sí, llamenme',
+              onPress: async () => {
+                await notifyPromoFollowUp(action, promoItem);
+                openSub(CLIENT_SUB.CONTACTO);
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      if (action === BROADCAST_PROMO_ACTIONS.BUY) {
+        openSub(CLIENT_SUB.TIENDA, {
+          ...payload,
+          tiendaProductId: parsed.linkType === 'product' ? parsed.linkId : null,
+        });
+        return;
+      }
+
+      if (action === BROADCAST_PROMO_ACTIONS.BOOK) {
+        openSub(CLIENT_SUB.AGENDAR_FLUJO, {
+          ...payload,
+          agendarServicioNombre: parsed.linkType === 'service' ? parsed.linkName : null,
+        });
+      }
+    },
+    [notifyPromoFollowUp, openSub],
+  );
+
   const goTabFromSub = useCallback((slug) => {
     if (slug === 'inicio') setTab(TABS.INICIO);
     else if (slug === 'citas') setTab(TABS.CITAS);
     else if (slug === 'historial') setTab(TABS.HISTORIAL);
     else if (slug === 'perfil') setTab(TABS.PERFIL);
     setOpenedSub(null);
+    setSubPayload(null);
   }, []);
 
   const { colors: c, isDark } = useTheme();
@@ -455,6 +525,17 @@ function AppMain({ localProfile, onLogout }) {
     setAuraUnread(count || 0);
   }, [clienteRow?.id, notifPrefs.mensajes]);
 
+  const refreshPedidosActivos = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!hasSupabaseEnv || !userId) {
+      setPedidosActivos(0);
+      return;
+    }
+    const { data, error } = await db.orders.getByCliente(userId);
+    if (error) return;
+    setPedidosActivos(countActivePedidos(data));
+  }, [session?.user?.id]);
+
   const handleNotifPrefChange = useCallback(
     async (key, value) => {
       setNotifPrefs((prev) => {
@@ -496,11 +577,41 @@ function AppMain({ localProfile, onLogout }) {
     };
   }, [clienteRow?.id, notifPrefs.mensajes, refreshAuraUnread]);
 
+  useEffect(() => {
+    refreshPedidosActivos();
+    const userId = session?.user?.id;
+    if (!hasSupabaseEnv || !userId) return undefined;
+    const channel = supabase
+      .channel(`client-pedidos-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ecommerce_orders',
+          filter: `client_user_id=eq.${userId}`,
+        },
+        () => refreshPedidosActivos(),
+      )
+      .subscribe();
+    const iv = setInterval(refreshPedidosActivos, 45000);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(iv);
+    };
+  }, [session?.user?.id, refreshPedidosActivos]);
+
+  const openTiendaCart = useCallback(() => {
+    openSub(CLIENT_SUB.TIENDA, { tiendaPhase: 'cart' });
+  }, [openSub]);
+
   const closeSub = useCallback(() => {
     setOpenedSub(null);
+    setSubPayload(null);
     void loadClientNotifPrefs(session?.user?.id ?? null).then(setNotifPrefs);
     void refreshAuraUnread();
-  }, [session?.user?.id, refreshAuraUnread]);
+    void refreshPedidosActivos();
+  }, [session?.user?.id, refreshAuraUnread, refreshPedidosActivos]);
 
   useEffect(() => {
     if (tab !== TABS.INICIO) return;
@@ -521,10 +632,6 @@ function AppMain({ localProfile, onLogout }) {
   const handleCarouselInterest = useCallback(
     async (slide) => {
       if (!slide) return;
-      if (!hasSupabaseEnv) {
-        openSub(CLIENT_SUB.TIENDA);
-        return;
-      }
       const { error } = await registerMarketingInterest({
         type: MARKETING_INTEREST_TYPES.CAROUSEL,
         title: slide.headline || slide.caption || 'Promoción',
@@ -549,7 +656,7 @@ function AppMain({ localProfile, onLogout }) {
         'Tu solicitud sobre esta publicación del carrusel llegó al salón en Pedidos.',
       );
     },
-    [hasSupabaseEnv, openSub],
+    [openSub],
   );
 
   useEffect(() => {
@@ -610,21 +717,21 @@ function AppMain({ localProfile, onLogout }) {
       ? String(session.user.user_metadata.full_name).trim()
       : '';
   const profileFullName =
-    clienteRow?.nombre || metaName || localProfile?.name || DEFAULT_PROFILE.fullName;
+    clienteRow?.nombre || metaName || DEFAULT_PROFILE.fullName;
   const profileGreetingFirst =
     metaName ||
     clienteRow?.nombre?.trim()?.split(/\s+/)[0] ||
-    localProfile?.name?.trim()?.split(/\s+/)[0] ||
     DEFAULT_GREETING_NAME;
   const profileEmail =
-    session?.user?.email || clienteRow?.email || localProfile?.email || DEFAULT_PROFILE.emailPlaceholder;
+    session?.user?.email || clienteRow?.email || DEFAULT_PROFILE.emailPlaceholder;
 
   const primaryHeader = (
     <ScreenHeader
       showHomeBar={tab === TABS.INICIO}
       searchValue={headerSearch}
       onSearchChange={setHeaderSearch}
-      onCartPress={() => openSub(CLIENT_SUB.CARRITO)}
+      onCartPress={openTiendaCart}
+      cartBadgeCount={cartCount}
       profileFirstName={
         tab === TABS.PERFIL ? profileGreetingFirst : undefined
       }
@@ -645,7 +752,8 @@ function AppMain({ localProfile, onLogout }) {
           showHomeBar
           searchValue={headerSearch}
           onSearchChange={setHeaderSearch}
-          onCartPress={() => openSub(CLIENT_SUB.CARRITO)}
+          onCartPress={openTiendaCart}
+          cartBadgeCount={cartCount}
           wrapStyle={styles.inicioHeaderWrapTight}
         />
       </View>
@@ -675,8 +783,8 @@ function AppMain({ localProfile, onLogout }) {
                 >
                   <MessageCircle size={22} color={c.primary} strokeWidth={2} />
                   {auraUnread > 0 ? (
-                    <View style={[styles.messagesBadge, { backgroundColor: c.primary }]}>
-                      <Text style={[styles.messagesBadgeTxt, { color: c.heroCtaText }]}>
+                    <View style={[styles.messagesBadge, { backgroundColor: c.error }]}>
+                      <Text style={[styles.messagesBadgeTxt, { color: '#FFFFFF' }]}>
                         {auraUnread > 9 ? '9+' : auraUnread}
                       </Text>
                     </View>
@@ -706,7 +814,9 @@ function AppMain({ localProfile, onLogout }) {
               icon={Package}
               title="Pedidos"
               subtitle={QUICK_ACCESS.pedidosSubtitle}
-              onPress={() => openSub(CLIENT_SUB.CARRITO)}
+              badgeCount={pedidosActivos}
+              badgeTone="green"
+              onPress={() => openSub(CLIENT_SUB.MIS_PEDIDOS)}
             />
           </View>
         </View>
@@ -978,7 +1088,6 @@ function AppMain({ localProfile, onLogout }) {
       </TouchableOpacity>
 
       <ProfileConnectionCard
-        hasSupabaseEnv={hasSupabaseEnv}
         session={session}
         perfilLoading={perfilLoading}
         perfilMeta={perfilMeta}
@@ -1039,12 +1148,34 @@ function AppMain({ localProfile, onLogout }) {
             onClienteUpdated={() => {
               if (session?.user?.id) void refreshClienteFicha(session.user.id);
             }}
+            onPromoAction={handlePromoAction}
+            subPayload={subPayload}
+            onPromoFollowUp={notifyPromoFollowUp}
+            onOpenTienda={() => {
+              closeSub();
+              openSub(CLIENT_SUB.TIENDA);
+            }}
+            onPedidosChanged={refreshPedidosActivos}
           />
         ) : (
           <SubScreenChrome
             title={subTitles.title}
             subtitle={subTitles.subtitle}
             onBack={closeSub}
+            rightAction={
+              openedSub === CLIENT_SUB.TIENDA ? (
+                <TiendaCartButton onPress={openTiendaCart} />
+              ) : null
+            }
+            disableBodyScroll={
+              openedSub === CLIENT_SUB.MENSAJES || openedSub === CLIENT_SUB.MIS_PEDIDOS
+            }
+            bottomPadding={
+              openedSub === CLIENT_SUB.MENSAJES || openedSub === CLIENT_SUB.MIS_PEDIDOS ? 0 : undefined
+            }
+            hideHeaderText={
+              openedSub === CLIENT_SUB.MENSAJES || openedSub === CLIENT_SUB.TIENDA
+            }
           >
             <ClientSubScreenBody
               screenId={openedSub}
@@ -1061,6 +1192,14 @@ function AppMain({ localProfile, onLogout }) {
               onClienteUpdated={() => {
                 if (session?.user?.id) void refreshClienteFicha(session.user.id);
               }}
+              onPromoAction={handlePromoAction}
+              subPayload={subPayload}
+              onPromoFollowUp={notifyPromoFollowUp}
+              onOpenTienda={() => {
+                closeSub();
+                openSub(CLIENT_SUB.TIENDA);
+              }}
+              onPedidosChanged={refreshPedidosActivos}
             />
           </SubScreenChrome>
         )
@@ -1094,60 +1233,97 @@ export default function App() {
     profile: null,
   });
 
+  const enterAppAfterAuthUser = useCallback(async (user) => {
+    if (!user) {
+      setGate({ ready: true, phase: 'auth', profile: null });
+      return;
+    }
+    const nom =
+      (user.user_metadata?.full_name && String(user.user_metadata.full_name).trim()) ||
+      user.email?.split('@')[0] ||
+      'Cliente';
+    await db.clientes.ensureFromAuth({
+      userId: user.id,
+      nombre: nom,
+      email: user.email,
+    });
+    await clearLegacyLocalSession();
+    const intro = await getIntroDone();
+    const tour = await getTourDone();
+    if (!intro) {
+      const name =
+        (user.user_metadata?.full_name && String(user.user_metadata.full_name).trim()) ||
+        user.email?.split('@')[0] ||
+        'Cliente';
+      setGate({
+        ready: true,
+        phase: 'intro',
+        profile: { name, email: user.email || '' },
+      });
+      return;
+    }
+    if (!tour) {
+      setGate({ ready: true, phase: 'tour', profile: null });
+      return;
+    }
+    setGate({ ready: true, phase: 'main', profile: null });
+  }, []);
+
+  const resolveGateAfterSession = useCallback(
+    async (user) => {
+      if (!user) {
+        setGate({ ready: true, phase: 'auth', profile: null });
+        return;
+      }
+      await enterAppAfterAuthUser(user);
+    },
+    [enterAppAfterAuthUser],
+  );
+
+  const handleAuthRedirectUrl = useCallback(
+    async (url) => {
+      if (!url || !hasSupabaseEnv) return;
+      const { session, error } = await completeAuthFromRedirectUrl(url);
+      if (error) {
+        if (__DEV__) console.warn('[auth redirect]', error.message);
+        Alert.alert(
+          'Enlace de confirmación',
+          error.message || 'No se pudo validar el enlace. Probá iniciar sesión.',
+        );
+        return;
+      }
+      if (session?.user) {
+        await enterAppAfterAuthUser(session.user);
+      }
+    },
+    [enterAppAfterAuthUser],
+  );
+
+  useEffect(() => {
+    if (!fontsLoaded || !hasSupabaseEnv) return;
+    Linking.getInitialURL().then((url) => {
+      if (url) void handleAuthRedirectUrl(url);
+    });
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      void handleAuthRedirectUrl(url);
+    });
+    return () => sub.remove();
+  }, [fontsLoaded, handleAuthRedirectUrl]);
+
   useEffect(() => {
     if (!fontsLoaded) return;
+    if (!hasSupabaseEnv) {
+      setGate({ ready: true, phase: 'auth', profile: null });
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        if (hasSupabaseEnv) {
-          const {
-            data: { session: s },
-          } = await supabase.auth.getSession();
-          if (cancelled) return;
-          if (!s?.user) {
-            setGate({ ready: true, phase: 'auth', profile: null });
-            return;
-          }
-          const intro = await getIntroDone();
-          const tour = await getTourDone();
-          if (!intro) {
-            const name =
-              (s.user.user_metadata?.full_name &&
-                String(s.user.user_metadata.full_name).trim()) ||
-              s.user.email?.split('@')[0] ||
-              'Cliente';
-            setGate({
-              ready: true,
-              phase: 'intro',
-              profile: { name, email: s.user.email || '' },
-            });
-            return;
-          }
-          if (!tour) {
-            setGate({ ready: true, phase: 'tour', profile: null });
-            return;
-          }
-          setGate({ ready: true, phase: 'main', profile: null });
-          return;
-        }
-
-        const local = await getLocalProfile();
-        const intro = await getIntroDone();
-        const tour = await getTourDone();
+        const {
+          data: { session: s },
+        } = await supabase.auth.getSession();
         if (cancelled) return;
-        if (!local) {
-          setGate({ ready: true, phase: 'auth', profile: null });
-          return;
-        }
-        if (!intro) {
-          setGate({ ready: true, phase: 'intro', profile: local });
-          return;
-        }
-        if (!tour) {
-          setGate({ ready: true, phase: 'tour', profile: local });
-          return;
-        }
-        setGate({ ready: true, phase: 'main', profile: local });
+        await resolveGateAfterSession(s?.user ?? null);
       } catch (e) {
         if (__DEV__) console.warn('[auth gate]', e);
         if (!cancelled) {
@@ -1158,19 +1334,23 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [fontsLoaded]);
+  }, [fontsLoaded, resolveGateAfterSession]);
 
   useEffect(() => {
     if (!hasSupabaseEnv) return undefined;
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === 'SIGNED_OUT') {
         setGate({ ready: true, phase: 'auth', profile: null });
+        return;
+      }
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && s?.user) {
+        void enterAppAfterAuthUser(s.user);
       }
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [enterAppAfterAuthUser]);
 
   const handleAuthSuccess = async (profile) => {
     setGate({ ready: true, phase: 'intro', profile: profile ?? null });
@@ -1187,25 +1367,22 @@ export default function App() {
 
   const handleTourDone = async () => {
     await setTourDone();
-    const profile = await getLocalProfile();
-    setGate({ ready: true, phase: 'main', profile });
+    setGate({ ready: true, phase: 'main', profile: null });
   };
 
   const handleLogout = async () => {
-    if (hasSupabaseEnv) {
-      await supabase.auth.signOut();
-      await clearLocalProfile();
-    } else {
-      await clearLocalOnboarding();
-    }
+    await supabase.auth.signOut();
+    await clearLegacyLocalSession();
     setGate({ ready: true, phase: 'auth', profile: null });
   };
 
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        {!fontsLoaded || !gate.ready ? (
+        {!fontsLoaded || (hasSupabaseEnv && !gate.ready) ? (
           <ThemeBoot />
+        ) : !hasSupabaseEnv ? (
+          <SupabaseConfigScreen />
         ) : gate.phase === 'auth' ? (
           <ClientAuthScreen onAuthSuccess={handleAuthSuccess} />
         ) : gate.phase === 'intro' ? (
@@ -1216,10 +1393,9 @@ export default function App() {
         ) : gate.phase === 'tour' ? (
           <AppTourScreen onDone={handleTourDone} />
         ) : (
-          <AppMain
-            localProfile={gate.profile}
-            onLogout={handleLogout}
-          />
+          <TiendaCartProvider>
+            <AppMain onLogout={handleLogout} />
+          </TiendaCartProvider>
         )}
       </ThemeProvider>
     </SafeAreaProvider>

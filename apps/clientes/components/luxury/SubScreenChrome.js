@@ -142,6 +142,7 @@ export function SubScreenChrome({
   bottomPadding,
   rightAction,
   disableBodyScroll,
+  hideHeaderText = false,
 }) {
   const { colors: c } = useTheme();
   const styles = useMemo(() => createChromeStyles(c), [c]);
@@ -151,8 +152,14 @@ export function SubScreenChrome({
 
   return (
     <View style={styles.root}>
-      <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
-        <View style={styles.topRow}>
+      <View
+        style={[
+          styles.topBar,
+          { paddingTop: insets.top + spacing.sm },
+          hideHeaderText && { paddingBottom: spacing.xs },
+        ]}
+      >
+        <View style={[styles.topRow, hideHeaderText && { marginBottom: 0 }]}>
           <TouchableOpacity
             style={styles.backRow}
             onPress={onBack}
@@ -165,15 +172,23 @@ export function SubScreenChrome({
           </TouchableOpacity>
           {rightAction ? <View style={styles.rightActionWrap}>{rightAction}</View> : null}
         </View>
-        <Text style={styles.display}>{title}</Text>
-        {subtitle ? <Text style={styles.lead}>{subtitle}</Text> : null}
+        {!hideHeaderText ? (
+          <>
+            <Text style={styles.display}>{title}</Text>
+            {subtitle ? <Text style={styles.lead}>{subtitle}</Text> : null}
+          </>
+        ) : null}
       </View>
 
       {disableBodyScroll ? (
         <View
           style={[
             styles.scrollInnerNoScroll,
-            { paddingHorizontal: spacing.lg, paddingBottom: padBottom },
+            {
+              paddingHorizontal: spacing.lg,
+              paddingBottom: padBottom,
+              paddingTop: hideHeaderText ? 0 : spacing.sm,
+            },
           ]}
         >
           {children}

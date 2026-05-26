@@ -12,7 +12,9 @@ import { TendenciasFeed } from '../components/tendencias/TendenciasFeed';
 import { PremiosDashboard } from '../components/premios/PremiosDashboard';
 import { MembresiasBody } from '../components/membresias/MembresiasBody';
 import { MisFacturasBody } from './MisFacturasBody';
+import { MisPedidosBody } from '../components/pedidos/MisPedidosBody';
 import { AuraLineInbox } from '../components/mensajes/AuraLineInbox';
+import { BROADCAST_PROMO_ACTIONS } from '@appsalon/shared-config';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -255,6 +257,11 @@ export function ClientSubScreenBody({
   notifPrefs,
   onNotifPrefChange,
   onAuraUnreadChange,
+  onPromoAction,
+  subPayload,
+  onPromoFollowUp,
+  onOpenTienda,
+  onPedidosChanged,
 }) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
@@ -391,6 +398,12 @@ export function ClientSubScreenBody({
             onClose={onClose}
             onGoTab={onGoTab}
             onCitasChanged={onCitasChanged}
+            initialServicioNombre={subPayload?.agendarServicioNombre || null}
+            onCitaBooked={() => {
+              if (subPayload?.promoItem) {
+                onPromoFollowUp?.(BROADCAST_PROMO_ACTIONS.BOOK, subPayload.promoItem);
+              }
+            }}
           />
         </>
       );
@@ -505,6 +518,7 @@ export function ClientSubScreenBody({
           clienteRow={clienteRow}
           sessionUser={sessionUser}
           onUnreadChange={onAuraUnreadChange}
+          onPromoAction={onPromoAction}
         />
       );
 
@@ -530,6 +544,14 @@ export function ClientSubScreenBody({
           clienteNombre={clienteRow?.nombre}
           clienteTelefono={clienteRow?.telefono}
           clientUserId={sessionUser?.id}
+          initialProductId={subPayload?.tiendaProductId || null}
+          initialPhase={subPayload?.tiendaPhase || null}
+          onPedidosChanged={onPedidosChanged}
+          onPurchaseComplete={() => {
+            if (subPayload?.promoItem) {
+              onPromoFollowUp?.(BROADCAST_PROMO_ACTIONS.BUY, subPayload.promoItem);
+            }
+          }}
         />
       );
 
@@ -556,14 +578,19 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.MIS_FACTURAS:
       return <MisFacturasBody clienteId={clienteRow?.id} onClose={onClose} />;
 
+    case CLIENT_SUB.MIS_PEDIDOS:
+      return (
+        <MisPedidosBody sessionUser={sessionUser} onOpenTienda={onOpenTienda} />
+      );
+
     case CLIENT_SUB.CARRITO:
       return (
         <>
           <View style={subStyles.card}>
             <Text style={subStyles.rowLabel}>Tu carrito está vacío</Text>
             <Text style={subStyles.bullets}>
-              Aquí listaremos shampoo, tratamientos y complementos antes de pasar por caja. Por ahora
-              es solo navegación.
+              El carrito de compra está en la tienda. Para ver pedidos ya enviados al salón, usá Acceso rápido →
+              Pedidos.
             </Text>
           </View>
           <SalonButton variant="outlineGray" title="Cerrar" fullWidth onPress={onClose} />
