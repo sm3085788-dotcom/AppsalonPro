@@ -18,7 +18,15 @@ import {
   splitNotas,
   sanitizeInventarioFechaVencimiento,
   parseDuracionMinutosFromMeta,
+  getArticuloTipo,
 } from './inventarioMeta.js';
+import {
+  parseSalonFisicoUnidades,
+  mergeAndreasPremiosSalonFisico,
+  isPedidoAppEfectivoRetiroSalon,
+  isPedidoAppTarjetaDelivery,
+  ANDREAS_META,
+} from './andreasPremios.js';
 
 export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
 
@@ -32,6 +40,18 @@ export function isPostgrestSingleRowError(error) {
     /JSON object requested, multiple \(or no\) rows returned/i.test(msg)
   );
 }
+
+/** Sesión persistida inválida (p. ej. refresh revocado en servidor) — conviene `signOut({ scope: 'local' })`. */
+export function isInvalidRefreshTokenError(error) {
+  if (!error) return false;
+  const msg = String(error.message || error || '');
+  const code = String(error.code || '');
+  return (
+    code === 'refresh_token_not_found' ||
+    /invalid refresh token/i.test(msg) ||
+    /refresh token not found/i.test(msg)
+  );
+}
 export {
   TIENDA_JSON_MARK,
   DEFAULT_TIENDA_META,
@@ -43,6 +63,7 @@ export {
   getPreciosPorVolumenFromRow,
   precioServicioPorVolumen,
   precioVentaReferencia,
+  resolvePrecioRegularTienda,
   inventarioSearchSubtitle,
   parseDuracionMinutosFromMeta,
   splitNotas,
@@ -94,10 +115,52 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
+// GoTrue hace console.error antes de borrar sesión local; en RN eso abre LogBox aunque el flujo sea esperable.
+if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  try {
+    const { LogBox } = require('react-native');
+    LogBox?.ignoreLogs?.([
+      'Invalid Refresh Token',
+      'Refresh Token Not Found',
+      'AuthApiError: Invalid Refresh Token',
+    ]);
+  } catch {
+    /* web / tests: sin react-native */
+  }
+}
+
 /**
  * Helper Functions para interactuar con tu base de datos
  * Funciones mapeadas a tu esquema existente
  */
+
+/**
+ * Código de invitación visible en Premios (columna opcional `clientes.codigo_referido`).
+ */
+function buildDefaultCodigoReferido(userId) {
+  const raw = String(userId || '').replace(/-/g, '');
+  if (raw.length < 8) return `ANDREAS-${String(userId).slice(0, 12).toUpperCase()}`;
+  const mid = `${raw.slice(0, 6)}${raw.slice(-6)}`.toUpperCase();
+  return `ANDREAS-${mid}`;
+}
+
+/**
+ * UUID de auth del referidor: código UUID directo o `codigo_referido` vía RPC.
+ */
+async function resolveReferidorUserIdForSignup(referralCode, newUserId) {
+  const raw = String(referralCode || '').trim();
+  if (!raw) return null;
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidLike.test(raw)) {
+    const id = raw.toLowerCase();
+    if (id === String(newUserId || '').toLowerCase()) return null;
+    return id;
+  }
+  const { data, error } = await supabase.rpc('resolve_codigo_referido_andreas', { p_codigo: raw });
+  if (error || data == null) return null;
+  if (String(data).toLowerCase() === String(newUserId || '').toLowerCase()) return null;
+  return String(data);
+}
 
 export const db = {
   // ==================== AUTENTICACIÓN ====================
@@ -217,39 +280,74 @@ export const db = {
         .maybeSingle();
       if (findErr) return { data: null, error: findErr };
 
+      const backfillCodigo = async (row) => {
+        if (!row?.id || String(row.codigo_referido || '').trim()) return row;
+        const code = buildDefaultCodigoReferido(userId);
+        const { data: upd, error: upErr } = await supabase
+          .from('clientes')
+          .update({ codigo_referido: code })
+          .eq('id', row.id)
+          .select()
+          .single();
+        if (!upErr && upd) return upd;
+        return row;
+      };
+
       if (existing) {
         const patch = {};
         const nom = String(nombre || '').trim();
         const em = String(email || '').trim();
         if (nom && !String(existing.nombre || '').trim()) patch.nombre = nom;
         if (em && !String(existing.email || '').trim()) patch.email = em;
-        if (Object.keys(patch).length === 0) {
-          return { data: existing, error: null, created: false };
+        let nextRow = existing;
+        if (Object.keys(patch).length > 0) {
+          const { data, error } = await supabase
+            .from('clientes')
+            .update(patch)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) return { data: null, error, created: false };
+          nextRow = data || existing;
         }
-        const { data, error } = await supabase
-          .from('clientes')
-          .update(patch)
-          .eq('id', existing.id)
-          .select()
-          .single();
-        return { data, error, created: false };
+        const withCode = await backfillCodigo(nextRow);
+        return { data: withCode, error: null, created: false };
       }
 
       const nom = String(nombre || '').trim() || String(email || '').split('@')[0] || 'Cliente';
       const notas = referralCode ? `Código referido: ${String(referralCode).trim()}` : null;
-      const { data, error } = await supabase
-        .from('clientes')
-        .insert({
-          user_id: userId,
-          nombre: nom,
-          email: email || null,
-          tipo_registro: 'app_clientes',
-          categoria: 'Nuevo',
-          notas,
-        })
-        .select()
-        .single();
-      return { data, error, created: true };
+      const referidor = await resolveReferidorUserIdForSignup(referralCode, userId);
+      const codigo_referido = buildDefaultCodigoReferido(userId);
+      const insertPayload = {
+        user_id: userId,
+        nombre: nom,
+        email: email || null,
+        tipo_registro: 'app_clientes',
+        categoria: 'Nuevo',
+        notas,
+        referido_por: referidor,
+        codigo_referido,
+      };
+      let { data, error } = await supabase.from('clientes').insert(insertPayload).select().single();
+      if (
+        error &&
+        /codigo_referido|referido_por|andreas_premios|column/i.test(String(error.message || ''))
+      ) {
+        const fallback = await supabase
+          .from('clientes')
+          .insert({
+            user_id: userId,
+            nombre: nom,
+            email: email || null,
+            tipo_registro: 'app_clientes',
+            categoria: 'Nuevo',
+            notas,
+          })
+          .select()
+          .single();
+        return { data: fallback.data, error: fallback.error, created: !fallback.error };
+      }
+      return { data, error, created: !error };
     },
 
     updateByUserId: async (userId, data) => {
@@ -304,6 +402,173 @@ export const db = {
         .from('clientes')
         .select('*')
         .eq('referido_por', userId);
+    },
+  },
+
+  /**
+   * Programa ANDREAS (Premios): contadores desde pedidos/citas + JSON en ficha (salón físico).
+   * Requiere ejecutar `supabase-andreas-premios.sql` en Supabase para columnas y RPC.
+   */
+  premiosAndreas: {
+    getResumen: async ({ clientUserId, clienteRow }) => {
+      const meta = {
+        appEfectivoRetiro: ANDREAS_META.appEfectivoRetiro,
+        appTarjetaDelivery: ANDREAS_META.appTarjetaDelivery,
+        citas: ANDREAS_META.citas,
+        salon: ANDREAS_META.salon,
+        referidos: ANDREAS_META.referidos,
+      };
+      const empty = {
+        productosAppEfectivoRetiro: 0,
+        productosAppTarjetaDelivery: 0,
+        citasVerificadas: 0,
+        productosSalonFisico: 0,
+        referidosPrimeraCompra: 0,
+        codigoReferido: null,
+        meta,
+        error: null,
+        rpcMissing: false,
+      };
+      if (!clientUserId || !clienteRow?.id) {
+        return { ...empty, error: { message: 'Sin ficha de cliente' } };
+      }
+
+      const { data: freshCliente, error: eFresh } = await supabase
+        .from('clientes')
+        .select('codigo_referido, andreas_premios')
+        .eq('id', clienteRow.id)
+        .maybeSingle();
+      if (eFresh && !/column|does not exist/i.test(String(eFresh.message || ''))) {
+        return { ...empty, error: eFresh };
+      }
+      const codigoReferido = String(freshCliente?.codigo_referido || clienteRow.codigo_referido || '').trim() || null;
+      let codigoReferidoFinal = codigoReferido;
+      if (!codigoReferidoFinal && clientUserId) {
+        const code = buildDefaultCodigoReferido(clientUserId);
+        const { data: codUp, error: codErr } = await supabase
+          .from('clientes')
+          .update({ codigo_referido: code })
+          .eq('id', clienteRow.id)
+          .select('codigo_referido')
+          .maybeSingle();
+        if (!codErr && codUp?.codigo_referido) {
+          codigoReferidoFinal = String(codUp.codigo_referido).trim();
+        }
+      }
+      let productosSalonFisico = 0;
+      const ap = freshCliente?.andreas_premios ?? clienteRow.andreas_premios;
+      if (ap && typeof ap === 'object' && ap.salon_fisico_unidades != null) {
+        const n = Number(ap.salon_fisico_unidades);
+        if (Number.isFinite(n)) productosSalonFisico = Math.max(0, Math.floor(n));
+      }
+
+      const { data: orders, error: eOrd } = await supabase
+        .from('ecommerce_orders')
+        .select('id, status, payment_method, fulfillment_type')
+        .eq('client_user_id', clientUserId)
+        .eq('status', 'delivered');
+      if (eOrd) {
+        return { ...empty, codigoReferido: codigoReferidoFinal, productosSalonFisico, error: eOrd };
+      }
+      const deliveredOrders = Array.isArray(orders) ? orders : [];
+      const orderById = new Map(deliveredOrders.map((o) => [String(o.id), o]));
+      const deliveredIds = deliveredOrders.map((o) => o.id).filter(Boolean);
+
+      let productosAppEfectivoRetiro = 0;
+      let productosAppTarjetaDelivery = 0;
+      if (deliveredIds.length) {
+        const { data: lines, error: eItems } = await supabase
+          .from('ecommerce_order_items')
+          .select('qty, order_id, product:inventario(notas)')
+          .in('order_id', deliveredIds);
+        if (!eItems && Array.isArray(lines)) {
+          for (const line of lines) {
+            if (getArticuloTipo(line.product) !== 'producto') continue;
+            const qty = Math.max(0, Math.floor(Number(line.qty) || 0));
+            if (qty < 1) continue;
+            const ord = orderById.get(String(line.order_id));
+            if (isPedidoAppEfectivoRetiroSalon(ord)) productosAppEfectivoRetiro += qty;
+            if (isPedidoAppTarjetaDelivery(ord)) productosAppTarjetaDelivery += qty;
+          }
+        }
+      }
+
+      let citasVerificadas = 0;
+      const { data: citas, error: eCit } = await supabase
+        .from('citas')
+        .select('estado')
+        .eq('cliente_id', clienteRow.id);
+      if (!eCit && Array.isArray(citas)) {
+        citasVerificadas = citas.filter((c) => String(c.estado || '').toLowerCase() === 'completada').length;
+      }
+
+      let referidosPrimeraCompra = 0;
+      let rpcMissing = false;
+      const { data: refCount, error: eRpc } = await supabase.rpc('premios_andreas_referidos_primera_compra', {
+        p_referidor: clientUserId,
+      });
+      if (eRpc) {
+        const msg = String(eRpc.message || eRpc.hint || '');
+        if (/function|does not exist|rpc/i.test(msg)) rpcMissing = true;
+        else
+          return {
+            ...empty,
+            codigoReferido: codigoReferidoFinal,
+            productosSalonFisico,
+            productosAppEfectivoRetiro,
+            productosAppTarjetaDelivery,
+            citasVerificadas,
+            error: eRpc,
+          };
+      } else if (refCount != null) {
+        referidosPrimeraCompra = Math.max(0, Math.floor(Number(refCount) || 0));
+      }
+
+      return {
+        productosAppEfectivoRetiro,
+        productosAppTarjetaDelivery,
+        citasVerificadas,
+        productosSalonFisico,
+        referidosPrimeraCompra,
+        codigoReferido: codigoReferidoFinal,
+        meta,
+        error: null,
+        rpcMissing,
+      };
+    },
+
+    /** Registra unidades de producto compradas en salón físico (staff · columna andreas_premios). */
+    updateSalonFisicoUnidades: async (clienteId, unidades) => {
+      if (!clienteId) return { data: null, error: { message: 'Cliente no indicado' } };
+      const n = Math.max(0, Math.floor(Number(unidades) || 0));
+      const { data: row, error: e0 } = await supabase
+        .from('clientes')
+        .select('andreas_premios')
+        .eq('id', clienteId)
+        .maybeSingle();
+      if (e0) return { data: null, error: e0 };
+      const next = mergeAndreasPremiosSalonFisico(row?.andreas_premios, n);
+      const { data, error } = await supabase
+        .from('clientes')
+        .update({ andreas_premios: next })
+        .eq('id', clienteId)
+        .select()
+        .single();
+      return { data, error };
+    },
+
+    addSalonFisicoUnidades: async (clienteId, delta = 1) => {
+      if (!clienteId) return { data: null, error: { message: 'Cliente no indicado' } };
+      const d = Math.max(0, Math.floor(Number(delta) || 0));
+      if (d < 1) return { data: null, error: { message: 'Cantidad inválida' } };
+      const { data: row, error: e0 } = await supabase
+        .from('clientes')
+        .select('andreas_premios')
+        .eq('id', clienteId)
+        .maybeSingle();
+      if (e0) return { data: null, error: e0 };
+      const cur = parseSalonFisicoUnidades(row?.andreas_premios);
+      return db.premiosAndreas.updateSalonFisicoUnidades(clienteId, cur + d);
     },
   },
 
@@ -591,16 +856,14 @@ export const db = {
         .order('fecha_hora');
     },
 
-    // Obtener citas de un cliente
-    getByCliente: async (clienteId) => {
+    // Obtener citas de un cliente ({ forClientApp: true } evita join empleados — RLS app clientes)
+    getByCliente: async (clienteId, options = {}) => {
+      const forClientApp = options.forClientApp === true;
       return await supabase
         .from('citas')
-        .select(`
-          *,
-          empleado:empleados(id, nombre)
-        `)
+        .select(forClientApp ? '*' : `*, empleado:empleados(id, nombre)`)
         .eq('cliente_id', clienteId)
-        .order('fecha_hora', { ascending: false });
+        .order('fecha_hora', { ascending: true });
     },
 
     // Obtener citas de un empleado
@@ -644,19 +907,22 @@ export const db = {
     },
 
     // Crear nueva cita
-    create: async (data) => {
-      return await supabase
-        .from('citas')
-        .insert({
-          cliente_id: data.cliente_id,
-          servicio: data.servicio,
-          precio: data.precio || 0,
-          duracion_minutos: data.duracion_minutos || 30,
-          fecha_hora: data.fecha_hora,
-          estado: data.estado || 'pendiente',
-          notas_servicio: data.notas_servicio || null,
-          empleado_id: data.empleado_id || null,
-        })
+    create: async (data, options = {}) => {
+      const forClientApp = options.forClientApp === true;
+      const insert = supabase.from('citas').insert({
+        cliente_id: data.cliente_id,
+        servicio: data.servicio,
+        precio: data.precio || 0,
+        duracion_minutos: data.duracion_minutos || 30,
+        fecha_hora: data.fecha_hora,
+        estado: data.estado || 'pendiente',
+        notas_servicio: data.notas_servicio || null,
+        empleado_id: data.empleado_id || null,
+      });
+      if (forClientApp) {
+        return await insert.select('*').single();
+      }
+      return await insert
         .select(`
           *,
           cliente:clientes(id, nombre, telefono, email),
@@ -666,11 +932,13 @@ export const db = {
     },
 
     // Actualizar cita
-    update: async (id, data) => {
-      return await supabase
-        .from('citas')
-        .update(data)
-        .eq('id', id)
+    update: async (id, data, options = {}) => {
+      const forClientApp = options.forClientApp === true;
+      const q = supabase.from('citas').update(data).eq('id', id);
+      if (forClientApp) {
+        return await q.select('*').single();
+      }
+      return await q
         .select(`
           *,
           cliente:clientes(id, nombre, telefono, email),
@@ -703,16 +971,19 @@ export const db = {
     },
 
     // Cancelar cita
-    cancelar: async (id, motivo = null) => {
-      return await supabase
+    cancelar: async (id, motivo = null, options = {}) => {
+      const forClientApp = options.forClientApp === true;
+      const q = supabase
         .from('citas')
-        .update({ 
+        .update({
           estado: 'cancelada',
-          notas_servicio: motivo 
+          notas_servicio: motivo,
         })
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
+      if (forClientApp) {
+        return await q.select('*').single();
+      }
+      return await q.select().single();
     },
 
     // Eliminar cita
@@ -1991,13 +2262,18 @@ export const db = {
         .order('nombre');
     },
 
-    // Obtener productos visibles en tienda (para e-commerce)
+    // Obtener productos visibles en tienda (para e-commerce; sin servicios)
     getVisiblesEnTienda: async () => {
       return await supabase
         .from('inventario')
         .select('*')
         .eq('visible_en_tienda', true)
         .order('nombre');
+    },
+
+    /** Catálogo App Clientes: productos en tienda + servicios (Mis citas). Requiere RLS inventario_tienda_public_read. */
+    getCatalogoAppClientes: async () => {
+      return await supabase.from('inventario').select('*').order('nombre');
     },
 
     // Obtener por ID

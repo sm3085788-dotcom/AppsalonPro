@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { UserPlus, X, ChevronRight, Check } from 'lucide-react-native';
+import { UserPlus, X, ChevronRight, Check, Store } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, MEMBRESIA_TIERS, membresiaLabel, isClienteAppVerificado } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
@@ -26,6 +26,7 @@ import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { MembresiaBadge } from '../components/MembresiaBadge';
 import { useTheme } from '../theme/ThemeProvider';
 import { shareClienteFicha } from '../utils/shareClienteFicha';
+import { AndreasSalonFisicoModal } from '../components/AndreasSalonFisicoModal';
 
 const MINT = { border: '#2E7D32', bg: '#E8F5E9', chip: '#C8E6C9' };
 
@@ -106,6 +107,7 @@ export function ClientesScreen({ onBack }) {
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
   const [asignandoMembresia, setAsignandoMembresia] = useState(false);
   const [savingClienteKey, setSavingClienteKey] = useState(null);
+  const [modalAndreasSalon, setModalAndreasSalon] = useState(false);
 
   const loadClientes = useCallback(async () => {
     setLoadError(null);
@@ -491,18 +493,42 @@ export function ClientesScreen({ onBack }) {
     [c, isDark, sel, styles],
   );
 
-  const addPersonIconColor = isDark ? '#141414' : c.foreground;
+  const addPersonIconColor = c.foreground;
+
+  const openAndreasSalonModal = useCallback(() => {
+    setModalAndreasSalon(true);
+  }, []);
+
+  const onAndreasSalonSaved = useCallback(
+    (updatedRow) => {
+      if (!updatedRow?.id) return;
+      setClientes((prev) => prev.map((c) => (c.id === updatedRow.id ? { ...c, ...updatedRow } : c)));
+      setDetailCliente((prev) => (prev?.id === updatedRow.id ? { ...prev, ...updatedRow } : prev));
+    },
+    [],
+  );
 
   const rightAction = (
-    <TouchableOpacity
-      style={[styles.addPersonCircle, isDark && styles.addPersonCircleDark]}
-      onPress={openNuevoCliente}
-      accessibilityRole="button"
-      accessibilityLabel="Agregar cliente manual"
-      activeOpacity={0.85}
-    >
-      <UserPlus size={22} color={addPersonIconColor} strokeWidth={2.2} />
-    </TouchableOpacity>
+    <View style={styles.headerActions}>
+      <TouchableOpacity
+        style={styles.addPersonCircle}
+        onPress={openAndreasSalonModal}
+        accessibilityRole="button"
+        accessibilityLabel="Registrar compra salón físico ANDREAS"
+        activeOpacity={0.85}
+      >
+        <Store size={21} color={addPersonIconColor} strokeWidth={2.1} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.addPersonCircle}
+        onPress={openNuevoCliente}
+        accessibilityRole="button"
+        accessibilityLabel="Agregar cliente manual"
+        activeOpacity={0.85}
+      >
+        <UserPlus size={22} color={addPersonIconColor} strokeWidth={2.2} />
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -563,6 +589,8 @@ export function ClientesScreen({ onBack }) {
                       loadClientes();
                     }}
                     tintColor={c.primary}
+                    colors={[c.primary]}
+                    progressBackgroundColor={c.card}
                   />
                 }
                 contentContainerStyle={{
@@ -597,6 +625,16 @@ export function ClientesScreen({ onBack }) {
           />
         ) : null}
       </SubScreenChrome>
+
+      <AndreasSalonFisicoModal
+        visible={modalAndreasSalon}
+        onClose={() => setModalAndreasSalon(false)}
+        colors={c}
+        insets={insets}
+        clientes={clientes}
+        initialCliente={detailCliente?.id ? detailCliente : null}
+        onSaved={onAndreasSalonSaved}
+      />
 
       <SalonFichaSheet
         visible={!!detailCliente}
@@ -812,6 +850,7 @@ function createStyles(c) {
     body: {
       flex: 1,
       paddingHorizontal: spacing.sm,
+      backgroundColor: c.background,
     },
     toolbar: {
       flexDirection: 'row',
@@ -839,11 +878,16 @@ function createStyles(c) {
       borderRadius: radii.md,
       overflow: 'hidden',
     },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
     addPersonCircle: {
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: c.card,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
@@ -853,9 +897,6 @@ function createStyles(c) {
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.12,
       shadowRadius: 4,
-    },
-    addPersonCircleDark: {
-      borderColor: 'rgba(255,255,255,0.35)',
     },
     search: {
       fontFamily: typography.fontSans,

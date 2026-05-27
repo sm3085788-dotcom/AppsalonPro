@@ -532,7 +532,15 @@ export function PedidosScreen({ onBack }) {
                 keyExtractor={(it) => it.key}
                 renderItem={renderItem}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={c.primary} />}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => load(true)}
+                    tintColor={c.primary}
+                    colors={[c.primary]}
+                    progressBackgroundColor={c.card}
+                  />
+                }
                 contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
                 ListEmptyComponent={
                   <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
@@ -669,6 +677,7 @@ function createStyles(c) {
     body: {
       flex: 1,
       paddingHorizontal: spacing.sm,
+      backgroundColor: c.background,
     },
     search: {
       fontFamily: typography.fontSans,

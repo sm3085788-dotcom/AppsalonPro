@@ -17,6 +17,8 @@ export const CLIENT_SUB = {
   TENDENCIAS: 'tendencias',
   PREMIOS: 'premios',
   CARRITO: 'carrito',
+  /** Servicios seleccionados para agendar (distinto del carrito de tienda). */
+  SERVICIOS_CARRITO: 'servicios_carrito',
   /** Pedidos de tienda del cliente (QR, efectivo, envío). */
   MIS_PEDIDOS: 'mis_pedidos',
   MEMBRESIAS: 'membresias',

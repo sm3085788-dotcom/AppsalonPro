@@ -53,7 +53,7 @@ import { PedidosScreen } from './screens/PedidosScreen';
 import { SalonModulePlaceholder } from './screens/SalonModulePlaceholder';
 import { ControlPanelScreen } from './screens/ControlPanelScreen';
 import { SalonAdminSignInScreen } from './screens/SalonAdminSignInScreen';
-import { db, supabase, isSalonAdminRole } from '@appsalon/shared-config';
+import { db, supabase, isSalonAdminRole, isInvalidRefreshTokenError } from '@appsalon/shared-config';
 
 const MAX_CONTENT_WIDTH = 1120;
 /** Ancho máximo de cada tarjeta del grid (evita cuadros gigantes en horizontal / BlueStacks). */
@@ -103,16 +103,19 @@ function SalonAdminShell({ onSignOut }) {
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasNewMensajes, setHasNewMensajes] = useState(false);
   const [hasNewPedidos, setHasNewPedidos] = useState(false);
+  const [agendaPendientes, setAgendaPendientes] = useState(0);
   const [homeRefreshing, setHomeRefreshing] = useState(false);
   const searchTimerRef = useRef(null);
   const searchGenRef = useRef(0);
   const badgeCounts = useMemo(
-    () =>
-      BADGE_MODULE_IDS.reduce((acc, id) => {
+    () => ({
+      ...BADGE_MODULE_IDS.reduce((acc, id) => {
         acc[id] = 0;
         return acc;
       }, {}),
-    [],
+      agenda: agendaPendientes,
+    }),
+    [agendaPendientes],
   );
   const { colors: c, isDark, setScheme } = useTheme();
 
@@ -168,10 +171,37 @@ function SalonAdminShell({ onSignOut }) {
     }
   }, []);
 
+  const refreshAgendaAlert = useCallback(async () => {
+    try {
+      const { data, error } = await db.citas.getByEstado('pendiente');
+      if (error) return;
+      setAgendaPendientes(Array.isArray(data) ? data.length : 0);
+    } catch {
+      // noop
+    }
+  }, []);
+
   useEffect(() => {
     refreshMensajesAlert();
     refreshPedidosAlert();
-  }, [refreshMensajesAlert, refreshPedidosAlert]);
+    refreshAgendaAlert();
+  }, [refreshMensajesAlert, refreshPedidosAlert, refreshAgendaAlert]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('salon-home-citas-alert')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'citas' },
+        () => {
+          void refreshAgendaAlert();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshAgendaAlert]);
 
   useEffect(() => {
     const channel = supabase
@@ -222,7 +252,7 @@ function SalonAdminShell({ onSignOut }) {
     setHomeRefreshing(true);
     try {
       const q = search.trim();
-      await Promise.all([refreshMensajesAlert(), refreshPedidosAlert()]);
+      await Promise.all([refreshMensajesAlert(), refreshPedidosAlert(), refreshAgendaAlert()]);
       if (q.length >= SALON_SEARCH_MIN_LEN) {
         const gen = searchGenRef.current + 1;
         searchGenRef.current = gen;
@@ -232,7 +262,7 @@ function SalonAdminShell({ onSignOut }) {
     } finally {
       setHomeRefreshing(false);
     }
-  }, [search, refreshMensajesAlert, refreshPedidosAlert]);
+  }, [search, refreshMensajesAlert, refreshPedidosAlert, refreshAgendaAlert]);
 
   const closeModule = useCallback(() => {
     setOpenedModuleId(null);
@@ -463,6 +493,7 @@ function buildStyles(c) {
     },
     scroll: {
       flex: 1,
+      backgroundColor: c.background,
     },
     contentWrap: {
       maxWidth: MAX_CONTENT_WIDTH,
@@ -540,7 +571,11 @@ function buildStyles(c) {
 
 async function resolveSalonAuthPhase() {
   if (!hasSupabaseEnv) return { phase: 'signin', message: 'Supabase no configurado en este build.' };
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+  if (sessionErr && isInvalidRefreshTokenError(sessionErr)) {
+    await supabase.auth.signOut({ scope: 'local' });
+    return { phase: 'signin' };
+  }
   if (!session?.user?.id) return { phase: 'signin' };
   const { data: profile, error } = await db.profiles.getById(session.user.id);
   if (error || !profile) {
@@ -673,10 +708,20 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <SalonAppWithAuth />
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ThemeProvider>
+      <SafeAreaProvider>
+        <SalonThemedRoot />
+      </SafeAreaProvider>
+    </ThemeProvider>
+  );
+}
+
+/** Evita franjas blancas (área segura / ventana) fuera del contenido en modo oscuro. */
+function SalonThemedRoot() {
+  const { colors: c } = useTheme();
+  return (
+    <View style={{ flex: 1, backgroundColor: c.background }}>
+      <SalonAppWithAuth />
+    </View>
   );
 }

@@ -374,7 +374,15 @@ export function PapeleriaScreen({ onBack }) {
                 data={filtered}
                 keyExtractor={(v) => String(v.id)}
                 renderItem={renderItem}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    tintColor={c.primary}
+                    colors={[c.primary]}
+                    progressBackgroundColor={c.card}
+                  />
+                }
                 contentContainerStyle={{
                   paddingBottom: sel.count ? 100 : padBottom,
                   flexGrow: filtered.length === 0 ? 1 : 0,
@@ -426,6 +434,7 @@ export function PapeleriaScreen({ onBack }) {
                 </View>
 
                 <ScrollView
+                  style={{ backgroundColor: c.background }}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={{ paddingBottom: modalScrollBottomPad(insets) }}
                 >
@@ -648,6 +657,7 @@ function createStyles(c) {
     body: {
       flex: 1,
       paddingHorizontal: spacing.sm,
+      backgroundColor: c.background,
     },
     search: {
       fontFamily: typography.fontSans,

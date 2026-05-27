@@ -22,6 +22,7 @@ export function AdminModuleTile({
   const titleColor = hasAccent && isDark ? '#1F1F1F' : c.foreground;
   const subtitleColor = hasAccent && isDark ? '#4A4A4A' : c.foregroundMuted;
   const iconColor = hasAccent ? (accent.icon ?? c.primary) : c.primary;
+  const badgeRing = accent?.bg ?? c.card;
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -67,7 +68,7 @@ export function AdminModuleTile({
           alignItems: 'center',
           justifyContent: 'center',
           borderWidth: 2,
-          borderColor: '#FFFFFF',
+          borderColor: badgeRing,
         },
         badgeTxt: {
           fontFamily: typography.fontSansMedium,
@@ -86,10 +87,10 @@ export function AdminModuleTile({
           alignItems: 'center',
           justifyContent: 'center',
           borderWidth: 2,
-          borderColor: '#FFFFFF',
+          borderColor: badgeRing,
         },
       }),
-    [c, titleColor, subtitleColor, accent, isDark],
+    [c, titleColor, subtitleColor, accent, isDark, badgeRing],
   );
 
   const shake = useRef(new Animated.Value(0)).current;

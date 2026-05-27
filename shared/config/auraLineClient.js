@@ -1,6 +1,11 @@
 import { db, supabase } from './supabaseClient.js';
 
-const SALON_OUTBOUND_TYPES = new Set(['chat', 'broadcast_promo', 'incident_report']);
+const SALON_OUTBOUND_TYPES = new Set([
+  'chat',
+  'broadcast_promo',
+  'incident_report',
+  'cita_confirmacion',
+]);
 
 export function isSalonOutboundMessage(row) {
   const ct = String(row?.content_type || '');

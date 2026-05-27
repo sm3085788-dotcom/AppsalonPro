@@ -25,14 +25,20 @@ import {
   isSalonOutboundMessage,
   uploadMensajeMediaFromUri,
   broadcastPreviewText,
+  parseCitaConfirmacionContent,
+  citaConfirmacionPreviewText,
 } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
 import { SalonButton } from '../luxury/SalonButton';
 import { saveChatImageWithAlert } from '../../utils/saveChatImage';
 import { BroadcastPromoCard } from './BroadcastPromoCard';
+import { CitaConfirmacionCard } from './CitaConfirmacionCard';
 
 function chatBubbleText(item) {
   const ct = String(item.content_type || '');
+  if (ct === 'cita_confirmacion') {
+    return citaConfirmacionPreviewText(item.content);
+  }
   if (ct.includes('broadcast')) {
     const preview = broadcastPreviewText(item.content);
     if (preview) return preview;
@@ -293,7 +299,17 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
     const fromSalon = isSalonOutboundMessage(item) && !isFromClient;
     const isBroadcast = String(item.content_type || '').includes('broadcast');
     const isIncident = String(item.content_type || '') === 'incident_report';
+    const isCitaConfirm = String(item.content_type || '') === 'cita_confirmacion';
+    const citaCard = isCitaConfirm ? parseCitaConfirmacionContent(item.content) : null;
     const whenLabel = `${formatWhen(item.created_at)} · ${item.created_by_name || (fromSalon ? 'Aura Salón' : 'Vos')}`;
+
+    if (isCitaConfirm && fromSalon && citaCard) {
+      return (
+        <View style={styles.postWrap}>
+          <CitaConfirmacionCard data={citaCard} metaLabel={whenLabel} />
+        </View>
+      );
+    }
 
     if (isBroadcast && fromSalon) {
       return (
@@ -456,8 +472,8 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
 
 function createStyles(c) {
   return StyleSheet.create({
-    shell: { flex: 1 },
-    list: { flex: 1 },
+    shell: { flex: 1, backgroundColor: c.background },
+    list: { flex: 1, backgroundColor: c.background },
     listContent: {
       padding: spacing.md,
       paddingBottom: spacing.sm,

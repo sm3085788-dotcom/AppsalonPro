@@ -411,7 +411,7 @@ export function EmpleadosScreen({ onBack }) {
 
   const rightAction = (
     <TouchableOpacity
-      style={[styles.addCircle, isDark && styles.addCircleDark, { backgroundColor: c.card, borderColor: c.cardBorder }]}
+      style={[styles.addCircle, { backgroundColor: c.card, borderColor: c.cardBorder }]}
       onPress={openNuevo}
       accessibilityRole="button"
       accessibilityLabel="Nuevo empleado"
@@ -483,6 +483,8 @@ export function EmpleadosScreen({ onBack }) {
                       loadEmpleados();
                     }}
                     tintColor={c.primary}
+                    colors={[c.primary]}
+                    progressBackgroundColor={c.card}
                   />
                 }
                 renderItem={({ item }) => {
@@ -718,6 +720,7 @@ function createStyles(c) {
       flex: 1,
       paddingHorizontal: spacing.sm,
       paddingTop: spacing.xs,
+      backgroundColor: c.background,
     },
     search: {
       fontFamily: typography.fontSans,
@@ -840,11 +843,8 @@ function createStyles(c) {
       elevation: 3,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.12,
+      shadowOpacity: 0.18,
       shadowRadius: 4,
-    },
-    addCircleDark: {
-      shadowOpacity: 0.28,
     },
     modalBackdrop: {
       flex: 1,

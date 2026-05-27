@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,10 @@ import {
   TouchableOpacity,
   Share,
   Alert,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -16,77 +19,136 @@ import {
   Share2,
   Copy,
   Users,
-  Wallet,
-  TrendingUp,
-  Sparkles,
   Percent,
+  Calendar,
+  Store,
+  RefreshCw,
+  X,
+  Wallet,
+  Truck,
 } from 'lucide-react-native';
 import { SalonButton } from '../luxury/SalonButton';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { db, ANDREAS_META } from '@appsalon/shared-config';
 
-const MOCK = {
-  nivel: 'Aura Gold',
-  nivelSiguiente: 'Platinum',
-  puntos: 2450,
-  puntosParaSiguiente: 3000,
-  saldoQuetzales: 45,
-  descuentoAcumuladoPct: 12,
-  codigoReferido: 'AURA-SM308-482',
-  invitadosActivos: 3,
-  puntosPorReferidos: 900,
-  /** Metas de referido (valores de UI hasta conectar programa). */
-  metaInvitados: 5,
-  /** Paquete que se activa en la cuenta del nuevo cliente al ingresar el código. */
-  bienvenidaCitasPrivilegio: 5,
-  bienvenidaDescuentoPct: 20,
-  /** Premio para quien recomienda, al confirmarse la primera visita del referido. */
-  premioReferidorVisitas: 1,
-  premioReferidorDescuentoPct: 60,
-};
+const META_APP_EFECTIVO_RETIRO = ANDREAS_META.appEfectivoRetiro;
+const META_APP_TARJETA_DELIVERY = ANDREAS_META.appTarjetaDelivery;
+const META_CITAS = ANDREAS_META.citas;
+const META_SALON = ANDREAS_META.salon;
+const META_REFERIDOS = ANDREAS_META.referidos;
 
-const CANJES_EJEMPLO_UI = [
-  {
-    id: 'c1',
-    titulo: 'Q25 en tienda',
-    detalle: 'Válido en productos seleccionados',
-    costoPuntos: 500,
-  },
-  {
-    id: 'c2',
-    titulo: '10% tu próxima visita',
-    detalle: 'Servicio o tratamiento completo',
-    costoPuntos: 1200,
-  },
-  {
-    id: 'c3',
-    titulo: 'Upgrade de técnica',
-    detalle: 'Balayage o color premium',
-    costoPuntos: 2400,
-  },
-];
+function RuleProgress({ icon: Icon, title, body, current, meta, tc }) {
+  const p = Math.min(1, meta > 0 ? current / meta : 0);
+  return (
+    <View style={[localStyles.ruleCard, { borderColor: tc.cardBorder }]}>
+      <View style={localStyles.ruleHead}>
+        <Icon size={18} color={tc.primary} strokeWidth={2} />
+        <Text style={[localStyles.ruleTitle, { color: tc.foreground }]}>{title}</Text>
+      </View>
+      <Text style={[localStyles.ruleBody, { color: tc.foregroundMuted ?? '#6B6B6B' }]}>{body}</Text>
+      <View style={[localStyles.track, { backgroundColor: tc.iconCircleBg ?? '#F3F3F3' }]}>
+        <View style={[localStyles.fill, { width: `${p * 100}%`, backgroundColor: tc.primary }]} />
+      </View>
+      <Text style={[localStyles.ruleMeta, { color: tc.foregroundSubtle ?? '#888' }]}>
+        {current} de {meta} · datos verificados
+      </Text>
+    </View>
+  );
+}
 
-export function PremiosDashboard({ onClose }) {
+const localStyles = StyleSheet.create({
+  ruleCard: {
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  ruleHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  ruleTitle: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 14,
+    flex: 1,
+  },
+  ruleBody: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+  },
+  track: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  ruleMeta: {
+    fontFamily: typography.fontSans,
+    fontSize: 11,
+  },
+});
+
+export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
   const [canjeTap, setCanjeTap] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [resumen, setResumen] = useState(null);
+  const [loadErr, setLoadErr] = useState(null);
+  const [modalSalonFisico, setModalSalonFisico] = useState(false);
+  const insets = useSafeAreaInsets();
   const { colors: tc } = useTheme();
   const styles = useMemo(() => createPremiosStyles(tc), [tc]);
 
-  const progress = Math.min(
-    1,
-    MOCK.puntosParaSiguiente > 0 ? MOCK.puntos / MOCK.puntosParaSiguiente : 1,
-  );
-  const invProgress = Math.min(1, MOCK.invitadosActivos / MOCK.metaInvitados);
+  const load = useCallback(async () => {
+    if (!clientUserId || !clienteRow?.id) {
+      setResumen(null);
+      setLoadErr(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadErr(null);
+    const r = await db.premiosAndreas.getResumen({ clientUserId, clienteRow });
+    setLoading(false);
+    if (r.error) {
+      setLoadErr(String(r.error.message || 'No se pudo cargar'));
+      setResumen(null);
+      return;
+    }
+    setResumen(r);
+  }, [clientUserId, clienteRow]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const codigo = resumen?.codigoReferido?.trim() || '—';
+  const productosAppEfectivoRetiro = resumen?.productosAppEfectivoRetiro ?? 0;
+  const productosAppTarjetaDelivery = resumen?.productosAppTarjetaDelivery ?? 0;
+  const citasOk = resumen?.citasVerificadas ?? 0;
+  const salonFisico = resumen?.productosSalonFisico ?? 0;
+  const referidosOk = resumen?.referidosPrimeraCompra ?? 0;
 
   const shareReferral = async () => {
+    if (!codigo || codigo === '—') {
+      Alert.alert('Premios', 'Iniciá sesión y enlazá tu ficha para obtener tu código de invitación.');
+      return;
+    }
     const msg =
-      `¡Te invito a Aura Salón! Descargá App Clientes y, al crear tu cuenta, ingresá mi código ${MOCK.codigoReferido}. ` +
-      `Se carga solo en tu perfil el premio «Cita privilegiada de bienvenida»: ${MOCK.bienvenidaCitasPrivilegio} citas con ${MOCK.bienvenidaDescuentoPct}% de descuento sobre todo lo que gastes en el salón (servicios y productos). ` +
-      `Y cuando completes tu primera visita, a mí se me activa automáticamente el premio por recomendación: ${MOCK.premioReferidorVisitas} visita de consumo + ${MOCK.premioReferidorDescuentoPct}% de descuento en el siguiente producto o servicio. ` +
-      `Te esperamos.`;
+      `¡Te invito a Salon Andreas! Descargá la app de clientes, creá tu cuenta verificada y usá mi código ${codigo}. ` +
+      `Programa ANDREAS: al referir 3 personas verificadas con su primera compra en la app, quien comparte gana 29,99% en un servicio más sesión de fotos e imagen impresa, canjeable en el salón.`;
     try {
       await Share.share({
         message: msg,
-        title: 'Invitación Aura Salón',
+        title: 'Invitación Salon Andreas',
       });
     } catch {
       /* cancelado */
@@ -94,22 +156,62 @@ export function PremiosDashboard({ onClose }) {
   };
 
   const copyCode = async () => {
+    if (!codigo || codigo === '—') {
+      Alert.alert('Código', 'Aún no tenemos un código asignado. Volvé a abrir Premios luego de iniciar sesión.');
+      return;
+    }
     try {
-      await Clipboard.setStringAsync(MOCK.codigoReferido);
+      await Clipboard.setStringAsync(codigo);
       Alert.alert('Listo', 'Código copiado al portapapeles.');
     } catch {
-      Alert.alert('Código', MOCK.codigoReferido);
+      Alert.alert('Código', codigo);
     }
   };
 
-  const onCanjePendiente = (id) => {
+  const onCanjeInfo = (id, titulo, detalle) => {
     setCanjeTap(id);
-    Alert.alert(
-      'Canje',
-      'Cuando el programa de puntos esté activo, aquí confirmaremos el canje y descontaremos tus puntos.',
-      [{ text: 'OK', onPress: () => setCanjeTap(null) }],
-    );
+    Alert.alert(titulo, detalle, [{ text: 'OK', onPress: () => setCanjeTap(null) }]);
   };
+
+  const canjesIlustrativos = [
+    {
+      id: 'p_app_efectivo_retiro',
+      titulo: '19,99% · app efectivo y retiro en salón',
+      detalle:
+        '1 punto por cada producto en pedidos de la app pagados en efectivo con retiro en Salon Andreas, verificados al entregar el pedido (estado entregado). Con 8 puntos: 19,99% de descuento en un producto en tu próxima compra por la app con el mismo método (efectivo + retiro en salón). Coordiná el canje en recepción.',
+    },
+    {
+      id: 'p_app_tarjeta_delivery',
+      titulo: '19,99% · app tarjeta y envío a domicilio',
+      detalle:
+        '1 punto por cada producto en pedidos de la app pagados con tarjeta y envío a domicilio (delivery), verificados al entregar el pedido (estado entregado). Con 8 puntos: 19,99% de descuento en un producto en tu próxima compra por la app con tarjeta y envío a domicilio. Coordiná el canje en recepción.',
+    },
+    {
+      id: 'citas',
+      titulo: '19,99% en servicio + producto',
+      detalle:
+        'Con 8 citas en estado completada y verificadas en el salón, obtenés 19,99% de descuento en un servicio al comprar producto en Salon Andreas. Canje en salón.',
+    },
+    {
+      id: 'salon',
+      titulo: '19,99% próximo producto (salón físico)',
+      detalle:
+        'Las compras de producto en el salón físico las registra el equipo en tu ficha (`andreas_premios.salon_fisico_unidades`). Con 8 unidades verificadas, 19,99% en la siguiente compra de producto en salón físico.',
+    },
+  ];
+
+  if (!clientUserId || !clienteRow?.id) {
+    return (
+      <>
+        <View style={[styles.card, { marginBottom: spacing.md }]}>
+          <Text style={styles.cardLead}>
+            Iniciá sesión y pedí en recepción que enlacen tu cuenta para ver tu código ANDREAS y el progreso de puntos.
+          </Text>
+        </View>
+        <SalonButton variant="outlineGray" title="Cerrar" fullWidth onPress={onClose} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -122,132 +224,234 @@ export function PremiosDashboard({ onClose }) {
         <View style={styles.heroTop}>
           <View style={styles.heroBadge}>
             <Crown size={14} color={tc.primary} strokeWidth={2.2} />
-            <Text style={styles.heroBadgeTxt}>{MOCK.nivel}</Text>
+            <Text style={styles.heroBadgeTxt}>ANDREAS</Text>
           </View>
-          <Sparkles size={20} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+          <View style={styles.heroActions}>
+            <TouchableOpacity
+              onPress={() => setModalSalonFisico(true)}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Ver progreso salón físico"
+              activeOpacity={0.85}
+            >
+              <Store size={20} color="rgba(255,255,255,0.9)" strokeWidth={2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => void load()}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Actualizar puntos"
+              activeOpacity={0.85}
+              disabled={loading}
+            >
+              <RefreshCw size={20} color="rgba(255,255,255,0.55)" strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
         </View>
-        <Text style={styles.heroPoints}>{MOCK.puntos.toLocaleString('es-GT')}</Text>
-        <Text style={styles.heroPointsLabel}>puntos Aura disponibles</Text>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-        </View>
+        <Text style={styles.heroPoints}>Premios</Text>
+        <Text style={styles.heroPointsLabel}>Programa de puntos Salon Andreas</Text>
         <Text style={styles.heroMeta}>
-          {MOCK.puntosParaSiguiente - MOCK.puntos > 0
-            ? `Te faltan ${(MOCK.puntosParaSiguiente - MOCK.puntos).toLocaleString('es-GT')} pts para ${MOCK.nivelSiguiente}`
-            : `¡Listo para subir a ${MOCK.nivelSiguiente}!`}
+          Pedidos app entregados (efectivo + retiro o tarjeta + domicilio) y citas completadas se calculan solos. Compras
+          en salón físico: las registra recepción.
         </Text>
       </LinearGradient>
 
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Wallet size={18} color={tc.primary} strokeWidth={2} />
-          <Text style={styles.statValue}>Q{MOCK.saldoQuetzales}</Text>
-          <Text style={styles.statLabel}>saldo canjeable</Text>
+      {loading ? (
+        <ActivityIndicator style={{ marginVertical: spacing.lg }} color={tc.primary} />
+      ) : loadErr ? (
+        <View style={[styles.card, { marginBottom: spacing.md }]}>
+          <Text style={styles.cardLead}>{loadErr}</Text>
+          <SalonButton variant="mutedFill" title="Reintentar" fullWidth onPress={() => void load()} />
         </View>
-        <View style={styles.statCard}>
-          <Percent size={18} color={tc.primary} strokeWidth={2} />
-          <Text style={styles.statValue}>{MOCK.descuentoAcumuladoPct}%</Text>
-          <Text style={styles.statLabel}>dto. acumulado</Text>
-        </View>
-        <View style={styles.statCard}>
-          <TrendingUp size={18} color={tc.primary} strokeWidth={2} />
-          <Text style={styles.statValue}>+{MOCK.puntosPorReferidos}</Text>
-          <Text style={styles.statLabel}>pts referidos</Text>
-        </View>
-      </View>
+      ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Recomienda clientes nuevos</Text>
-        <Text style={styles.cardLead}>
-          Compartí tu código por WhatsApp, redes o en persona. La persona nueva{' '}
-          <Text style={styles.leadStrong}>descarga App Clientes</Text>, se registra y{' '}
-          <Text style={styles.leadStrong}>ingresa tu código de referido</Text>: el sistema lo valida y{' '}
-          <Text style={styles.leadStrong}>automáticamente</Text> le activa el premio de bienvenida en su cuenta (sin
-          trámites en recepción).
-        </Text>
-
-        <View style={styles.welcomeCallout}>
-          <Text style={styles.welcomeCalloutKicker}>Lo que recibe quien usa tu código</Text>
-          <Text style={styles.welcomeCalloutTitle}>Cita privilegiada de bienvenida</Text>
-          <Text style={styles.welcomeCalloutBody}>
-            Paquete de bienvenida con{' '}
-            <Text style={styles.welcomeStrong}>
-              {MOCK.bienvenidaCitasPrivilegio} citas con {MOCK.bienvenidaDescuentoPct}% de descuento
-            </Text>{' '}
-            sobre todo lo que invierta en el salón (servicios y productos) durante ese período promocional. Se aplica al
-            cargar el código al registrarse; vos seguís sumando puntos Aura cuando esa persona completa su primera visita.
+      {!loading && !loadErr && resumen?.rpcMissing ? (
+        <View style={[styles.card, { marginBottom: spacing.md, borderColor: tc.primary }]}>
+          <Text style={styles.cardLead}>
+            Para contar referidos con primera compra, ejecutá en Supabase el script{' '}
+            <Text style={styles.leadStrong}>supabase-andreas-premios.sql</Text> (función RPC). El resto de contadores
+            ya debería funcionar.
           </Text>
         </View>
-        <View style={styles.welcomeCallout}>
-          <Text style={styles.welcomeCalloutKicker}>Lo que ganás vos por recomendar</Text>
-          <Text style={styles.welcomeCalloutTitle}>Premio por recomendación confirmada</Text>
-          <Text style={styles.welcomeCalloutBody}>
-            Cuando la persona referida completa su primera visita al salón, se habilita automáticamente en tu cuenta:{' '}
-            <Text style={styles.welcomeStrong}>
-              {MOCK.premioReferidorVisitas} visita de consumo + {MOCK.premioReferidorDescuentoPct}% de descuento
-            </Text>{' '}
-            en el siguiente producto o servicio que elijas.
-          </Text>
-        </View>
+      ) : null}
 
-        <TouchableOpacity style={styles.codeBox} onPress={copyCode} activeOpacity={0.85}>
-          <Text style={styles.codeText}>{MOCK.codigoReferido}</Text>
-          <Copy size={20} color={tc.primary} strokeWidth={2} />
-        </TouchableOpacity>
-        <Text style={styles.codeHint}>Toca el código para copiarlo</Text>
-        <View style={styles.refActions}>
-          <TouchableOpacity style={styles.refShareBtn} onPress={shareReferral} activeOpacity={0.9}>
-            <Share2 size={18} color={tc.heroCtaText} strokeWidth={2.2} />
-            <Text style={styles.refShareTxt}>Compartir invitación</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.refMeter}>
-          <View style={styles.refMeterHead}>
-            <Users size={16} color={tc.foreground} strokeWidth={2} />
-            <Text style={styles.refMeterTitle}>Meta de bienvenidas este mes</Text>
+      {!loading && !loadErr ? (
+        <>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Cómo sumás y canjeás</Text>
+            <Text style={styles.cardLead}>
+              Un punto por cada unidad verificada según el canal. Al completar 8 en la misma regla, se habilita el
+              canje indicado (coordinación en Salon Andreas).
+            </Text>
+
+            <RuleProgress
+              icon={Wallet}
+              title="App · efectivo y retiro en salón"
+              body="1 punto por cada producto en pedidos de la app pagados en efectivo con retiro en Salon Andreas, verificados al entregar (estado entregado). 8 puntos: 19,99% de descuento en un producto en tu próxima compra app con efectivo y retiro en salón."
+              current={productosAppEfectivoRetiro}
+              meta={META_APP_EFECTIVO_RETIRO}
+              tc={tc}
+            />
+            <RuleProgress
+              icon={Truck}
+              title="App · tarjeta y envío a domicilio"
+              body="1 punto por cada producto en pedidos de la app pagados con tarjeta y envío a domicilio, verificados al entregar (estado entregado). 8 puntos: 19,99% de descuento en un producto en tu próxima compra app con tarjeta y delivery."
+              current={productosAppTarjetaDelivery}
+              meta={META_APP_TARJETA_DELIVERY}
+              tc={tc}
+            />
+            <RuleProgress
+              icon={Calendar}
+              title="Citas verificadas"
+              body="1 punto por cada cita en estado completada. 8 citas: 19,99% de descuento en un servicio al comprar producto en Salon Andreas."
+              current={citasOk}
+              meta={META_CITAS}
+              tc={tc}
+            />
+            <RuleProgress
+              icon={Store}
+              title="Producto en salón físico"
+              body="Unidades que registra el salón en tu ficha (JSON andreas_premios). 8: 19,99% en la siguiente compra de producto en salón físico."
+              current={salonFisico}
+              meta={META_SALON}
+              tc={tc}
+            />
           </View>
-          <View style={styles.progressTrackMuted}>
-            <View style={[styles.progressFillGold, { width: `${invProgress * 100}%` }]} />
-          </View>
-          <Text style={styles.refMeterSub}>
-            {MOCK.invitadosActivos} de {MOCK.metaInvitados} personas ya usaron tu código y visitaron el salón · cuando
-            se confirma esa primera visita, se activa tu premio de recomendación y además sumás{' '}
-            <Text style={styles.refMeterBold}>puntos Aura</Text>
-          </Text>
-        </View>
-      </View>
 
-      <View style={styles.card}>
-        <View style={styles.cardHeadRow}>
-          <Gift size={20} color={tc.primary} strokeWidth={2} />
-          <Text style={styles.cardTitleFlush}>Canjes con puntos</Text>
-        </View>
-        <Text style={styles.cardLead}>
-          Canjeá puntos por dinero en tienda, porcentajes en servicios o upgrades exclusivos.
-        </Text>
-        {CANJES_EJEMPLO_UI.map((c) => (
-          <TouchableOpacity
-            key={c.id}
-            style={[styles.canjeRow, canjeTap === c.id && styles.canjeRowActive]}
-            onPress={() => onCanjePendiente(c.id)}
-            activeOpacity={0.88}
+          <View style={[styles.card, { borderColor: tc.cardBorder }]}>
+            <Text style={styles.cardTitle}>Referidos verificados</Text>
+            <Text style={styles.cardLead}>
+              Si <Text style={styles.leadStrong}>3 nuevos usuarios</Text> crean cuenta verificada, se registran con tu
+              código o vinculación y realizan su <Text style={styles.leadStrong}>primera compra</Text> entregada en la
+              app, como referidor ganás: <Text style={styles.leadStrong}>29,99% en un servicio</Text>, más{' '}
+              <Text style={styles.leadStrong}>sesión de fotos e imagen impresa</Text>, canjeable en Salon Andreas.
+            </Text>
+            <View style={[localStyles.ruleCard, { borderColor: tc.cardBorder, marginBottom: spacing.md }]}>
+              <View style={localStyles.ruleHead}>
+                <Users size={18} color={tc.primary} strokeWidth={2} />
+                <Text style={[localStyles.ruleTitle, { color: tc.foreground }]}>Progreso de referidos</Text>
+              </View>
+              <View style={[localStyles.track, { backgroundColor: tc.iconCircleBg ?? '#F3F3F3' }]}>
+                <View
+                  style={[
+                    localStyles.fill,
+                    {
+                      width: `${Math.min(1, referidosOk / META_REFERIDOS) * 100}%`,
+                      backgroundColor: tc.primary,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[localStyles.ruleMeta, { color: tc.foregroundSubtle ?? '#888', marginTop: 4 }]}>
+                {referidosOk} de {META_REFERIDOS} referidos con primera compra entregada
+              </Text>
+            </View>
+
+            <TouchableOpacity style={styles.codeBox} onPress={copyCode} activeOpacity={0.85}>
+              <Text style={styles.codeText}>{codigo}</Text>
+              <Copy size={20} color={tc.primary} strokeWidth={2} />
+            </TouchableOpacity>
+            <Text style={styles.codeHint}>Toca el código para copiarlo</Text>
+            <TouchableOpacity style={styles.refShareBtn} onPress={shareReferral} activeOpacity={0.9}>
+              <Share2 size={18} color={tc.heroCtaText} strokeWidth={2.2} />
+              <Text style={styles.refShareTxt}>Compartir invitación Salon Andreas</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeadRow}>
+              <Gift size={20} color={tc.primary} strokeWidth={2} />
+              <Text style={styles.cardTitleFlush}>Canjes (resumen)</Text>
+            </View>
+            <Text style={styles.cardLead}>Tocá cada ítem para ver la condición completa antes de ir a recepción.</Text>
+            {canjesIlustrativos.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.canjeRow, canjeTap === c.id && styles.canjeRowActive]}
+                onPress={() => onCanjeInfo(c.id, c.titulo, c.detalle)}
+                activeOpacity={0.88}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.canjeTitulo}>{c.titulo}</Text>
+                  <Text style={styles.canjeDetalle} numberOfLines={3}>
+                    {c.detalle}
+                  </Text>
+                </View>
+                <View style={styles.canjeCost}>
+                  <Percent size={14} color={tc.primary} strokeWidth={2} />
+                  <Award size={14} color={tc.primary} strokeWidth={2} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      <Modal
+        visible={modalSalonFisico}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setModalSalonFisico(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: tc.card, paddingBottom: Math.max(insets.bottom, spacing.md) + spacing.md },
+            ]}
           >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.canjeTitulo}>{c.titulo}</Text>
-              <Text style={styles.canjeDetalle}>{c.detalle}</Text>
+            <View style={styles.modalHead}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Store size={20} color={tc.primary} strokeWidth={2} />
+                <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Salón físico</Text>
+              </View>
+              <TouchableOpacity onPress={() => setModalSalonFisico(false)} hitSlop={12}>
+                <X size={22} color={tc.foregroundMuted} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.canjeCost}>
-              <Award size={14} color={tc.primary} strokeWidth={2} />
-              <Text style={styles.canjeCostTxt}>{c.costoPuntos} pts</Text>
+            <Text style={styles.cardLead}>
+              Cada producto que comprás en el salón (no en la app) lo registra recepción en tu ficha. Llevás{' '}
+              <Text style={styles.leadStrong}>{salonFisico}</Text> de <Text style={styles.leadStrong}>{META_SALON}</Text>{' '}
+              unidades verificadas.
+            </Text>
+            <View style={[localStyles.track, { backgroundColor: tc.iconCircleBg ?? '#F3F3F3', marginBottom: spacing.md }]}>
+              <View
+                style={[
+                  localStyles.fill,
+                  {
+                    width: `${Math.min(1, salonFisico / META_SALON) * 100}%`,
+                    backgroundColor: tc.primary,
+                  },
+                ]}
+              />
             </View>
-          </TouchableOpacity>
-        ))}
-      </View>
+            <Text style={[styles.cardLead, { marginBottom: spacing.md }]}>
+              Al completar {META_SALON} unidades, podés canjear <Text style={styles.leadStrong}>19,99%</Text> de
+              descuento en la compra del siguiente producto en Salon Andreas. Si acabás de comprar en salón y no ves el
+              cambio, pedí en recepción que lo registren y tocá actualizar.
+            </Text>
+            <SalonButton
+              variant="heroGold"
+              title={loading ? 'Actualizando…' : 'Actualizar progreso'}
+              fullWidth
+              disabled={loading}
+              onPress={() => void load()}
+            />
+            <SalonButton
+              variant="outlineGray"
+              title="Cerrar"
+              fullWidth
+              style={{ marginTop: spacing.sm }}
+              onPress={() => setModalSalonFisico(false)}
+            />
+          </View>
+        </View>
+      </Modal>
 
       <SalonButton variant="outlineGray" title="Cerrar" fullWidth onPress={onClose} />
       <Text style={styles.footNote}>
-        Beneficios del referido (nuevo cliente) y del referidor (quien comparte el código) son ilustrativos · vigencia,
-        exclusiones y reglas finales las configura el salón en App Salón.
+        Reglas y exclusiones las confirma el equipo en App Salón; los canjes de premios ANDREAS se coordinan en
+        recepción Salon Andreas.
       </Text>
     </>
   );
@@ -255,283 +459,187 @@ export function PremiosDashboard({ onClose }) {
 
 function createPremiosStyles(c) {
   return StyleSheet.create({
-  hero: {
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    overflow: 'hidden',
-  },
-  heroTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  heroBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-  },
-  heroBadgeTxt: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 12,
-    color: '#FFF',
-    letterSpacing: 0.4,
-  },
-  heroPoints: {
-    fontFamily: typography.fontDisplay,
-    fontSize: 36,
-    color: '#FFF',
-    letterSpacing: -0.5,
-  },
-  heroPointsLabel: {
-    fontFamily: typography.fontSans,
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.72)',
-    marginBottom: spacing.sm,
-  },
-  progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    overflow: 'hidden',
-    marginBottom: spacing.xs,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: c.primary,
-  },
-  heroMeta: {
-    fontFamily: typography.fontSans,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.65)',
-    lineHeight: 16,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: c.card,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: c.cardBorder,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statValue: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 16,
-    color: c.foreground,
-  },
-  statLabel: {
-    fontFamily: typography.fontSans,
-    fontSize: 10,
-    color: c.foregroundMuted ?? '#6B6B6B',
-    textAlign: 'center',
-  },
-  card: {
-    backgroundColor: c.card,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: c.cardBorder,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  cardHeadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  cardTitle: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 16,
-    color: c.foreground,
-    marginBottom: spacing.xs,
-  },
-  cardTitleFlush: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 16,
-    color: c.foreground,
-  },
-  cardLead: {
-    fontFamily: typography.fontSans,
-    fontSize: 13,
-    color: c.foregroundMuted ?? '#6B6B6B',
-    lineHeight: 19,
-    marginBottom: spacing.sm,
-  },
-  leadStrong: {
-    fontFamily: typography.fontSansMedium,
-    color: c.foreground,
-  },
-  welcomeCallout: {
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(197, 163, 104, 0.45)',
-    backgroundColor: 'rgba(197, 163, 104, 0.09)',
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  welcomeCalloutKicker: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 11,
-    color: c.primary,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  welcomeCalloutTitle: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 15,
-    color: c.foreground,
-    marginBottom: spacing.xs,
-  },
-  welcomeCalloutBody: {
-    fontFamily: typography.fontSans,
-    fontSize: 13,
-    color: c.foregroundMuted ?? '#6B6B6B',
-    lineHeight: 20,
-  },
-  welcomeStrong: {
-    fontFamily: typography.fontSansMedium,
-    color: c.foreground,
-  },
-  codeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: c.surfaceMuted ?? '#F5F3EF',
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: c.cardBorder,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    marginBottom: 4,
-  },
-  codeText: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 17,
-    letterSpacing: 1,
-    color: c.foreground,
-  },
-  codeHint: {
-    fontFamily: typography.fontSans,
-    fontSize: 11,
-    color: c.foregroundSubtle ?? '#888',
-    marginBottom: spacing.sm,
-  },
-  refActions: {
-    marginBottom: spacing.md,
-  },
-  refShareBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: c.primary,
-    borderRadius: radii.pill,
-    paddingVertical: 12,
-  },
-  refShareTxt: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 14,
-    color: c.heroCtaText,
-  },
-  refMeter: {
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: c.cardBorder,
-  },
-  refMeterHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: spacing.sm,
-  },
-  refMeterTitle: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 13,
-    color: c.foreground,
-  },
-  progressTrackMuted: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: c.iconCircleBg ?? '#F3F3F3',
-    overflow: 'hidden',
-    marginBottom: spacing.xs,
-  },
-  progressFillGold: {
-    height: '100%',
-    borderRadius: 4,
-    backgroundColor: c.primary,
-  },
-  refMeterSub: {
-    fontFamily: typography.fontSans,
-    fontSize: 12,
-    color: c.foregroundMuted ?? '#6B6B6B',
-    lineHeight: 17,
-  },
-  refMeterBold: {
-    fontFamily: typography.fontSansMedium,
-    color: c.foreground,
-  },
-  canjeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: c.cardBorder,
-    marginBottom: spacing.sm,
-    backgroundColor: c.background,
-  },
-  canjeRowActive: {
-    borderColor: c.primary,
-    backgroundColor: 'rgba(197, 163, 104, 0.08)',
-  },
-  canjeTitulo: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 14,
-    color: c.foreground,
-  },
-  canjeDetalle: {
-    fontFamily: typography.fontSans,
-    fontSize: 12,
-    color: c.foregroundMuted ?? '#6B6B6B',
-    marginTop: 2,
-  },
-  canjeCost: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: spacing.sm,
-  },
-  canjeCostTxt: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 13,
-    color: c.primary,
-  },
-  footNote: {
-    fontFamily: typography.fontSans,
-    fontSize: 11,
-    color: c.foregroundSubtle ?? '#888',
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-    lineHeight: 15,
-  },
-});
+    hero: {
+      borderRadius: radii.lg,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      overflow: 'hidden',
+    },
+    heroTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.sm,
+    },
+    heroActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'flex-end',
+    },
+    modalCard: {
+      borderTopLeftRadius: radii.xl,
+      borderTopRightRadius: radii.xl,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+    },
+    modalHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+    },
+    heroBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: radii.pill,
+    },
+    heroBadgeTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      color: '#FFF',
+      letterSpacing: 0.4,
+    },
+    heroPoints: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 32,
+      color: '#FFF',
+      letterSpacing: -0.5,
+    },
+    heroPointsLabel: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      color: 'rgba(255,255,255,0.72)',
+      marginBottom: spacing.sm,
+    },
+    heroMeta: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      color: 'rgba(255,255,255,0.65)',
+      lineHeight: 16,
+    },
+    card: {
+      backgroundColor: c.card,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+    },
+    cardHeadRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    cardTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 16,
+      color: c.foreground,
+      marginBottom: spacing.xs,
+    },
+    cardTitleFlush: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 16,
+      color: c.foreground,
+    },
+    cardLead: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      color: c.foregroundMuted ?? '#6B6B6B',
+      lineHeight: 19,
+      marginBottom: spacing.sm,
+    },
+    leadStrong: {
+      fontFamily: typography.fontSansMedium,
+      color: c.foreground,
+    },
+    codeBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: c.surfaceMuted ?? '#F5F3EF',
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      paddingVertical: 14,
+      paddingHorizontal: spacing.md,
+      marginBottom: 4,
+    },
+    codeText: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 17,
+      letterSpacing: 1,
+      color: c.foreground,
+    },
+    codeHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      color: c.foregroundSubtle ?? '#888',
+      marginBottom: spacing.sm,
+    },
+    refShareBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      backgroundColor: c.primary,
+      borderRadius: radii.pill,
+      paddingVertical: 12,
+    },
+    refShareTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      color: c.heroCtaText,
+    },
+    canjeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      marginBottom: spacing.sm,
+      backgroundColor: c.background,
+    },
+    canjeRowActive: {
+      borderColor: c.primary,
+      backgroundColor: 'rgba(197, 163, 104, 0.08)',
+    },
+    canjeTitulo: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      color: c.foreground,
+    },
+    canjeDetalle: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      color: c.foregroundMuted ?? '#6B6B6B',
+      marginTop: 2,
+    },
+    canjeCost: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginLeft: spacing.sm,
+    },
+    footNote: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      color: c.foregroundSubtle ?? '#888',
+      textAlign: 'center',
+      marginTop: spacing.sm,
+      marginBottom: spacing.md,
+      lineHeight: 15,
+    },
+  });
 }
-

@@ -26,9 +26,8 @@ import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPa
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { db, supabase } from '@appsalon/shared-config';
-import { offerEnviarCitaWhatsApp } from '../utils/citaWhatsApp';
-import * as NavigationBar from 'expo-navigation-bar';
-import * as SystemUI from 'expo-system-ui';
+import { offerConfirmacionCitaCliente } from '../utils/citaConfirmacionCliente';
+import { applyNativeChromeTheme } from '../theme/applyNativeChromeTheme';
 
 const MEDICAL_ITEMS = [
   { key: 'allergy', label: 'Alergias conocidas' },
@@ -133,6 +132,7 @@ export function AppointmentsScreen({ onBack }) {
   const [agendaFiltersOpen, setAgendaFiltersOpen] = useState(false);
   const [agendaSort, setAgendaSort] = useState('fecha_desc');
   const [agendaEstado, setAgendaEstado] = useState('todos');
+  const [agendaFecha, setAgendaFecha] = useState(null); // Date seleccionado (día completo)
 
   const [citas, setCitas] = useState([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -223,13 +223,29 @@ export function AppointmentsScreen({ onBack }) {
       confirmado: 'Confirmado',
       rechazado: 'Rechazado',
     };
-    return `${sortLabels[agendaSort] || agendaSort} · ${estLabels[agendaEstado] || agendaEstado}`;
-  }, [agendaSort, agendaEstado]);
+    const dtLbl = agendaFecha
+      ? agendaFecha.toLocaleDateString('es-GT', { day: 'numeric', month: 'short', year: 'numeric' })
+      : null;
+    return `${sortLabels[agendaSort] || agendaSort} · ${estLabels[agendaEstado] || agendaEstado}${dtLbl ? ` · ${dtLbl}` : ''}`;
+  }, [agendaSort, agendaEstado, agendaFecha]);
+
+  const dateKeyLocal = (d) => {
+    const x = d instanceof Date ? d : new Date(d);
+    if (!Number.isFinite(x.getTime())) return '';
+    const y = x.getFullYear();
+    const m = String(x.getMonth() + 1).padStart(2, '0');
+    const day = String(x.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
 
   const citasFiltradas = useMemo(() => {
     let rows = [...citas];
     if (agendaEstado !== 'todos') {
       rows = rows.filter((r) => String(r.estado || 'pendiente').toLowerCase() === agendaEstado);
+    }
+    if (agendaFecha) {
+      const k = dateKeyLocal(agendaFecha);
+      rows = rows.filter((r) => dateKeyLocal(r.fecha_hora) === k);
     }
     rows.sort((a, b) => {
       if (agendaSort === 'nombre') {
@@ -242,7 +258,7 @@ export function AppointmentsScreen({ onBack }) {
       return agendaSort === 'fecha_asc' ? ta - tb : tb - ta;
     });
     return rows;
-  }, [citas, agendaEstado, agendaSort]);
+  }, [citas, agendaEstado, agendaSort, agendaFecha]);
 
   const clientMatches = useMemo(() => {
     if (selectedClient) return [];
@@ -423,17 +439,30 @@ export function AppointmentsScreen({ onBack }) {
     return true;
   };
 
-  const enviarWhatsAppCita = (cita, estado = 'pendiente') => {
-    if (!cita?.cliente?.telefono && !cita?.cliente_id) return;
-    void offerEnviarCitaWhatsApp({
-      telefono: cita.cliente?.telefono,
-      clienteNombre: cita.cliente?.nombre,
-      servicio: cita.servicio,
-      fechaHora: cita.fecha_hora,
-      profesionalNombre: cita.empleado?.nombre,
-      precio: cita.precio,
+  const paramsConfirmacionCita = useCallback(async (cita, estado = 'pendiente') => {
+    const { data: authData } = await supabase.auth.getUser();
+    const u = authData?.user;
+    return {
+      clienteId: cita?.cliente_id || cita?.cliente?.id || null,
+      telefono: cita?.cliente?.telefono,
+      clienteNombre: cita?.cliente?.nombre,
+      servicio: cita?.servicio,
+      fechaHora: cita?.fecha_hora,
+      profesionalNombre: cita?.empleado?.nombre,
+      precio: cita?.precio,
       estado,
-    });
+      sender: {
+        id: u?.id,
+        name: u?.user_metadata?.full_name || "Andrea's salón",
+      },
+    };
+  }, []);
+
+  const avisarClienteCita = (cita, estado = 'pendiente') => {
+    void (async () => {
+      const params = await paramsConfirmacionCita(cita, estado);
+      void offerConfirmacionCitaCliente(params);
+    })();
   };
 
   const confirmarCita = (citaOrId) => {
@@ -445,7 +474,7 @@ export function AppointmentsScreen({ onBack }) {
     void solicitarActualizacionEstado(id, 'confirmado').then((ok) => {
       if (!ok) return;
       setDetailCita((prev) => (prev?.id === id ? { ...prev, estado: 'confirmado' } : prev));
-      if (cita) enviarWhatsAppCita({ ...cita, estado: 'confirmado' }, 'confirmado');
+      if (cita) avisarClienteCita({ ...cita, estado: 'confirmado' }, 'confirmado');
     });
   };
 
@@ -506,7 +535,11 @@ export function AppointmentsScreen({ onBack }) {
       return;
     }
     await loadCitas();
-    await offerEnviarCitaWhatsApp({
+    const { data: authData } = await supabase.auth.getUser();
+    const staffUser = authData?.user;
+    Alert.alert('Cita registrada', 'La cita quedó guardada en la agenda como pendiente.');
+    void offerConfirmacionCitaCliente({
+      clienteId: selectedClient?.id,
       telefono: selectedClient.telefono,
       clienteNombre: selectedClient.nombre,
       servicio: itemsDesc,
@@ -514,28 +547,18 @@ export function AppointmentsScreen({ onBack }) {
       profesionalNombre: selectedEmployee?.nombre,
       precio: finalPrice,
       estado: 'pendiente',
+      sender: {
+        id: staffUser?.id,
+        name: staffUser?.user_metadata?.full_name || "Andrea's salón",
+      },
     });
-    Alert.alert('Cita registrada', 'La cita quedó guardada en la agenda como pendiente.');
     resetComposer();
   };
 
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
-    let alive = true;
-    const syncBars = async () => {
-      try {
-        await SystemUI.setBackgroundColorAsync(c.background);
-        if (alive) {
-          NavigationBar.setStyle(isDark ? 'dark' : 'light');
-        }
-      } catch {
-        /* ignore */
-      }
-    };
-    void syncBars();
-    return () => {
-      alive = false;
-    };
+    applyNativeChromeTheme(isDark, c.background);
+    return undefined;
   }, [composerOpen, c.background, isDark]);
 
   const onRefreshCitas = useCallback(async () => {
@@ -576,11 +599,11 @@ export function AppointmentsScreen({ onBack }) {
     );
   };
 
-  const addPersonIconColor = isDark ? '#141414' : c.foreground;
+  const addPersonIconColor = c.foreground;
 
   const rightAction = (
     <TouchableOpacity
-      style={[styles.addPersonCircle, isDark && styles.addPersonCircleDark]}
+      style={styles.addPersonCircle}
       onPress={() => setComposerOpen(true)}
       accessibilityRole="button"
       accessibilityLabel="Nueva cita"
@@ -626,7 +649,15 @@ export function AppointmentsScreen({ onBack }) {
               data={citasFiltradas}
               keyExtractor={(item) => String(item.id)}
               style={styles.agendaList}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefreshCitas} tintColor={c.primary} />}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefreshCitas}
+                  tintColor={c.primary}
+                  colors={[c.primary]}
+                  progressBackgroundColor={c.card}
+                />
+              }
               ListEmptyComponent={
                 <View style={styles.listPlaceholder}>
                   <Calendar size={48} color={c.foregroundSubtle} strokeWidth={1.5} />
@@ -756,6 +787,33 @@ export function AppointmentsScreen({ onBack }) {
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
+              <Text style={styles.filterSectionLbl}>Fecha</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <DateTimePicker
+                    value={agendaFecha ?? new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(_, d) => {
+                      if (d) setAgendaFecha(d);
+                    }}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      paddingHorizontal: spacing.md,
+                      paddingVertical: 8,
+                      borderColor: c.cardBorder,
+                      backgroundColor: c.card,
+                    },
+                  ]}
+                  onPress={() => setAgendaFecha(null)}
+                >
+                  <Text style={[styles.filterChipTxt, { color: c.foreground }]}>Todas</Text>
+                </TouchableOpacity>
+              </View>
             <Text style={styles.filterSectionLbl}>Orden</Text>
             <View style={styles.chipRow}>
               {[
@@ -886,13 +944,13 @@ export function AppointmentsScreen({ onBack }) {
                     </View>
                   ) : null}
                 </ScrollView>
-                {detailCita.cliente?.telefono ? (
+                {detailCita.cliente_id || detailCita.cliente?.telefono ? (
                   <SalonButton
-                    title="Enviar confirmación por WhatsApp"
+                    title="Avisar al cliente"
                     variant="outlineGray"
                     fullWidth
                     onPress={() =>
-                      enviarWhatsAppCita(
+                      avisarClienteCita(
                         detailCita,
                         String(detailCita.estado || 'pendiente').toLowerCase() === 'confirmado'
                           ? 'confirmado'
@@ -1337,6 +1395,7 @@ function createStyles(c) {
     listShell: {
       flex: 1,
       paddingTop: spacing.xs,
+      backgroundColor: c.background,
     },
     agendaToolbar: {
       flexDirection: 'row',
@@ -1421,6 +1480,7 @@ function createStyles(c) {
     },
     agendaList: {
       flex: 1,
+      backgroundColor: c.background,
     },
     agendaListContent: {
       paddingBottom: spacing.xl,
@@ -1559,7 +1619,7 @@ function createStyles(c) {
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: c.card,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
@@ -1569,9 +1629,6 @@ function createStyles(c) {
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.12,
       shadowRadius: 4,
-    },
-    addPersonCircleDark: {
-      borderColor: 'rgba(255,255,255,0.35)',
     },
     modalRoot: {
       flex: 1,
@@ -1593,6 +1650,7 @@ function createStyles(c) {
     },
     modalScroll: {
       flex: 1,
+      backgroundColor: c.background,
     },
     formTitle: {
       fontFamily: typography.fontSansMedium,

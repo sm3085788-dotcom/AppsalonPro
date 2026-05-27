@@ -19,7 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Image as ImageIcon, Play, Video as VideoIcon, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, uploadTendenciaMediaFromUri } from '@appsalon/shared-config';
+import { db, uploadTendenciaMediaFromUri, getArticuloTipo, normalizeServicioCategoria } from '@appsalon/shared-config';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useListSelection } from '../hooks/useListSelection';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
@@ -216,7 +216,13 @@ export function MarketingScreen({ onBack }) {
   const [carTitle, setCarTitle] = useState('');
   const [carBody, setCarBody] = useState('');
   const [carPrice, setCarPrice] = useState('');
-  const [carCta, setCarCta] = useState('Ver más');
+  const [carCta, setCarCta] = useState('Ver servicio');
+
+  const [importServOpen, setImportServOpen] = useState(false);
+  const [importServQuery, setImportServQuery] = useState('');
+  const [importServCta, setImportServCta] = useState('Ver servicio');
+  const [importServRows, setImportServRows] = useState([]);
+  const [importServLoading, setImportServLoading] = useState(false);
 
   const [heroAsset, setHeroAsset] = useState(null);
   const [heroKicker, setHeroKicker] = useState('Tu próxima experiencia');
@@ -434,6 +440,88 @@ export function MarketingScreen({ onBack }) {
     }
   };
 
+  const openImportServicioCarousel = async () => {
+    const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
+    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
+      Alert.alert(
+        'Límite del carrusel',
+        `Ya hay ${MAX_CAROUSEL_SLIDES} diapositivas publicadas. Eliminá una para importar otra.`,
+      );
+      return;
+    }
+    setImportServOpen(true);
+    setImportServQuery('');
+    setImportServCta('Ver servicio');
+    setImportServLoading(true);
+    try {
+      const { data, error } = await db.inventario.getAll();
+      if (error) throw error;
+      const rows = (data || []).filter((r) => getArticuloTipo(r) === 'servicio');
+      setImportServRows(rows);
+    } catch (e) {
+      Alert.alert('Servicios', e?.message || 'No se pudo cargar inventario.');
+      setImportServRows([]);
+    } finally {
+      setImportServLoading(false);
+    }
+  };
+
+  const confirmImportServicioCarousel = async (row) => {
+    if (!row?.id) return;
+    const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
+    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
+      Alert.alert('Límite del carrusel', `Máximo ${MAX_CAROUSEL_SLIDES} servicios en publicidad.`);
+      return;
+    }
+    const imgs = [row.imagen_url, ...(Array.isArray(row.imagenes_urls) ? row.imagenes_urls : [])].filter(
+      Boolean,
+    );
+    const mainImg = imgs[0];
+    if (!mainImg) {
+      Alert.alert('Sin imagen', 'El servicio necesita al menos una foto (portada) en inventario.');
+      return;
+    }
+    const headline = String(row.nombre || 'Servicio').trim();
+    const overlay = {
+      inventarioId: row.id,
+      kicker: normalizeServicioCategoria(row.categoria),
+      headline,
+      body: String(row.descripcion_tienda || ' ').trim().slice(0, 240) || ' ',
+      buttonTitle: importServCta.trim() || 'Ver servicio',
+    };
+    setSaving(true);
+    try {
+      const payload = {
+        title: headline.slice(0, 200),
+        body: JSON.stringify(overlay),
+        media_url: mainImg,
+        content_type: 'image',
+        status: 'published',
+        visibility: 'public',
+        audience: 'home_carousel',
+        published_at: new Date().toISOString(),
+      };
+      const { data: created, error: crErr } = await db.marketingPosts.create(payload);
+      if (crErr) {
+        Alert.alert('Base de datos', crErr.message || 'No se pudo importar el servicio.');
+        return;
+      }
+      if (created?.id && created.status !== 'published') {
+        await db.marketingPosts.publish(created.id);
+      }
+      Alert.alert(
+        'Listo',
+        'El servicio aparece en Publicidad (App Clientes). Al tocar «Ver servicio» el cliente va a Mis citas.',
+      );
+      setImportServOpen(false);
+      await loadPosts();
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'No se pudo importar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openCarouselPicker = async () => {
     const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
     if (publishedCount >= MAX_CAROUSEL_SLIDES) {
@@ -460,7 +548,7 @@ export function MarketingScreen({ onBack }) {
     setCarTitle('');
     setCarBody('');
     setCarPrice('');
-    setCarCta('Ver más');
+    setCarCta('Ver servicio');
     setCarouselOpen(true);
   };
 
@@ -480,7 +568,7 @@ export function MarketingScreen({ onBack }) {
       headline,
       body: carBody.trim() || ' ',
       priceLabel: carPrice.trim() || undefined,
-      buttonTitle: carCta.trim() || 'Ver más',
+      buttonTitle: carCta.trim() || 'Ver servicio',
     };
     const bodyJson = JSON.stringify(overlay);
     setSaving(true);
@@ -776,7 +864,7 @@ export function MarketingScreen({ onBack }) {
       >
         <View style={styles.body}>
           <ScrollView
-            style={{ flex: 1 }}
+            style={styles.fillScroll}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: padBottom }}
             keyboardShouldPersistTaps="handled"
@@ -845,22 +933,18 @@ export function MarketingScreen({ onBack }) {
               Carrusel · Publicidad (bajo Pedidos)
             </Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12 }]}>
-              Hasta {MAX_CAROUSEL_SLIDES} imágenes horizontales con titular, texto, precio y botón. Los clientes
-              avisan su interés al tocar el botón; llega a Mensajes.
+              Hasta {MAX_CAROUSEL_SLIDES} servicios o imágenes importadas del inventario (usa su portada). En
+              App Clientes el botón lleva a Mis citas para agendar.
             </Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12, fontFamily: typography.fontSansMedium }]}>
               {carouselPosts.length}/{MAX_CAROUSEL_SLIDES} diapositivas publicadas
             </Text>
             <SalonButton
-              title={
-                carouselPosts.length >= MAX_CAROUSEL_SLIDES
-                  ? 'Carrusel completo (15/15)'
-                  : 'Nueva diapositiva carrusel'
-              }
-              variant="outlineGray"
+              title="Importar servicio del inventario"
+              variant="heroGold"
               fullWidth
               disabled={saving || carouselPosts.length >= MAX_CAROUSEL_SLIDES}
-              onPress={openCarouselPicker}
+              onPress={openImportServicioCarousel}
               style={{ marginBottom: spacing.md }}
             />
             {loading ? null : carouselPosts.length === 0 ? (
@@ -914,7 +998,7 @@ export function MarketingScreen({ onBack }) {
           >
             <ScrollView
               keyboardShouldPersistTaps="handled"
-              style={{ maxHeight: modalMaxHeight }}
+              style={[styles.modalScrollFill, { maxHeight: modalMaxHeight }]}
               contentContainerStyle={[
                 styles.modalScrollContent,
                 { paddingBottom: padBottom },
@@ -976,7 +1060,7 @@ export function MarketingScreen({ onBack }) {
           >
             <ScrollView
               keyboardShouldPersistTaps="handled"
-              style={{ maxHeight: modalMaxHeight }}
+              style={[styles.modalScrollFill, { maxHeight: modalMaxHeight }]}
               contentContainerStyle={[
                 styles.modalScrollContent,
                 { paddingBottom: padBottom },
@@ -1062,6 +1146,117 @@ export function MarketingScreen({ onBack }) {
         </View>
       </Modal>
 
+      <Modal
+        visible={importServOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        onRequestClose={() => setImportServOpen(false)}
+      >
+        <View style={[styles.importServShell, { backgroundColor: c.background }]}>
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+          <View
+            style={[
+              styles.importServHead,
+              {
+                paddingTop: insets.top + spacing.sm,
+                borderBottomColor: c.cardBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: c.foreground, flex: 1 }]}>Importar servicio</Text>
+            <TouchableOpacity onPress={() => setImportServOpen(false)} hitSlop={12}>
+              <X size={24} color={c.foreground} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            style={styles.importServScroll}
+            contentContainerStyle={[
+              styles.modalScrollContent,
+              { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.lg },
+            ]}
+            showsVerticalScrollIndicator={false}
+          >
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    borderColor: c.cardBorder,
+                    color: c.foreground,
+                    backgroundColor: c.card,
+                    marginBottom: spacing.sm,
+                  },
+                ]}
+                placeholder="Buscar servicio…"
+                placeholderTextColor={c.foregroundSubtle}
+                value={importServQuery}
+                onChangeText={setImportServQuery}
+              />
+              <Text style={styles.fieldLbl}>Texto del botón en App Clientes</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    borderColor: c.cardBorder,
+                    color: c.foreground,
+                    backgroundColor: c.card,
+                    marginBottom: spacing.sm,
+                  },
+                ]}
+                placeholder="Ej. Ver servicio"
+                placeholderTextColor={c.foregroundSubtle}
+                value={importServCta}
+                onChangeText={setImportServCta}
+                maxLength={28}
+              />
+
+              {importServLoading ? (
+                <ActivityIndicator color={c.primary} style={{ marginVertical: spacing.lg }} />
+              ) : (
+                <>
+                  {importServRows
+                    .filter((r) => {
+                      const q = importServQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      return `${r.nombre || ''} ${r.categoria || ''}`.toLowerCase().includes(q);
+                    })
+                    .map((row) => {
+                      const img = row.imagen_url;
+                      return (
+                        <TouchableOpacity
+                          key={String(row.id)}
+                          style={[styles.importServRow, { borderBottomColor: c.cardBorder }]}
+                          onPress={() => void confirmImportServicioCarousel(row)}
+                          disabled={saving}
+                        >
+                          {img ? (
+                            <Image source={{ uri: img }} style={styles.importServThumb} />
+                          ) : (
+                            <View style={[styles.importServThumb, { backgroundColor: c.surfaceMuted }]} />
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={{ color: c.foreground, fontFamily: typography.fontSansMedium }}
+                              numberOfLines={1}
+                            >
+                              {row.nombre}
+                            </Text>
+                            <Text style={{ color: c.foregroundMuted, fontSize: 12 }} numberOfLines={1}>
+                              {normalizeServicioCategoria(row.categoria)}
+                              {!img ? ' · Sin portada' : ''}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </>
+              )}
+          </ScrollView>
+        </View>
+      </Modal>
+
       <Modal visible={carouselOpen} animationType="slide" transparent onRequestClose={closeCarouselComposer}>
         <View style={styles.modalBackdrop}>
           <View
@@ -1072,7 +1267,7 @@ export function MarketingScreen({ onBack }) {
           >
             <ScrollView
               keyboardShouldPersistTaps="handled"
-              style={{ maxHeight: modalMaxHeight }}
+              style={[styles.modalScrollFill, { maxHeight: modalMaxHeight }]}
               contentContainerStyle={[
                 styles.modalScrollContent,
                 { paddingBottom: padBottom },
@@ -1144,7 +1339,7 @@ export function MarketingScreen({ onBack }) {
               <Text style={styles.fieldLbl}>Texto del botón</Text>
               <TextInput
                 style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                placeholder="Ver más"
+                placeholder="Ver servicio"
                 placeholderTextColor={c.foregroundSubtle}
                 value={carCta}
                 onChangeText={setCarCta}
@@ -1175,7 +1370,9 @@ export function MarketingScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
-    body: { flex: 1, paddingTop: spacing.xs },
+    body: { flex: 1, paddingTop: spacing.xs, backgroundColor: c.background },
+    fillScroll: { flex: 1, backgroundColor: c.background },
+    modalScrollFill: { backgroundColor: c.background },
     hint: { marginBottom: spacing.md, lineHeight: 20, fontSize: 13 },
     subHint: { marginBottom: spacing.md, fontSize: 12 },
     sectionTitle: {
@@ -1252,6 +1449,16 @@ function createStyles(c) {
       borderRadius: radii.md,
       marginTop: 2,
     },
+    importServShell: { flex: 1 },
+    importServHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    importServScroll: { flex: 1 },
     modalBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
@@ -1321,6 +1528,18 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
       marginTop: spacing.sm,
+    },
+    importServRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    importServThumb: {
+      width: 56,
+      height: 56,
+      borderRadius: radii.sm,
     },
   });
 }

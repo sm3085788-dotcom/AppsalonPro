@@ -247,10 +247,16 @@ export function MetasScreen({ onBack }) {
         disableBodyScroll
       >
         <ScrollView
-          style={{ flex: 1 }}
+          style={styles.fillScroll}
           contentContainerStyle={{ paddingBottom: padBottom }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMeta(true); }} tintColor={c.primary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); loadMeta(true); }}
+              tintColor={c.primary}
+              colors={[c.primary]}
+              progressBackgroundColor={c.card}
+            />
           }
           keyboardShouldPersistTaps="handled"
         >
@@ -389,6 +395,7 @@ export function MetasScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    fillScroll: { flex: 1, backgroundColor: c.background },
     renewBanner: { borderWidth: 1, borderRadius: radii.lg, padding: spacing.md, marginBottom: spacing.md },
     renewBannerTitle: { fontFamily: typography.fontSansMedium, fontSize: 15, marginBottom: 4 },
     renewBannerBody: { fontFamily: typography.fontSans, fontSize: 13, lineHeight: 18 },

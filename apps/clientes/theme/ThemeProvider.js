@@ -8,6 +8,7 @@ import {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors as colorsLight, colorsDark } from '@appsalon/design-tokens';
+import { applyNativeChromeTheme } from './applyNativeChromeTheme';
 
 const STORAGE_KEY = '@appsalon/clientes/colorScheme';
 
@@ -46,6 +47,13 @@ export function ThemeProvider({ children }) {
       /* ignore */
     }
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const isDark = scheme === 'dark';
+    const bg = isDark ? colorsDark.background : colorsLight.background;
+    applyNativeChromeTheme(isDark, bg);
+  }, [ready, scheme]);
 
   const value = useMemo(() => {
     const isDark = scheme === 'dark';

@@ -80,6 +80,7 @@
       }
     },
     "plugins": [
+      "expo-dev-client",
       [
         "expo-build-properties",
         {

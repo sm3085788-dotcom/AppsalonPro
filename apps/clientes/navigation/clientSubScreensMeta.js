@@ -11,7 +11,10 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.DETALLE_SERVICIO:
       return { title: FEATURED_SERVICE.titulo, subtitle: 'Detalle del servicio' };
     case CLIENT_SUB.AGENDAR_FLUJO:
-      return { title: 'Agendar cita', subtitle: 'La solicitud llega al salón en pendiente hasta que la confirmen.' };
+      return {
+        title: 'Agendar cita',
+        subtitle: 'Elegí fecha y hora para cada servicio de tu lista.',
+      };
     case CLIENT_SUB.HISTORIAL_COMPLETO:
       return { title: 'Historial completo', subtitle: 'Todas tus visitas registradas.' };
     case CLIENT_SUB.REPROGRAMAR_CITA:
@@ -37,9 +40,11 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.TENDENCIAS:
       return { title: 'Tendencias', subtitle: 'Looks e inspiración del salón.' };
     case CLIENT_SUB.PREMIOS:
-      return { title: 'Premios', subtitle: 'Puntos, referidos y recompensas Aura.' };
+      return { title: 'Premios', subtitle: 'Puntos ANDREAS, referidos y canjes en Salon Andreas.' };
     case CLIENT_SUB.CARRITO:
       return { title: 'Carrito', subtitle: 'Productos seleccionados.' };
+    case CLIENT_SUB.SERVICIOS_CARRITO:
+      return { title: 'Servicios por agendar', subtitle: 'Lista para reservar cita.' };
     case CLIENT_SUB.MIS_PEDIDOS:
       return { title: 'Mis pedidos', subtitle: 'QR de retiro, efectivo y envío a domicilio.' };
     case CLIENT_SUB.MEMBRESIAS:

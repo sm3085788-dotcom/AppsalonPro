@@ -155,7 +155,7 @@ export function MisPedidosBody({ sessionUser, onOpenTienda }) {
   );
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, { backgroundColor: c.background }]}>
       {loading ? (
         <>
           {listHeader}
@@ -166,10 +166,16 @@ export function MisPedidosBody({ sessionUser, onOpenTienda }) {
           data={orders}
           keyExtractor={(o) => String(o.id)}
           renderItem={renderItem}
-          style={styles.list}
+          style={[styles.list, { backgroundColor: c.background }]}
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={c.primary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load(true)}
+              tintColor={c.primary}
+              colors={[c.primary]}
+              progressBackgroundColor={c.card}
+            />
           }
           ListHeaderComponent={listHeader}
           ListEmptyComponent={listEmpty}

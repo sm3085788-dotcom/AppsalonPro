@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,8 @@ import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { useTheme } from '../theme/ThemeProvider';
 import { db } from '@appsalon/shared-config';
+import { loadServiciosTiendaCatalog, formatServicioPrecio, formatServicioDuracion } from '../services/salonServiciosTienda';
+import { useServiciosCart } from '../context/ServiciosCartContext';
 
 function defaultNextSlot() {
   const d = new Date();
@@ -34,9 +36,12 @@ export function AgendarCitaForm({
   onCitasChanged,
   initialServicioNombre = null,
   onCitaBooked,
+  modoCarrito = false,
 }) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
+  const { items: cartItems, removeItem, clear: clearCart } = useServiciosCart();
+  const cartInicialRef = useRef(null);
   const [servicios, setServicios] = useState([]);
   const [loadingCat, setLoadingCat] = useState(true);
   const [servicioSel, setServicioSel] = useState(null);
@@ -50,14 +55,10 @@ export function AgendarCitaForm({
     let alive = true;
     (async () => {
       setLoadingCat(true);
-      const { data, error } = await db.servicios.search('', 120);
+      const list = await loadServiciosTiendaCatalog();
       if (!alive) return;
       setLoadingCat(false);
-      if (error || !Array.isArray(data)) {
-        setServicios([]);
-        return;
-      }
-      setServicios(data);
+      setServicios(list);
     })();
     return () => {
       alive = false;
@@ -65,13 +66,26 @@ export function AgendarCitaForm({
   }, []);
 
   useEffect(() => {
+    if (modoCarrito) {
+      if (cartInicialRef.current == null && cartItems.length > 0) {
+        cartInicialRef.current = cartItems.length;
+      }
+      if (cartItems.length > 0) setServicioSel(cartItems[0]);
+      else setServicioSel(null);
+      return;
+    }
     const want = String(initialServicioNombre || '')
       .trim()
       .toLowerCase();
     if (!want || !servicios.length) return;
     const hit = servicios.find((s) => String(s.nombre || '').trim().toLowerCase() === want);
     if (hit) setServicioSel(hit);
-  }, [initialServicioNombre, servicios]);
+  }, [modoCarrito, cartItems, initialServicioNombre, servicios]);
+
+  const cartTotal = cartItems.length;
+  const cartTotalFijo = cartInicialRef.current || cartTotal;
+  const cartPaso =
+    modoCarrito && cartTotalFijo > 0 ? cartTotalFijo - cartTotal + 1 : 0;
 
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -90,13 +104,13 @@ export function AgendarCitaForm({
           marginBottom: spacing.md,
         },
         svcRow: {
-          borderRadius: radii.md,
+          borderRadius: radii.lg,
           borderWidth: 1,
           borderColor: tc.cardBorder,
           backgroundColor: tc.card,
-          paddingVertical: spacing.sm,
+          paddingVertical: spacing.md,
           paddingHorizontal: spacing.md,
-          marginBottom: spacing.sm,
+          marginBottom: spacing.md,
         },
         svcRowOn: {
           borderColor: tc.primary,
@@ -108,10 +122,28 @@ export function AgendarCitaForm({
           color: tc.foreground,
         },
         svcMeta: {
-          marginTop: 2,
+          marginTop: spacing.xs,
           fontFamily: typography.fontSans,
-          fontSize: 12,
+          fontSize: 14,
           color: tc.foregroundMuted,
+        },
+        searchInput: {
+          minHeight: 48,
+          borderRadius: radii.lg,
+          borderWidth: 1,
+          borderColor: tc.cardBorder,
+          backgroundColor: tc.card,
+          color: tc.foreground,
+          paddingHorizontal: spacing.md,
+          marginTop: spacing.xs,
+          fontFamily: typography.fontSans,
+          fontSize: 15,
+        },
+        sectionTitle: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 16,
+          color: tc.foreground,
+          marginBottom: spacing.xs,
         },
         dateRow: {
           flexDirection: 'row',
@@ -147,33 +179,85 @@ export function AgendarCitaForm({
     setSaving(true);
     const precio = Number(servicioSel.precio);
     const dur = Number(servicioSel.duracion_minutos);
-    const { error } = await db.citas.create({
-      cliente_id: clienteRow.id,
-      servicio: servicioSel.nombre,
-      precio: Number.isFinite(precio) ? precio : 0,
-      duracion_minutos: Number.isFinite(dur) ? dur : 30,
-      fecha_hora: fechaHora.toISOString(),
-      estado: 'pendiente',
-      notas_servicio: 'Solicitud desde app clientes',
-      empleado_id: null,
-    });
+    const notasServicio = servicioSel.inventarioId
+      ? `Solicitud desde app clientes · inventario_id=${servicioSel.inventarioId}`
+      : 'Solicitud desde app clientes';
+    const { error } = await db.citas.create(
+      {
+        cliente_id: clienteRow.id,
+        servicio: servicioSel.nombre,
+        precio: Number.isFinite(precio) ? precio : 0,
+        duracion_minutos: Number.isFinite(dur) ? dur : 30,
+        fecha_hora: fechaHora.toISOString(),
+        estado: 'pendiente',
+        notas_servicio: notasServicio,
+        empleado_id: null,
+      },
+      { forClientApp: true },
+    );
     setSaving(false);
     if (error) {
-      Alert.alert('No se pudo enviar', error.message || 'Revisá la conexión e intentá de nuevo.');
+      const raw = String(error.message || '');
+      const isRls = /row-level security|violates.*policy|permission denied/i.test(raw);
+      const msg = isRls
+        ? 'Tu cuenta no tiene permiso para agendar aún. Pedí al salón que vincule tu usuario y habilite agenda en tu perfil.'
+        : raw || 'Revisá la conexión e intentá de nuevo.';
+      Alert.alert('No se pudo enviar', msg);
       return;
     }
     onCitasChanged?.();
     onCitaBooked?.();
-    Alert.alert('Solicitud enviada', 'El salón verá tu cita en pendiente y te confirmará pronto.', [
-      {
-        text: 'OK',
-        onPress: () => {
-          onClose?.();
-          onGoTab?.('citas');
+
+    const nombreEnviado = servicioSel.nombre;
+    const quedan = modoCarrito ? cartItems.length - 1 : 0;
+
+    if (modoCarrito) {
+      removeItem(servicioSel);
+    }
+
+    if (modoCarrito && quedan > 0) {
+      setFechaHora(defaultNextSlot());
+      Alert.alert(
+        'Solicitud enviada',
+        `${nombreEnviado} quedó pendiente. Te falta agendar ${quedan} servicio${quedan === 1 ? '' : 's'} más.`,
+        [{ text: 'Continuar' }],
+      );
+      return;
+    }
+
+    if (modoCarrito) {
+      clearCart();
+    }
+
+    const enviados = cartInicialRef.current || 1;
+    Alert.alert(
+      'Solicitud enviada',
+      modoCarrito && enviados > 1
+        ? `Se enviaron ${enviados} solicitudes al salón. Te confirmarán pronto.`
+        : 'El salón verá tu cita en pendiente y te confirmará pronto.',
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            onClose?.();
+            onGoTab?.(modoCarrito ? 'historial' : 'citas');
+          },
         },
-      },
-    ]);
-  }, [clienteRow?.id, servicioSel, fechaHora, onCitasChanged, onCitaBooked, onClose, onGoTab]);
+      ],
+    );
+  }, [
+    clienteRow?.id,
+    servicioSel,
+    fechaHora,
+    onCitasChanged,
+    onCitaBooked,
+    onClose,
+    onGoTab,
+    modoCarrito,
+    cartItems.length,
+    removeItem,
+    clearCart,
+  ]);
 
   if (!clienteRow?.id) {
     return (
@@ -189,59 +273,64 @@ export function AgendarCitaForm({
     );
   }
 
+  if (modoCarrito && cartTotal === 0) {
+    return (
+      <>
+        <Text style={styles.hint}>No hay servicios en tu lista. Agregá algunos en Mis citas.</Text>
+        <SalonButton variant="outlineGray" title="Volver" fullWidth onPress={onClose} />
+      </>
+    );
+  }
+
   return (
     <>
-      <Text style={styles.hint}>
-        Elegí servicio, fecha y hora. La solicitud llega al salón en estado pendiente hasta que la confirmen o
-        rechacen.
-      </Text>
-
-      <View style={[subStyles.card, { paddingTop: spacing.sm }]}>
-        <Text style={subStyles.rowLabel}>Buscar servicio</Text>
-        <TextInput
-          style={{
-            minHeight: 46,
-            borderRadius: radii.md,
-            borderWidth: 1,
-            borderColor: tc.cardBorder,
-            backgroundColor: tc.card,
-            color: tc.foreground,
-            paddingHorizontal: spacing.md,
-            marginTop: spacing.xs,
-            fontFamily: typography.fontSans,
-            fontSize: 15,
-          }}
-          placeholder="Nombre del servicio…"
-          placeholderTextColor={tc.foregroundSubtle}
-          value={busqueda}
-          onChangeText={setBusqueda}
-        />
-        {loadingCat ? (
-          <ActivityIndicator style={{ marginTop: spacing.md }} color={tc.primary} />
-        ) : (
-          <View style={{ marginTop: spacing.md, maxHeight: 220 }}>
-            {filtrados.slice(0, 40).map((s) => {
-              const on = servicioSel?.id === s.id;
-              return (
-                <TouchableOpacity
-                  key={String(s.id)}
-                  style={[styles.svcRow, on && styles.svcRowOn]}
-                  onPress={() => setServicioSel(s)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.svcName}>{s.nombre}</Text>
-                  <Text style={styles.svcMeta}>
-                    {s.precioVariable || !(Number(s.precio) > 0)
-                      ? 'Precio variable · según volumen'
-                      : `Q${Number(s.precio).toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}{' '}
-                    · {s.duracion_agenda?.trim() || `${Number(s.duracion_minutos) || 30} min`}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </View>
+      {modoCarrito && servicioSel ? (
+        <View style={[subStyles.card, { marginBottom: spacing.md }]}>
+          <Text style={subStyles.rowLabel}>
+            Servicio {cartPaso} de {cartTotalFijo}
+          </Text>
+          <Text style={[styles.svcName, { marginTop: spacing.xs }]}>{servicioSel.nombre}</Text>
+          <Text style={styles.svcMeta}>
+            {formatServicioPrecio(servicioSel)} · {formatServicioDuracion(servicioSel)}
+          </Text>
+        </View>
+      ) : (
+        <View>
+          <Text style={styles.sectionTitle}>Servicios</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Nombre del servicio…"
+            placeholderTextColor={tc.foregroundSubtle}
+            value={busqueda}
+            onChangeText={setBusqueda}
+          />
+          {loadingCat ? (
+            <ActivityIndicator style={{ marginTop: spacing.md }} color={tc.primary} />
+          ) : (
+            <View style={{ marginTop: spacing.md, maxHeight: 300 }}>
+              {filtrados.slice(0, 40).map((s) => {
+                const on = servicioSel?.id === s.id;
+                return (
+                  <TouchableOpacity
+                    key={String(s.id)}
+                    style={[styles.svcRow, on && styles.svcRowOn]}
+                    onPress={() => setServicioSel(s)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.svcName}>{s.nombre}</Text>
+                    <Text style={styles.svcMeta}>
+                      {s.precioVariable || !(Number(s.precio) > 0)
+                        ? 'Precio variable · según volumen'
+                        : `Q${Number(s.precio).toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}{' '}
+                      · {s.duracion_agenda?.trim() || `${Number(s.duracion_minutos) || 30} min`}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      )}
 
       <View style={[subStyles.card, { marginTop: spacing.md }]}>
         <Text style={subStyles.rowLabel}>Fecha y hora</Text>
@@ -291,7 +380,13 @@ export function AgendarCitaForm({
       </View>
 
       <SalonButton
-        title={saving ? 'Enviando…' : 'Solicitar cita'}
+        title={
+          saving
+            ? 'Enviando…'
+            : modoCarrito && cartTotalFijo > 1 && cartPaso < cartTotalFijo
+              ? 'Solicitar y continuar'
+              : 'Solicitar cita'
+        }
         variant="heroGold"
         fullWidth
         style={{ marginTop: spacing.md }}

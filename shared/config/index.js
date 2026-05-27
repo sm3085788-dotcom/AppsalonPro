@@ -17,7 +17,13 @@ export {
   montoInputFromNumber,
 } from './metaGlobal.js';
 export { confirmarCompraConTarjeta, mapInventarioToTiendaProduct, buildTiendaProductFicha } from './tiendaCheckout.js';
-export { crearPedidoEfectivo, confirmarCobroPedidoSalon } from './pedidoSalon.js';
+export { crearPedidoEfectivo, crearPedidoTarjetaPendiente, confirmarCobroPedidoSalon } from './pedidoSalon.js';
+export {
+  CLIENTE_ENVIO_JSON_MARK,
+  splitClienteNotasEnvio,
+  mergeClienteNotasEnvio,
+  normalizeEnvioGuardado,
+} from './clienteEnvioTienda.js';
 export { requireCajaAbierta } from './cajaGuard.js';
 export {
   buildPickupQrPayload,
@@ -43,6 +49,11 @@ export {
   isSalonOutboundMessage,
 } from './auraLineClient.js';
 export {
+  buildCitaConfirmacionPayload,
+  parseCitaConfirmacionContent,
+  citaConfirmacionPreviewText,
+} from './citaConfirmacionMessage.js';
+export {
   buildIncidentClientMessage,
   sendIncidentReportToClient,
   INCIDENT_REPORT_CONTENT_TYPE,
@@ -56,3 +67,14 @@ export {
   buildMembresiaCodigo,
   normalizeMembresiaCodigoInput,
 } from './membresias.js';
+export {
+  ANDREAS_META,
+  parseSalonFisicoUnidades,
+  mergeAndreasPremiosSalonFisico,
+  isPedidoAppEfectivoRetiroSalon,
+  isPedidoAppTarjetaDelivery,
+} from './andreasPremios.js';
+export {
+  SERVICIO_CATEGORIAS,
+  normalizeServicioCategoria,
+} from './servicioCategorias.js';

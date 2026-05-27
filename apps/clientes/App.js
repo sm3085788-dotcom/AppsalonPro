@@ -17,6 +17,7 @@ import {
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { TiendaCartProvider, useTiendaCart } from './context/TiendaCartContext';
+import { ServiciosCartProvider } from './context/ServiciosCartContext';
 import { TiendaCartButton } from './components/tienda/TiendaCartButton';
 import { countActivePedidos } from './utils/pedidosBadge';
 import {
@@ -40,9 +41,8 @@ import {
 import {
   supabase,
   db,
+  isInvalidRefreshTokenError,
   uploadClientePhotoFromUri,
-  registerMarketingInterest,
-  MARKETING_INTEREST_TYPES,
   fetchClientAuraUnreadCount,
   sendClientAuraChat,
   buildBroadcastActionMessage,
@@ -68,7 +68,8 @@ import {
 import { CLIENT_SUB } from './navigation/clientSubScreens';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
-import { MembresiaBadge } from './components/MembresiaBadge';
+import { MisCitasTab } from './components/citas/MisCitasTab';
+import { HistorialCitasTab } from './components/citas/HistorialCitasTab';
 import {
   loadClientNotifPrefs,
   saveClientNotifPrefs,
@@ -91,6 +92,11 @@ import {
 import { ClientAuthScreen } from './onboarding/ClientAuthScreen';
 import { SupabaseConfigScreen } from './onboarding/SupabaseConfigScreen';
 import { completeAuthFromRedirectUrl } from './utils/clientAuthEmail';
+import {
+  getCitaConfirmadaAlertadas,
+  addCitaConfirmadaAlertadas,
+} from './utils/historialCitaAlerts';
+import { partitionCitasCliente } from './utils/citasLabels';
 import * as Linking from 'expo-linking';
 import { PostLoginIntroScreen } from './onboarding/PostLoginIntroScreen';
 import { AppTourScreen } from './onboarding/AppTourScreen';
@@ -122,6 +128,7 @@ function mapHomeCarouselPostToSlide(row) {
   let priceLabel;
   let buttonTitle = 'Ver más';
   const raw = String(row.body || '').trim();
+  let inventarioId = null;
   if (raw.startsWith('{')) {
     try {
       const o = JSON.parse(raw);
@@ -131,6 +138,7 @@ function mapHomeCarouselPostToSlide(row) {
         if (o.body != null) bodyText = String(o.body);
         if (o.priceLabel) priceLabel = String(o.priceLabel);
         if (o.buttonTitle) buttonTitle = String(o.buttonTitle);
+        if (o.inventarioId != null) inventarioId = Number(o.inventarioId);
       }
     } catch {
       bodyText = raw;
@@ -138,6 +146,7 @@ function mapHomeCarouselPostToSlide(row) {
   } else {
     bodyText = raw;
   }
+  if (inventarioId) buttonTitle = buttonTitle || 'Ver servicio';
   return {
     id,
     uri,
@@ -147,6 +156,7 @@ function mapHomeCarouselPostToSlide(row) {
     body: bodyText,
     priceLabel,
     buttonTitle,
+    inventarioId: Number.isFinite(inventarioId) ? inventarioId : null,
   };
 }
 
@@ -244,10 +254,22 @@ function formatGtq(n) {
   return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
+function labelEstadoCita(estado) {
+  const s = String(estado || '').trim().toLowerCase();
+  if (s === 'confirmado') return 'Confirmada';
+  if (s === 'pendiente') return 'Pendiente';
+  if (s === 'rechazado' || s === 'rechazada') return 'Rechazada';
+  if (s === 'cancelado' || s === 'cancelada') return 'Cancelada';
+  if (s === 'completado' || s === 'completada') return 'Completada';
+  if (!s) return 'Sin estado';
+  return String(estado);
+}
+
 function AppMain({ onLogout }) {
   const insets = useSafeAreaInsets();
   const scrollBottom = paddingForTabBar(insets);
   const [tab, setTab] = useState(TABS.INICIO);
+  const [highlightInventarioId, setHighlightInventarioId] = useState(null);
   const [session, setSession] = useState(null);
   const [clienteRow, setClienteRow] = useState(null);
   const [perfilLoading, setPerfilLoading] = useState(false);
@@ -267,6 +289,23 @@ function AppMain({ onLogout }) {
     setSubPayload(payload);
     setOpenedSub(id);
   }, []);
+
+  const openAgendarServicio = useCallback(
+    (nombre) => {
+      openSub(CLIENT_SUB.AGENDAR_FLUJO, {
+        agendarServicioNombre: nombre || null,
+      });
+    },
+    [openSub],
+  );
+
+  const openServiciosCart = useCallback(() => {
+    openSub(CLIENT_SUB.SERVICIOS_CARRITO);
+  }, [openSub]);
+
+  const openAgendarDesdeCarrito = useCallback(() => {
+    openSub(CLIENT_SUB.AGENDAR_FLUJO, { agendarDesdeCarrito: true });
+  }, [openSub]);
 
   const notifyPromoFollowUp = useCallback(
     async (action, promoItem, extra = '') => {
@@ -466,7 +505,12 @@ function AppMain({ onLogout }) {
   useEffect(() => {
     if (!hasSupabaseEnv) return undefined;
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    supabase.auth.getSession().then(({ data: { session: s }, error }) => {
+      if (error && isInvalidRefreshTokenError(error)) {
+        void supabase.auth.signOut({ scope: 'local' });
+        setSession(null);
+        return;
+      }
       setSession(s ?? null);
     });
 
@@ -602,7 +646,7 @@ function AppMain({ onLogout }) {
   }, [session?.user?.id, refreshPedidosActivos]);
 
   const openTiendaCart = useCallback(() => {
-    openSub(CLIENT_SUB.TIENDA, { tiendaPhase: 'cart' });
+    openSub(CLIENT_SUB.TIENDA, { tiendaPhase: 'cart', tiendaOpenKey: Date.now() });
   }, [openSub]);
 
   const closeSub = useCallback(() => {
@@ -629,35 +673,15 @@ function AppMain({ onLogout }) {
     openSub(CLIENT_SUB.MENSAJES);
   }, [session?.user, hasSupabaseEnv, clienteRow?.id, ensureClienteFicha, openSub]);
 
-  const handleCarouselInterest = useCallback(
-    async (slide) => {
-      if (!slide) return;
-      const { error } = await registerMarketingInterest({
-        type: MARKETING_INTEREST_TYPES.CAROUSEL,
-        title: slide.headline || slide.caption || 'Promoción',
-        headline: slide.headline || slide.caption || 'Promoción',
-        detail: slide.body || null,
-        postId: /^\d+$/.test(String(slide.id)) ? slide.id : null,
-        mediaUrl: slide.uri || null,
-        buttonLabel: slide.buttonTitle || null,
-        kicker: slide.kicker || null,
-        priceLabel: slide.priceLabel || null,
-      });
-      if (error) {
-        Alert.alert(
-          slide.buttonTitle || 'Ver más',
-          error.message ||
-            'No se pudo avisar al salón. Revisá tu sesión o permisos en Supabase.',
-        );
-        return;
-      }
-      Alert.alert(
-        '¡Gracias!',
-        'Tu solicitud sobre esta publicación del carrusel llegó al salón en Pedidos.',
-      );
-    },
-    [openSub],
-  );
+  const handleCarouselServicio = useCallback((slide) => {
+    if (!slide) return;
+    if (slide.inventarioId) {
+      setHighlightInventarioId(slide.inventarioId);
+      setTab(TABS.CITAS);
+      return;
+    }
+    setTab(TABS.CITAS);
+  }, []);
 
   useEffect(() => {
     if (!session?.user?.id) {
@@ -681,11 +705,14 @@ function AppMain({ onLogout }) {
     let alive = true;
     (async () => {
       setCitasLoading(true);
-      const { data, error } = await db.citas.getByCliente(clienteRow.id);
+      const { data, error } = await db.citas.getByCliente(clienteRow.id, { forClientApp: true });
       if (!alive) return;
       setCitasLoading(false);
       if (error || !Array.isArray(data)) {
         setCitasRaw([]);
+        if (error) {
+          console.warn('[clientes] citas.getByCliente', error.message);
+        }
       } else {
         setCitasRaw(data);
       }
@@ -695,17 +722,58 @@ function AppMain({ onLogout }) {
     };
   }, [hasSupabaseEnv, clienteRow?.id, citasNonce]);
 
-  const { proximaCita, historialRows } = useMemo(() => {
-    const now = Date.now();
-    const rows = Array.isArray(citasRaw) ? [...citasRaw] : [];
-    rows.sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora));
-    const upcoming = rows.filter((c) => new Date(c.fecha_hora).getTime() >= now - 60_000);
-    const next = upcoming[0] || null;
-    const past = rows
-      .filter((c) => new Date(c.fecha_hora).getTime() < now)
-      .sort((a, b) => new Date(b.fecha_hora) - new Date(a.fecha_hora));
-    return { proximaCita: next, historialRows: past };
-  }, [citasRaw]);
+  const citasPartition = useMemo(() => partitionCitasCliente(citasRaw), [citasRaw]);
+
+  const { proximaCita, otrasProximas, pasadas, canceladasFuturas } = citasPartition;
+
+  useEffect(() => {
+    if (tab !== TABS.CITAS) return;
+    if (!hasSupabaseEnv || !clienteRow?.id) return;
+    refreshCitas();
+  }, [tab, hasSupabaseEnv, clienteRow?.id, refreshCitas]);
+
+  useEffect(() => {
+    if (tab !== TABS.HISTORIAL) return;
+    if (!hasSupabaseEnv || !clienteRow?.id) return;
+    refreshCitas();
+  }, [tab, hasSupabaseEnv, clienteRow?.id, refreshCitas]);
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid || !Array.isArray(citasRaw) || !citasRaw.length) return;
+    let cancelled = false;
+    (async () => {
+      const confirmados = citasRaw.filter(
+        (c) => String(c.estado || '').trim().toLowerCase() === 'confirmado' && c.id != null,
+      );
+      if (!confirmados.length) return;
+      const ya = await getCitaConfirmadaAlertadas(uid);
+      if (cancelled) return;
+      const setYa = new Set(ya);
+      const nuevos = confirmados.filter((c) => !setYa.has(String(c.id)));
+      if (!nuevos.length) return;
+      const lineas = nuevos.slice(0, 3).map((c) => {
+        const fh = new Date(c.fecha_hora).toLocaleString('es-GT', {
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        return `· ${c.servicio || 'Cita'} — ${fh}`;
+      });
+      const more =
+        nuevos.length > 3 ? `\n…y ${nuevos.length - 3} más. Revisá Historial.` : '';
+      const body =
+        nuevos.length === 1
+          ? `El salón confirmó tu cita en App Salón: ${String(lineas[0] || '').replace(/^· /, '')}.`
+          : `El salón confirmó ${nuevos.length} citas en App Salón:\n${lineas.join('\n')}${more}`;
+      Alert.alert('Cita confirmada', body, [{ text: 'OK' }]);
+      await addCitaConfirmadaAlertadas(uid, nuevos.map((c) => c.id));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, citasRaw]);
 
   const appVersion =
     Constants.expoConfig?.version ??
@@ -828,10 +896,9 @@ function AppMain({ onLogout }) {
             overlayKicker="Publicidad"
             headline="Promociones"
             body=""
-            buttonTitle="Ver más"
+            buttonTitle="Ver servicio"
             buttonVariant="heroGold"
-            fullWidthButton
-            onButtonPress={handleCarouselInterest}
+            onButtonPress={handleCarouselServicio}
             showAdvanceArrow={inicioPubSlides.length > 1}
             edgeToEdge
             squareCorners
@@ -845,152 +912,33 @@ function AppMain({ onLogout }) {
   );
 
   const renderCitas = () => (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[
-        styles.scrollInner,
-        {
-          paddingBottom: scrollBottom,
-          paddingTop: insets.top + spacing.sm,
-          paddingHorizontal: spacing.lg,
-        },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      {primaryHeader}
-      <Text style={styles.pageDisplay}>Mis citas</Text>
-      <Text style={styles.pageLead}>
-        Gestiona tus próximas reservaciones
-      </Text>
-
-      {citasLoading && hasSupabaseEnv ? (
-        <ActivityIndicator style={{ marginVertical: spacing.lg }} color={c.primary} />
-      ) : proximaCita ? (
-        <View style={styles.detailCard}>
-          <Text style={styles.citaRibbon}>• Próxima cita</Text>
-          <Text style={styles.citaTitulo}>{proximaCita.servicio}</Text>
-          <Text style={styles.citaStaff}>
-            {proximaCita.empleado?.nombre
-              ? `Con ${proximaCita.empleado.nombre}`
-              : 'Profesional por confirmar'}
-          </Text>
-          <View style={styles.citaIconsRow}>
-            <View style={styles.citaIconCell}>
-              <Calendar size={18} color={c.foreground} strokeWidth={1.7} />
-              <Text style={styles.citaIconText}>
-                {new Date(proximaCita.fecha_hora).toLocaleDateString('es-GT', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </Text>
-            </View>
-            <View style={styles.citaIconCell}>
-              <Clock size={18} color={c.foreground} strokeWidth={1.7} />
-              <Text style={styles.citaIconText}>
-                {new Date(proximaCita.fecha_hora).toLocaleTimeString('es-GT', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </Text>
-            </View>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.detailCard}>
-          <Text style={styles.citaRibbon}>• Próxima cita</Text>
-          <Text style={[styles.citaStaff, { marginTop: spacing.sm }]}>
-            {hasSupabaseEnv && session?.user && !clienteRow
-              ? 'No encontramos tu ficha de cliente. Pedí en recepción que enlacen tu cuenta con el salón.'
-              : 'No tenés una cita agendada por ahora.'}
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.duoBtns}>
-        <SalonButton
-          variant="outlineGray"
-          title="Reprogramar"
-          style={{ flex: 1 }}
-          fullWidth
-          onPress={() => openSub(CLIENT_SUB.REPROGRAMAR_CITA)}
-        />
-        <SalonButton
-          variant="solidGold"
-          title="Confirmar"
-          style={{ flex: 1 }}
-          fullWidth
-          onPress={() => openSub(CLIENT_SUB.CONFIRMAR_CITA)}
-        />
-      </View>
-
-      <View style={styles.emptyCitas}>
-        <View style={styles.emptyOrb}>
-          <Calendar size={28} color={c.foregroundSubtle} strokeWidth={1.5} />
-        </View>
-        <Text style={styles.emptyTitulo}>No tienes más citas programadas</Text>
-        <SalonButton
-          variant="mutedFill"
-          title="Agendar nueva cita"
-          fullWidth
-          onPress={() => openSub(CLIENT_SUB.AGENDAR_FLUJO)}
-          style={{ marginTop: spacing.md }}
-          textStyle={{ fontSize: 14 }}
-        />
-      </View>
-    </ScrollView>
+    <MisCitasTab
+      hasSupabaseEnv={hasSupabaseEnv}
+      scrollBottom={scrollBottom}
+      contentPaddingTop={insets.top + spacing.sm}
+      onOpenServiciosCart={openServiciosCart}
+      onRefreshCitas={refreshCitas}
+      highlightInventarioId={highlightInventarioId}
+      onHighlightConsumed={() => setHighlightInventarioId(null)}
+    />
   );
 
   const renderHistorial = () => (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[
-        styles.scrollInner,
-        {
-          paddingBottom: scrollBottom,
-          paddingTop: insets.top + spacing.sm,
-          paddingHorizontal: spacing.lg,
-        },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      {primaryHeader}
-      <Text style={styles.pageDisplay}>Historial</Text>
-      <Text style={styles.pageLead}>Tus visitas anteriores</Text>
-
-      {citasLoading && hasSupabaseEnv ? (
-        <ActivityIndicator style={{ marginVertical: spacing.lg }} color={c.primary} />
-      ) : historialRows.length > 0 ? (
-        historialRows.map((h) => (
-          <View key={h.id} style={styles.historyCard}>
-            <View style={styles.historyTop}>
-              <Text style={styles.historyService}>{h.servicio}</Text>
-              <Text style={styles.historyPrice}>{formatGtq(h.precio)}</Text>
-            </View>
-            <Text style={styles.historyMeta}>
-              {new Date(h.fecha_hora).toLocaleDateString('es-GT', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-              })}
-              {h.empleado?.nombre ? ` · ${h.empleado.nombre}` : ''}
-            </Text>
-          </View>
-        ))
-      ) : (
-        <Text style={[styles.pageLead, { marginBottom: spacing.md }]}>
-          Todavía no hay visitas registradas en tu historial.
-        </Text>
-      )}
-
-      <SalonButton
-        variant="outlineGray"
-        title="Ver historial completo"
-        fullWidth
-        onPress={() => openSub(CLIENT_SUB.HISTORIAL_COMPLETO)}
-        style={{ marginTop: spacing.md }}
-      />
-    </ScrollView>
+    <HistorialCitasTab
+      header={primaryHeader}
+      proximaCita={proximaCita}
+      otrasProximas={otrasProximas}
+      pasadas={pasadas}
+      canceladasFuturas={canceladasFuturas}
+      citasLoading={citasLoading}
+      hasSupabaseEnv={hasSupabaseEnv}
+      clienteRow={clienteRow}
+      scrollBottom={scrollBottom}
+      contentPaddingTop={insets.top + spacing.sm}
+      onRefreshCitas={refreshCitas}
+      onVerHistorialCompleto={() => openSub(CLIENT_SUB.HISTORIAL_COMPLETO)}
+      onGoTab={goTabFromSub}
+    />
   );
 
   const renderPerfil = () => (
@@ -1200,6 +1148,8 @@ function AppMain({ onLogout }) {
                 openSub(CLIENT_SUB.TIENDA);
               }}
               onPedidosChanged={refreshPedidosActivos}
+              onAgendarServicio={openAgendarServicio}
+              onContinuarAgendarDesdeCarrito={openAgendarDesdeCarrito}
             />
           </SubScreenChrome>
         )
@@ -1321,8 +1271,14 @@ export default function App() {
       try {
         const {
           data: { session: s },
+          error: sessionErr,
         } = await supabase.auth.getSession();
         if (cancelled) return;
+        if (sessionErr && isInvalidRefreshTokenError(sessionErr)) {
+          await supabase.auth.signOut({ scope: 'local' });
+          setGate({ ready: true, phase: 'auth', profile: null });
+          return;
+        }
         await resolveGateAfterSession(s?.user ?? null);
       } catch (e) {
         if (__DEV__) console.warn('[auth gate]', e);
@@ -1377,28 +1333,42 @@ export default function App() {
   };
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        {!fontsLoaded || (hasSupabaseEnv && !gate.ready) ? (
-          <ThemeBoot />
-        ) : !hasSupabaseEnv ? (
-          <SupabaseConfigScreen />
-        ) : gate.phase === 'auth' ? (
-          <ClientAuthScreen onAuthSuccess={handleAuthSuccess} />
-        ) : gate.phase === 'intro' ? (
-          <PostLoginIntroScreen
-            profile={gate.profile}
-            onContinue={handleIntroContinue}
-          />
-        ) : gate.phase === 'tour' ? (
-          <AppTourScreen onDone={handleTourDone} />
-        ) : (
-          <TiendaCartProvider>
-            <AppMain onLogout={handleLogout} />
-          </TiendaCartProvider>
-        )}
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ThemeProvider>
+      <SafeAreaProvider>
+        <ClientThemedRoot>
+          {!fontsLoaded || (hasSupabaseEnv && !gate.ready) ? (
+            <ThemeBoot />
+          ) : !hasSupabaseEnv ? (
+            <SupabaseConfigScreen />
+          ) : gate.phase === 'auth' ? (
+            <ClientAuthScreen onAuthSuccess={handleAuthSuccess} />
+          ) : gate.phase === 'intro' ? (
+            <PostLoginIntroScreen
+              profile={gate.profile}
+              onContinue={handleIntroContinue}
+            />
+          ) : gate.phase === 'tour' ? (
+            <AppTourScreen onDone={handleTourDone} />
+          ) : (
+            <TiendaCartProvider>
+              <ServiciosCartProvider>
+                <AppMain onLogout={handleLogout} />
+              </ServiciosCartProvider>
+            </TiendaCartProvider>
+          )}
+        </ClientThemedRoot>
+      </SafeAreaProvider>
+    </ThemeProvider>
+  );
+}
+
+/** Misma idea que App Salón: color de ventana / safe areas = tema (sin franjas blancas en oscuro). */
+function ClientThemedRoot({ children }) {
+  const { colors: c } = useTheme();
+  return (
+    <View style={{ flex: 1, backgroundColor: c.background }}>
+      {children}
+    </View>
   );
 }
 
@@ -1610,6 +1580,18 @@ function buildAppStyles(c) {
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: spacing.md,
+  },
+  historyRightCol: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  historyEstado: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 12,
+    color: c.foregroundMuted,
+  },
+  historyEstadoGold: {
+    color: c.primary,
   },
   historyService: {
     fontFamily: typography.fontSansMedium,

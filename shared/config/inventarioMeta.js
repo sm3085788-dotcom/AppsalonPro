@@ -9,9 +9,13 @@ export const VOLUMEN_TRABAJO_OPCIONES = [
 
 export const DEFAULT_TIENDA_META = {
   badge: '',
+  /** Línea bajo precio/estrellas en tarjeta Mis citas (App Clientes). */
+  hintTarjeta: '',
   shippingLabel: 'Envío y retiro · coordinar en recepción',
   rating: 4.5,
   reviewCount: 0,
+  /** Precio “antes” en tienda (opcional). Si no hay, se simula o se usa costo mayor al de venta. */
+  precioRegular: null,
   articuloTipo: 'producto',
   /** Texto libre en inventario (ej. «1 hora», «media mañana»). */
   duracion_agenda: '',
@@ -68,6 +72,22 @@ function formatQInventario(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return '';
   return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Precio regular para estrategia “antes / ahora” en tarjetas de tienda.
+ * Prioridad: meta.precioRegular → precio_costo (si mayor) → simulado (+20 % redondeado).
+ */
+export function resolvePrecioRegularTienda(row, precioVenta) {
+  const venta = Number(precioVenta);
+  if (!Number.isFinite(venta) || venta <= 0) return null;
+  const { meta } = splitNotas(row?.notas);
+  const manual = Number(meta.precioRegular);
+  if (Number.isFinite(manual) && manual > venta) return manual;
+  const costo = Number(row?.precio_costo ?? row?.costo ?? 0);
+  if (Number.isFinite(costo) && costo > venta) return costo;
+  const simulated = Math.ceil((venta * 1.2) / 10) * 10;
+  return simulated > venta ? simulated : null;
 }
 
 /** Subtítulo para búsqueda global / listados (App Salón). */

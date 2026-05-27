@@ -10,6 +10,7 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -356,7 +357,7 @@ export function ProveedoresScreen({ onBack }) {
   const rightAction = (
     <TouchableOpacity
       onPress={openNew}
-      style={[styles.addCircle, isDark && styles.addCircleDark, { backgroundColor: c.card, borderColor: c.cardBorder }]}
+      style={styles.addCircle}
       hitSlop={12}
       accessibilityLabel="Nuevo proveedor"
       activeOpacity={0.85}
@@ -509,8 +510,15 @@ export function ProveedoresScreen({ onBack }) {
                 data={filtered}
                 keyExtractor={(r) => String(r.id)}
                 renderItem={renderItem}
-                onRefresh={() => load(true)}
-                refreshing={refreshing}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => load(true)}
+                    tintColor={c.primary}
+                    colors={[c.primary]}
+                    progressBackgroundColor={c.card}
+                  />
+                }
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: sel.count ? 100 : padBottom, flexGrow: 1 }}
                 ListEmptyComponent={
@@ -656,6 +664,7 @@ function createStyles(c) {
     body: {
       flex: 1,
       paddingHorizontal: spacing.sm,
+      backgroundColor: c.background,
     },
     search: {
       borderWidth: 1,
@@ -749,7 +758,7 @@ function createStyles(c) {
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: c.card,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
@@ -759,9 +768,6 @@ function createStyles(c) {
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.12,
       shadowRadius: 4,
-    },
-    addCircleDark: {
-      borderColor: 'rgba(255,255,255,0.35)',
     },
     modalBackdrop: {
       flex: 1,

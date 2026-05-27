@@ -622,7 +622,7 @@ export function CajaScreen({ onBack }) {
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <SubScreenChrome onBack={onBack} disableBodyScroll>
           <ScrollView
-            style={{ flex: 1 }}
+            style={styles.fillScroll}
             contentContainerStyle={{ paddingBottom: padBottom }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -712,7 +712,7 @@ export function CajaScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome onBack={onBack} disableBodyScroll>
         <ScrollView
-          style={{ flex: 1 }}
+          style={styles.fillScroll}
           contentContainerStyle={{ paddingBottom: padBottom }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -1114,6 +1114,7 @@ export function CajaScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    fillScroll: { flex: 1, backgroundColor: c.background },
     gateHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
     gateTitle: {
       fontFamily: typography.fontDisplay,
@@ -1359,6 +1360,7 @@ function createStyles(c) {
     modalScrollFrame: {
       width: '100%',
       maxHeight: '92%',
+      backgroundColor: c.background,
     },
     modalScrollContent: {
       paddingHorizontal: spacing.md,

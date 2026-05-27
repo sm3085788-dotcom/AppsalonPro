@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ProfileEditForm } from './ProfileEditForm';
 import { AgendarCitaForm } from './AgendarCitaForm';
+import { ServiciosCarritoBody } from '../components/citas/ServiciosCarritoBody';
 import { View, Text, TouchableOpacity, Linking, StyleSheet, Switch, ActivityIndicator } from 'react-native';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
@@ -15,6 +16,7 @@ import { MisFacturasBody } from './MisFacturasBody';
 import { MisPedidosBody } from '../components/pedidos/MisPedidosBody';
 import { AuraLineInbox } from '../components/mensajes/AuraLineInbox';
 import { BROADCAST_PROMO_ACTIONS } from '@appsalon/shared-config';
+import { labelEstadoCita, estadoCitaTone } from '../utils/citasLabels';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -262,6 +264,8 @@ export function ClientSubScreenBody({
   onPromoFollowUp,
   onOpenTienda,
   onPedidosChanged,
+  onAgendarServicio,
+  onContinuarAgendarDesdeCarrito,
 }) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
@@ -279,7 +283,7 @@ export function ClientSubScreenBody({
     let alive = true;
     (async () => {
       setHistLoading(true);
-      const { data, error } = await db.citas.getByCliente(clienteRow.id);
+      const { data, error } = await db.citas.getByCliente(clienteRow.id, { forClientApp: true });
       if (!alive) return;
       setHistLoading(false);
       if (error || !Array.isArray(data)) {
@@ -341,17 +345,27 @@ export function ClientSubScreenBody({
           color: tc.foreground,
           flex: 1,
         },
-        price: {
-          fontFamily: typography.fontSansMedium,
-          fontSize: 15,
-          color: tc.foreground,
-        },
         meta: {
           marginTop: spacing.sm,
           fontFamily: typography.fontSans,
           fontSize: 13,
           color: tc.foregroundMuted,
           lineHeight: 18,
+        },
+        estadoPill: {
+          paddingHorizontal: spacing.sm,
+          paddingVertical: 4,
+          borderRadius: radii.pill,
+        },
+        estadoPillTxt: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 11,
+        },
+        price: {
+          marginTop: spacing.xs,
+          fontFamily: typography.fontSans,
+          fontSize: 13,
+          color: tc.foregroundSubtle,
         },
       }),
     [tc],
@@ -392,13 +406,13 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.AGENDAR_FLUJO:
       return (
         <>
-          <Steps />
           <AgendarCitaForm
             clienteRow={clienteRow}
             onClose={onClose}
             onGoTab={onGoTab}
             onCitasChanged={onCitasChanged}
             initialServicioNombre={subPayload?.agendarServicioNombre || null}
+            modoCarrito={Boolean(subPayload?.agendarDesdeCarrito)}
             onCitaBooked={() => {
               if (subPayload?.promoItem) {
                 onPromoFollowUp?.(BROADCAST_PROMO_ACTIONS.BOOK, subPayload.promoItem);
@@ -414,11 +428,17 @@ export function ClientSubScreenBody({
           {histLoading ? (
             <ActivityIndicator style={{ marginVertical: spacing.lg }} color={tc.primary} />
           ) : histRows.length > 0 ? (
-            histRows.map((h) => (
+            histRows.map((h) => {
+              const tone = estadoCitaTone(h.estado);
+              return (
               <View key={h.id} style={hist.card}>
                 <View style={hist.top}>
                   <Text style={hist.name}>{h.servicio}</Text>
-                  <Text style={hist.price}>{formatGtq(h.precio)}</Text>
+                  <View style={[hist.estadoPill, { backgroundColor: tone.bg }]}>
+                    <Text style={[hist.estadoPillTxt, { color: tone.fg }]}>
+                      {labelEstadoCita(h.estado)}
+                    </Text>
+                  </View>
                 </View>
                 <Text style={hist.meta}>
                   {new Date(h.fecha_hora).toLocaleDateString('es-GT', {
@@ -428,8 +448,10 @@ export function ClientSubScreenBody({
                   })}
                   {h.empleado?.nombre ? ` · ${h.empleado.nombre}` : ''}
                 </Text>
+                <Text style={hist.price}>{formatGtq(h.precio)}</Text>
               </View>
-            ))
+            );
+            })
           ) : (
             <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>
               {!clienteRow?.id
@@ -441,61 +463,12 @@ export function ClientSubScreenBody({
         </>
       );
 
-    case CLIENT_SUB.REPROGRAMAR_CITA:
+    case CLIENT_SUB.SERVICIOS_CARRITO:
       return (
-        <>
-          <View style={subStyles.card}>
-            <Text style={subStyles.rowLabel}>{FLUJO_CITA_PLACEHOLDER.servicio}</Text>
-            <Text style={subStyles.rowSub}>
-              {FLUJO_CITA_PLACEHOLDER.fechaLabel} · {FLUJO_CITA_PLACEHOLDER.horaLabel}
-            </Text>
-            <View style={{ height: spacing.md }} />
-            <Text style={subStyles.bullets}>
-              Aquí aparecerán los huecos disponibles del salón. Por ahora toca cualquier opción para
-              simular el flujo.
-            </Text>
-          </View>
-          <SalonButton
-            variant="outlineGray"
-            title="Ver calendario"
-            fullWidth
-            onPress={() => {}}
-          />
-          <SalonButton
-            variant="mutedFill"
-            title="Sugerencia: mismo día 16:00"
-            fullWidth
-            style={{ marginTop: spacing.sm }}
-            onPress={onClose}
-          />
-          <SalonButton
-            variant="solidGold"
-            title="Mantener hora actual"
-            fullWidth
-            style={{ marginTop: spacing.sm }}
-            onPress={onClose}
-          />
-        </>
-      );
-
-    case CLIENT_SUB.CONFIRMAR_CITA:
-      return (
-        <>
-          <View style={subStyles.card}>
-            <Text style={checkLine}>Tu cita {FLUJO_CITA_PLACEHOLDER.servicio} quedará confirmada.</Text>
-            <Text style={checkLine}>
-              ✓ Recordatorio 24 h antes{'\n'}✓ Puedes cambiar fecha desde Mis citas
-            </Text>
-          </View>
-          <SalonButton variant="outlineGray" title="Volver" fullWidth onPress={onClose} />
-          <SalonButton
-            variant="solidGold"
-            title="Confirmar"
-            fullWidth
-            style={{ marginTop: spacing.sm }}
-            onPress={onClose}
-          />
-        </>
+        <ServiciosCarritoBody
+          onClose={onClose}
+          onContinuarAgendar={onContinuarAgendarDesdeCarrito}
+        />
       );
 
     case CLIENT_SUB.EDITAR_PERFIL:
@@ -546,6 +519,7 @@ export function ClientSubScreenBody({
           clientUserId={sessionUser?.id}
           initialProductId={subPayload?.tiendaProductId || null}
           initialPhase={subPayload?.tiendaPhase || null}
+          tiendaOpenKey={subPayload?.tiendaOpenKey ?? 0}
           onPedidosChanged={onPedidosChanged}
           onPurchaseComplete={() => {
             if (subPayload?.promoItem) {
@@ -559,7 +533,9 @@ export function ClientSubScreenBody({
       return <TendenciasFeed onBack={onClose} />;
 
     case CLIENT_SUB.PREMIOS:
-      return <PremiosDashboard onClose={onClose} />;
+      return (
+        <PremiosDashboard onClose={onClose} clientUserId={sessionUser?.id} clienteRow={clienteRow} />
+      );
 
     case CLIENT_SUB.MEMBRESIAS:
       return (
@@ -671,23 +647,5 @@ function FieldStub() {
     <TouchableOpacity activeOpacity={0.85}>
       <View style={[subStyles.fauxInput, { marginBottom: spacing.xs }]} />
     </TouchableOpacity>
-  );
-}
-
-function Steps() {
-  const subStyles = useSubStyles();
-  const bullets = [
-    'Elige categoría del servicio',
-    'Selecciona bloque disponible',
-    'Confirma y recibe la confirmación por correo',
-  ];
-  return (
-    <View style={[subStyles.card, padTop]}>
-      {bullets.map((b, i) => (
-        <Text key={b} style={[subStyles.bullets, i > 0 && { marginTop: spacing.sm }]}>
-          {i + 1}. {b}
-        </Text>
-      ))}
-    </View>
   );
 }

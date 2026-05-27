@@ -1285,7 +1285,7 @@ export function ReportesScreen({ onBack }) {
             </View>
 
             <ScrollView
-              style={{ maxHeight: modalScrollMaxHeight }}
+              style={[styles.modalScrollReport, { maxHeight: modalScrollMaxHeight, backgroundColor: c.background }]}
               contentContainerStyle={{ paddingBottom: modalScrollBottomPad(insets) }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
@@ -1756,6 +1756,7 @@ function createStyles(c) {
       flex: 1,
       paddingHorizontal: spacing.sm,
       paddingTop: spacing.xs,
+      backgroundColor: c.background,
     },
     listShell: {
       flex: 1,

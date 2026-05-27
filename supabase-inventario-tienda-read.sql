@@ -7,4 +7,8 @@ DROP POLICY IF EXISTS inventario_tienda_public_read ON public.inventario;
 CREATE POLICY inventario_tienda_public_read
 ON public.inventario FOR SELECT
 TO anon, authenticated
-USING (visible_en_tienda = true);
+USING (
+  visible_en_tienda = true
+  OR COALESCE(notas, '') LIKE '%"articuloTipo":"servicio"%'
+  OR COALESCE(notas, '') LIKE '%"articuloTipo": "servicio"%'
+);

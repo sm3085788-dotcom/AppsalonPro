@@ -83,6 +83,7 @@ function createChromeStyles(c) {
     topBar: {
       paddingHorizontal: spacing.lg,
       paddingBottom: spacing.sm,
+      backgroundColor: c.background,
     },
     topRow: {
       flexDirection: 'row',
@@ -123,6 +124,7 @@ function createChromeStyles(c) {
     },
     scroll: {
       flex: 1,
+      backgroundColor: c.background,
     },
     scrollInner: {
       flexGrow: 1,
@@ -134,6 +136,7 @@ function createChromeStyles(c) {
     scrollInnerNoScroll: {
       flex: 1,
       paddingTop: spacing.sm,
+      backgroundColor: c.background,
     },
   });
 }

@@ -32,6 +32,7 @@ import {
   emptyPreciosPorVolumen,
   normalizePreciosPorVolumen,
   precioVentaReferencia,
+  resolvePrecioRegularTienda,
   splitNotas,
   getArticuloTipo,
   mergeNotas,
@@ -39,6 +40,8 @@ import {
   parseMontoInput,
   formatMontoInputLive,
   montoInputFromNumber,
+  SERVICIO_CATEGORIAS,
+  normalizeServicioCategoria,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar, useSubStyles, modalSheetBottomPad } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
@@ -120,6 +123,12 @@ function rowToTiendaCard(row) {
   } else if (!esServicio && venta > 0) {
     priceLabel = venta.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+  const precioRegular =
+    !meta.volumenTrabajoActivo && !esServicio && venta > 0 ? resolvePrecioRegularTienda(row, venta) : null;
+  const compareAtLabel =
+    precioRegular != null
+      ? precioRegular.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : null;
   const brandLine = String(row.categoria || (meta.articuloTipo === 'servicio' ? 'Servicio' : 'Producto')).toUpperCase();
   const stock = Number(row.stock_actual ?? 0);
   const stockHint =
@@ -136,6 +145,7 @@ function rowToTiendaCard(row) {
     brandLine,
     title: row.nombre,
     priceLabel,
+    compareAtLabel,
     badge: meta.badge?.trim() || null,
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
@@ -335,7 +345,7 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
         priceLive: {
           fontFamily: typography.fontSansMedium,
           fontSize: compact ? 11 : 16,
-          color: colors.foreground,
+          color: colors.primary,
         },
         ratingRow: {
           flexDirection: 'row',
@@ -424,6 +434,9 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           {product.title}
         </Text>
         <View style={styles.priceRow}>
+          {product.compareAtLabel ? (
+            <Text style={styles.compareAt}>{product.compareAtLabel}</Text>
+          ) : null}
           <Text style={styles.priceLive}>{product.priceLabel}</Text>
         </View>
         <View style={styles.ratingRow}>
@@ -467,6 +480,7 @@ const emptyForm = () => ({
   visible_en_tienda: false,
   notasStaff: '',
   badge: '',
+  hintTarjeta: '',
   shippingLabel: DEFAULT_TIENDA_META.shippingLabel,
   rating: '4.5',
   reviewCount: '0',
@@ -474,6 +488,8 @@ const emptyForm = () => ({
   duracion_agenda: '60 min',
   volumenTrabajoActivo: false,
   preciosPorVolumen: emptyPreciosPorVolumen(),
+  /** Precio “antes” en tienda (JSON meta.precioRegular); vacío = reglas automáticas. */
+  precio_regular_tienda: '',
   localMain: null,
   localGallery: [],
   remoteMain: '',
@@ -509,7 +525,10 @@ export function InventarioScreen({ onBack }) {
   }));
   const [showLoteDatePicker, setShowLoteDatePicker] = useState(false);
   const [stockSaving, setStockSaving] = useState(false);
+  const [categoriaPickerOpen, setCategoriaPickerOpen] = useState(false);
   const sel = useListSelection();
+
+  const esFormServicio = form.articuloTipo === 'servicio';
 
   const isNuevoStock = !form.id && form.articuloTipo === 'nuevo_stock';
 
@@ -712,6 +731,7 @@ export function InventarioScreen({ onBack }) {
       visible_en_tienda: !!row.visible_en_tienda,
       notasStaff: staff,
       badge: meta.badge || '',
+      hintTarjeta: meta.hintTarjeta || '',
       shippingLabel: meta.shippingLabel || DEFAULT_TIENDA_META.shippingLabel,
       rating: String(meta.rating ?? 4.5),
       reviewCount: String(meta.reviewCount ?? 0),
@@ -721,6 +741,10 @@ export function InventarioScreen({ onBack }) {
       preciosPorVolumen: preciosPorVolumenToForm(
         meta.volumenTrabajoActivo ? meta.preciosPorVolumen : emptyPreciosPorVolumen(),
       ),
+      precio_regular_tienda:
+        meta.precioRegular != null && Number(meta.precioRegular) > 0
+          ? montoInputFromNumber(meta.precioRegular)
+          : '',
       localMain: null,
       localGallery: [],
       remoteMain: main,
@@ -810,6 +834,7 @@ export function InventarioScreen({ onBack }) {
       return;
     }
     if (
+      !esFormServicio &&
       form.visible_en_tienda &&
       !(parsePrecioInput(form.precio_venta) > 0) &&
       !form.volumenTrabajoActivo
@@ -817,6 +842,10 @@ export function InventarioScreen({ onBack }) {
       Alert.alert('Tienda', 'Para publicar en App Clientes, indicá un precio de venta mayor a 0.');
       return;
     }
+    const ventaCmp =
+      form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? 0 : parsePrecioInput(form.precio_venta);
+    const precioTachadoInput = parsePrecioInput(form.precio_regular_tienda);
+
     setSaving(true);
     try {
       const uploadWarnings = [];
@@ -840,7 +869,10 @@ export function InventarioScreen({ onBack }) {
 
       const meta = {
         badge: form.badge.trim(),
-        shippingLabel: form.shippingLabel.trim() || DEFAULT_TIENDA_META.shippingLabel,
+        hintTarjeta: esFormServicio ? String(form.hintTarjeta || '').trim() : '',
+        shippingLabel: esFormServicio
+          ? ''
+          : form.shippingLabel.trim() || DEFAULT_TIENDA_META.shippingLabel,
         rating: parseNum(form.rating) || 4.5,
         reviewCount: Math.max(0, Math.floor(parseNum(form.reviewCount))),
         articuloTipo: form.articuloTipo === 'servicio' ? 'servicio' : 'producto',
@@ -855,6 +887,12 @@ export function InventarioScreen({ onBack }) {
         volumenTrabajo: null,
         preciosPorVolumen:
           form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? preciosVol : null,
+        precioRegular:
+          form.articuloTipo === 'servicio' && form.volumenTrabajoActivo
+            ? null
+            : precioTachadoInput > ventaCmp && ventaCmp > 0
+              ? Math.round(precioTachadoInput * 100) / 100
+              : null,
       };
       const notas = mergeNotas(form.notasStaff, meta);
       const precioVentaCol =
@@ -866,17 +904,20 @@ export function InventarioScreen({ onBack }) {
 
       const payload = {
         nombre: form.nombre.trim(),
-        categoria: form.categoria.trim() || null,
+        categoria:
+          form.articuloTipo === 'servicio'
+            ? normalizeServicioCategoria(form.categoria)
+            : form.categoria.trim() || null,
         barcode: form.barcode.trim() || null,
         precio_venta: precioVentaCol,
         precio_costo: null,
         stock_actual: Math.max(0, Math.floor(parseNum(form.stock_actual))),
         stock_minimo: Math.max(0, Math.floor(parseNum(form.stock_minimo))),
         es_consumible: !!form.es_consumible,
-        fecha_vencimiento: fechaVenc.value,
+        fecha_vencimiento: esFormServicio ? null : fechaVenc.value,
         ubicacion: form.ubicacion.trim() || null,
         descripcion_tienda: form.descripcion_tienda.trim() || null,
-        visible_en_tienda: !!form.visible_en_tienda,
+        visible_en_tienda: esFormServicio ? false : !!form.visible_en_tienda,
         notas,
         imagen_url: form.remoteMain || null,
         imagenes_urls: form.remoteGallery.filter(Boolean).slice(0, MAX_GALERIA),
@@ -967,7 +1008,7 @@ export function InventarioScreen({ onBack }) {
     }
   };
 
-  const addPersonIconColor = isDark ? '#141414' : c.foreground;
+  const addPersonIconColor = c.foreground;
 
   const confirmDeleteSelected = () => {
     if (!sel.count) return;
@@ -1004,7 +1045,7 @@ export function InventarioScreen({ onBack }) {
   const rightAction = (
     <TouchableOpacity
       onPress={openNew}
-      style={[styles.addPersonCircle, { backgroundColor: '#FFFFFF', borderColor: c.cardBorder }]}
+      style={[styles.addPersonCircle, { backgroundColor: c.card, borderColor: c.cardBorder }]}
       hitSlop={12}
       accessibilityLabel="Nuevo artículo"
       activeOpacity={0.85}
@@ -1046,13 +1087,8 @@ export function InventarioScreen({ onBack }) {
               </TouchableOpacity>
             </View>
           </View>
-          <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.sm }]} numberOfLines={2}>
+          <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.md }]} numberOfLines={2}>
             {inventarioFiltroResumen}
-          </Text>
-          <Text style={[subStyles.muted, { marginTop: 0, marginBottom: spacing.md, fontSize: 12 }]}>
-            Las tarjetas replican la jerarquía de la tienda en clientes (marca, título, precio tachado si el costo es mayor,
-            estrellas, envío, stock). Los datos extra (insignia, envío, reseñas, tipo producto/servicio) se guardan junto
-            con las notas internas en un bloque JSON reservado para el salón.
           </Text>
           </View>
 
@@ -1187,6 +1223,11 @@ export function InventarioScreen({ onBack }) {
                         ...f,
                         articuloTipo: opt.id,
                         volumenTrabajoActivo: opt.id === 'servicio' ? f.volumenTrabajoActivo : false,
+                        categoria:
+                          opt.id === 'servicio' && !String(f.categoria || '').trim()
+                            ? 'Otro'
+                            : f.categoria,
+                        visible_en_tienda: opt.id === 'servicio' ? false : f.visible_en_tienda,
                       }));
                       resetStockFlow();
                     }}
@@ -1371,6 +1412,11 @@ export function InventarioScreen({ onBack }) {
                           ...f,
                           articuloTipo: opt.id,
                           volumenTrabajoActivo: opt.id === 'servicio' ? f.volumenTrabajoActivo : false,
+                          categoria:
+                            opt.id === 'servicio' && !String(f.categoria || '').trim()
+                              ? 'Otro'
+                              : f.categoria,
+                          visible_en_tienda: opt.id === 'servicio' ? false : f.visible_en_tienda,
                         }))
                       }
                     >
@@ -1393,15 +1439,30 @@ export function InventarioScreen({ onBack }) {
               placeholderTextColor={c.foregroundSubtle}
             />
           </Field>
-          <Field label="Línea / marca (texto pequeño en tarjeta)" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.categoria}
-              onChangeText={(t) => setForm((f) => ({ ...f, categoria: t }))}
-              placeholder="Ej. Keraplús · Profesional"
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
+          {esFormServicio ? (
+            <Field label="Categoría del servicio *" c={c}>
+              <TouchableOpacity
+                style={[styles.inp, styles.dateTouch, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+                onPress={() => setCategoriaPickerOpen(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>
+                  {normalizeServicioCategoria(form.categoria)}
+                </Text>
+                <ChevronRight size={18} color={c.foregroundSubtle} style={{ position: 'absolute', right: 12 }} />
+              </TouchableOpacity>
+            </Field>
+          ) : (
+            <Field label="Línea / marca (texto pequeño en tarjeta)" c={c}>
+              <TextInput
+                style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                value={form.categoria}
+                onChangeText={(t) => setForm((f) => ({ ...f, categoria: t }))}
+                placeholder="Ej. Keraplús · Profesional"
+                placeholderTextColor={c.foregroundSubtle}
+              />
+            </Field>
+          )}
           <Field label="SKU / código de barras" c={c}>
             <TextInput
               style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
@@ -1425,6 +1486,27 @@ export function InventarioScreen({ onBack }) {
             </Field>
           )}
 
+          {form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? null : (
+            <Field
+              label={
+                esFormServicio ? 'Precio tachado (Q, opcional)' : 'Precio tachado en tienda (Q, opcional)'
+              }
+              c={c}
+            >
+              <PrecioGtqInput
+                c={c}
+                value={form.precio_regular_tienda}
+                onChangeText={(t) => setForm((f) => ({ ...f, precio_regular_tienda: t }))}
+                placeholder="Ej. 600"
+              />
+            </Field>
+          )}
+          {!esFormServicio ? (
+            <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.md }]}>
+              Si es mayor al precio de venta, se muestra tachado en App Clientes. Vacío: costo o referencia automática.
+            </Text>
+          ) : null}
+
           {form.articuloTipo === 'servicio' ? (
             <>
               <Field label="Duración en agenda" c={c}>
@@ -1433,6 +1515,15 @@ export function InventarioScreen({ onBack }) {
                   value={form.duracion_agenda}
                   onChangeText={(t) => setForm((f) => ({ ...f, duracion_agenda: t }))}
                   placeholder="Ej. 60 min, 1 hora, media mañana"
+                  placeholderTextColor={c.foregroundSubtle}
+                />
+              </Field>
+              <Field label="Texto en tarjeta Mis citas (una línea)" c={c}>
+                <TextInput
+                  style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                  value={form.hintTarjeta}
+                  onChangeText={(t) => setForm((f) => ({ ...f, hintTarjeta: t }))}
+                  placeholder="Ej. Según volumen de cabello · coordiná en salón"
                   placeholderTextColor={c.foregroundSubtle}
                 />
               </Field>
@@ -1539,34 +1630,42 @@ export function InventarioScreen({ onBack }) {
               thumbColor={form.es_consumible ? c.primary : c.foregroundSubtle}
             />
           </View>
-          <View style={styles.switchRow}>
-            <View style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>Visible en tienda (clientes)</Text>
-              {form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? (
-                <Text style={{ color: c.foregroundMuted, fontFamily: typography.fontSans, fontSize: 12, marginTop: 4 }}>
-                  En la app verán «Precio variable» (sin monto fijo). Los 4 precios solo se usan en Vender.
+          {!esFormServicio ? (
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>
+                  Visible en tienda (clientes)
                 </Text>
-              ) : null}
+              </View>
+              <Switch
+                value={form.visible_en_tienda}
+                onValueChange={(v) => setForm((f) => ({ ...f, visible_en_tienda: v }))}
+                trackColor={{ false: c.cardBorder, true: `${c.primary}88` }}
+                thumbColor={form.visible_en_tienda ? c.primary : c.foregroundSubtle}
+              />
             </View>
-            <Switch
-              value={form.visible_en_tienda}
-              onValueChange={(v) => setForm((f) => ({ ...f, visible_en_tienda: v }))}
-              trackColor={{ false: c.cardBorder, true: `${c.primary}88` }}
-              thumbColor={form.visible_en_tienda ? c.primary : c.foregroundSubtle}
-            />
-          </View>
+          ) : (
+            <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.md }]}>
+              Los servicios se publican solo en Mis citas (App Clientes), no en la tienda.
+              {form.volumenTrabajoActivo
+                ? ' En la app verán «Precio variable»; los 4 precios se usan en Vender.'
+                : ''}
+            </Text>
+          )}
 
-          <Field label="Fecha vencimiento (AAAA-MM-DD)" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.fecha_vencimiento}
-              onChangeText={(t) => setForm((f) => ({ ...f, fecha_vencimiento: t }))}
-              placeholder="Opcional · ej. 2026-12-31"
-              placeholderTextColor={c.foregroundSubtle}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </Field>
+          {!esFormServicio ? (
+            <Field label="Fecha vencimiento (AAAA-MM-DD)" c={c}>
+              <TextInput
+                style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                value={form.fecha_vencimiento}
+                onChangeText={(t) => setForm((f) => ({ ...f, fecha_vencimiento: t }))}
+                placeholder="Opcional · ej. 2026-12-31"
+                placeholderTextColor={c.foregroundSubtle}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </Field>
+          ) : null}
           <Field label="Ubicación en salón" c={c}>
             <TextInput
               style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
@@ -1577,19 +1676,26 @@ export function InventarioScreen({ onBack }) {
             />
           </Field>
 
-          <Field label="Descripción larga (ficha tienda)" c={c}>
+          <Field
+            label={esFormServicio ? 'Descripción (ficha Mis citas)' : 'Descripción larga (ficha tienda)'}
+            c={c}
+          >
             <TextInput
               style={[styles.inp, styles.area, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
               value={form.descripcion_tienda}
               onChangeText={(t) => setForm((f) => ({ ...f, descripcion_tienda: t }))}
               multiline
               textAlignVertical="top"
-              placeholder="Ingredientes, uso, advertencias…"
+              placeholder={
+                esFormServicio ? 'Detalle del servicio para el cliente…' : 'Ingredientes, uso, advertencias…'
+              }
               placeholderTextColor={c.foregroundSubtle}
             />
           </Field>
 
-          <Text style={[subStyles.rowLabel, { marginTop: spacing.md }]}>Ficha tienda (como en App Clientes)</Text>
+          <Text style={[subStyles.rowLabel, { marginTop: spacing.md }]}>
+            {esFormServicio ? 'Ficha Mis citas (App Clientes)' : 'Ficha tienda (como en App Clientes)'}
+          </Text>
           <Field label="Insignia en foto (ej. Más vendido)" c={c}>
             <TextInput
               style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
@@ -1598,14 +1704,16 @@ export function InventarioScreen({ onBack }) {
               placeholderTextColor={c.foregroundSubtle}
             />
           </Field>
-          <Field label="Texto envío / retiro (una línea bajo estrellas)" c={c}>
-            <TextInput
-              style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-              value={form.shippingLabel}
-              onChangeText={(t) => setForm((f) => ({ ...f, shippingLabel: t }))}
-              placeholderTextColor={c.foregroundSubtle}
-            />
-          </Field>
+          {!esFormServicio ? (
+            <Field label="Texto envío / retiro (una línea bajo estrellas)" c={c}>
+              <TextInput
+                style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
+                value={form.shippingLabel}
+                onChangeText={(t) => setForm((f) => ({ ...f, shippingLabel: t }))}
+                placeholderTextColor={c.foregroundSubtle}
+              />
+            </Field>
+          ) : null}
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
               <Field label="Valoración (0–5)" c={c}>
@@ -1645,7 +1753,8 @@ export function InventarioScreen({ onBack }) {
 
           <Text style={[subStyles.rowLabel, { marginTop: spacing.md }]}>Imágenes</Text>
           <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.sm }]}>
-            Primera imagen = portada; hasta {MAX_GALERIA} adicionales en carrusel (como en la ficha de tienda).
+            Primera imagen = portada; hasta {MAX_GALERIA} adicionales en carrusel
+            {esFormServicio ? ' en Mis citas.' : ' en la ficha de tienda.'}
           </Text>
           <SalonButton title="Portada (principal)" variant="outlineGray" onPress={pickMain} />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
@@ -1693,6 +1802,58 @@ export function InventarioScreen({ onBack }) {
           <SalonButton title={saving ? 'Guardando…' : 'Guardar'} variant="heroGold" fullWidth loading={saving} onPress={save} style={{ marginTop: spacing.lg }} />
         </ScrollView>
         )}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={categoriaPickerOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCategoriaPickerOpen(false)}
+      >
+        <View style={styles.filterBackdrop}>
+          <View
+            style={[
+              styles.filterSheet,
+              { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets), maxHeight: '70%' },
+            ]}
+          >
+            <View style={styles.filterHead}>
+              <Text style={[styles.filterTitle, { color: c.foreground }]}>Categoría del servicio</Text>
+              <TouchableOpacity onPress={() => setCategoriaPickerOpen(false)} hitSlop={12}>
+                <X size={22} color={c.foregroundMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {SERVICIO_CATEGORIAS.map((cat) => {
+                const on = normalizeServicioCategoria(form.categoria) === cat;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.categoriaPickRow,
+                      { borderBottomColor: c.cardBorder, backgroundColor: on ? c.surfaceMuted : 'transparent' },
+                    ]}
+                    onPress={() => {
+                      setForm((f) => ({ ...f, categoria: cat }));
+                      setCategoriaPickerOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: on ? c.primary : c.foreground,
+                        fontFamily: on ? typography.fontSansMedium : typography.fontSans,
+                        fontSize: 15,
+                      }}
+                    >
+                      {cat}
+                    </Text>
+                    {on ? <Check size={18} color={c.primary} strokeWidth={2.5} /> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
@@ -1931,6 +2092,14 @@ function createStyles(c) {
       marginBottom: spacing.md,
     },
     filterTitle: { fontFamily: typography.fontDisplay, fontSize: 20 },
+    categoriaPickRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xs,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
     filterSectionLbl: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,

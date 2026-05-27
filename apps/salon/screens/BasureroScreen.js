@@ -341,7 +341,15 @@ export function BasureroScreen({ onBack }) {
               data={filtered}
               keyExtractor={(it) => it.id}
               renderItem={renderItem}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={c.primary}
+                  colors={[c.primary]}
+                  progressBackgroundColor={c.card}
+                />
+              }
               contentContainerStyle={{ paddingBottom: sel.count ? 120 : padBottom, flexGrow: 1 }}
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
@@ -454,6 +462,7 @@ function createStyles(c) {
       flex: 1,
       paddingHorizontal: spacing.sm,
       paddingTop: spacing.xs,
+      backgroundColor: c.background,
     },
     search: {
       fontFamily: typography.fontSans,

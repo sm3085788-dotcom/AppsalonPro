@@ -41,16 +41,16 @@ function mapFulfillment(shipId, homeAddressType) {
   return { fulfillment_type: 'retiro_salon', delivery_reference: null };
 }
 
-/**
- * Pedido pendiente de pago en efectivo (llega a App Salón · Pedidos).
- */
-export async function crearPedidoEfectivo({
+async function crearPedidoTiendaCliente({
   clienteNombre,
   clienteTelefono,
   clientUserId,
   cartItems,
   shipId,
   homeAddressType,
+  deliveryAddress,
+  payment_method,
+  card_last4,
   notes,
 }) {
   const lines = (cartItems || []).filter((i) => i?.id && Number(i.qty) > 0);
@@ -88,13 +88,15 @@ export async function crearPedidoEfectivo({
   const { data: order, error: oErr } = await db.orders.create({
     customer_name: clienteNombre?.trim() || 'Cliente tienda',
     customer_phone: clienteTelefono?.trim() || '—',
-    notes: notes || 'Pedido app clientes · pago en efectivo',
+    notes: notes || `Pedido app clientes · ${payment_method}`,
     status: 'pending',
     total_amount: subtotal,
-    payment_method: 'efectivo',
+    payment_method,
+    card_last4: card_last4 || null,
     client_user_id: uid,
     fulfillment_type: fulfillment.fulfillment_type,
     delivery_reference: fulfillment.delivery_reference,
+    delivery_address: deliveryAddress || null,
   });
 
   if (oErr || !order) {
@@ -116,6 +118,62 @@ export async function crearPedidoEfectivo({
   }
 
   return { ok: true, order, trackingCode: order.tracking_code, total: subtotal };
+}
+
+/**
+ * Pedido pendiente de pago en efectivo (llega a App Salón · Pedidos).
+ */
+export async function crearPedidoEfectivo({
+  clienteNombre,
+  clienteTelefono,
+  clientUserId,
+  cartItems,
+  shipId,
+  homeAddressType,
+  notes,
+  deliveryAddress = null,
+}) {
+  return crearPedidoTiendaCliente({
+    clienteNombre,
+    clienteTelefono,
+    clientUserId,
+    cartItems,
+    shipId,
+    homeAddressType,
+    deliveryAddress,
+    payment_method: 'efectivo',
+    card_last4: null,
+    notes: notes || 'Pedido app clientes · pago en efectivo',
+  });
+}
+
+/**
+ * Pedido con tarjeta: mismo canal que efectivo (ecommerce_orders).
+ * El stock y la venta en `ventas` se registran cuando el salón confirma el cobro con caja abierta.
+ */
+export async function crearPedidoTarjetaPendiente({
+  clienteNombre,
+  clienteTelefono,
+  clientUserId,
+  cartItems,
+  shipId,
+  homeAddressType,
+  deliveryAddress = null,
+  cardLast4 = null,
+}) {
+  return crearPedidoTiendaCliente({
+    clienteNombre,
+    clienteTelefono,
+    clientUserId,
+    cartItems,
+    shipId,
+    homeAddressType,
+    deliveryAddress,
+    payment_method: 'tarjeta',
+    card_last4: cardLast4,
+    notes:
+      'Pedido app clientes · tarjeta (pendiente de captura). El salón cobra con su pasarela y confirma en Pedidos antes de preparar el envío o retiro.',
+  });
 }
 
 /**
@@ -168,19 +226,21 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
   }));
 
   const noFactura = order.tracking_code || `PED-${String(orderId).slice(0, 8)}`;
+  const payMethod = String(order.payment_method || 'efectivo').toLowerCase();
+  const isTarjeta = payMethod === 'tarjeta';
 
   const { error: vErr } = await db.ventas.create(
     {
       cliente_nombre: order.customer_name,
       total: subtotal,
       monto: subtotal,
-      metodo_pago: 'efectivo',
+      metodo_pago: isTarjeta ? 'tarjeta' : 'efectivo',
       items: ventaItems,
       no_factura: noFactura,
       descuento: 0,
       caja_id: caja.id,
       notas: `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
-      detalles_pago: 'Efectivo (app clientes)',
+      detalles_pago: isTarjeta ? 'Tarjeta · pedido app clientes' : 'Efectivo (app clientes)',
     },
     { minimalReturn: true },
   );

@@ -23,6 +23,8 @@ export function ScreenHeader({
   onCartPress,
   /** Total de unidades en el carrito de tienda. */
   cartBadgeCount = 0,
+  /** En Mis citas se usa el carrito de servicios (icono aparte). */
+  showCartButton = true,
   /** Solo pestaña Perfil: primer nombre para saludo */
   profileFirstName,
   /** Estilo extra del contenedor (p. ej. menos margen cuando va fijo arriba). */
@@ -129,22 +131,24 @@ export function ScreenHeader({
               accessibilityLabel="Buscar en la app"
             />
           </View>
-          <TouchableOpacity
-            style={styles.cartBtn}
-            onPress={onCartPress ?? (() => {})}
-            accessibilityRole="button"
-            accessibilityLabel={
-              cartLabel ? `Carrito, ${cartLabel} productos` : 'Carrito'
-            }
-            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-          >
-            <ShoppingCart size={23} color={c.foreground} strokeWidth={1.85} />
-            {cartLabel ? (
-              <View style={[styles.cartBadge, { backgroundColor: c.error }]}>
-                <Text style={styles.cartBadgeTxt}>{cartLabel}</Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
+          {showCartButton ? (
+            <TouchableOpacity
+              style={styles.cartBtn}
+              onPress={onCartPress ?? (() => {})}
+              accessibilityRole="button"
+              accessibilityLabel={
+                cartLabel ? `Carrito, ${cartLabel} productos` : 'Carrito'
+              }
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+            >
+              <ShoppingCart size={23} color={c.foreground} strokeWidth={1.85} />
+              {cartLabel ? (
+                <View style={[styles.cartBadge, { backgroundColor: c.error }]}>
+                  <Text style={styles.cartBadgeTxt}>{cartLabel}</Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     );

@@ -123,6 +123,10 @@ export function AppTourScreen({ onDone }) {
           paddingBottom: insets.bottom + spacing.md,
           gap: spacing.sm,
         },
+        tourList: {
+          flex: 1,
+          backgroundColor: c.background,
+        },
       }),
     [c, insets.bottom, insets.top, width],
   );
@@ -159,6 +163,7 @@ export function AppTourScreen({ onDone }) {
         ref={listRef}
         data={SLIDES}
         keyExtractor={(item) => item.id}
+        style={styles.tourList}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}

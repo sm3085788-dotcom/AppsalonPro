@@ -17,6 +17,7 @@ import {
   RefreshControl,
   Animated,
   Easing,
+  Pressable,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,6 +47,7 @@ import {
   formatBroadcastContent,
   parseBroadcastContent,
   broadcastPreviewText,
+  citaConfirmacionPreviewText,
   mapInventarioToTiendaProduct,
   BROADCAST_LINK_TYPES,
 } from '@appsalon/shared-config';
@@ -59,6 +61,9 @@ import { saveChatImageWithAlert } from '../utils/saveChatImage';
 
 function chatBubbleText(item) {
   const ct = String(item.content_type || '');
+  if (ct === 'cita_confirmacion') {
+    return citaConfirmacionPreviewText(item.content);
+  }
   if (ct.includes('broadcast')) {
     const preview = broadcastPreviewText(item.content);
     if (preview) return preview;
@@ -101,7 +106,12 @@ function ChatBubbleImage({ uri, style, saveBtnStyle }) {
 
 const BULK_CHUNK = 80;
 const MENSAJES_SEEN_BY_CLIENT_KEY = '@appsalon/salon/mensajes_seen_by_client';
-const INBOX_PREVIEW_TYPES = new Set(['chat', 'broadcast_promo', 'incident_report']);
+const INBOX_PREVIEW_TYPES = new Set([
+  'chat',
+  'broadcast_promo',
+  'incident_report',
+  'cita_confirmacion',
+]);
 const INBOX_OPEN_HINT = 'Tocá para abrir Andreas Pro';
 /** Mismo verde que Clientes para fichas manuales (sin App Clientes). */
 const MINT = { chip: '#C8E6C9', chipText: '#1B5E20' };
@@ -201,7 +211,9 @@ function buildInboxRows(allClients, previews) {
       preview: last
         ? String(last.content_type || '').includes('broadcast')
           ? broadcastPreviewText(last.content) || INBOX_OPEN_HINT
-          : last.content || INBOX_OPEN_HINT
+          : String(last.content_type || '') === 'cita_confirmacion'
+            ? citaConfirmacionPreviewText(last.content) || INBOX_OPEN_HINT
+            : last.content || INBOX_OPEN_HINT
         : INBOX_OPEN_HINT,
       lastAt: last?.created_at || null,
     };
@@ -232,6 +244,7 @@ export function MensajesScreen({ onBack }) {
   const [filterTipo, setFilterTipo] = useState('todos');
   const [broadcastOnlyIds, setBroadcastOnlyIds] = useState(null);
   const [loadingInbox, setLoadingInbox] = useState(true);
+  const [refreshingInbox, setRefreshingInbox] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -241,6 +254,7 @@ export function MensajesScreen({ onBack }) {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [clientDataOpen, setClientDataOpen] = useState(false);
   const [promoTitle, setPromoTitle] = useState('');
   const [promoBody, setPromoBody] = useState('');
   const [promoImage, setPromoImage] = useState(null);
@@ -329,7 +343,9 @@ export function MensajesScreen({ onBack }) {
     for (const row of data || []) {
       if (!row?.client_id) continue;
       const by = row.created_by ? String(row.created_by) : '';
-      const isInbound = Boolean(by && by !== String(staffUserId));
+      const contentType = String(row.content_type || '');
+      const isAppointmentConfirm = contentType === 'cita_confirmacion';
+      const isInbound = Boolean(by && by !== String(staffUserId)) || isAppointmentConfirm;
       if (!isInbound) continue;
       const clientId = String(row.client_id);
       const createdMs = new Date(row.created_at).getTime();
@@ -351,8 +367,9 @@ export function MensajesScreen({ onBack }) {
     };
   }, []);
 
-  const loadInbox = useCallback(async () => {
-    setLoadingInbox(true);
+  const loadInbox = useCallback(async (opts = {}) => {
+    const silent = Boolean(opts.silent);
+    if (!silent) setLoadingInbox(true);
     try {
       const [cRes, pRes] = await Promise.all([
         db.clientes.getAll(),
@@ -364,13 +381,25 @@ export function MensajesScreen({ onBack }) {
       setClients(clientList);
       setInboxPreviews(pRes.data || []);
     } catch (e) {
-      Alert.alert('Andreas Pro', e?.message || 'No se pudo cargar la bandeja.');
+      if (!silent) {
+        Alert.alert('Andreas Pro', e?.message || 'No se pudo cargar la bandeja.');
+      }
       setClients([]);
       setInboxPreviews([]);
     } finally {
-      setLoadingInbox(false);
+      if (!silent) setLoadingInbox(false);
     }
   }, []);
+
+  const onInboxRefresh = useCallback(async () => {
+    setRefreshingInbox(true);
+    try {
+      await loadInbox({ silent: true });
+      await refreshUnreadByClient();
+    } finally {
+      setRefreshingInbox(false);
+    }
+  }, [loadInbox, refreshUnreadByClient]);
 
   useEffect(() => {
     loadInbox();
@@ -450,17 +479,25 @@ export function MensajesScreen({ onBack }) {
     return `${orden} · ${tipo}`;
   }, [sortMode, filterTipo]);
 
-  const openClientChat = useCallback(async (client) => {
-    if (!isClienteAppVerificado(client)) {
-      Alert.alert(
-        'Sin App Clientes',
-        `${client.nombre || 'Este cliente'} es una ficha manual. Andreas Pro solo envía mensajes a clientes verificados en App Clientes (con cuenta vinculada).`,
-      );
-      return;
-    }
-    await markClientSeen(client.id);
-    setSelectedClient(client);
-  }, [markClientSeen]);
+  const openClientChat = useCallback(
+    async (client) => {
+      if (!client?.id) return;
+      if (!isClienteAppVerificado(client)) {
+        Alert.alert(
+          'Sin App Clientes',
+          `${client.nombre || 'Este cliente'} es una ficha manual. Andreas Pro solo envía mensajes a clientes verificados en App Clientes (con cuenta vinculada).`,
+        );
+        return;
+      }
+      try {
+        await markClientSeen(client.id);
+      } catch {
+        // no bloquear apertura del chat si falla persistir "visto"
+      }
+      setSelectedClient(client);
+    },
+    [markClientSeen],
+  );
 
   const inboxListEmpty = useMemo(() => {
     const q = inboxQuery.trim();
@@ -480,7 +517,7 @@ export function MensajesScreen({ onBack }) {
     requestAnimationFrame(() => {
       listRef.current?.scrollToEnd({ animated });
     });
-  }, [refreshUnreadByClient]);
+  }, []);
 
   const loadChat = useCallback(async (clientId) => {
     setLoadingChat(true);
@@ -739,7 +776,7 @@ export function MensajesScreen({ onBack }) {
   const broadcastBtn = useMemo(
     () => (
       <TouchableOpacity
-        style={[styles.addPersonCircle, isDark && styles.addPersonCircleDark]}
+        style={styles.addPersonCircle}
         onPress={() => {
           setBroadcastOnlyIds(null);
           setBroadcastOpen(true);
@@ -748,10 +785,10 @@ export function MensajesScreen({ onBack }) {
         hitSlop={10}
         activeOpacity={0.85}
       >
-        <Megaphone size={22} color={isDark ? '#141414' : c.foreground} strokeWidth={2.2} />
+        <Megaphone size={22} color={c.foreground} strokeWidth={2.2} />
       </TouchableOpacity>
     ),
-    [c.foreground, isDark, styles.addPersonCircle, styles.addPersonCircleDark],
+    [c.foreground, styles.addPersonCircle],
   );
 
   const renderInboxRow = useCallback(
@@ -1130,13 +1167,19 @@ export function MensajesScreen({ onBack }) {
             </Text>
             <Text style={styles.chatSub}>Andreas Pro · en vivo</Text>
           </View>
-          <TouchableOpacity onPress={() => setBroadcastOpen(true)} hitSlop={12} accessibilityLabel="Pulso masivo">
-            <Megaphone size={22} color="rgba(255,255,255,0.9)" strokeWidth={2.2} />
+          <TouchableOpacity
+            onPress={() => setClientDataOpen(true)}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Ver datos del cliente"
+            style={styles.chatHeaderVerBtn}
+          >
+            <Text style={styles.chatHeaderVerTxt}>Ver</Text>
           </TouchableOpacity>
         </LinearGradient>
 
         <KeyboardAvoidingView
-          style={{ flex: 1 }}
+          style={[styles.chatShell, { backgroundColor: c.background }]}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 72 : 0}
         >
@@ -1148,7 +1191,7 @@ export function MensajesScreen({ onBack }) {
               data={messages}
               keyExtractor={(m) => String(m.id)}
               renderItem={renderBubble}
-              style={{ flex: 1 }}
+              style={styles.chatList}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               contentContainerStyle={{
@@ -1208,6 +1251,59 @@ export function MensajesScreen({ onBack }) {
           </View>
         </KeyboardAvoidingView>
       </View>
+      {clientDataOpen ? (
+      <Modal
+        visible
+        transparent
+        animationType="fade"
+        onRequestClose={() => setClientDataOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setClientDataOpen(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Datos del cliente</Text>
+              <TouchableOpacity onPress={() => setClientDataOpen(false)} hitSlop={12}>
+                <X size={22} color={c.foregroundMuted} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ gap: spacing.sm }}>
+              <View>
+                <Text style={{ fontFamily: typography.fontSansMedium, color: c.foreground, fontSize: 16 }}>
+                  {selectedClient.nombre}
+                </Text>
+              </View>
+              {selectedClient.telefono ? (
+                <View>
+                  <Text style={{ fontFamily: typography.fontSansMedium, color: c.foregroundSubtle, fontSize: 12, marginBottom: 4 }}>
+                    Teléfono
+                  </Text>
+                  <Text style={{ fontFamily: typography.fontSans, color: c.foreground, fontSize: 14 }}>
+                    {selectedClient.telefono}
+                  </Text>
+                </View>
+              ) : null}
+              {selectedClient.email ? (
+                <View>
+                  <Text style={{ fontFamily: typography.fontSansMedium, color: c.foregroundSubtle, fontSize: 12, marginBottom: 4 }}>
+                    Email
+                  </Text>
+                  <Text style={{ fontFamily: typography.fontSans, color: c.foreground, fontSize: 14 }}>
+                    {selectedClient.email}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <SalonButton
+              title="Cerrar"
+              variant="outlineGray"
+              fullWidth
+              style={{ marginTop: spacing.lg }}
+              onPress={() => setClientDataOpen(false)}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+      ) : null}
       {broadcastModal}
       </Fragment>
     );
@@ -1261,7 +1357,13 @@ export function MensajesScreen({ onBack }) {
                 keyExtractor={(r) => String(r.client.id)}
                 renderItem={renderInboxRow}
                 refreshControl={
-                  <RefreshControl refreshing={false} onRefresh={loadInbox} tintColor={c.primary} />
+                  <RefreshControl
+                    refreshing={refreshingInbox}
+                    onRefresh={onInboxRefresh}
+                    tintColor={c.primary}
+                    colors={[c.primary]}
+                    progressBackgroundColor={c.card}
+                  />
                 }
                 contentContainerStyle={{
                   paddingBottom: sel.count ? 100 : padList,
@@ -1353,11 +1455,13 @@ export function MensajesScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
+    chatShell: { flex: 1 },
+    chatList: { flex: 1, backgroundColor: c.background },
     addPersonCircle: {
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: c.card,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
@@ -1368,12 +1472,10 @@ function createStyles(c) {
       shadowOpacity: 0.12,
       shadowRadius: 4,
     },
-    addPersonCircleDark: {
-      borderColor: 'rgba(255,255,255,0.35)',
-    },
     body: {
       flex: 1,
       paddingHorizontal: spacing.sm,
+      backgroundColor: c.background,
     },
     toolbar: {
       flexDirection: 'row',
@@ -1449,7 +1551,7 @@ function createStyles(c) {
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: '#FFFFFF',
+      borderColor: c.background,
     },
     rowAvatarWrap: {
       width: 34,
@@ -1546,6 +1648,23 @@ function createStyles(c) {
       paddingHorizontal: spacing.md,
       paddingBottom: spacing.md,
       gap: spacing.sm,
+    },
+    chatHeaderVerBtn: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 6,
+      borderRadius: radii.lg,
+      backgroundColor: 'rgba(255,255,255,0.14)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.22)',
+      marginLeft: spacing.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 36,
+    },
+    chatHeaderVerTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      color: '#FFFFFF',
     },
     chatBack: { padding: 4 },
     chatTitle: {

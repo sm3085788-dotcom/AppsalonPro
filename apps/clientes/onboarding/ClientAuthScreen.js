@@ -42,6 +42,10 @@ export function ClientAuthScreen({ onAuthSuccess }) {
           flex: 1,
           backgroundColor: c.background,
         },
+        scroll: {
+          flex: 1,
+          backgroundColor: c.background,
+        },
         scrollContent: {
           paddingHorizontal: spacing.lg,
           paddingTop: insets.top + spacing.lg,
@@ -273,6 +277,7 @@ export function ClientAuthScreen({ onAuthSuccess }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        style={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}

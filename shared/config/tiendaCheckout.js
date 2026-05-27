@@ -1,6 +1,10 @@
-import { db } from './supabaseClient.js';
-import { registrarMontoVentaEnMeta } from './metaGlobal.js';
-import { splitNotas, DEFAULT_TIENDA_META, servicioUsaPreciosPorVolumen } from './inventarioMeta.js';
+import {
+  splitNotas,
+  DEFAULT_TIENDA_META,
+  servicioUsaPreciosPorVolumen,
+  resolvePrecioRegularTienda,
+} from './inventarioMeta.js';
+import { crearPedidoTarjetaPendiente } from './pedidoSalon.js';
 
 /** Texto en catálogo App Clientes para servicios con precios por volumen (solo salón). */
 export const PRECIO_VARIABLE_LABEL = 'Precio variable';
@@ -13,70 +17,12 @@ function formatQ(n) {
 }
 
 /**
- * Cierra compra con tarjeta desde app clientes: venta en `ventas`, descuenta stock y suma monto a la meta global.
- * @param {{ clienteId?: string, clienteNombre?: string, cartItems: Array<{ id: string, title: string, qty: number, priceAmount: number }> }} params
+ * Tarjeta desde app clientes: crea pedido en `ecommerce_orders` (RLS cliente), sin tocar `ventas` ni stock.
+ * El salón confirma cobro con su pasarela y usa «Pedidos» para cerrar venta y stock (mismo flujo que efectivo).
+ * @param {{ clienteNombre?: string, clienteTelefono?: string, clientUserId?: string, cartItems: Array<{ id: string, title: string, qty: number, priceAmount: number }>, shipId?: string, homeAddressType?: string, deliveryAddress?: string | null, cardLast4?: string | null }} params
  */
-export async function confirmarCompraConTarjeta({ clienteId, clienteNombre, cartItems }) {
-  const lines = (cartItems || []).filter((i) => i?.id && Number(i.qty) > 0);
-  if (!lines.length) {
-    return { ok: false, error: { message: 'El carrito está vacío.' } };
-  }
-
-  for (const line of lines) {
-    const { data: prod, error: pErr } = await db.inventario.getById(line.id);
-    if (pErr || !prod) {
-      return { ok: false, error: { message: `Producto no encontrado: ${line.title || line.id}` } };
-    }
-    const stock = Number(prod.stock_actual ?? 0);
-    if (stock < Number(line.qty)) {
-      return {
-        ok: false,
-        error: { message: `Stock insuficiente para «${prod.nombre}» (hay ${stock}, pediste ${line.qty}).` },
-      };
-    }
-  }
-
-  const subtotal = lines.reduce((s, l) => s + Number(l.priceAmount || 0) * Number(l.qty || 0), 0);
-  const items = lines.map((l) => ({
-    producto_id: l.id,
-    nombre: l.title,
-    cantidad: l.qty,
-    precio_unitario: Number(l.priceAmount || 0),
-    subtotal: Number(l.priceAmount || 0) * Number(l.qty || 0),
-  }));
-  const noFactura = `WEB-${Date.now().toString(36).toUpperCase()}`;
-
-  const { data: venta, error: vErr } = await db.ventas.create({
-    cliente_id: clienteId || null,
-    cliente_nombre: clienteNombre?.trim() || null,
-    total: subtotal,
-    monto: subtotal,
-    metodo_pago: 'tarjeta',
-    items,
-    no_factura: noFactura,
-    descuento: 0,
-    notas: 'Compra app clientes · tarjeta',
-    detalles_pago: 'Tarjeta guardada (app clientes)',
-  });
-
-  if (vErr) return { ok: false, error: vErr };
-
-  for (const line of lines) {
-    const { error: dErr } = await db.inventario.decrementarStock(line.id, line.qty);
-    if (dErr) {
-      return {
-        ok: false,
-        error: {
-          message: `Venta ${noFactura} registrada, pero falló el descuento de stock de «${line.title}». Revisá inventario.`,
-        },
-        venta,
-      };
-    }
-  }
-
-  await registrarMontoVentaEnMeta(subtotal);
-
-  return { ok: true, venta, noFactura, total: subtotal };
+export async function confirmarCompraConTarjeta(params) {
+  return crearPedidoTarjetaPendiente(params);
 }
 
 export function mapInventarioToTiendaProduct(row) {
@@ -89,6 +35,8 @@ export function mapInventarioToTiendaProduct(row) {
   const venta = precioVariable ? null : Number(row.precio_venta || 0);
   const tipo = meta.articuloTipo === 'servicio' ? 'servicio' : 'producto';
   const stock = Number(row.stock_actual ?? 0);
+  const precioRegular =
+    !precioVariable && Number.isFinite(venta) && venta > 0 ? resolvePrecioRegularTienda(row, venta) : null;
 
   return {
     id: row.id,
@@ -101,16 +49,19 @@ export function mapInventarioToTiendaProduct(row) {
     precioVariable,
     priceLabel: precioVariable ? PRECIO_VARIABLE_LABEL : formatQ(venta),
     priceAmount: precioVariable ? null : venta,
-    compareAtLabel: null,
-    stockHint: precioVariable
-      ? PRECIO_VARIABLE_HINT
-      : stock > 0
-        ? tipo === 'servicio'
-          ? 'Disponible para agendar'
-          : 'Disponible en salón'
-        : tipo === 'servicio'
-          ? 'Consultá disponibilidad en salón'
-          : 'Consultá disponibilidad en salón',
+    compareAtLabel: precioRegular != null ? formatQ(precioRegular) : null,
+    stockHint:
+      tipo === 'servicio' && String(meta.hintTarjeta || '').trim()
+        ? String(meta.hintTarjeta).trim()
+        : precioVariable
+          ? PRECIO_VARIABLE_HINT
+          : stock > 0
+            ? tipo === 'servicio'
+              ? 'Disponible para agendar'
+              : 'Disponible en salón'
+            : tipo === 'servicio'
+              ? 'Consultá disponibilidad en salón'
+              : 'Consultá disponibilidad en salón',
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
     shippingLabel: meta.shippingLabel || DEFAULT_TIENDA_META.shippingLabel,

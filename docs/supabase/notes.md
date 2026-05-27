@@ -76,6 +76,7 @@ ORDER BY p.proname;
 ## Relaciones sin FK declarada en `information_schema`
 
 - `clientes.user_id` suele enlazar **lógicamente** a `auth.users.id`; las políticas `clientes_client_*` usan `auth.uid()`.
+- **App Clientes · tienda:** al final de `clientes.notas` puede guardarse un bloque JSON tras el marcador `__APP_CLIENTES_ENVIO_DOMICILIO__` (dirección de envío reutilizable). Las notas del salón deben quedar **antes** de ese marcador.
 - `ecommerce_orders.client_user_id` alinea pedidos al usuario Auth (políticas `ecommerce_orders_client_*`).
 - **`citas`**: políticas `*_role_*` usan `is_staff_or_admin()` → en la práctica **solo admin** tras el cambio de función recomendado; el cliente app necesita políticas propias para `INSERT`/`SELECT` (ver sección Agenda abajo).
 

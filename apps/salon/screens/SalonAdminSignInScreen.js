@@ -120,6 +120,7 @@ export function SalonAdminSignInScreen({ onSignedIn, initialError }) {
     >
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView
+        style={styles.scrollView}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.scroll,
@@ -172,6 +173,7 @@ export function SalonAdminSignInScreen({ onSignedIn, initialError }) {
 function createStyles(c) {
   return StyleSheet.create({
     root: { flex: 1 },
+    scrollView: { flex: 1, backgroundColor: c.background },
     scroll: { paddingHorizontal: spacing.lg },
     title: {
       fontFamily: typography.fontDisplay,

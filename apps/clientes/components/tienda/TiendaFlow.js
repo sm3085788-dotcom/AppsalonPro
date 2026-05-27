@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
-import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, Building2, QrCode } from 'lucide-react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, QrCode } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SalonButton } from '../luxury/SalonButton';
 import { createSubStyles } from '../luxury/SubScreenChrome';
@@ -19,6 +19,9 @@ import {
   buildTiendaProductFicha,
   db,
   mapInventarioToTiendaProduct,
+  splitClienteNotasEnvio,
+  mergeClienteNotasEnvio,
+  normalizeEnvioGuardado,
 } from '@appsalon/shared-config';
 
 const STAR_GOLD = '#FFB800';
@@ -76,8 +79,8 @@ function SpecRow({ label, value }) {
 }
 
 /**
- * Catálogo → ficha → resumen → envío → pago → venta cerrada.
- * Compra con tarjeta: venta real, descuenta stock y suma unidades a la meta global.
+ * Catálogo → ficha → resumen → envío → pago → confirmación.
+ * Tarjeta y efectivo crean pedido en `ecommerce_orders`; dirección de envío opcional se guarda en la ficha cliente.
  */
 export function TiendaFlow({
   onClose,
@@ -87,6 +90,8 @@ export function TiendaFlow({
   clientUserId,
   initialProductId = null,
   initialPhase = null,
+  /** Cambia al abrir el carrito desde el header para forzar fase «cart» aunque el payload sea igual. */
+  tiendaOpenKey = 0,
   onPurchaseComplete,
   onPedidosChanged,
 }) {
@@ -106,22 +111,64 @@ export function TiendaFlow({
   const [specsExpanded, setSpecsExpanded] = useState(false);
   const [shipId, setShipId] = useState('ship-home');
   const [homeAddressType, setHomeAddressType] = useState('casa');
+  const [homeContactName, setHomeContactName] = useState('');
+  const [homePhone, setHomePhone] = useState('');
+  const [homeAddressFull, setHomeAddressFull] = useState('');
   const [homeSaved, setHomeSaved] = useState(false);
   const [pickupQrIssued, setPickupQrIssued] = useState(false);
   const [payId, setPayId] = useState('pay-card');
-  const [wireTransferConfirmed, setWireTransferConfirmed] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState('card-4242');
   const [showAddCardForm, setShowAddCardForm] = useState(false);
   const [cardSavedToast, setCardSavedToast] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
   const [gridCartToast, setGridCartToast] = useState(null);
   const deepLinkDone = useRef(false);
   const gridToastTimer = useRef(null);
 
   useEffect(() => {
     if (initialPhase) setPhase(initialPhase);
-  }, [initialPhase]);
+  }, [initialPhase, tiendaOpenKey]);
+
+  useEffect(() => {
+    if (phase !== 'ship' || shipId !== 'ship-home' || !clienteId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await db.clientes.getById(clienteId);
+        if (cancelled || error || !data) return;
+        const { envio } = splitClienteNotasEnvio(data.notas);
+        const n = normalizeEnvioGuardado(envio);
+        if (!n) {
+          setHomeContactName((p) => p || String(clienteNombre || '').trim());
+          const tel = String(clienteTelefono || '')
+            .replace(/—/g, '')
+            .trim();
+          if (tel.length >= 6) setHomePhone((p) => p || tel);
+          return;
+        }
+        setHomeAddressType(n.tipo);
+        setHomeContactName(n.contacto || String(clienteNombre || '').trim());
+        const tel =
+          n.telefono ||
+          String(clienteTelefono || '')
+            .replace(/—/g, '')
+            .trim();
+        setHomePhone(tel);
+        setHomeAddressFull(n.direccion || '');
+        const contactOk = String(n.contacto || clienteNombre || '').trim().length > 0;
+        const telOk = String(n.telefono || tel || '').trim().length >= 6;
+        const dirOk = String(n.direccion || '').trim().length >= 10;
+        if (contactOk && telOk && dirOk) setHomeSaved(true);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, shipId, clienteId, clienteNombre, clienteTelefono]);
 
   useEffect(
     () => () => {
@@ -181,6 +228,14 @@ export function TiendaFlow({
   };
 
   const openProduct = (product) => {
+    if (product?.catalogKind === 'promo') {
+      Alert.alert(
+        product.title || 'Promoción',
+        product.promoBody?.trim() || 'Consultá condiciones en recepción Salon Andreas.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
     setSelected(product);
     setQty(1);
     setCartHint(false);
@@ -236,23 +291,53 @@ export function TiendaFlow({
   };
 
   const shipOptions = [
-    { id: 'ship-home', label: 'Envío a domicilio', sub: 'Zona metropolitana · 2–4 días hábiles' },
+    {
+      id: 'ship-home',
+      label: 'Envío a domicilio',
+      sub: 'Un agente te llamará para coordinar el envío.',
+    },
     { id: 'ship-salon', label: 'Retiro en salón', sub: 'Aura Salón · listo en 24 h' },
   ];
 
   const payOptions = [
-    { id: 'pay-card', label: 'Tarjeta guardada', sub: 'Visa terminada en 4242', Icon: CreditCard },
-    { id: 'pay-cash', label: 'Efectivo al retirar', sub: 'Pagas cuando recoges en salón', Icon: Wallet },
-    { id: 'pay-wire', label: 'Transferencia', sub: 'Banco Industrial · referencia en siguiente paso', Icon: Building2 },
+    {
+      id: 'pay-card',
+      label: 'Tarjeta guardada',
+      sub: 'Se envía el pedido al salón; el cobro lo confirma el equipo con su pasarela.',
+      Icon: CreditCard,
+    },
+    {
+      id: 'pay-cash',
+      label: 'Pagar en efectivo',
+      sub: 'Un agente del salón te llamará para coordinar tu envío.',
+      Icon: Wallet,
+    },
   ];
   const savedCards = [
     { id: 'card-4242', label: 'Visa ··· 4242', sub: 'Predeterminada · vence 08/29' },
     { id: 'card-1189', label: 'Mastercard ··· 1189', sub: 'Personal · vence 11/28' },
   ];
   const selectedCard = savedCards.find((c) => c.id === selectedCardId) ?? savedCards[0];
-  const canConfirmPurchase = payId === 'pay-wire' ? wireTransferConfirmed : true;
-  const homeShippingEligible = cartSubtotal >= 350;
-  const shippingReady = shipId === 'ship-home' ? homeSaved : pickupQrIssued;
+  const homeShipFieldsOk =
+    String(homeContactName).trim().length > 0 &&
+    String(homePhone).trim().length >= 6 &&
+    String(homeAddressFull).trim().length >= 10;
+  const shippingReady = shipId === 'ship-home' ? homeSaved && homeShipFieldsOk : pickupQrIssued;
+
+  const buildDeliveryAddressSnapshot = () => {
+    if (shipId !== 'ship-home') return null;
+    return [
+      `Tipo: ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`,
+      `Contacto: ${String(homeContactName).trim()}`,
+      `Tel: ${String(homePhone).trim()}`,
+      `Dirección: ${String(homeAddressFull).trim()}`,
+    ].join('\n');
+  };
+
+  const cardLast4FromSelection = () => {
+    const m = String(selectedCardId || '').match(/(\d{4})$/);
+    return m ? m[1] : null;
+  };
 
   return (
     <View style={styles.wrap}>
@@ -596,19 +681,15 @@ export function TiendaFlow({
           <PhaseBack label="Resumen" onPress={() => setPhase('summary')} />
 
           <Text style={styles.stepHead}>¿Cómo lo recibes?</Text>
-          <Text style={styles.stepSub}>Toca una opción (solo selección visual).</Text>
+          <Text style={styles.stepSub}>Elegí envío o retiro en salón. Si pedís envío, completá la dirección.</Text>
 
           {shipOptions.map((o) => (
             <TouchableOpacity
               key={o.id}
-              style={[
-                styles.choiceCard,
-                shipId === o.id && styles.choiceCardOn,
-                o.id === 'ship-home' && !homeShippingEligible && styles.choiceCardDisabled,
-              ]}
+              style={[styles.choiceCard, shipId === o.id && styles.choiceCardOn]}
               onPress={() => {
-                if (o.id === 'ship-home' && !homeShippingEligible) return;
                 setShipId(o.id);
+                setHomeSaved(false);
                 if (o.id === 'ship-home') {
                   setPickupQrIssued(false);
                 }
@@ -620,11 +701,7 @@ export function TiendaFlow({
               activeOpacity={0.88}
             >
               <Text style={styles.choiceTitle}>{o.label}</Text>
-              <Text style={styles.choiceSub}>
-                {o.id === 'ship-home' && !homeShippingEligible
-                  ? 'Disponible para compras mayores a Q 350.00'
-                  : o.sub}
-              </Text>
+              <Text style={styles.choiceSub}>{o.sub}</Text>
             </TouchableOpacity>
           ))}
 
@@ -632,7 +709,8 @@ export function TiendaFlow({
             <View style={[subStyles.card, styles.shipScenarioCard]}>
               <Text style={subStyles.rowLabel}>Dirección de entrega</Text>
               <Text style={styles.choiceSub}>
-                Completa estos datos para cotizar ruta y confirmar envío.
+                Un agente te llamará para coordinar el envío. Completá estos datos para que el salón te ubique sin
+                errores. Si ya guardaste una dirección con tu cuenta, se muestra aquí automáticamente.
               </Text>
 
               <View style={styles.shipChipRow}>
@@ -641,7 +719,10 @@ export function TiendaFlow({
                     styles.shipChip,
                     homeAddressType === 'casa' && styles.shipChipOn,
                   ]}
-                  onPress={() => setHomeAddressType('casa')}
+                  onPress={() => {
+                    setHomeAddressType('casa');
+                    setHomeSaved(false);
+                  }}
                   activeOpacity={0.86}
                 >
                   <Text style={styles.shipChipText}>Casa</Text>
@@ -651,7 +732,10 @@ export function TiendaFlow({
                     styles.shipChip,
                     homeAddressType === 'trabajo' && styles.shipChipOn,
                   ]}
-                  onPress={() => setHomeAddressType('trabajo')}
+                  onPress={() => {
+                    setHomeAddressType('trabajo');
+                    setHomeSaved(false);
+                  }}
                   activeOpacity={0.86}
                 >
                   <Text style={styles.shipChipText}>Trabajo</Text>
@@ -659,19 +743,45 @@ export function TiendaFlow({
               </View>
 
               <Text style={styles.formLabel}>Nombre de contacto</Text>
-              <View style={subStyles.fauxInput} />
+              <TextInput
+                style={styles.formField}
+                value={homeContactName}
+                onChangeText={(t) => {
+                  setHomeContactName(t);
+                  setHomeSaved(false);
+                }}
+                placeholder="Nombre y apellido"
+                placeholderTextColor={tc.foregroundSubtle}
+                autoCapitalize="words"
+              />
               <Text style={styles.formLabel}>Teléfono</Text>
-              <View style={subStyles.fauxInput} />
+              <TextInput
+                style={styles.formField}
+                value={homePhone}
+                onChangeText={(t) => {
+                  setHomePhone(t);
+                  setHomeSaved(false);
+                }}
+                placeholder="Ej. 502 1234 5678"
+                placeholderTextColor={tc.foregroundSubtle}
+                keyboardType="phone-pad"
+              />
               <Text style={styles.formLabel}>Dirección completa</Text>
-              <View style={[subStyles.fauxInput, { height: 96, justifyContent: 'center' }]}>
-                <Text style={styles.inlineHintText}>
-                  Escribe tu dirección de forma clara para ubicarte rápido y sin errores.
-                </Text>
-              </View>
+              <TextInput
+                style={[styles.formField, styles.formFieldMultiline]}
+                value={homeAddressFull}
+                onChangeText={(t) => {
+                  setHomeAddressFull(t);
+                  setHomeSaved(false);
+                }}
+                placeholder="Zona, calle, número, referencias…"
+                placeholderTextColor={tc.foregroundSubtle}
+                multiline
+                textAlignVertical="top"
+              />
 
               <Text style={styles.shipContactMsg}>
-                La persona asignada para tu envío se comunicará contigo para coordinar la hora exacta de
-                entrega.
+                La persona asignada para tu envío se comunicará contigo para coordinar la hora exacta de entrega.
               </Text>
 
               {homeSaved ? (
@@ -681,7 +791,48 @@ export function TiendaFlow({
                 title="Guardar dirección de envío"
                 variant="outlineGold"
                 fullWidth
-                onPress={() => setHomeSaved(true)}
+                loading={savingAddress}
+                onPress={async () => {
+                  if (!homeShipFieldsOk) {
+                    Alert.alert(
+                      'Dirección incompleta',
+                      'Completá nombre, teléfono (mín. 6 dígitos) y una dirección clara (mín. 10 caracteres).',
+                    );
+                    return;
+                  }
+                  if (!clienteId) {
+                    Alert.alert(
+                      'Iniciá sesión',
+                      'Para guardar tu dirección en tu cuenta y reutilizarla en la próxima compra, iniciá sesión en App Clientes.',
+                    );
+                    return;
+                  }
+                  setSavingAddress(true);
+                  try {
+                    const { data: row, error: gErr } = await db.clientes.getById(clienteId);
+                    if (gErr || !row) {
+                      Alert.alert('No se guardó', gErr?.message || 'No se pudo leer tu ficha de cliente.');
+                      return;
+                    }
+                    const { staffNotas } = splitClienteNotasEnvio(row.notas);
+                    const envio = {
+                      tipo: homeAddressType,
+                      contacto: String(homeContactName).trim(),
+                      telefono: String(homePhone).trim(),
+                      direccion: String(homeAddressFull).trim(),
+                      updatedAt: new Date().toISOString(),
+                    };
+                    const notas = mergeClienteNotasEnvio(staffNotas, envio);
+                    const { error: uErr } = await db.clientes.update(clienteId, { notas });
+                    if (uErr) {
+                      Alert.alert('No se guardó', uErr.message || 'Revisá permisos o conexión.');
+                      return;
+                    }
+                    setHomeSaved(true);
+                  } finally {
+                    setSavingAddress(false);
+                  }
+                }}
                 style={{ marginTop: spacing.sm }}
               />
             </View>
@@ -722,7 +873,10 @@ export function TiendaFlow({
           <PhaseBack label="Envío" onPress={() => setPhase('ship')} />
 
           <Text style={styles.stepHead}>Método de pago</Text>
-          <Text style={styles.stepSub}>El cobro real irá con tu pasarela; aquí solo botones.</Text>
+          <Text style={styles.stepSub}>
+            Efectivo: pedido al salón y pagás al retirar. Tarjeta: pedido al salón; el cobro con pasarela lo confirma el
+            equipo antes de preparar tu compra.
+          </Text>
 
           {payOptions.map(({ id, label, sub, Icon }) => (
             <TouchableOpacity
@@ -733,9 +887,6 @@ export function TiendaFlow({
                 if (id !== 'pay-card') {
                   setShowAddCardForm(false);
                   setCardSavedToast(false);
-                }
-                if (id !== 'pay-wire') {
-                  setWireTransferConfirmed(false);
                 }
               }}
               activeOpacity={0.88}
@@ -819,53 +970,17 @@ export function TiendaFlow({
             </View>
           ) : null}
 
-          {payId === 'pay-wire' ? (
-            <View style={[subStyles.card, styles.cardManager]}>
-              <Text style={subStyles.rowLabel}>Confirmación de transferencia</Text>
-              <Text style={styles.choiceSub}>
-                Debes comunicarte con el salón y confirmar la transferencia para proseguir con la compra.
-              </Text>
-              <TouchableOpacity
-                style={styles.savedCardRow}
-                onPress={() => Linking.openURL('tel:+50247132123').catch(() => {})}
-                activeOpacity={0.86}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.choiceTitle}>Llamar al salón</Text>
-                  <Text style={styles.choiceSub}>+502 4713-2123</Text>
-                </View>
-                <Text style={styles.cardPickText}>Llamar</Text>
-              </TouchableOpacity>
-
-              {wireTransferConfirmed ? (
-                <Text style={styles.shipOkMsg}>Transferencia confirmada · puedes finalizar tu compra.</Text>
-              ) : (
-                <Text style={styles.choiceSub}>
-                  Si no se confirma la transferencia, el botón final permanecerá deshabilitado.
-                </Text>
-              )}
-
-              <SalonButton
-                title="Ya confirmé la transferencia"
-                variant="outlineGold"
-                fullWidth
-                style={{ marginTop: spacing.sm }}
-                onPress={() => setWireTransferConfirmed(true)}
-              />
-            </View>
-          ) : null}
-
           <SalonButton
-            title={checkoutBusy ? 'Procesando…' : 'Confirmar pedido y cerrar venta'}
+            title={checkoutBusy ? 'Procesando…' : 'Enviar pedido al salón'}
             variant="heroGold"
             fullWidth
             style={{ marginTop: spacing.lg }}
             onPress={async () => {
               if (payId === 'pay-card') {
-                if (!clienteId) {
+                if (!clientUserId) {
                   Alert.alert(
-                    'Iniciá sesión',
-                    'Para pagar con tarjeta necesitás una cuenta de cliente vinculada al salón.',
+                    'Sesión requerida',
+                    'Iniciá sesión con tu cuenta para enviar el pedido al salón (tarjeta o efectivo).',
                   );
                   return;
                 }
@@ -883,32 +998,38 @@ export function TiendaFlow({
                 }
                 setCheckoutBusy(true);
                 const res = await confirmarCompraConTarjeta({
-                  clienteId,
                   clienteNombre,
+                  clienteTelefono,
+                  clientUserId: clientUserId || null,
                   cartItems,
+                  shipId,
+                  homeAddressType,
+                  deliveryAddress: buildDeliveryAddressSnapshot(),
+                  cardLast4: cardLast4FromSelection(),
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {
-                  Alert.alert('No se completó la compra', res.error?.message || 'Intentá de nuevo.');
+                  Alert.alert('No se envió el pedido', res.error?.message || 'Intentá de nuevo.');
                   return;
                 }
-                const orderCode = res.noFactura || `APS-${String(Date.now()).slice(-6)}`;
+                const orderCode = res.trackingCode || res.order?.tracking_code || `APS-${String(Date.now()).slice(-6)}`;
                 setLastOrder({
                   code: orderCode,
                   items: cartItems,
                   subtotal: cartSubtotal,
                   total: cartSubtotal,
-                  paymentSummary: `Tarjeta guardada · ${selectedCard.label}`,
+                  paymentSummary: `Tarjeta · últimos ${cardLast4FromSelection() || '—'} · pendiente de cobro en salón`,
                   shippingSummary:
                     shipId === 'ship-home'
-                      ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
+                      ? `Envío a domicilio · agente coordinará · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
                       : 'Retiro en salón con QR',
                   qrCode: null,
-                  realSale: true,
+                  realSale: 'pending_card',
                 });
                 setPhase('success');
                 setCartItems([]);
                 onPurchaseComplete?.();
+                onPedidosChanged?.();
                 return;
               }
 
@@ -940,6 +1061,7 @@ export function TiendaFlow({
                   cartItems,
                   shipId,
                   homeAddressType,
+                  deliveryAddress: buildDeliveryAddressSnapshot(),
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {
@@ -954,7 +1076,7 @@ export function TiendaFlow({
                   paymentSummary: 'Efectivo · pendiente de cobro en salón',
                   shippingSummary:
                     shipId === 'ship-home'
-                      ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
+                      ? `Envío a domicilio · agente coordinará · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
                       : 'Retiro en salón',
                   qrCode: shipId === 'ship-salon' ? res.trackingCode : null,
                   realSale: 'pending_cash',
@@ -966,27 +1088,9 @@ export function TiendaFlow({
                 return;
               }
 
-              const orderCode = `APS-${String(Date.now()).slice(-6)}`;
-              const paymentSummary = 'Transferencia confirmada por llamada';
-              const shippingSummary =
-                shipId === 'ship-home'
-                  ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
-                  : 'Retiro en salón con QR';
-
-              setLastOrder({
-                code: orderCode,
-                items: cartItems,
-                subtotal: cartSubtotal,
-                total: cartSubtotal,
-                paymentSummary,
-                shippingSummary,
-                qrCode: null,
-                realSale: false,
-              });
-              setPhase('success');
-              setCartItems([]);
+              Alert.alert('Método de pago', 'Elegí tarjeta o efectivo para continuar.');
             }}
-            disabled={!canConfirmPurchase || checkoutBusy}
+            disabled={checkoutBusy}
           />
         </View>
       ) : null}
@@ -994,14 +1098,14 @@ export function TiendaFlow({
       {phase === 'success' ? (
         <View style={styles.section}>
           <View style={[subStyles.card, styles.successCard]}>
-            <Text style={styles.successTitle}>Venta cerrada</Text>
+            <Text style={styles.successTitle}>Pedido enviado</Text>
             <Text style={subStyles.bullets}>
               Pedido #{lastOrder?.code ?? '—'}
-              {lastOrder?.realSale === true
-                ? ' · Compra con tarjeta registrada, stock descontado y monto sumado a la meta.'
+              {lastOrder?.realSale === 'pending_card'
+                ? ' · El salón recibió tu pedido con tarjeta indicada. El cobro real lo confirma el equipo con su pasarela; el stock se descuenta al cerrar la venta en Pedidos.'
                 : lastOrder?.realSale === 'pending_cash'
                   ? ' · Pedido enviado al salón. Pagá en efectivo al retirar; el equipo lo confirmará en Pedidos.'
-                  : ' · Pedido de referencia (transferencia).'}
+                  : ' · Guardá tu código de seguimiento en la app.'}
             </Text>
           </View>
 
@@ -1426,9 +1530,6 @@ function createTiendaStyles(c) {
     borderWidth: 2,
     backgroundColor: c.surfaceMuted,
   },
-  choiceCardDisabled: {
-    opacity: 0.55,
-  },
   choiceTitle: {
     fontFamily: typography.fontSansMedium,
     fontSize: 15,
@@ -1450,6 +1551,24 @@ function createTiendaStyles(c) {
     color: c.foregroundMuted,
     marginTop: spacing.sm,
     marginBottom: 4,
+  },
+  formField: {
+    minHeight: 48,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: c.cardBorder,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    backgroundColor: c.card,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+    fontFamily: typography.fontSans,
+    fontSize: 15,
+    color: c.foreground,
+  },
+  formFieldMultiline: {
+    minHeight: 100,
+    paddingTop: 12,
   },
   inlineHintText: {
     fontFamily: typography.fontSans,
