@@ -1,4 +1,5 @@
 import { db, supabase } from './supabaseClient.js';
+import { formatTendenciasPublicationLine } from './tendenciasPublication.js';
 
 export const MARKETING_INTEREST_TYPES = {
   TENDENCIAS: 'tendencias_interest',
@@ -18,6 +19,7 @@ export async function registerMarketingInterest({
   title,
   detail,
   postId = null,
+  publicationNo = null,
   mediaUrl = null,
   buttonLabel = null,
   kicker = null,
@@ -67,9 +69,15 @@ export async function registerMarketingInterest({
   const source = interestLabel(type);
   const titular = String(headline || title || 'Publicación').trim();
   const extra = String(detail || '').trim();
+  const pubLine =
+    type === MARKETING_INTEREST_TYPES.TENDENCIAS
+      ? formatTendenciasPublicationLine(publicationNo)
+      : postId != null
+        ? `Publicación #${postId}`
+        : null;
   const lines = [
     `📣 Solicitud · ${source}`,
-    postId != null ? `Publicación #${postId}` : null,
+    pubLine,
     kicker ? `Etiqueta: ${String(kicker).trim()}` : null,
     `Titular: ${titular}`,
     extra ? `Descripción: ${extra}` : null,
@@ -87,7 +95,7 @@ export async function registerMarketingInterest({
     content,
     content_type: type,
     media_url: mediaUrl || null,
-    media_kind: mediaUrl ? 'image' : null,
+    media_kind: mediaUrl ? 'image' : null, // miniatura JPEG, no el video completo
     status: 'delivered',
     created_by: user.id,
     created_by_name: clientName,

@@ -12,6 +12,8 @@ import {
   Keyboard,
   Platform,
   Alert,
+  RefreshControl,
+  AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -23,6 +25,7 @@ import {
   markClientAuraDelivered,
   sendClientAuraChat,
   isSalonOutboundMessage,
+  mergeAuraMessage,
   uploadMensajeMediaFromUri,
   broadcastPreviewText,
   parseCitaConfirmacionContent,
@@ -93,8 +96,16 @@ function formatWhen(iso) {
   }
 }
 
+function isFromClientMessage(item, sessionUserId) {
+  const uid = sessionUserId ? String(sessionUserId) : '';
+  const author = item.created_by != null ? String(item.created_by) : '';
+  return Boolean(uid && author && author === uid);
+}
+
 /** Altura aprox. del encabezado SubScreenChrome (Volver + título + subtítulo). */
 const CHROME_HEADER_EST = 118;
+const SYNC_POLL_MS = 60000;
+const INITIAL_MSG_LIMIT = 60;
 
 /** Burbuja del cliente (vos): distinta a la del salón (card blanca). */
 const CLIENT_BUBBLE = {
@@ -109,22 +120,54 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   const keyboardVerticalOffset = insets.top + CHROME_HEADER_EST;
   const styles = useMemo(() => createStyles(c), [c]);
   const listRef = useRef(null);
+  const chatStickToBottomRef = useRef(true);
+  const ignoreScrollStickRef = useRef(false);
+  const onUnreadChangeRef = useRef(onUnreadChange);
+  onUnreadChangeRef.current = onUnreadChange;
+
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [promoBusy, setPromoBusy] = useState(false);
   const [pendingImage, setPendingImage] = useState(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const markDeliveredOnOpenRef = useRef(false);
   const composerPadBottom = isKeyboardVisible
     ? spacing.xs
     : Math.max(insets.bottom, Platform.OS === 'android' ? 6 : 4);
 
-  const scrollToEnd = useCallback((animated = true) => {
-    requestAnimationFrame(() => {
+  const scrollToEnd = useCallback((animated = true, force = false) => {
+    if (!force && !chatStickToBottomRef.current) return;
+    ignoreScrollStickRef.current = true;
+    chatStickToBottomRef.current = true;
+    const scroll = () => {
       listRef.current?.scrollToEnd({ animated });
+      requestAnimationFrame(() => {
+        ignoreScrollStickRef.current = false;
+      });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(scroll));
+  }, []);
+
+  const onChatContentSizeChange = useCallback(() => {
+    if (!chatStickToBottomRef.current) return;
+    ignoreScrollStickRef.current = true;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+      requestAnimationFrame(() => {
+        ignoreScrollStickRef.current = false;
+      });
     });
+  }, []);
+
+  const onChatScroll = useCallback((e) => {
+    if (ignoreScrollStickRef.current) return;
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    chatStickToBottomRef.current = distFromBottom < 72;
   }, []);
 
   const clientMeta = useMemo(
@@ -135,51 +178,93 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
     [clienteRow, sessionUser],
   );
 
-  const refresh = useCallback(async () => {
-    if (!clienteRow?.id) {
-      setMessages([]);
-      setLoadError(null);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setLoadError(null);
-    const { data, error } = await fetchClientAuraMessages(250);
-    setLoading(false);
-    if (error) {
-      setMessages([]);
-      setLoadError(error.message || 'No se pudieron cargar los mensajes.');
-      return;
-    }
-    const sorted = [...(data || [])].sort(
-      (a, b) => new Date(a.created_at) - new Date(b.created_at),
-    );
-    setMessages(sorted);
-    scrollToEnd(false);
-    const pendingIds = sorted
+  const markSalonMessagesDelivered = useCallback(async (rows, { onlyIfViewing = false } = {}) => {
+    if (onlyIfViewing && !markDeliveredOnOpenRef.current) return rows || [];
+    const pendingIds = (rows || [])
       .filter((m) => m.status === 'pending_sync' && isSalonOutboundMessage(m))
-      .map((m) => m.id);
-    if (pendingIds.length) {
-      await markClientAuraDelivered(pendingIds);
-      setMessages((prev) =>
-        prev.map((m) =>
-          pendingIds.includes(m.id)
-            ? { ...m, status: 'delivered', delivered_at: new Date().toISOString() }
-            : m,
-        ),
-      );
-    }
-    onUnreadChange?.();
-  }, [clienteRow?.id, onUnreadChange, scrollToEnd]);
+      .map((m) => m.id)
+      .filter((id) => id != null);
+    if (!pendingIds.length) return rows || [];
+    await markClientAuraDelivered(pendingIds);
+    onUnreadChangeRef.current?.();
+    const idSet = new Set(pendingIds.map(String));
+    return (rows || []).map((m) =>
+      idSet.has(String(m.id))
+        ? { ...m, status: 'delivered', delivered_at: new Date().toISOString() }
+        : m,
+    );
+  }, []);
+
+  const loadMessages = useCallback(
+    async (opts = {}) => {
+      const silent = Boolean(opts.silent);
+      if (!clienteRow?.id) {
+        setMessages([]);
+        setLoadError(null);
+        setLoading(false);
+        return;
+      }
+      if (!silent) {
+        setLoading(true);
+        setLoadError(null);
+      }
+      const limit = silent ? 300 : INITIAL_MSG_LIMIT;
+      const { data, error } = await fetchClientAuraMessages(limit);
+      if (!silent) setLoading(false);
+      if (error) {
+        if (!silent) {
+          setMessages([]);
+          setLoadError(error.message || 'No se pudieron cargar los mensajes.');
+        }
+        return;
+      }
+      const marked = await markSalonMessagesDelivered(data || [], {
+        onlyIfViewing: true,
+      });
+      setMessages(marked);
+      setLoadError(null);
+      if (!silent) {
+        scrollToEnd(false, true);
+      } else if (chatStickToBottomRef.current) {
+        scrollToEnd(false, true);
+      }
+    },
+    [clienteRow?.id, markSalonMessagesDelivered, scrollToEnd],
+  );
+
+  const applyIncomingRow = useCallback(
+    async (row) => {
+      if (!row?.id) return;
+      setMessages((prev) => mergeAuraMessage(prev, row));
+      const fromSalon =
+        isSalonOutboundMessage(row) && !isFromClientMessage(row, sessionUser?.id);
+      if (fromSalon && row.status === 'pending_sync') {
+        onUnreadChangeRef.current?.();
+      }
+      if (fromSalon) {
+        chatStickToBottomRef.current = true;
+        scrollToEnd(true, true);
+      }
+    },
+    [scrollToEnd, sessionUser?.id],
+  );
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    chatStickToBottomRef.current = true;
+    markDeliveredOnOpenRef.current = false;
+    const openTimer = setTimeout(() => {
+      markDeliveredOnOpenRef.current = true;
+      void loadMessages({ silent: true });
+    }, 700);
+    void loadMessages({ silent: false });
+    return () => clearTimeout(openTimer);
+  }, [clienteRow?.id, loadMessages]);
 
   useEffect(() => {
     if (!clienteRow?.id) return undefined;
+
     const channel = supabase
-      .channel(`aura-client-${clienteRow.id}`)
+      .channel(`aura-client-sync-${clienteRow.id}`)
       .on(
         'postgres_changes',
         {
@@ -188,21 +273,36 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
           table: 'marketing_direct_messages',
           filter: `client_id=eq.${clienteRow.id}`,
         },
-        () => {
-          refresh();
+        (payload) => {
+          void applyIncomingRow(payload.new);
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'marketing_direct_messages',
+          filter: `client_id=eq.${clienteRow.id}`,
+        },
+        (payload) => {
+          void applyIncomingRow(payload.new);
         },
       )
       .subscribe();
+
+    const pollIv = setInterval(() => void loadMessages({ silent: true }), SYNC_POLL_MS);
+
+    const appSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void loadMessages({ silent: true });
+    });
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(pollIv);
+      appSub.remove();
     };
-  }, [clienteRow?.id, refresh]);
-
-  useEffect(() => {
-    if (!loading && messages.length > 0) {
-      scrollToEnd(false);
-    }
-  }, [loading, messages.length, scrollToEnd]);
+  }, [clienteRow?.id, applyIncomingRow, loadMessages]);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -214,6 +314,15 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
       onHide.remove();
     };
   }, []);
+
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadMessages({ silent: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadMessages]);
 
   const pickImage = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -268,13 +377,11 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
       setDraft('');
       setPendingImage(null);
       if (data) {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === data.id)) return prev;
-          return [...prev, data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        });
-        scrollToEnd(true);
+        setMessages((prev) => mergeAuraMessage(prev, data));
+        chatStickToBottomRef.current = true;
+        scrollToEnd(true, true);
       } else {
-        await refresh();
+        await loadMessages({ silent: true });
       }
     } finally {
       setSending(false);
@@ -292,10 +399,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   };
 
   const renderItem = ({ item }) => {
-    const uid = sessionUser?.id ? String(sessionUser.id) : '';
-    const author = item.created_by != null ? String(item.created_by) : '';
-    const isFromClient = Boolean(uid && author && author === uid);
-    // chat del salón y el cliente comparten content_type "chat"; se distingue por created_by.
+    const isFromClient = isFromClientMessage(item, sessionUser?.id);
     const fromSalon = isSalonOutboundMessage(item) && !isFromClient;
     const isBroadcast = String(item.content_type || '').includes('broadcast');
     const isIncident = String(item.content_type || '') === 'incident_report';
@@ -344,9 +448,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
             </View>
           ) : null}
           {chatBubbleText(item) ? (
-            <Text style={[styles.bubbleTxt, { color: fromSalon ? c.foreground : c.foreground }]}>
-              {chatBubbleText(item)}
-            </Text>
+            <Text style={[styles.bubbleTxt, { color: c.foreground }]}>{chatBubbleText(item)}</Text>
           ) : null}
           {item.media_url && item.media_kind === 'image' ? (
             <ChatImageWithSave uri={item.media_url} imageStyle={styles.bubbleImg} btnStyle={styles.saveImgBtn} />
@@ -387,10 +489,10 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   return (
     <KeyboardAvoidingView
       style={styles.shell}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={keyboardVerticalOffset}
     >
-      {loading ? (
+      {loading && messages.length === 0 ? (
         <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
       ) : (
         <FlatList
@@ -400,9 +502,20 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
           renderItem={renderItem}
           style={styles.list}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
+          keyboardDismissMode="on-drag"
+          nestedScrollEnabled
+          onScroll={onChatScroll}
+          scrollEventThrottle={80}
+          onContentSizeChange={onChatContentSizeChange}
           contentContainerStyle={styles.listContent}
-          onContentSizeChange={() => scrollToEnd(false)}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onPullRefresh()}
+              tintColor={c.primary}
+              colors={[c.primary]}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               {loadError ? (
@@ -411,7 +524,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
                   <SalonButton
                     variant="outlineGold"
                     title="Reintentar"
-                    onPress={refresh}
+                    onPress={() => void loadMessages({ silent: false })}
                     style={{ marginTop: spacing.md }}
                   />
                 </>
@@ -447,20 +560,26 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
           onPress={pickImage}
           disabled={sending}
         >
-          <ImageIcon size={20} color={c.primary} />
+          <ImageIcon size={22} color={c.primary} />
         </TouchableOpacity>
-        <TextInput
-          style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-          placeholder="Escribí al salón…"
-          placeholderTextColor={c.foregroundSubtle}
-          value={draft}
-          onChangeText={setDraft}
-          multiline
-          maxLength={2000}
-        />
+        <View style={styles.composerInputWrap}>
+          <TextInput
+            style={[
+              styles.composerInput,
+              { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
+            ]}
+            placeholder="Escribí al salón…"
+            placeholderTextColor={c.foregroundSubtle}
+            value={draft}
+            onChangeText={setDraft}
+            multiline
+            maxLength={2000}
+            textAlignVertical="center"
+          />
+        </View>
         <TouchableOpacity
           style={[styles.sendBtn, { backgroundColor: c.primary, opacity: sending ? 0.6 : 1 }]}
-          onPress={send}
+          onPress={() => void send()}
           disabled={sending}
         >
           <Send size={20} color={c.heroCtaText} strokeWidth={2.2} />
@@ -472,13 +591,12 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
 
 function createStyles(c) {
   return StyleSheet.create({
-    shell: { flex: 1, backgroundColor: c.background },
+    shell: { flex: 1, minHeight: 0, backgroundColor: c.background },
     list: { flex: 1, backgroundColor: c.background },
     listContent: {
       padding: spacing.md,
-      paddingBottom: spacing.sm,
+      paddingBottom: spacing.lg,
       flexGrow: 1,
-      justifyContent: 'flex-end',
     },
     emptyWrap: { padding: spacing.lg },
     emptyTxt: { fontFamily: typography.fontSans, fontSize: 14, lineHeight: 20, textAlign: 'center' },
@@ -528,10 +646,13 @@ function createStyles(c) {
     },
     composer: {
       flexDirection: 'row',
-      alignItems: 'flex-end',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingTop: spacing.sm,
+      alignItems: 'center',
+      alignSelf: 'stretch',
+      width: '100%',
+      gap: 8,
+      paddingHorizontal: 10,
+      paddingTop: 10,
+      paddingBottom: 8,
       borderTopWidth: 1,
     },
     attachBtn: {
@@ -541,16 +662,25 @@ function createStyles(c) {
       borderWidth: 1,
       alignItems: 'center',
       justifyContent: 'center',
+      flexShrink: 0,
     },
-    input: {
+    composerInputWrap: {
       flex: 1,
+      minWidth: 0,
+      alignSelf: 'stretch',
+    },
+    composerInput: {
+      width: '100%',
+      minHeight: 44,
+      maxHeight: 132,
       borderWidth: 1,
       borderRadius: radii.lg,
       paddingHorizontal: spacing.md,
-      paddingVertical: Platform.OS === 'ios' ? spacing.sm : spacing.xs,
-      maxHeight: 100,
+      paddingTop: Platform.OS === 'ios' ? 11 : 10,
+      paddingBottom: Platform.OS === 'ios' ? 11 : 10,
       fontFamily: typography.fontSans,
-      fontSize: 15,
+      fontSize: 16,
+      lineHeight: 22,
     },
     sendBtn: {
       width: 44,
@@ -558,6 +688,7 @@ function createStyles(c) {
       borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
+      flexShrink: 0,
     },
   });
 }

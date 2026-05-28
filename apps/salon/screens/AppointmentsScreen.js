@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   Modal,
+  Pressable,
   Switch,
   FlatList,
   RefreshControl,
@@ -26,7 +27,7 @@ import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPa
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { db, supabase } from '@appsalon/shared-config';
-import { offerConfirmacionCitaCliente } from '../utils/citaConfirmacionCliente';
+import { notifyClienteCitaConfirmada, offerConfirmacionCitaCliente } from '../utils/citaConfirmacionCliente';
 import { applyNativeChromeTheme } from '../theme/applyNativeChromeTheme';
 
 const MEDICAL_ITEMS = [
@@ -45,29 +46,39 @@ const REFERRAL_ITEMS = [
   { key: 'cliente', label: 'Ya era cliente' },
 ];
 
+function normalizeEstadoCita(est) {
+  return String(est || 'pendiente').toLowerCase();
+}
+
+function isCitaRechazada(est) {
+  const v = normalizeEstadoCita(est);
+  return v === 'rechazado' || v === 'rechazada' || v === 'cancelado' || v === 'cancelada';
+}
+
+function isCitaConfirmada(est) {
+  return normalizeEstadoCita(est) === 'confirmado';
+}
+
 function estadoLabel(est) {
-  const v = String(est || 'pendiente').toLowerCase();
+  const v = normalizeEstadoCita(est);
   if (v === 'pendiente') return 'Pendiente';
   if (v === 'confirmado') return 'Confirmada';
-  if (v === 'rechazado') return 'Rechazada';
+  if (isCitaRechazada(v)) return 'Rechazada';
   if (v === 'completada') return 'Completada';
-  if (v === 'cancelada') return 'Cancelada';
   return v;
 }
 
 function estadoPillBg(_c, est) {
   const v = String(est || 'pendiente').toLowerCase();
   if (v === 'confirmado') return '#2E7D32';
-  if (v === 'rechazado') return '#C62828';
+  if (v === 'rechazado' || v === 'rechazada' || v === 'cancelado' || v === 'cancelada') return '#C62828';
   if (v === 'completada') return '#5C6BC0';
-  if (v === 'cancelada') return '#757575';
   return '#F9A825';
 }
 
 function estadoPillFg(_c, est) {
   const v = String(est || 'pendiente').toLowerCase();
   if (v === 'pendiente') return '#3E2E00';
-  if (v === 'completada' || v === 'cancelada') return '#FFFFFF';
   return '#FFFFFF';
 }
 
@@ -130,9 +141,15 @@ export function AppointmentsScreen({ onBack }) {
   const [catalogEmpleados, setCatalogEmpleados] = useState([]);
 
   const [agendaFiltersOpen, setAgendaFiltersOpen] = useState(false);
+  const [showAgendaDatePicker, setShowAgendaDatePicker] = useState(false);
   const [agendaSort, setAgendaSort] = useState('fecha_desc');
   const [agendaEstado, setAgendaEstado] = useState('todos');
   const [agendaFecha, setAgendaFecha] = useState(null); // Date seleccionado (día completo)
+
+  const closeAgendaFilters = useCallback(() => {
+    setAgendaFiltersOpen(false);
+    setShowAgendaDatePicker(false);
+  }, []);
 
   const [citas, setCitas] = useState([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -241,7 +258,13 @@ export function AppointmentsScreen({ onBack }) {
   const citasFiltradas = useMemo(() => {
     let rows = [...citas];
     if (agendaEstado !== 'todos') {
-      rows = rows.filter((r) => String(r.estado || 'pendiente').toLowerCase() === agendaEstado);
+      rows = rows.filter((r) => {
+        const v = String(r.estado || 'pendiente').toLowerCase();
+        if (agendaEstado === 'rechazado') {
+          return v === 'rechazado' || v === 'rechazada' || v === 'cancelado' || v === 'cancelada';
+        }
+        return v === agendaEstado;
+      });
     }
     if (agendaFecha) {
       const k = dateKeyLocal(agendaFecha);
@@ -460,8 +483,20 @@ export function AppointmentsScreen({ onBack }) {
 
   const avisarClienteCita = (cita, estado = 'pendiente') => {
     void (async () => {
-      const params = await paramsConfirmacionCita(cita, estado);
-      void offerConfirmacionCitaCliente(params);
+      const estadoEfectivo = normalizeEstadoCita(cita?.estado || estado);
+      if (isCitaRechazada(estadoEfectivo)) {
+        Alert.alert(
+          'Cita rechazada',
+          'No se puede enviar mensaje de confirmación en una cita rechazada.',
+        );
+        return;
+      }
+      const params = await paramsConfirmacionCita(cita, estadoEfectivo);
+      if (isCitaConfirmada(estadoEfectivo)) {
+        await notifyClienteCitaConfirmada(params);
+      } else {
+        void offerConfirmacionCitaCliente(params);
+      }
     })();
   };
 
@@ -625,7 +660,13 @@ export function AppointmentsScreen({ onBack }) {
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
               <Text style={{ color: c.foregroundSubtle, fontSize: 13 }}> · </Text>
-              <TouchableOpacity hitSlop={12} onPress={() => setAgendaFiltersOpen(true)}>
+              <TouchableOpacity
+                hitSlop={12}
+                onPress={() => {
+                  setShowAgendaDatePicker(false);
+                  setAgendaFiltersOpen(true);
+                }}
+              >
                 <Text style={styles.agendaToolbarLink}>Filtros</Text>
               </TouchableOpacity>
             </View>
@@ -710,32 +751,30 @@ export function AppointmentsScreen({ onBack }) {
                         </View>
                       ) : null}
                       <View style={styles.citaCardTop}>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={[styles.citaServicio, { color: c.foreground }]} numberOfLines={2}>
-                            {item.servicio}
-                          </Text>
-                          <Text style={[styles.citaCliente, { color: c.foregroundMuted }]} numberOfLines={1}>
-                            {clienteNombre}
-                          </Text>
-                          <Text style={[styles.citaWhen, { color: c.foregroundSubtle }]}>
-                            {new Date(item.fecha_hora).toLocaleString('es-GT', {
-                              weekday: 'short',
-                              day: 'numeric',
-                              month: 'short',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                            {item.empleado?.nombre ? ` · ${item.empleado.nombre}` : ''}
-                          </Text>
-                        </View>
+                        <Text style={[styles.citaServicio, { color: c.foreground }]} numberOfLines={1}>
+                          {item.servicio}
+                        </Text>
                         <View style={[styles.estadoPill, { backgroundColor: estadoPillBg(c, est) }]}>
                           <Text style={[styles.estadoPillTxt, { color: estadoPillFg(c, est) }]}>
                             {estadoLabel(est)}
                           </Text>
                         </View>
                       </View>
+                      <Text style={[styles.citaCliente, { color: c.foregroundMuted }]} numberOfLines={1}>
+                        {clienteNombre}
+                      </Text>
+                      <Text style={[styles.citaWhen, { color: c.foregroundSubtle }]} numberOfLines={1}>
+                        {new Date(item.fecha_hora).toLocaleString('es-GT', {
+                          weekday: 'short',
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {item.empleado?.nombre ? ` · ${item.empleado.nombre}` : ''}
+                      </Text>
                       {item.notas_servicio ? (
-                        <Text style={[styles.citaNotas, { color: c.foregroundMuted }]} numberOfLines={2}>
+                        <Text style={[styles.citaNotas, { color: c.foregroundMuted }]} numberOfLines={1}>
                           {item.notas_servicio}
                         </Text>
                       ) : null}
@@ -778,27 +817,36 @@ export function AppointmentsScreen({ onBack }) {
         ) : null}
       </SubScreenChrome>
 
-      <Modal visible={agendaFiltersOpen} animationType="slide" transparent onRequestClose={() => setAgendaFiltersOpen(false)}>
-        <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
+      <Modal visible={agendaFiltersOpen} animationType="slide" transparent onRequestClose={closeAgendaFilters}>
+        <Pressable style={styles.filterBackdrop} onPress={closeAgendaFilters}>
+          <Pressable
+            style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.filterHead}>
               <Text style={styles.filterTitle}>Ordenar y filtrar</Text>
-              <TouchableOpacity onPress={() => setAgendaFiltersOpen(false)} hitSlop={12} accessibilityLabel="Cerrar">
+              <TouchableOpacity onPress={closeAgendaFilters} hitSlop={12} accessibilityLabel="Cerrar">
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
               <Text style={styles.filterSectionLbl}>Fecha</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <DateTimePicker
-                    value={agendaFecha ?? new Date()}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={(_, d) => {
-                      if (d) setAgendaFecha(d);
-                    }}
-                  />
-                </View>
+                <TouchableOpacity
+                  style={[styles.selectRow, { flex: 1, marginBottom: 0 }]}
+                  onPress={() => setShowAgendaDatePicker(true)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.selectTxt}>
+                    {agendaFecha
+                      ? agendaFecha.toLocaleDateString('es-GT', {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric',
+                        })
+                      : 'Todas las fechas'}
+                  </Text>
+                  <Calendar size={18} color={c.foregroundSubtle} strokeWidth={1.8} />
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={[
                     styles.filterChip,
@@ -809,11 +857,29 @@ export function AppointmentsScreen({ onBack }) {
                       backgroundColor: c.card,
                     },
                   ]}
-                  onPress={() => setAgendaFecha(null)}
+                  onPress={() => {
+                    setAgendaFecha(null);
+                    setShowAgendaDatePicker(false);
+                  }}
                 >
                   <Text style={[styles.filterChipTxt, { color: c.foreground }]}>Todas</Text>
                 </TouchableOpacity>
               </View>
+              {showAgendaDatePicker ? (
+                <DateTimePicker
+                  value={agendaFecha ?? new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, d) => {
+                    if (Platform.OS !== 'ios') setShowAgendaDatePicker(false);
+                    if (event?.type === 'dismissed') {
+                      setShowAgendaDatePicker(false);
+                      return;
+                    }
+                    if (d) setAgendaFecha(d);
+                  }}
+                />
+              ) : null}
             <Text style={styles.filterSectionLbl}>Orden</Text>
             <View style={styles.chipRow}>
               {[
@@ -859,9 +925,9 @@ export function AppointmentsScreen({ onBack }) {
                 );
               })}
             </View>
-            <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setAgendaFiltersOpen(false)} />
-          </View>
-        </View>
+            <SalonButton title="Listo" variant="heroGold" fullWidth onPress={closeAgendaFilters} />
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal visible={!!detailCita} animationType="slide" transparent onRequestClose={() => setDetailCita(null)}>
@@ -944,17 +1010,20 @@ export function AppointmentsScreen({ onBack }) {
                     </View>
                   ) : null}
                 </ScrollView>
-                {detailCita.cliente_id || detailCita.cliente?.telefono ? (
+                {(detailCita.cliente_id || detailCita.cliente?.telefono) &&
+                !isCitaRechazada(detailCita.estado) ? (
                   <SalonButton
-                    title="Avisar al cliente"
+                    title={
+                      isCitaConfirmada(detailCita.estado)
+                        ? 'Reenviar confirmación'
+                        : 'Avisar al cliente'
+                    }
                     variant="outlineGray"
                     fullWidth
                     onPress={() =>
                       avisarClienteCita(
                         detailCita,
-                        String(detailCita.estado || 'pendiente').toLowerCase() === 'confirmado'
-                          ? 'confirmado'
-                          : 'pendiente',
+                        isCitaConfirmada(detailCita.estado) ? 'confirmado' : 'pendiente',
                       )
                     }
                     style={{ marginTop: spacing.md }}
@@ -1488,18 +1557,19 @@ function createStyles(c) {
     },
     citaCard: {
       borderRadius: radii.md,
-      borderWidth: 1,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      marginBottom: 6,
       position: 'relative',
     },
     citaCheck: {
       position: 'absolute',
-      top: spacing.sm,
-      right: spacing.sm,
-      width: 22,
-      height: 22,
-      borderRadius: 11,
+      top: 6,
+      right: 6,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
       borderWidth: 2,
       alignItems: 'center',
       justifyContent: 'center',
@@ -1507,48 +1577,53 @@ function createStyles(c) {
     },
     citaCardTop: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.sm,
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginBottom: 4,
     },
     citaServicio: {
+      flex: 1,
+      minWidth: 0,
       fontFamily: typography.fontSansMedium,
-      fontSize: 16,
+      fontSize: 14,
+      letterSpacing: 0.1,
     },
     citaCliente: {
-      marginTop: 2,
-      fontFamily: typography.fontSans,
-      fontSize: 14,
-    },
-    citaWhen: {
-      marginTop: 4,
       fontFamily: typography.fontSans,
       fontSize: 12,
     },
+    citaWhen: {
+      marginTop: 2,
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+    },
     estadoPill: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
       borderRadius: radii.pill,
-      maxWidth: 110,
+      maxWidth: 96,
+      flexShrink: 0,
     },
     estadoPillTxt: {
       fontFamily: typography.fontSansMedium,
-      fontSize: 11,
+      fontSize: 10,
+      letterSpacing: 0.3,
       textAlign: 'center',
     },
     citaNotas: {
-      marginTop: spacing.sm,
+      marginTop: 4,
       fontFamily: typography.fontSans,
-      fontSize: 12,
-      lineHeight: 17,
+      fontSize: 11,
+      lineHeight: 15,
     },
     citaActions: {
       flexDirection: 'row',
-      gap: spacing.sm,
-      marginTop: spacing.md,
+      gap: spacing.xs,
+      marginTop: spacing.sm,
     },
     citaActBtn: {
       flex: 1,
-      paddingVertical: spacing.sm,
+      paddingVertical: 7,
       borderRadius: radii.md,
       alignItems: 'center',
       justifyContent: 'center',
@@ -1561,7 +1636,7 @@ function createStyles(c) {
     },
     citaActBtnTxt: {
       fontFamily: typography.fontSansMedium,
-      fontSize: 14,
+      fontSize: 13,
     },
     citaActBtnTxtFilled: {
       color: '#FFFFFF',

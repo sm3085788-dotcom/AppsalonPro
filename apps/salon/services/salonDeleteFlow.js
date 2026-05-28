@@ -78,6 +78,19 @@ export function buildDeletionMeta(source, row) {
         summary: [snap.fecha_hora, snap.estado].filter(Boolean).join(' · '),
         snapshot: snap,
       };
+    case 'pedidos':
+      return {
+        source: 'pedidos',
+        title: snap.tracking_code || snap.customer_name || `Pedido ${String(snap.id || '').slice(0, 8)}`,
+        summary: [
+          snap.customer_name,
+          snap.total_amount != null ? `Q${Number(snap.total_amount).toFixed(2)}` : null,
+          snap.status,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        snapshot: snap,
+      };
     default:
       return {
         source: src,

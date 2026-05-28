@@ -27,6 +27,7 @@ import {
   isPedidoAppTarjetaDelivery,
   ANDREAS_META,
 } from './andreasPremios.js';
+import { enrichTendenciasFeedPosts, isTendenciasFeedPost } from './tendenciasPublication.js';
 
 export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
 
@@ -3375,18 +3376,27 @@ export const db = {
 
     /** Posts publicados con multimedia para el feed Tendencias (App Clientes). */
     getPublishedTendenciasFeed: async (limit = 40) => {
+      const filterMedia = (r) => {
+        const url = r.media_url;
+        if (!url || typeof url !== 'string') return false;
+        const ct = String(r.content_type || '').toLowerCase();
+        if (ct === 'video' || ct === 'image') return true;
+        return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
+      };
+
+      const { data: rankSource } = await supabase
+        .from('marketing_posts')
+        .select('id, audience, status, published_at, created_at, media_url, content_type')
+        .eq('status', 'published');
+
+      const rankRows = (rankSource || []).filter(isTendenciasFeedPost);
+
       const { data: rpcData, error: rpcError } = await supabase.rpc('feed_tendencias', {
         p_limit: limit,
       });
       if (!rpcError && Array.isArray(rpcData)) {
-        const filtered = rpcData.filter((r) => {
-          const url = r.media_url;
-          if (!url || typeof url !== 'string') return false;
-          const ct = String(r.content_type || '').toLowerCase();
-          if (ct === 'video' || ct === 'image') return true;
-          return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
-        });
-        return { data: filtered, error: null };
+        const filtered = rpcData.filter(filterMedia);
+        return { data: enrichTendenciasFeedPosts(filtered, rankRows), error: null };
       }
       const { data, error } = await supabase
         .from('marketing_posts')
@@ -3399,13 +3409,9 @@ export const db = {
       const filtered = list.filter((r) => {
         const aud = String(r?.audience || '');
         if (aud === 'home_carousel' || aud === 'home_hero') return false;
-        const url = r.media_url;
-        if (!url || typeof url !== 'string') return false;
-        const ct = String(r.content_type || '').toLowerCase();
-        if (ct === 'video' || ct === 'image') return true;
-        return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
+        return filterMedia(r);
       });
-      return { data: filtered, error: null };
+      return { data: enrichTendenciasFeedPosts(filtered, rankRows), error: null };
     },
 
     /** Carrusel hero «Reserva tu cita» (parte superior Inicio App Clientes). */

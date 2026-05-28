@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors as colorsLight, colorsDark } from '@appsalon/design-tokens';
 import { applyNativeChromeTheme } from './applyNativeChromeTheme';
@@ -21,14 +22,15 @@ const ThemeContext = createContext({
 });
 
 export function ThemeProvider({ children }) {
+  const systemScheme = useColorScheme();
   const [ready, setReady] = useState(false);
-  const [scheme, setSchemeState] = useState('light');
+  const [scheme, setSchemeState] = useState('system');
 
   useEffect(() => {
     let cancelled = false;
     AsyncStorage.getItem(STORAGE_KEY).then((v) => {
       if (cancelled) return;
-      if (v === 'dark' || v === 'light') {
+      if (v === 'dark' || v === 'light' || v === 'system') {
         setSchemeState(v);
       }
       setReady(true);
@@ -39,7 +41,7 @@ export function ThemeProvider({ children }) {
   }, []);
 
   const setScheme = useCallback(async (next) => {
-    const s = next === 'dark' ? 'dark' : 'light';
+    const s = next === 'dark' || next === 'light' ? next : 'system';
     setSchemeState(s);
     try {
       await AsyncStorage.setItem(STORAGE_KEY, s);
@@ -50,13 +52,13 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     if (!ready) return;
-    const isDark = scheme === 'dark';
+    const isDark = scheme === 'system' ? systemScheme === 'dark' : scheme === 'dark';
     const bg = isDark ? colorsDark.background : colorsLight.background;
     applyNativeChromeTheme(isDark, bg);
-  }, [ready, scheme]);
+  }, [ready, scheme, systemScheme]);
 
   const value = useMemo(() => {
-    const isDark = scheme === 'dark';
+    const isDark = scheme === 'system' ? systemScheme === 'dark' : scheme === 'dark';
     return {
       ready,
       scheme,
@@ -64,7 +66,7 @@ export function ThemeProvider({ children }) {
       colors: isDark ? colorsDark : colorsLight,
       setScheme,
     };
-  }, [ready, scheme, setScheme]);
+  }, [ready, scheme, setScheme, systemScheme]);
 
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

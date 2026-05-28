@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Modal,
   TextInput,
   Platform,
@@ -17,9 +18,29 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { Image as ImageIcon, Play, Video as VideoIcon, X, Check } from 'lucide-react-native';
+import {
+  Image as ImageIcon,
+  Play,
+  Video as VideoIcon,
+  X,
+  Check,
+  Bell,
+  Heart,
+  MessageCircle,
+} from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, uploadTendenciaMediaFromUri, getArticuloTipo, normalizeServicioCategoria } from '@appsalon/shared-config';
+import {
+  db,
+  supabase,
+  uploadTendenciaMediaFromUri,
+  getArticuloTipo,
+  normalizeServicioCategoria,
+  fetchMarketingEngagementSince,
+  fetchMarketingEngagementFeed,
+  buildCarouselOverlayFromInventario,
+  buildTendenciasPublicationMap,
+} from '@appsalon/shared-config';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useListSelection } from '../hooks/useListSelection';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
@@ -29,6 +50,22 @@ import { useTheme } from '../theme/ThemeProvider';
 
 /** Máximo de diapositivas activas en el carrusel de inicio (App Clientes). */
 const MAX_CAROUSEL_SLIDES = 15;
+
+const SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY = '@appsalon/salon/marketing_engagement_last_seen_at';
+
+function formatEngagementWhen(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('es-GT', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
 
 /** Máximo de duración de video en Tendencias (picker iOS + validación cruzada). */
 const MAX_VIDEO_SECONDS = 50;
@@ -187,7 +224,7 @@ function MarketingMediaThumb({ uri, contentType, placeholderBg, iconColor }) {
   );
 }
 
-export function MarketingScreen({ onBack }) {
+export function MarketingScreen({ onBack, onEngagementSeen }) {
   const { colors: c, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -224,6 +261,12 @@ export function MarketingScreen({ onBack }) {
   const [importServRows, setImportServRows] = useState([]);
   const [importServLoading, setImportServLoading] = useState(false);
 
+  const [engagementAlerts, setEngagementAlerts] = useState([]);
+  const [engagementFeed, setEngagementFeed] = useState([]);
+  const [engagementOpen, setEngagementOpen] = useState(false);
+  const [engagementLoading, setEngagementLoading] = useState(false);
+  const engagementLastSeenRef = useRef('');
+
   const [heroAsset, setHeroAsset] = useState(null);
   const [heroKicker, setHeroKicker] = useState('Tu próxima experiencia');
   const [heroTitle, setHeroTitle] = useState('Reserva tu cita');
@@ -256,6 +299,7 @@ export function MarketingScreen({ onBack }) {
             new Date(a.published_at || a.created_at).getTime(),
         );
       setCarouselPosts(car);
+      const pubMap = buildTendenciasPublicationMap(all);
       const list = all
         .filter((row) => {
           const aud = String(row?.audience || '');
@@ -266,7 +310,11 @@ export function MarketingScreen({ onBack }) {
           const ta = new Date(b.published_at || b.created_at).getTime();
           const tb = new Date(a.published_at || a.created_at).getTime();
           return ta - tb;
-        });
+        })
+        .map((row) => ({
+          ...row,
+          tendencias_no: pubMap.get(Number(row.id)) ?? null,
+        }));
       setPosts(list);
     } catch (e) {
       Alert.alert('Marketing', e?.message || 'No se pudieron cargar los contenidos.');
@@ -278,11 +326,107 @@ export function MarketingScreen({ onBack }) {
     }
   }, []);
 
+  const loadEngagementFeed = useCallback(async () => {
+    const { data, error } = await fetchMarketingEngagementFeed();
+    if (!error) setEngagementFeed(data || []);
+  }, []);
+
+  const refreshEngagementAlerts = useCallback(async () => {
+    try {
+      const lastSeen =
+        engagementLastSeenRef.current ||
+        (await AsyncStorage.getItem(SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY)) ||
+        '';
+      engagementLastSeenRef.current = lastSeen;
+      const since = lastSeen || new Date(0).toISOString();
+      const { data, error } = await fetchMarketingEngagementSince(since);
+      if (error) return;
+      setEngagementAlerts(data || []);
+    } catch {
+      // noop
+    }
+  }, []);
+
+  const openEngagementAlerts = useCallback(async () => {
+    setEngagementOpen(true);
+    setEngagementLoading(true);
+    try {
+      await loadEngagementFeed();
+    } finally {
+      setEngagementLoading(false);
+    }
+  }, [loadEngagementFeed]);
+
+  const closeEngagementAlerts = useCallback(async () => {
+    setEngagementOpen(false);
+    const nowIso = new Date().toISOString();
+    await AsyncStorage.setItem(SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY, nowIso);
+    engagementLastSeenRef.current = nowIso;
+    setEngagementAlerts([]);
+    onEngagementSeen?.();
+  }, [onEngagementSeen]);
+
   useEffect(() => {
     loadPosts();
-  }, [loadPosts]);
+    void refreshEngagementAlerts();
+  }, [loadPosts, refreshEngagementAlerts]);
 
-  const { refreshControl } = useSalonPullRefresh(loadPosts);
+  useEffect(() => {
+    const channel = supabase
+      .channel('salon-marketing-engagement')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'marketing_comments' },
+        () => void refreshEngagementAlerts(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'marketing_post_likes' },
+        () => void refreshEngagementAlerts(),
+      )
+      .subscribe();
+    const iv = setInterval(() => void refreshEngagementAlerts(), 45000);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(iv);
+    };
+  }, [refreshEngagementAlerts]);
+
+  const hasEngagementAlert = engagementAlerts.length > 0;
+
+  const renderEngagementBell = useCallback(
+    (onPress) => (
+      <TouchableOpacity
+        style={[styles.engagementBellBtn, hasEngagementAlert && styles.engagementBellActive]}
+        onPress={onPress}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={
+          hasEngagementAlert
+            ? `Actividad en Tendencias, ${engagementAlerts.length} nueva${engagementAlerts.length === 1 ? '' : 's'}`
+            : 'Actividad en Tendencias'
+        }
+      >
+        <Bell size={22} color={c.foreground} strokeWidth={2} />
+        {hasEngagementAlert ? (
+          <View style={[styles.engagementBellAlertDot, { backgroundColor: '#E53935', borderColor: c.card }]}>
+            <Bell size={11} color="#FFFFFF" fill="#FFFFFF" strokeWidth={2.2} />
+          </View>
+        ) : null}
+      </TouchableOpacity>
+    ),
+    [c.card, c.foreground, engagementAlerts.length, hasEngagementAlert, styles],
+  );
+
+  const engagementBell = useMemo(
+    () => renderEngagementBell(() => void openEngagementAlerts()),
+    [openEngagementAlerts, renderEngagementBell],
+  );
+
+  const { refreshControl } = useSalonPullRefresh(async () => {
+    await loadPosts();
+    await refreshEngagementAlerts();
+  });
 
   const openPicker = async (kind) => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -451,15 +595,22 @@ export function MarketingScreen({ onBack }) {
     }
     setImportServOpen(true);
     setImportServQuery('');
-    setImportServCta('Ver servicio');
+    setImportServCta('');
     setImportServLoading(true);
     try {
       const { data, error } = await db.inventario.getAll();
       if (error) throw error;
-      const rows = (data || []).filter((r) => getArticuloTipo(r) === 'servicio');
+      const rows = (data || []).filter((r) => {
+        const tipo = getArticuloTipo(r);
+        if (tipo !== 'servicio' && tipo !== 'producto') return false;
+        const imgs = [r.imagen_url, ...(Array.isArray(r.imagenes_urls) ? r.imagenes_urls : [])].filter(
+          Boolean,
+        );
+        return imgs.length > 0;
+      });
       setImportServRows(rows);
     } catch (e) {
-      Alert.alert('Servicios', e?.message || 'No se pudo cargar inventario.');
+      Alert.alert('Inventario', e?.message || 'No se pudo cargar inventario.');
       setImportServRows([]);
     } finally {
       setImportServLoading(false);
@@ -470,7 +621,7 @@ export function MarketingScreen({ onBack }) {
     if (!row?.id) return;
     const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
     if (publishedCount >= MAX_CAROUSEL_SLIDES) {
-      Alert.alert('Límite del carrusel', `Máximo ${MAX_CAROUSEL_SLIDES} servicios en publicidad.`);
+      Alert.alert('Límite del carrusel', `Máximo ${MAX_CAROUSEL_SLIDES} diapositivas en publicidad.`);
       return;
     }
     const imgs = [row.imagen_url, ...(Array.isArray(row.imagenes_urls) ? row.imagenes_urls : [])].filter(
@@ -478,17 +629,13 @@ export function MarketingScreen({ onBack }) {
     );
     const mainImg = imgs[0];
     if (!mainImg) {
-      Alert.alert('Sin imagen', 'El servicio necesita al menos una foto (portada) en inventario.');
+      Alert.alert('Sin imagen', 'El artículo necesita al menos una foto (portada) en inventario.');
       return;
     }
-    const headline = String(row.nombre || 'Servicio').trim();
-    const overlay = {
-      inventarioId: row.id,
-      kicker: normalizeServicioCategoria(row.categoria),
-      headline,
-      body: String(row.descripcion_tienda || ' ').trim().slice(0, 240) || ' ',
-      buttonTitle: importServCta.trim() || 'Ver servicio',
-    };
+    const isProducto = getArticuloTipo(row) === 'producto';
+    const defaultCta = isProducto ? 'Ver en tienda' : 'Ver servicio';
+    const overlay = buildCarouselOverlayFromInventario(row, importServCta.trim() || defaultCta);
+    const headline = overlay.headline;
     setSaving(true);
     try {
       const payload = {
@@ -503,7 +650,7 @@ export function MarketingScreen({ onBack }) {
       };
       const { data: created, error: crErr } = await db.marketingPosts.create(payload);
       if (crErr) {
-        Alert.alert('Base de datos', crErr.message || 'No se pudo importar el servicio.');
+        Alert.alert('Base de datos', crErr.message || 'No se pudo importar.');
         return;
       }
       if (created?.id && created.status !== 'published') {
@@ -511,7 +658,9 @@ export function MarketingScreen({ onBack }) {
       }
       Alert.alert(
         'Listo',
-        'El servicio aparece en Publicidad (App Clientes). Al tocar «Ver servicio» el cliente va a Mis citas.',
+        isProducto
+          ? 'Producto en el carrusel. En App Clientes el botón abre Tienda en esa ficha.'
+          : 'Servicio en el carrusel. En App Clientes el botón abre Mis citas para agendar.',
       );
       setImportServOpen(false);
       await loadPosts();
@@ -654,7 +803,14 @@ export function MarketingScreen({ onBack }) {
       if (created?.id && created.status !== 'published') {
         await db.marketingPosts.publish(created.id);
       }
-      Alert.alert('Listo', 'El contenido quedó publicado y aparecerá en Tendencias (App Clientes).');
+      const { data: allAfter } = await db.marketingPosts.getAll();
+      const pubNo = buildTendenciasPublicationMap(allAfter || []).get(Number(created?.id));
+      Alert.alert(
+        'Listo',
+        pubNo
+          ? `Publicación #${pubNo} en Tendencias. Los clientes la verán en la app; en «Me interesa» aparecerá ese número.`
+          : 'El contenido quedó publicado y aparecerá en Tendencias (App Clientes).',
+      );
       closeComposer();
       await loadPosts();
     } catch (e) {
@@ -825,6 +981,7 @@ export function MarketingScreen({ onBack }) {
     if (ct === 'image' || /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url)) typeLabel = 'Foto';
     else if (ct === 'video' || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url)) typeLabel = 'Video';
     const when = item.published_at || item.created_at;
+    const pubNo = item.tendencias_no;
     return wrapCardPress(
       item,
       <>
@@ -836,6 +993,7 @@ export function MarketingScreen({ onBack }) {
         />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[styles.cardTypeBadge, { color: c.primary }]}>
+            {pubNo ? `Publicación #${pubNo} · ` : ''}
             {typeLabel} · Tendencias
           </Text>
           <Text style={[styles.cardTitle, { color: c.foreground }]} numberOfLines={2}>
@@ -845,6 +1003,7 @@ export function MarketingScreen({ onBack }) {
             {(item.body || '').trim() || 'Sin descripción'}
           </Text>
           <Text style={[subStyles.muted, styles.cardMeta]} numberOfLines={2}>
+            {pubNo ? `Nº Tendencias ${pubNo} · ` : ''}
             Publicado: {formatPostDate(when)} · Estado: {String(item.status || '—')}
           </Text>
         </View>
@@ -861,6 +1020,7 @@ export function MarketingScreen({ onBack }) {
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
+        rightAction={engagementBell}
       >
         <View style={styles.body}>
           <ScrollView
@@ -933,18 +1093,26 @@ export function MarketingScreen({ onBack }) {
               Carrusel · Publicidad (bajo Pedidos)
             </Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12 }]}>
-              Hasta {MAX_CAROUSEL_SLIDES} servicios o imágenes importadas del inventario (usa su portada). En
-              App Clientes el botón lleva a Mis citas para agendar.
+              Importá productos o servicios del inventario (con portada). Producto → Tienda · Servicio → Mis
+              citas. También podés subir una imagen manual.
             </Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12, fontFamily: typography.fontSansMedium }]}>
               {carouselPosts.length}/{MAX_CAROUSEL_SLIDES} diapositivas publicadas
             </Text>
             <SalonButton
-              title="Importar servicio del inventario"
+              title="Importar del inventario (producto o servicio)"
               variant="heroGold"
               fullWidth
               disabled={saving || carouselPosts.length >= MAX_CAROUSEL_SLIDES}
               onPress={openImportServicioCarousel}
+              style={{ marginBottom: spacing.sm }}
+            />
+            <SalonButton
+              title="Subir imagen manual al carrusel"
+              variant="outlineGray"
+              fullWidth
+              disabled={saving || carouselPosts.length >= MAX_CAROUSEL_SLIDES}
+              onPress={openCarouselPicker}
               style={{ marginBottom: spacing.md }}
             />
             {loading ? null : carouselPosts.length === 0 ? (
@@ -1164,7 +1332,9 @@ export function MarketingScreen({ onBack }) {
               },
             ]}
           >
-            <Text style={[styles.modalTitle, { color: c.foreground, flex: 1 }]}>Importar servicio</Text>
+            <Text style={[styles.modalTitle, { color: c.foreground, flex: 1 }]}>
+              Importar al carrusel
+            </Text>
             <TouchableOpacity onPress={() => setImportServOpen(false)} hitSlop={12}>
               <X size={24} color={c.foreground} />
             </TouchableOpacity>
@@ -1189,7 +1359,7 @@ export function MarketingScreen({ onBack }) {
                     marginBottom: spacing.sm,
                   },
                 ]}
-                placeholder="Buscar servicio…"
+                placeholder="Buscar producto o servicio…"
                 placeholderTextColor={c.foregroundSubtle}
                 value={importServQuery}
                 onChangeText={setImportServQuery}
@@ -1205,7 +1375,7 @@ export function MarketingScreen({ onBack }) {
                     marginBottom: spacing.sm,
                   },
                 ]}
-                placeholder="Ej. Ver servicio"
+                placeholder="Ej. Ver en tienda / Ver servicio"
                 placeholderTextColor={c.foregroundSubtle}
                 value={importServCta}
                 onChangeText={setImportServCta}
@@ -1224,6 +1394,11 @@ export function MarketingScreen({ onBack }) {
                     })
                     .map((row) => {
                       const img = row.imagen_url;
+                      const isProducto = getArticuloTipo(row) === 'producto';
+                      const tipoLabel = isProducto ? 'Producto · Tienda' : 'Servicio · Mis citas';
+                      const catLabel = isProducto
+                        ? String(row.categoria || 'Producto')
+                        : normalizeServicioCategoria(row.categoria);
                       return (
                         <TouchableOpacity
                           key={String(row.id)}
@@ -1243,9 +1418,12 @@ export function MarketingScreen({ onBack }) {
                             >
                               {row.nombre}
                             </Text>
+                            <Text style={{ color: c.primary, fontSize: 11, fontFamily: typography.fontSansMedium }}>
+                              {tipoLabel}
+                              {!row.visible_en_tienda && isProducto ? ' · No visible en tienda' : ''}
+                            </Text>
                             <Text style={{ color: c.foregroundMuted, fontSize: 12 }} numberOfLines={1}>
-                              {normalizeServicioCategoria(row.categoria)}
-                              {!img ? ' · Sin portada' : ''}
+                              {catLabel}
                             </Text>
                           </View>
                         </TouchableOpacity>
@@ -1253,6 +1431,120 @@ export function MarketingScreen({ onBack }) {
                     })}
                 </>
               )}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={engagementOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        onRequestClose={() => void closeEngagementAlerts()}
+      >
+        <View style={[styles.importServShell, { backgroundColor: c.background }]}>
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+          <View
+            style={[
+              styles.importServHead,
+              {
+                paddingTop: insets.top + spacing.sm,
+                borderBottomColor: c.cardBorder,
+              },
+            ]}
+          >
+            <TouchableOpacity
+              onPress={() => void closeEngagementAlerts()}
+              hitSlop={12}
+              style={styles.engagementBackBtn}
+            >
+              <Text style={{ fontFamily: typography.fontSansMedium, color: c.primary, fontSize: 16 }}>
+                Volver
+              </Text>
+            </TouchableOpacity>
+            <Text
+              style={[styles.modalTitle, { color: c.foreground, flex: 1, textAlign: 'center' }]}
+              numberOfLines={1}
+            >
+              Actividad en Tendencias
+            </Text>
+            <View style={styles.engagementHeadSpacer} />
+          </View>
+
+          <ScrollView
+            style={styles.importServScroll}
+            contentContainerStyle={[
+              styles.modalScrollContent,
+              { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.lg },
+            ]}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>
+              Likes y comentarios nuevos de clientes en App Clientes.
+            </Text>
+            {engagementLoading ? (
+              <ActivityIndicator color={c.primary} style={{ marginVertical: spacing.xl }} />
+            ) : engagementFeed.length === 0 ? (
+              <Text style={[subStyles.muted, { textAlign: 'center', paddingVertical: spacing.xl }]}>
+                No hay likes ni comentarios en Tendencias en los últimos 30 días.
+              </Text>
+            ) : (
+              engagementFeed.map((ev) => (
+                <View
+                  key={ev.id}
+                  style={[styles.engagementRow, { borderBottomColor: c.cardBorder }]}
+                >
+                  <View style={styles.engagementRowIcon}>
+                    {ev.kind === 'like' ? (
+                      <Heart size={16} color="#FF4D6D" fill="#FF4D6D" />
+                    ) : (
+                      <MessageCircle size={16} color={c.primary} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ fontFamily: typography.fontSansMedium, color: c.foreground, fontSize: 13 }}>
+                      {ev.kind === 'like' ? 'Me gusta' : 'Comentario'}
+                    </Text>
+                    <Text
+                      style={{
+                        fontFamily: typography.fontSansMedium,
+                        color: c.primary,
+                        fontSize: 12,
+                        marginTop: 2,
+                      }}
+                      numberOfLines={2}
+                    >
+                      {ev.publicationLabel}
+                      {ev.postTitle && ev.postTitle !== 'Sin título' ? ` · ${ev.postTitle}` : ''}
+                    </Text>
+                    {ev.postBody && ev.kind === 'comment' ? (
+                      <Text
+                        style={{ fontFamily: typography.fontSans, color: c.foregroundSubtle, fontSize: 11 }}
+                        numberOfLines={1}
+                      >
+                        {ev.postBody}
+                      </Text>
+                    ) : null}
+                    <Text
+                      style={{ fontFamily: typography.fontSans, color: c.foregroundMuted, fontSize: 12 }}
+                      numberOfLines={3}
+                    >
+                      {ev.body}
+                    </Text>
+                    <Text
+                      style={{
+                        fontFamily: typography.fontSans,
+                        color: c.foregroundSubtle,
+                        fontSize: 10,
+                        marginTop: 2,
+                      }}
+                    >
+                      {ev.clientLabel} · {formatEngagementWhen(ev.createdAt)}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
           </ScrollView>
         </View>
       </Modal>
@@ -1540,6 +1832,54 @@ function createStyles(c) {
       width: 56,
       height: 56,
       borderRadius: radii.sm,
+    },
+    engagementBellBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      backgroundColor: c.card,
+      position: 'relative',
+    },
+    engagementBellActive: {
+      borderColor: '#E53935',
+      backgroundColor: c.surfaceMuted,
+    },
+    engagementBellAlertDot: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    engagementBackBtn: {
+      minWidth: 72,
+    },
+    engagementHeadSpacer: {
+      minWidth: 72,
+    },
+    engagementRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+      paddingVertical: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    engagementRowIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: c.surfaceMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 2,
     },
   });
 }

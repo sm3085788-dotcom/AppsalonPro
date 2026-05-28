@@ -37,9 +37,22 @@
         "simulator": false
       },
       "channel": "production"
+    },
+    "production-store": {
+      "environment": "production",
+      "autoIncrement": true,
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "simulator": false
+      },
+      "channel": "production"
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "production-store": {}
   }
 }

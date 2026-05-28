@@ -12,6 +12,33 @@ export function isSalonOutboundMessage(row) {
   return SALON_OUTBOUND_TYPES.has(ct);
 }
 
+export function sortAuraMessages(rows) {
+  return [...(rows || [])].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+}
+
+/** Inserta o actualiza un mensaje en la lista ordenada por fecha. */
+export function mergeAuraMessage(prev, row) {
+  if (!row?.id) return prev || [];
+  const list = [...(prev || [])];
+  const id = String(row.id);
+  const idx = list.findIndex((m) => String(m.id) === id);
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], ...row };
+  } else {
+    list.push(row);
+  }
+  return sortAuraMessages(list);
+}
+
+const SALON_UNREAD_CONTENT_TYPES = [
+  'chat',
+  'broadcast_promo',
+  'incident_report',
+  'cita_confirmacion',
+];
+
 /** Mensajes Andreas Pro del cliente autenticado (RPC con fallback). */
 export async function fetchClientAuraMessages(limit = 200) {
   const { data: rpcData, error: rpcError } = await supabase.rpc('client_aura_messages', {
@@ -26,7 +53,7 @@ export async function fetchClientAuraMessages(limit = 200) {
   const { data: cliente } = await db.clientes.getByUserId(uid);
   if (!cliente?.id) return { data: [], error: { message: 'Sin ficha de cliente' } };
   const { data, error } = await db.marketingDirectMessages.getByClient(cliente.id);
-  return { data: data || [], error: rpcError || error };
+  return { data: sortAuraMessages(data), error: rpcError || error };
 }
 
 export async function fetchClientAuraUnreadCount() {
@@ -36,9 +63,11 @@ export async function fetchClientAuraUnreadCount() {
   }
   const { data: rows, error: listErr } = await fetchClientAuraMessages(300);
   if (listErr) return { count: 0, error: listErr };
-  const n = (rows || []).filter(
-    (m) => m.status === 'pending_sync' && isSalonOutboundMessage(m),
-  ).length;
+  const n = (rows || []).filter((m) => {
+    if (m.status !== 'pending_sync') return false;
+    const ct = String(m.content_type || '');
+    return SALON_UNREAD_CONTENT_TYPES.includes(ct) || isSalonOutboundMessage(m);
+  }).length;
   return { count: n, error: null };
 }
 

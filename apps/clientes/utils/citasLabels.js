@@ -6,9 +6,8 @@ export function normalizeEstadoCita(estado) {
 export function labelEstadoCita(estado) {
   const s = normalizeEstadoCita(estado);
   if (s === 'confirmado') return 'Confirmada';
-  if (s === 'pendiente') return 'Pendiente';
-  if (s === 'rechazado' || s === 'rechazada') return 'Rechazada';
-  if (s === 'cancelado' || s === 'cancelada') return 'Cancelada';
+  if (s === 'pendiente') return 'Pendiente en espera de confirmación';
+  if (s === 'rechazado' || s === 'rechazada' || s === 'cancelado' || s === 'cancelada') return 'Rechazada';
   if (s === 'completado' || s === 'completada') return 'Completada';
   return s ? String(estado) : 'Sin estado';
 }
@@ -73,17 +72,17 @@ export function partitionCitasCliente(rows) {
   const proximaCita = upcomingActivas[0] || null;
   const otrasProximas = upcomingActivas.slice(1);
 
-  const pasadas = list.filter((c) => citaEsPasada(c.fecha_hora, now)).sort(byDesc);
+  const canceladasRechazadas = list.filter((c) => citaEstaCancelada(c.estado)).sort(byDesc);
 
-  const canceladasFuturas = list
-    .filter((c) => citaEstaCancelada(c.estado) && !citaEsPasada(c.fecha_hora, now))
-    .sort(byAsc);
+  const pasadas = list
+    .filter((c) => !citaEstaCancelada(c.estado) && citaEsPasada(c.fecha_hora, now))
+    .sort(byDesc);
 
   return {
     proximaCita,
     otrasProximas,
     pasadas,
-    canceladasFuturas,
+    canceladasRechazadas,
     todas: [...list].sort(byDesc),
   };
 }

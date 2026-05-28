@@ -13,30 +13,23 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, Megaphone, MessageCircle, Package, X } from 'lucide-react-native';
+import { ChevronRight, Package, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, supabase, confirmarCobroPedidoSalon } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad } from '../components/luxury';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useTheme } from '../theme/ThemeProvider';
 import { PickupQrDisplay } from '../components/PickupQrDisplay';
 import { PedidoQrScannerModal } from '../components/PedidoQrScannerModal';
 
 const TABS = [
   { id: 'todos', label: 'Todos' },
-  { id: 'compra', label: 'Compras' },
-  { id: 'tendencias', label: 'Tendencias' },
-  { id: 'carrusel', label: 'Carrusel' },
+  { id: 'pending', label: 'Pendientes' },
+  { id: 'delivered', label: 'Entregados' },
+  { id: 'cancelled', label: 'Cancelados' },
 ];
-
-function isTrendsPost(post) {
-  if (!post || typeof post !== 'object') return false;
-  if (String(post.audience || '') === 'home_carousel') return false;
-  const url = post.media_url;
-  if (!url || typeof url !== 'string') return false;
-  const ct = String(post.content_type || '').toLowerCase();
-  if (ct === 'video' || ct === 'image') return true;
-  return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
-}
 
 function formatWhen(iso) {
   if (!iso) return '—';
@@ -45,26 +38,6 @@ function formatWhen(iso) {
   } catch {
     return '—';
   }
-}
-
-function interestField(content, label) {
-  const re = new RegExp(`${label}:\\s*(.+)`, 'i');
-  const m = String(content || '').match(re);
-  return m?.[1]?.trim() || '';
-}
-
-function interestPreview(msg) {
-  const content = msg?.content || '';
-  const titular = interestField(content, 'Titular');
-  const boton = interestField(content, 'Botón tocado').replace(/^«|»$/g, '');
-  const desc = interestField(content, 'Descripción');
-  const parts = [titular, boton && `Botón: ${boton}`, desc].filter(Boolean);
-  if (parts.length) return parts.join(' · ');
-  return content.split('\n').slice(0, 2).join(' · ') || '—';
-}
-
-function interestRowTitle(msg) {
-  return msg?.client_name || interestField(msg?.content, 'Cliente') || 'Cliente';
 }
 
 function isCashOrder(o) {
@@ -94,10 +67,16 @@ function orderCardStyle(o, c, isDark) {
   return { backgroundColor: c.card };
 }
 
+function matchesTab(o, tab) {
+  if (tab === 'todos') return true;
+  return String(o?.status || '').toLowerCase() === tab;
+}
+
 export function PedidosScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
+  const sel = useListSelection();
 
   const [tab, setTab] = useState('todos');
   const [sortMode, setSortMode] = useState('fecha_desc');
@@ -106,26 +85,22 @@ export function PedidosScreen({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [orders, setOrders] = useState([]);
-  const [comments, setComments] = useState([]);
-  const [interests, setInterests] = useState([]);
   const [detail, setDetail] = useState(null);
   const [detailItems, setDetailItems] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [loadHint, setLoadHint] = useState('');
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
+  const padList = sel.count > 0 ? 100 : padBottom;
 
   const load = useCallback(async (isRefresh) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const [oRes, cRes, iRes] = await Promise.all([
-        db.orders.getAll(),
-        db.marketingComments.listForPedidosInbox(400),
-        db.marketingDirectMessages.listPedidosInterest(400),
-      ]);
+      const oRes = await db.orders.getAll();
       if (oRes.error) throw oRes.error;
       const orderRows = Array.isArray(oRes.data) ? oRes.data : [];
       setOrders(orderRows);
@@ -134,13 +109,6 @@ export function PedidosScreen({ onBack }) {
           ? ''
           : 'Si hay pedidos en App Clientes y no aparecen aquí, ejecutá supabase-ecommerce-orders-salon.sql en Supabase (permisos del salón).',
       );
-      if (!cRes.error && Array.isArray(cRes.data)) {
-        setComments(cRes.data.filter((row) => isTrendsPost(row.marketing_posts)));
-      } else {
-        setComments([]);
-      }
-      if (!iRes.error && Array.isArray(iRes.data)) setInterests(iRes.data);
-      else setInterests([]);
     } catch (e) {
       const msg = String(e?.message || '');
       Alert.alert(
@@ -151,8 +119,6 @@ export function PedidosScreen({ onBack }) {
       );
       setOrders([]);
       setLoadHint('');
-      setComments([]);
-      setInterests([]);
     } finally {
       if (isRefresh) setRefreshing(false);
       else setLoading(false);
@@ -185,82 +151,63 @@ export function PedidosScreen({ onBack }) {
     return `${orden} · ${t}`;
   }, [tab, sortMode]);
 
-  const isTendenciasRow = (kind) => kind === 'tendencias_comentario' || kind === 'tendencias_solicitud';
-
-  const merged = useMemo(() => {
-    const rows = [];
-    for (const o of orders) {
-      rows.push({
-        key: `order-${o.id}`,
-        kind: 'compra',
-        sortAt: o.created_at || o.updated_at,
-        data: o,
-      });
-    }
-    for (const cm of comments) {
-      rows.push({
-        key: `comment-${cm.id}`,
-        kind: 'tendencias_comentario',
-        sortAt: cm.created_at,
-        data: cm,
-      });
-    }
-    for (const msg of interests) {
-      const ct = String(msg.content_type || '');
-      if (ct === 'carousel_interest') {
-        rows.push({
-          key: `interest-carousel-${msg.id}`,
-          kind: 'carrusel',
-          sortAt: msg.created_at,
-          data: msg,
-        });
-      } else if (ct === 'tendencias_interest') {
-        rows.push({
-          key: `interest-tendencias-${msg.id}`,
-          kind: 'tendencias_solicitud',
-          sortAt: msg.created_at,
-          data: msg,
-        });
-      }
-    }
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let rows = [...orders];
     rows.sort((a, b) => {
-      const cmp = new Date(b.sortAt || 0) - new Date(a.sortAt || 0);
+      const cmp = new Date(b.created_at || 0) - new Date(a.created_at || 0);
       return sortMode === 'fecha_asc' ? -cmp : cmp;
     });
-    const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (tab === 'compra' && r.kind !== 'compra') return false;
-      if (tab === 'tendencias' && !isTendenciasRow(r.kind)) return false;
-      if (tab === 'carrusel' && r.kind !== 'carrusel') return false;
+    return rows.filter((o) => {
+      if (!matchesTab(o, tab)) return false;
       if (!q) return true;
-      if (r.kind === 'compra') {
-        const o = r.data;
-        const blob = [o.customer_name, o.customer_phone, o.tracking_code, o.notes, o.status].join(' ').toLowerCase();
-        return blob.includes(q);
-      }
-      if (r.kind === 'tendencias_comentario') {
-        const cm = r.data;
-        const blob = [cm.content, cm.author_name, cm.marketing_posts?.title].join(' ').toLowerCase();
-        return blob.includes(q);
-      }
-      if (r.kind === 'tendencias_solicitud' || r.kind === 'carrusel') {
-        const msg = r.data;
-        const blob = [msg.content, msg.client_name, msg.client_phone, msg.content_type].join(' ').toLowerCase();
-        return blob.includes(q);
-      }
-      return true;
+      const blob = [o.customer_name, o.customer_phone, o.tracking_code, o.notes, o.status].join(' ').toLowerCase();
+      return blob.includes(q);
     });
-  }, [orders, comments, interests, tab, query, sortMode]);
+  }, [orders, tab, query, sortMode]);
 
-  const openDetail = useCallback(async (row) => {
+  const openDetail = useCallback(async (order) => {
+    if (sel.active) return;
+    const row = { kind: 'compra', data: order };
     setDetail(row);
     setDetailItems([]);
-    if (row.kind !== 'compra') return;
     setDetailLoading(true);
-    const { data } = await db.ecommerceOrderItems.getByOrder(row.data.id);
+    const { data } = await db.ecommerceOrderItems.getByOrder(order.id);
     setDetailItems(Array.isArray(data) ? data : []);
     setDetailLoading(false);
-  }, []);
+  }, [sel.active]);
+
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Eliminar pedidos',
+      `¿Eliminar ${sel.count} pedido(s)? Se guardará copia en Basurero.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = orders.find((x) => String(x.id) === String(id));
+              if (!row) continue;
+              const r = await deleteRowWithBasurero('pedidos', row, () => db.orders.delete(row.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await load(true);
+            setDeleteBusy(false);
+            if (errs.length) Alert.alert('Parcial', `Eliminados: ${ok}. Fallos: ${errs.length}.`);
+            else Alert.alert('Listo', ok === 1 ? 'Pedido eliminado.' : `Se eliminaron ${ok} pedidos.`);
+          },
+        },
+      ],
+    );
+  };
 
   const ejecutarCobro = useCallback(async () => {
     if (!detail || detail.kind !== 'compra') return;
@@ -306,179 +253,84 @@ export function PedidosScreen({ onBack }) {
     );
   }, [detail, ejecutarCobro]);
 
-  const renderItem = ({ item }) => {
-    if (item.kind === 'compra') {
-      const o = item.data;
-      const cardBg = orderCardStyle(o, c, isDark);
-      return (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => openDetail(item)}
-          style={[styles.row, { borderBottomColor: c.cardBorder }, cardBg]}
-          accessibilityRole="button"
-        >
-          <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-            <Package size={16} color={c.foregroundMuted} strokeWidth={2} />
-          </View>
-          <View style={styles.rowBody}>
-            <View style={styles.rowTop}>
-              <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
-                {o.customer_name || 'Cliente'}
-              </Text>
-              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
-                Compra
-              </Text>
-            </View>
-            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
-              {o.tracking_code} · Q{Number(o.total_amount || 0).toFixed(2)} · {o.payment_method || '—'}
-            </Text>
-            <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
-              {formatWhen(o.created_at)} · {String(o.status || '—')}
-            </Text>
-          </View>
-          <ChevronRight size={16} color={c.foregroundSubtle} />
-        </TouchableOpacity>
-      );
-    }
-    if (item.kind === 'tendencias_comentario') {
-      const cm = item.data;
-      return (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => openDetail(item)}
-          style={[styles.row, { borderBottomColor: c.cardBorder }]}
-          accessibilityRole="button"
-        >
-          <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-            <MessageCircle size={16} color={c.foregroundMuted} strokeWidth={2} />
-          </View>
-          <View style={styles.rowBody}>
-            <View style={styles.rowTop}>
-              <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
-                {cm.author_name || 'Cliente'}
-              </Text>
-              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
-                Comentario
-              </Text>
-            </View>
-            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={2}>
-              {cm.content || '—'}
-            </Text>
-            <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
-              {cm.marketing_posts?.title || `Post #${cm.post_id}`} · {formatWhen(cm.created_at)}
-            </Text>
-          </View>
-          <ChevronRight size={16} color={c.foregroundSubtle} />
-        </TouchableOpacity>
-      );
-    }
-    if (item.kind === 'tendencias_solicitud') {
-      const msg = item.data;
-      return (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => openDetail(item)}
-          style={[styles.row, { borderBottomColor: c.cardBorder }]}
-          accessibilityRole="button"
-        >
-          <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-            <MessageCircle size={16} color={c.foregroundMuted} strokeWidth={2} />
-          </View>
-          <View style={styles.rowBody}>
-            <View style={styles.rowTop}>
-              <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
-                {interestRowTitle(msg)}
-              </Text>
-              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
-                Tendencias
-              </Text>
-            </View>
-            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={2}>
-              {interestPreview(msg)}
-            </Text>
-            <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
-              {formatWhen(msg.created_at)}
-            </Text>
-          </View>
-          <ChevronRight size={16} color={c.foregroundSubtle} />
-        </TouchableOpacity>
-      );
-    }
-    const msg = item.data;
+  const renderItem = ({ item: o }) => {
+    const picked = sel.isSelected(o.id);
+    const cardBg = orderCardStyle(o, c, isDark);
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => openDetail(item)}
-        style={[styles.row, { borderBottomColor: c.cardBorder }]}
+        onPress={() => {
+          if (sel.active) sel.toggleId(o.id);
+          else openDetail(o);
+        }}
+        onLongPress={() => {
+          if (!sel.active) sel.setActive(true);
+          sel.toggleId(o.id);
+        }}
+        style={[
+          styles.row,
+          { borderBottomColor: c.cardBorder },
+          cardBg,
+          picked && { backgroundColor: c.surfaceMuted },
+        ]}
         accessibilityRole="button"
       >
+        {sel.active ? (
+          <View
+            style={[
+              styles.check,
+              {
+                borderColor: picked ? c.primary : c.cardBorder,
+                backgroundColor: picked ? c.primary : 'transparent',
+              },
+            ]}
+          >
+            {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+          </View>
+        ) : null}
         <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-          <Megaphone size={16} color={c.foregroundMuted} strokeWidth={2} />
+          <Package size={16} color={c.foregroundMuted} strokeWidth={2} />
         </View>
         <View style={styles.rowBody}>
           <View style={styles.rowTop}>
             <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
-              {interestRowTitle(msg)}
+              {o.customer_name || 'Cliente'}
             </Text>
             <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
-              Carrusel
+              Compra tienda
             </Text>
           </View>
-          <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={2}>
-            {interestPreview(msg)}
+          <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+            {o.tracking_code} · Q{Number(o.total_amount || 0).toFixed(2)} · {o.payment_method || '—'}
           </Text>
           <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
-            {formatWhen(msg.created_at)}
+            {formatWhen(o.created_at)} · {String(o.status || '—')}
           </Text>
         </View>
-        <ChevronRight size={16} color={c.foregroundSubtle} />
+        {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} /> : null}
       </TouchableOpacity>
     );
   };
 
   const detailBody = () => {
-    if (!detail) return '';
-    if (detail.kind === 'compra') {
-      const o = detail.data;
-      return [
-        `Cliente: ${o.customer_name}`,
-        `Tel: ${o.customer_phone || '—'}`,
-        `Tracking: ${o.tracking_code}`,
-        `Estado: ${o.status}`,
-        `Pago: ${o.payment_method || '—'}`,
-        `Total: Q${Number(o.total_amount || 0).toFixed(2)}`,
-        `Entrega: ${o.fulfillment_type || '—'}`,
-        `Notas: ${o.notes || '—'}`,
-        `Creado: ${formatWhen(o.created_at)}`,
-        detailItems.length
-          ? `\nProductos:\n${detailItems.map((l) => `· ${l.product_name} x${l.qty} · Q${Number(l.line_total || 0).toFixed(2)}`).join('\n')}`
-          : detailLoading
-            ? '\nCargando productos…'
-            : '',
-      ].join('\n');
-    }
-    if (detail.kind === 'tendencias_comentario') {
-      const cm = detail.data;
-      return [
-        'Tipo: Comentario en Tendencias',
-        `Comentario del cliente:\n${cm.content || '—'}`,
-        `\nAutor: ${cm.author_name || '—'}`,
-        `Post: ${cm.marketing_posts?.title || cm.post_id}`,
-        `Moderación: ${cm.moderation_status || '—'}`,
-        `Fecha: ${formatWhen(cm.created_at)}`,
-      ].join('\n');
-    }
-    if (detail.kind === 'tendencias_solicitud' || detail.kind === 'carrusel') {
-      const msg = detail.data;
-      const tipo = detail.kind === 'carrusel' ? 'Botón carrusel inicio' : 'Solicitud Tendencias';
-      return [
-        `Tipo: ${tipo}`,
-        '',
-        msg.content || '—',
-        msg.media_url ? `\nImagen publicación:\n${msg.media_url}` : '',
-      ].join('\n');
-    }
-    return '';
+    if (!detail?.data) return '';
+    const o = detail.data;
+    return [
+      `Cliente: ${o.customer_name}`,
+      `Tel: ${o.customer_phone || '—'}`,
+      `Tracking: ${o.tracking_code}`,
+      `Estado: ${o.status}`,
+      `Pago: ${o.payment_method || '—'}`,
+      `Total: Q${Number(o.total_amount || 0).toFixed(2)}`,
+      `Entrega: ${o.fulfillment_type || '—'}`,
+      `Notas: ${o.notes || '—'}`,
+      `Creado: ${formatWhen(o.created_at)}`,
+      detailItems.length
+        ? `\nProductos:\n${detailItems.map((l) => `· ${l.product_name} x${l.qty} · Q${Number(l.line_total || 0).toFixed(2)}`).join('\n')}`
+        : detailLoading
+          ? '\nCargando productos…'
+          : '',
+    ].join('\n');
   };
 
   return (
@@ -486,7 +338,7 @@ export function PedidosScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Pedidos"
-        subtitle="Bandeja del salón: compras de tienda, consultas en Tendencias y piezas del carrusel, todas enviadas desde App Clientes."
+        subtitle="Compras de la tienda enviadas desde App Clientes. Tendencias y carrusel se gestionan en Marketing."
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
@@ -495,7 +347,7 @@ export function PedidosScreen({ onBack }) {
         <View style={styles.body}>
           <TextInput
             style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
-            placeholder="Buscar cliente, tracking, comentario…"
+            placeholder="Buscar cliente, tracking, estado…"
             placeholderTextColor={c.foregroundSubtle}
             value={query}
             onChangeText={setQuery}
@@ -505,16 +357,20 @@ export function PedidosScreen({ onBack }) {
 
           <View style={styles.toolbar}>
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
-              {loading ? 'Cargando…' : `${merged.length} ítem${merged.length === 1 ? '' : 's'}`}
+              {loading ? 'Cargando…' : `${filtered.length} pedido${filtered.length === 1 ? '' : 's'}`}
             </Text>
-            <TouchableOpacity
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Ordenar y filtros"
-              onPress={() => setModalFiltros(true)}
-            >
-              <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+              <Text style={{ color: c.foregroundSubtle, fontSize: 13 }}> · </Text>
+              <TouchableOpacity
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Ordenar y filtros"
+                onPress={() => setModalFiltros(true)}
+              >
+                <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
             {filtroResumen}
@@ -528,8 +384,8 @@ export function PedidosScreen({ onBack }) {
           ) : (
             <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
               <FlatList
-                data={merged}
-                keyExtractor={(it) => it.key}
+                data={filtered}
+                keyExtractor={(o) => String(o.id)}
                 renderItem={renderItem}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
@@ -541,17 +397,29 @@ export function PedidosScreen({ onBack }) {
                     progressBackgroundColor={c.card}
                   />
                 }
-                contentContainerStyle={{ paddingBottom: padBottom, flexGrow: 1 }}
+                contentContainerStyle={{ paddingBottom: padList, flexGrow: 1 }}
                 ListEmptyComponent={
                   <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
-                    Sin entradas. Las compras llegan del checkout en App Clientes; las consultas, desde Tendencias; el
-                    carrusel se publica en Marketing.
+                    Sin pedidos de tienda. Las compras aparecen cuando un cliente finaliza el checkout en App
+                    Clientes.
                   </Text>
                 }
               />
             </View>
           )}
         </View>
+        {sel.active && sel.count > 0 ? (
+          <ListSelectionActionBar
+            count={sel.count}
+            onCancel={sel.exitSelectMode}
+            onConfirm={confirmDeleteSelected}
+            confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+            confirmTextStyle={{ color: c.error }}
+            confirmStyle={{ borderColor: c.error }}
+            colors={c}
+            bottomInset={insets.bottom}
+          />
+        ) : null}
       </SubScreenChrome>
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
@@ -584,7 +452,7 @@ export function PedidosScreen({ onBack }) {
                 );
               })}
             </View>
-            <Text style={[styles.sectionLbl, { color: c.foreground }]}>Tipo</Text>
+            <Text style={[styles.sectionLbl, { color: c.foreground }]}>Estado</Text>
             <View style={styles.typeGrid}>
               {TABS.map((t) => {
                 const on = tab === t.id;
@@ -602,12 +470,6 @@ export function PedidosScreen({ onBack }) {
                 );
               })}
             </View>
-            <Text style={[styles.helpTxt, { color: c.foregroundMuted }]}>
-              Entradas desde App Clientes:{'\n'}
-              · Compras: pedidos de la tienda.{'\n'}
-              · Tendencias: comentarios y solicitudes «Me interesa» con titular y publicación.{'\n'}
-              · Carrusel: cada toque en un botón del carrusel (hasta 15 piezas distintas) con titular, botón, precio y publicación #.
-            </Text>
             <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalFiltros(false)} />
           </View>
         </View>
@@ -617,7 +479,7 @@ export function PedidosScreen({ onBack }) {
         <View style={styles.modalBackdrop}>
           <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
             <View style={styles.modalHead}>
-              <Text style={[styles.modalTitle, { color: c.foreground }]}>Detalle</Text>
+              <Text style={[styles.modalTitle, { color: c.foreground }]}>Detalle del pedido</Text>
               <TouchableOpacity onPress={() => setDetail(null)} hitSlop={12}>
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
@@ -628,7 +490,7 @@ export function PedidosScreen({ onBack }) {
             >
               {detail ? detailBody() : ''}
             </Text>
-            {detail?.kind === 'compra' && detail.data.tracking_code ? (
+            {detail?.data?.tracking_code ? (
               <PickupQrDisplay
                 trackingCode={detail.data.tracking_code}
                 hint={
@@ -638,7 +500,7 @@ export function PedidosScreen({ onBack }) {
                 }
               />
             ) : null}
-            {detail?.kind === 'compra' &&
+            {detail?.data &&
             String(detail.data.status) === 'pending' &&
             isCashOrder(detail.data) ? (
               <SalonButton
@@ -663,7 +525,7 @@ export function PedidosScreen({ onBack }) {
 
       <PedidoQrScannerModal
         visible={scannerOpen}
-        expectedTracking={detail?.kind === 'compra' ? detail.data.tracking_code : ''}
+        expectedTracking={detail?.data?.tracking_code || ''}
         onClose={() => setScannerOpen(false)}
         onVerified={onQrVerified}
       />
@@ -723,6 +585,14 @@ function createStyles(c) {
       paddingHorizontal: spacing.sm,
       borderBottomWidth: StyleSheet.hairlineWidth,
       gap: spacing.sm,
+    },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     rowBody: { flex: 1, minWidth: 0 },
     rowTop: {
@@ -799,11 +669,5 @@ function createStyles(c) {
       borderWidth: 1,
     },
     typeChipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    helpTxt: {
-      fontFamily: typography.fontSans,
-      fontSize: 13,
-      lineHeight: 20,
-      marginBottom: spacing.md,
-    },
   });
 }

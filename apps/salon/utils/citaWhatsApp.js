@@ -118,6 +118,12 @@ export function getCitaWhatsAppUrl(telefono, message) {
  * Pregunta si desea abrir WhatsApp con el mensaje de cita (no envía automático sin intervención).
  */
 export function offerEnviarCitaWhatsApp(params) {
+  const est = String(params?.estado || '').toLowerCase();
+  if (est === 'rechazado' || est === 'rechazada' || est === 'cancelado' || est === 'cancelada') {
+    Alert.alert('Cita rechazada', 'No se puede enviar confirmación por WhatsApp en una cita rechazada.');
+    return Promise.resolve(false);
+  }
+
   const phone = normalizeWhatsAppPhone(params?.telefono);
   if (!phone) {
     Alert.alert(

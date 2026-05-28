@@ -23,6 +23,8 @@ export function AdminModuleTile({
   const subtitleColor = hasAccent && isDark ? '#4A4A4A' : c.foregroundMuted;
   const iconColor = hasAccent ? (accent.icon ?? c.primary) : c.primary;
   const badgeRing = accent?.bg ?? c.card;
+  const alertBg = c.error;
+  const alertFg = c.heroCtaText;
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -60,7 +62,7 @@ export function AdminModuleTile({
           position: 'absolute',
           top: 6,
           right: 6,
-          backgroundColor: '#E53935',
+          backgroundColor: alertBg,
           borderRadius: 10,
           minWidth: 20,
           height: 20,
@@ -73,7 +75,7 @@ export function AdminModuleTile({
         badgeTxt: {
           fontFamily: typography.fontSansMedium,
           fontSize: 11,
-          color: '#FFFFFF',
+          color: alertFg,
           lineHeight: 13,
         },
         bellWrap: {
@@ -83,23 +85,27 @@ export function AdminModuleTile({
           width: 24,
           height: 24,
           borderRadius: 12,
-          backgroundColor: '#E53935',
+          backgroundColor: alertBg,
           alignItems: 'center',
           justifyContent: 'center',
           borderWidth: 2,
           borderColor: badgeRing,
         },
       }),
-    [c, titleColor, subtitleColor, accent, isDark, badgeRing],
+    [c, titleColor, subtitleColor, accent, isDark, badgeRing, alertBg, alertFg],
   );
 
   const shake = useRef(new Animated.Value(0)).current;
+  const bellVisibleRef = useRef(false);
   useEffect(() => {
     if (!showAlertBell) {
+      bellVisibleRef.current = false;
       shake.stopAnimation();
       shake.setValue(0);
-      return;
+      return undefined;
     }
+    if (bellVisibleRef.current) return undefined;
+    bellVisibleRef.current = true;
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(shake, { toValue: -1, duration: 110, easing: Easing.linear, useNativeDriver: true }),
@@ -146,7 +152,7 @@ export function AdminModuleTile({
           ]}
           pointerEvents="none"
         >
-          <Bell size={12} color="#FFFFFF" strokeWidth={2.4} />
+          <Bell size={12} color={alertFg} strokeWidth={2.4} />
         </Animated.View>
       ) : null}
     </View>

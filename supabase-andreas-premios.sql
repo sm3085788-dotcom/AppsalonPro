@@ -3,7 +3,7 @@
 --
 -- 1) Columnas en ficha cliente: código de invitación + JSON para contadores que solo el salón ajusta (compra física).
 -- 2) RPC para resolver código → user_id del referidor (signup sin leer toda la tabla clientes).
--- 3) RPC para contar referidos con primera compra verificada (pedido delivered con líneas), evitando RLS del referidor.
+-- 3) RPC para contar referidos verificados: primera compra entregada (app) o primera cita agendada, evitando RLS del referidor.
 
 ALTER TABLE public.clientes
   ADD COLUMN IF NOT EXISTS codigo_referido text;
@@ -38,7 +38,7 @@ REVOKE ALL ON FUNCTION public.resolve_codigo_referido_andreas(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.resolve_codigo_referido_andreas(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.resolve_codigo_referido_andreas(text) TO service_role;
 
--- Referidos del usuario `p_referidor` (auth id) que ya tienen al menos un pedido `delivered` con ítems.
+-- Referidos del usuario `p_referidor` (auth id) con primera compra entregada en app o al menos una cita activa.
 CREATE OR REPLACE FUNCTION public.premios_andreas_referidos_primera_compra(p_referidor uuid)
 RETURNS integer
 LANGUAGE sql
@@ -50,17 +50,31 @@ AS $$
   FROM public.clientes c
   WHERE c.referido_por = p_referidor
     AND c.user_id IS NOT NULL
-    AND EXISTS (
-      SELECT 1
-      FROM public.ecommerce_orders o
-      WHERE o.client_user_id = c.user_id
-        AND o.status = 'delivered'
-        AND EXISTS (
-          SELECT 1
-          FROM public.ecommerce_order_items i
-          WHERE i.order_id = o.id
-            AND COALESCE(i.qty, 0) > 0
-        )
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM public.ecommerce_orders o
+        WHERE o.client_user_id = c.user_id
+          AND o.status = 'delivered'
+          AND EXISTS (
+            SELECT 1
+            FROM public.ecommerce_order_items i
+            WHERE i.order_id = o.id
+              AND COALESCE(i.qty, 0) > 0
+          )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.citas ct
+        WHERE ct.cliente_id = c.id
+          AND lower(trim(coalesce(ct.estado, ''))) IN (
+            'pendiente',
+            'confirmado',
+            'confirmada',
+            'completado',
+            'completada'
+          )
+      )
     );
 $$;
 

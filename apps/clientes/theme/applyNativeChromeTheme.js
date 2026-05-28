@@ -17,18 +17,20 @@ export function applyNativeChromeTheme(isDark, backgroundColor) {
 
   try {
     const NavigationBar = require('expo-navigation-bar');
-    NavigationBar.setStyle(isDark ? 'dark' : 'light');
-    /* Con edge-to-edge (app.json), setBackgroundColorAsync solo emite WARN y no aplica. */
-    let edgeToEdge = false;
-    try {
-      edgeToEdge = require('react-native-is-edge-to-edge').isEdgeToEdge();
-    } catch {
-      /* sin detector */
-    }
-    if (!edgeToEdge) {
-      const p = NavigationBar.setBackgroundColorAsync(backgroundColor);
-      if (p && typeof p.catch === 'function') void p.catch(() => {});
-    }
+    // Keep system nav layer transparent and sync icon contrast with app theme.
+    const button = NavigationBar.setButtonStyleAsync?.(isDark ? 'light' : 'dark');
+    if (button && typeof button.catch === 'function') void button.catch(() => {});
+    const legacy = NavigationBar.setStyle?.(isDark ? 'light' : 'dark');
+    if (legacy && typeof legacy.catch === 'function') void legacy.catch(() => {});
+
+    const pos = NavigationBar.setPositionAsync?.('absolute');
+    if (pos && typeof pos.catch === 'function') void pos.catch(() => {});
+    const beh = NavigationBar.setBehaviorAsync?.('overlay-swipe');
+    if (beh && typeof beh.catch === 'function') void beh.catch(() => {});
+    const border = NavigationBar.setBorderColorAsync?.('#00000000');
+    if (border && typeof border.catch === 'function') void border.catch(() => {});
+    const transparent = NavigationBar.setBackgroundColorAsync?.('transparent');
+    if (transparent && typeof transparent.catch === 'function') void transparent.catch(() => {});
   } catch {
     /* expo-navigation-bar no enlazado — ClientThemedRoot + scroll siguen el tema */
   }

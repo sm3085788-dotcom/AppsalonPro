@@ -155,6 +155,7 @@ export function LuxuryImageCarousel({
       style={[
         styles.shell,
         edgeToEdge && styles.shellEdge,
+        { backgroundColor: c.surfaceMuted },
         { marginTop: dockTop ? 0 : spacing.sm },
         cardRadii,
         edgeToEdge ? { width: '100%' } : { width: slideW },
@@ -184,6 +185,7 @@ export function LuxuryImageCarousel({
                 style={[
                   styles.img,
                   {
+                    backgroundColor: c.surfaceMuted,
                     width: slideW,
                     height,
                     ...cardRadii,

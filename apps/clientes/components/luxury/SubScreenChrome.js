@@ -144,6 +144,7 @@ export function SubScreenChrome({
   bottomPadding,
   rightAction,
   disableBodyScroll,
+  bodyPaddingHorizontal,
   hideHeaderText = false,
 }) {
   const { colors: c } = useTheme();
@@ -151,6 +152,7 @@ export function SubScreenChrome({
   const insets = useSafeAreaInsets();
   const padBottom =
     bottomPadding ?? Math.max(insets.bottom + spacing.md, spacing.xl);
+  const bodyPadH = bodyPaddingHorizontal ?? spacing.lg;
 
   return (
     <View style={styles.root}>
@@ -187,7 +189,7 @@ export function SubScreenChrome({
           style={[
             styles.scrollInnerNoScroll,
             {
-              paddingHorizontal: spacing.lg,
+              paddingHorizontal: bodyPadH,
               paddingBottom: padBottom,
               paddingTop: hideHeaderText ? 0 : spacing.sm,
             },

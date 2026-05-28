@@ -3,6 +3,7 @@
  * Carga supabaseClient primero; los módulos de dominio importan `db` sin ciclo.
  */
 export * from './supabaseClient.js';
+export { upsertPushDeviceToken } from './pushTokens.js';
 export {
   getMetaGlobal,
   guardarMetaGlobal,
@@ -34,6 +35,20 @@ export {
 } from './pickupQr.js';
 export { registerMarketingInterest, MARKETING_INTEREST_TYPES } from './marketingInterest.js';
 export {
+  clientToggleMarketingLike,
+  clientMarketingLikedPostIds,
+  fetchMarketingEngagementSince,
+  fetchMarketingEngagementFeed,
+} from './marketingEngagement.js';
+export {
+  isTendenciasFeedPost,
+  buildTendenciasPublicationMap,
+  getTendenciasPublicationNo,
+  countTendenciasPublications,
+  enrichTendenciasFeedPosts,
+  formatTendenciasPublicationLine,
+} from './tendenciasPublication.js';
+export {
   parseBroadcastContent,
   formatBroadcastContent,
   broadcastPreviewText,
@@ -47,12 +62,41 @@ export {
   markClientAuraDelivered,
   sendClientAuraChat,
   isSalonOutboundMessage,
+  mergeAuraMessage,
+  sortAuraMessages,
 } from './auraLineClient.js';
+export {
+  syncClientNotifPrefsToServer,
+  upsertClientPushToken,
+  enqueueClientNotification,
+  fetchClientNotifications,
+  fetchClientNotificationsUnreadCount,
+  fetchClientInboxUnreadCount,
+  markClientNotificationsRead,
+  markAllClientNotificationsRead,
+  notifyClientSalonMessage,
+  notifyClientFromMdmId,
+  notifyClientPedidoStatus,
+  resolveClientUserIdFromClienteId,
+  DEFAULT_CLIENT_NOTIF_PREFS_REMOTE,
+  CLIENT_NOTIF_PREF_KEYS,
+} from './clientNotifications.js';
 export {
   buildCitaConfirmacionPayload,
   parseCitaConfirmacionContent,
   citaConfirmacionPreviewText,
+  resolveCitaConfirmacionNote,
+  resolveCitaConfirmacionNoteSegments,
+  resolveCitaConfirmacionUbicacion,
+  CITA_COMPROMISO_NOTE,
+  CITA_COMPROMISO_NOTE_SEGMENTS,
+  CITA_UBICACION_HINT,
 } from './citaConfirmacionMessage.js';
+export {
+  buildCarouselOverlayFromInventario,
+  parseHomeCarouselOverlay,
+  mapHomeCarouselPostToClientSlide,
+} from './homeCarouselOverlay.js';
 export {
   buildIncidentClientMessage,
   sendIncidentReportToClient,

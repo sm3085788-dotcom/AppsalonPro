@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, Component } from 'react';
 import {
   View,
   Text,
@@ -15,116 +15,22 @@ import {
   Linking,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Heart, MessageCircle, Share2, CircleHelp, ChevronLeft, Send } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
-import { db, supabase, registerMarketingInterest, MARKETING_INTEREST_TYPES } from '@appsalon/shared-config';
-
-const TREND_VIDEOS = [
-  {
-    id: 'trend-1',
-    mediaType: 'video',
-    videoUri:
-      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
-    imageUri: null,
-    title: 'Balayage caramelo en capas',
-    caption: 'Técnica de luz natural para morenas · App Salón',
-    likes: 245,
-    comments: 34,
-  },
-  {
-    id: 'trend-2',
-    mediaType: 'video',
-    videoUri:
-      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    imageUri: null,
-    title: 'Glow treatment anti-frizz',
-    caption: 'Acabado espejo para cabello poroso · App Salón',
-    likes: 198,
-    comments: 20,
-  },
-  {
-    id: 'trend-3',
-    mediaType: 'video',
-    videoUri:
-      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-    imageUri: null,
-    title: 'Bob texturizado 2026',
-    caption: 'Corte con movimiento y secado rápido · App Salón',
-    likes: 322,
-    comments: 49,
-  },
-];
-
-/**
- * Comentarios locales para videos de ejemplo (sin `postId` en Supabase).
- * Cuando el post existe, los comentarios salen de `db.marketingComments`.
- */
-const OFFLINE_PLACEHOLDER_COMMENTS = {
-  'trend-1': [
-    {
-      id: 'c1',
-      displayName: 'María López',
-      body: '¿En Aura manejan este tono en morenas? Se ve divino.',
-      ago: 'hace 1 h',
-    },
-    {
-      id: 'c2',
-      displayName: 'ClienteAura_gt',
-      body: 'Me encantó el resultado en la promo que subieron la semana pasada.',
-      ago: 'hace 3 h',
-    },
-    {
-      id: 'c3',
-      displayName: 'Sofi · App Salón',
-      body: 'Podés agendar por la app y te asesoran con tu tono. 💛',
-      ago: 'hace 5 h',
-    },
-    {
-      id: 'c4',
-      displayName: 'Diana R.',
-      body: 'Precio aprox del servicio?',
-      ago: 'hace 1 d',
-    },
-  ],
-  'trend-2': [
-    {
-      id: 'c5',
-      displayName: 'Lucía M.',
-      body: 'Tengo mucho frizz, ¿este tratamiento es para todo tipo de cabello?',
-      ago: 'hace 40 min',
-    },
-    {
-      id: 'c6',
-      displayName: 'karla_h',
-      body: 'Lo vi en tendencias y ya pedí cita. Gracias ✨',
-      ago: 'hace 2 h',
-    },
-  ],
-  'trend-3': [
-    {
-      id: 'c7',
-      displayName: 'Andrea',
-      body: 'El bob queda corto para cara redonda?',
-      ago: 'hace 12 min',
-    },
-    {
-      id: 'c8',
-      displayName: 'Rafa G.',
-      body: 'Genial el tip del secado rápido.',
-      ago: 'hace 6 h',
-    },
-    {
-      id: 'c9',
-      displayName: 'Cliente zona 10',
-      body: '¿En qué sucursal hacen este corte?',
-      ago: 'hace 1 d',
-    },
-  ],
-};
+import {
+  db,
+  supabase,
+  registerMarketingInterest,
+  MARKETING_INTEREST_TYPES,
+  clientToggleMarketingLike,
+  clientMarketingLikedPostIds,
+} from '@appsalon/shared-config';
+import { uploadTendenciasInterestThumbnail } from '../../utils/tendenciasInterestMedia';
 
 function initialsFromDisplayName(name) {
   const parts = name
@@ -159,26 +65,21 @@ function formatRelativeAgo(iso) {
   }
 }
 
-function CommentsPanel({ videoId, postId, onClose }) {
+function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
   const { colors: c } = useTheme();
-  const offlinePlaceholderRows = OFFLINE_PLACEHOLDER_COMMENTS[videoId] ?? [];
   const [apiRows, setApiRows] = useState([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
 
-  const useRemote = postId != null;
-
   useEffect(() => {
-    if (!useRemote) {
+    if (postId == null) {
       setApiRows([]);
       return undefined;
     }
     let alive = true;
     (async () => {
       setApiLoading(true);
-      const { data: sessionData } = await supabase.auth.getSession();
-      const uid = sessionData?.session?.user?.id ?? null;
       const { data, error } = await db.marketingComments.getByPost(postId);
       if (!alive) return;
       setApiLoading(false);
@@ -186,27 +87,22 @@ function CommentsPanel({ videoId, postId, onClose }) {
         setApiRows([]);
         return;
       }
-      const filtered = data.filter(
-        (row) =>
-          row.moderation_status === 'visible' ||
-          (row.moderation_status === 'pending' && uid && row.author_id === uid),
-      );
+      const filtered = data.filter((row) => row.moderation_status === 'visible');
       setApiRows(
         filtered.map((row) => ({
           id: String(row.id),
           displayName: row.author_name || 'Cliente',
           body: row.content || '',
           ago: formatRelativeAgo(row.created_at),
-          pending: row.moderation_status === 'pending',
         })),
       );
     })();
     return () => {
       alive = false;
     };
-  }, [postId, useRemote]);
+  }, [postId]);
 
-  const rows = useRemote ? apiRows : offlinePlaceholderRows;
+  const rows = apiRows;
 
   const styles = useMemo(
     () =>
@@ -239,13 +135,6 @@ function CommentsPanel({ videoId, postId, onClose }) {
           fontFamily: typography.fontSansMedium,
           fontSize: 13,
           color: c.primary,
-        },
-        commentHint: {
-          fontFamily: typography.fontSans,
-          fontSize: 11,
-          color: c.foregroundMuted,
-          marginTop: spacing.xs,
-          lineHeight: 15,
         },
         commentListScroll: {
           marginTop: spacing.sm,
@@ -347,23 +236,16 @@ function CommentsPanel({ videoId, postId, onClose }) {
   );
 
   const reloadRemote = async () => {
-    if (!useRemote) return;
-    const { data: sessionData } = await supabase.auth.getSession();
-    const uid = sessionData?.session?.user?.id ?? null;
+    if (postId == null) return;
     const { data, error } = await db.marketingComments.getByPost(postId);
     if (error || !data) return;
-    const filtered = data.filter(
-      (row) =>
-        row.moderation_status === 'visible' ||
-        (row.moderation_status === 'pending' && uid && row.author_id === uid),
-    );
+    const filtered = data.filter((row) => row.moderation_status === 'visible');
     setApiRows(
       filtered.map((row) => ({
         id: String(row.id),
         displayName: row.author_name || 'Cliente',
         body: row.content || '',
         ago: formatRelativeAgo(row.created_at),
-        pending: row.moderation_status === 'pending',
       })),
     );
   };
@@ -371,14 +253,7 @@ function CommentsPanel({ videoId, postId, onClose }) {
   const handleSend = async () => {
     const text = draft.trim();
     if (!text) return;
-    if (!useRemote) {
-      Alert.alert(
-        'Comentarios',
-        'Este clip es de ejemplo. Los comentarios reales aparecen en las publicaciones del salón.',
-      );
-      setDraft('');
-      return;
-    }
+    if (postId == null) return;
     setSending(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -392,19 +267,19 @@ function CommentsPanel({ videoId, postId, onClose }) {
         content: text,
         author_id: session?.user?.id ?? null,
         author_name: authorName,
-        moderation_status: 'pending',
+        moderation_status: 'visible',
       });
       if (error) {
         Alert.alert(
           'No se pudo enviar',
           error.message ||
-            'Si ves error de permisos, en Supabase hay que permitir INSERT de clientes autenticados en marketing_comments.',
+            'Si ves error de permisos, ejecutá supabase-marketing-engagement-client.sql en Supabase.',
         );
         return;
       }
       setDraft('');
       await reloadRemote();
-      Alert.alert('Enviado', 'El salón verá tu mensaje en Pedidos. Cuando lo apruebe, aparecerá aquí para todos.');
+      onCommentAdded?.(postId);
     } finally {
       setSending(false);
     }
@@ -414,7 +289,7 @@ function CommentsPanel({ videoId, postId, onClose }) {
     <View style={styles.commentBox}>
       <View style={styles.sheetHandle} accessibilityElementsHidden />
       <View style={styles.commentHeaderRow}>
-        <Text style={styles.commentTitle}>Comentarios · App Clientes</Text>
+        <Text style={styles.commentTitle}>Comentarios</Text>
         <TouchableOpacity
           onPress={onClose}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -424,11 +299,6 @@ function CommentsPanel({ videoId, postId, onClose }) {
           <Text style={styles.commentCloseTxt}>Cerrar</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.commentHint}>
-        {useRemote
-          ? 'Consultas y comentarios sobre esta publicación. El salón puede moderar antes de mostrarlos a todos.'
-          : 'Video de ejemplo. Los comentarios reales están en las publicaciones del salón.'}
-      </Text>
 
       <ScrollView
         style={styles.commentListScroll}
@@ -437,12 +307,10 @@ function CommentsPanel({ videoId, postId, onClose }) {
         showsVerticalScrollIndicator={rows.length > 3}
         keyboardShouldPersistTaps="handled"
       >
-        {apiLoading && useRemote ? (
+        {apiLoading ? (
           <Text style={styles.commentEmpty}>Cargando comentarios…</Text>
         ) : rows.length === 0 ? (
-          <Text style={styles.commentEmpty}>
-            {useRemote ? 'Aún no hay comentarios visibles en esta publicación.' : 'Aún no hay comentarios en este video.'}
-          </Text>
+          <Text style={styles.commentEmpty}>Aún no hay comentarios en esta publicación.</Text>
         ) : (
           rows.map((row) => (
             <View key={row.id} style={styles.commentRow}>
@@ -452,9 +320,6 @@ function CommentsPanel({ videoId, postId, onClose }) {
               <View style={styles.commentBodyCol}>
                 <Text style={styles.commentAuthor} selectable={false}>
                   {row.displayName}
-                  {row.pending ? (
-                    <Text style={{ color: c.foregroundMuted, fontSize: 11 }}> · pendiente</Text>
-                  ) : null}
                 </Text>
                 <Text style={styles.commentMsg}>{row.body}</Text>
                 <Text style={styles.commentAgo}>{row.ago}</Text>
@@ -496,6 +361,48 @@ function shareTo(url) {
   return Linking.openURL(url).catch(() => {});
 }
 
+function isPlayableMediaUrl(uri) {
+  const u = String(uri || '').trim();
+  return u.startsWith('http://') || u.startsWith('https://');
+}
+
+const errorBoundaryStyles = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  title: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 18,
+    color: '#FFF',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  body: {
+    fontFamily: typography.fontSans,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.lg,
+  },
+  btn: {
+    backgroundColor: '#C9A24D',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    marginBottom: spacing.sm,
+  },
+  btnTxt: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 15,
+    color: '#1a1024',
+  },
+});
+
 function mapPostToTrendItem(post) {
   const url = post.media_url;
   if (!url || typeof url !== 'string') return null;
@@ -503,9 +410,11 @@ function mapPostToTrendItem(post) {
   if (mediaType !== 'image' && mediaType !== 'video') {
     mediaType = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url) ? 'image' : 'video';
   }
+  const publicationNo = Number(post.tendencias_no);
   return {
     id: `post-${post.id}`,
     postId: post.id,
+    publicationNo: Number.isFinite(publicationNo) && publicationNo > 0 ? publicationNo : null,
     mediaType,
     videoUri: mediaType === 'video' ? url : null,
     imageUri: mediaType === 'image' ? url : null,
@@ -516,63 +425,230 @@ function mapPostToTrendItem(post) {
   };
 }
 
-export function TendenciasFeed({ onBack }) {
+class TendenciasErrorBoundary extends Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(err) {
+    if (__DEV__) {
+      console.warn('[Tendencias] Error:', err?.message || err);
+    }
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <View style={errorBoundaryStyles.wrap}>
+          <Text style={errorBoundaryStyles.title}>No se pudo abrir Tendencias</Text>
+          <Text style={errorBoundaryStyles.body}>
+            Actualizá la app o volvé a intentar. Si el problema continúa, contactá al salón.
+          </Text>
+          <TouchableOpacity
+            style={errorBoundaryStyles.btn}
+            onPress={() => this.setState({ failed: false })}
+            activeOpacity={0.9}
+          >
+            <Text style={errorBoundaryStyles.btnTxt}>Reintentar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={errorBoundaryStyles.btn} onPress={this.props.onBack} activeOpacity={0.9}>
+            <Text style={errorBoundaryStyles.btnTxt}>Volver</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+class TrendCardErrorBoundary extends Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      const { width = 0, height = 0 } = this.props;
+      return (
+        <View style={[styles.videoCard, { width, height, backgroundColor: '#111' }]}>
+          <View style={styles.overlay}>
+            <Text style={styles.slideCaption}>No se pudo cargar este contenido.</Text>
+          </View>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function TendenciasFeedInner({ onBack }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [remoteFeed, setRemoteFeed] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [liked, setLiked] = useState({});
+  const [likeCounts, setLikeCounts] = useState({});
+  const [commentCounts, setCommentCounts] = useState({});
+  const [likeBusyId, setLikeBusyId] = useState(null);
+  const [interestBusyId, setInterestBusyId] = useState(null);
   const [commentOpen, setCommentOpen] = useState({});
+
+  const loadFeed = useCallback(async () => {
+    const { data, error } = await db.marketingPosts.getPublishedTendenciasFeed(40);
+    if (error) {
+      if (__DEV__) {
+        console.warn('[Tendencias] Feed Supabase:', error.message);
+      }
+      setRemoteFeed([]);
+      return;
+    }
+    if (!data?.length) {
+      setRemoteFeed([]);
+      return;
+    }
+    const mapped = data.map(mapPostToTrendItem).filter(Boolean);
+    setRemoteFeed(mapped);
+    const counts = {};
+    const commentCnt = {};
+    mapped.forEach((m) => {
+      if (m.postId != null) {
+        counts[m.postId] = m.likes;
+        commentCnt[m.postId] = m.comments;
+      }
+    });
+    setLikeCounts(counts);
+    setCommentCounts(commentCnt);
+    const postIds = mapped.map((m) => m.postId).filter((id) => id != null);
+    if (postIds.length) {
+      try {
+        const { data: likedIds, error: likedErr } = await clientMarketingLikedPostIds(postIds);
+        if (!likedErr && likedIds?.length) {
+          const next = {};
+          likedIds.forEach((row) => {
+            const pid = Number(row?.post_id ?? row);
+            if (Number.isFinite(pid)) next[pid] = true;
+          });
+          setLiked((prev) => ({ ...prev, ...next }));
+        }
+      } catch {
+        /* RPC likes opcional; el feed sigue sin bloquear */
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data, error } = await db.marketingPosts.getPublishedTendenciasFeed(40);
+      await loadFeed();
       if (!alive) return;
-      if (error) {
-        if (__DEV__) {
-          console.warn('[Tendencias] Feed Supabase:', error.message);
-        }
-        setRemoteFeed([]);
-        return;
-      }
-      if (!data?.length) {
-        setRemoteFeed([]);
-        return;
-      }
-      const mapped = data.map(mapPostToTrendItem).filter(Boolean);
-      setRemoteFeed(mapped);
     })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [loadFeed]);
 
-  const feedVideos = useMemo(() => {
-    if (remoteFeed && remoteFeed.length > 0) return remoteFeed;
-    return TREND_VIDEOS;
-  }, [remoteFeed]);
+  useEffect(() => {
+    const channel = supabase
+      .channel('client-tendencias-marketing-feed')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'marketing_posts' },
+        () => {
+          void loadFeed();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadFeed]);
+
+  const feedVideos = useMemo(() => remoteFeed ?? [], [remoteFeed]);
 
   useEffect(() => {
     if (!feedVideos.length) return;
     setActiveId((cur) => (cur && feedVideos.some((x) => x.id === cur) ? cur : feedVideos[0].id));
   }, [feedVideos]);
 
-  const onViewRef = useRef(({ viewableItems }) => {
+  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     const visible = viewableItems?.[0]?.item?.id;
     if (visible) setActiveId(visible);
-  });
+  }, []);
 
-  const viewConfigRef = useRef({ itemVisiblePercentThreshold: 80 });
+  const viewabilityPairsRef = useRef([
+    {
+      viewabilityConfig: { itemVisiblePercentThreshold: 80 },
+      onViewableItemsChanged: ({ viewableItems }) => {
+        const visible = viewableItems?.[0]?.item?.id;
+        if (visible) setActiveId(visible);
+      },
+    },
+  ]);
 
-  const toggledLikes = useMemo(
-    () =>
-      feedVideos.reduce((acc, v) => {
-        acc[v.id] = v.likes + (liked[v.id] ? 1 : 0);
-        return acc;
-      }, {}),
-    [liked, feedVideos],
+  useEffect(() => {
+    viewabilityPairsRef.current[0].onViewableItemsChanged = onViewableItemsChanged;
+  }, [onViewableItemsChanged]);
+
+  const displayLikes = useCallback(
+    (item) => {
+      if (item.postId != null && likeCounts[item.postId] != null) {
+        return likeCounts[item.postId];
+      }
+      return item.likes;
+    },
+    [likeCounts],
   );
+
+  const displayComments = useCallback(
+    (item) => {
+      if (item.postId != null && commentCounts[item.postId] != null) {
+        return commentCounts[item.postId];
+      }
+      return item.comments;
+    },
+    [commentCounts],
+  );
+
+  const isItemLiked = useCallback(
+    (item) => (item.postId != null ? Boolean(liked[item.postId]) : false),
+    [liked],
+  );
+
+  const handleToggleLike = useCallback(
+    async (item) => {
+      if (item.postId == null) return;
+      if (likeBusyId === item.postId) return;
+      setLikeBusyId(item.postId);
+      try {
+        const { data, error } = await clientToggleMarketingLike(item.postId);
+        if (error) {
+          Alert.alert('Me gusta', error.message || 'No se pudo registrar el like.');
+          return;
+        }
+        const likedNow = Boolean(data?.liked);
+        const count = Number(data?.count);
+        setLiked((prev) => ({ ...prev, [item.postId]: likedNow }));
+        if (Number.isFinite(count)) {
+          setLikeCounts((prev) => ({ ...prev, [item.postId]: count }));
+        }
+      } finally {
+        setLikeBusyId(null);
+      }
+    },
+    [likeBusyId],
+  );
+
+  const handleCommentAdded = useCallback((postId) => {
+    if (postId == null) return;
+    setCommentCounts((prev) => ({
+      ...prev,
+      [postId]: (prev[postId] ?? 0) + 1,
+    }));
+  }, []);
 
   /** Con panel de comentarios abierto, el feed vertical no debe cambiar de video. */
   const lockVideoFeedScroll = useMemo(
@@ -589,6 +665,12 @@ export function TendenciasFeed({ onBack }) {
     if (!openCommentsVideoId) return null;
     const item = feedVideos.find((x) => x.id === openCommentsVideoId);
     return item?.postId != null ? item.postId : null;
+  }, [feedVideos, openCommentsVideoId]);
+
+  const openCommentsPublicationNo = useMemo(() => {
+    if (!openCommentsVideoId) return null;
+    const item = feedVideos.find((x) => x.id === openCommentsVideoId);
+    return item?.publicationNo ?? null;
   }, [feedVideos, openCommentsVideoId]);
 
   const closeCommentsModal = () => {
@@ -609,27 +691,80 @@ export function TendenciasFeed({ onBack }) {
   };
 
   const onInterest = async (video) => {
-    const { error } = await registerMarketingInterest({
-      type: MARKETING_INTEREST_TYPES.TENDENCIAS,
-      title: video.title,
-      headline: video.title,
-      detail: video.caption || null,
-      postId: video.postId ?? null,
-      mediaUrl: video.imageUri || video.videoUri || null,
-    });
-    if (error) {
+    const busyKey = video.postId ?? video.id;
+    if (interestBusyId === busyKey) return;
+    setInterestBusyId(busyKey);
+    try {
+      let mediaUrl = video.imageUri || null;
+      if (!mediaUrl && video.videoUri) {
+        mediaUrl = await uploadTendenciasInterestThumbnail(video.videoUri);
+      }
+
+      const { error } = await registerMarketingInterest({
+        type: MARKETING_INTEREST_TYPES.TENDENCIAS,
+        title: video.title,
+        headline: video.title,
+        detail: video.caption || null,
+        postId: video.postId ?? null,
+        publicationNo: video.publicationNo ?? null,
+        mediaUrl,
+      });
+      if (error) {
+        Alert.alert(
+          'Me interesa',
+          error.message ||
+            'No se pudo avisar al salón. Si ves error de permisos, en Supabase activá la política de INSERT para clientes en marketing_direct_messages.',
+        );
+        return;
+      }
       Alert.alert(
-        'Me interesa',
-        error.message ||
-          'No se pudo avisar al salón. Si ves error de permisos, en Supabase activá la política de INSERT para clientes en marketing_direct_messages.',
+        '¡Listo!',
+        'Tu solicitud sobre esta publicación llegó al salón. Revisá tus mensajes en la app.',
       );
-      return;
+    } finally {
+      setInterestBusyId(null);
     }
-    Alert.alert(
-      '¡Listo!',
-      'Tu solicitud sobre esta publicación llegó al salón en Pedidos.',
-    );
   };
+
+  if (!height || height < 120) {
+    return (
+      <View style={[styles.wrap, styles.loadingWrap]}>
+        <ActivityIndicator size="large" color="#C9A24D" />
+        <TouchableOpacity style={[styles.backPill, { top: insets.top + 8 }]} onPress={onBack}>
+          <ChevronLeft size={22} color="#FFF" strokeWidth={2.2} />
+          <Text style={styles.backTxt}>Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (remoteFeed === null) {
+    return (
+      <View style={[styles.wrap, styles.loadingWrap]}>
+        <ActivityIndicator size="large" color="#C9A24D" />
+        <Text style={styles.emptyFeedTxt}>Cargando Tendencias…</Text>
+        <TouchableOpacity style={[styles.backPill, { top: insets.top + 8 }]} onPress={onBack}>
+          <ChevronLeft size={22} color="#FFF" strokeWidth={2.2} />
+          <Text style={styles.backTxt}>Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (feedVideos.length === 0) {
+    return (
+      <View style={[styles.wrap, styles.loadingWrap]}>
+        <Text style={styles.emptyFeedTitle}>Aún no hay publicaciones</Text>
+        <Text style={styles.emptyFeedTxt}>
+          El salón publicará fotos y videos en Marketing. Volvé más tarde.
+        </Text>
+        <TouchableOpacity style={[styles.backPill, { top: insets.top + 8 }]} onPress={onBack}>
+          <ChevronLeft size={22} color="#FFF" strokeWidth={2.2} />
+          <Text style={styles.backTxt}>Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.wrap}>
@@ -668,9 +803,10 @@ export function TendenciasFeed({ onBack }) {
           >
             {openCommentsVideoId ? (
               <CommentsPanel
-                videoId={openCommentsVideoId}
                 postId={openCommentsPostId}
+                publicationNo={openCommentsPublicationNo}
                 onClose={closeCommentsModal}
+                onCommentAdded={handleCommentAdded}
               />
             ) : null}
           </View>
@@ -697,57 +833,138 @@ export function TendenciasFeed({ onBack }) {
         snapToInterval={height}
         decelerationRate="fast"
         nestedScrollEnabled
-        removeClippedSubviews={false}
+        removeClippedSubviews={Platform.OS === 'android'}
+        initialNumToRender={1}
+        maxToRenderPerBatch={1}
+        windowSize={2}
         getItemLayout={(_, index) => ({
           length: height,
           offset: height * index,
           index,
         })}
-        onViewableItemsChanged={onViewRef.current}
-        viewabilityConfig={viewConfigRef.current}
-        renderItem={({ item }) => {
-          return (
+        viewabilityConfigCallbackPairs={viewabilityPairsRef.current}
+        renderItem={({ item }) => (
+          <TrendCardErrorBoundary width={width} height={height}>
             <TrendMediaCard
               item={item}
               width={width}
               height={height}
               isActive={activeId === item.id}
-              isLiked={Boolean(liked[item.id])}
+              isLiked={isItemLiked(item)}
               isCommentOpen={Boolean(commentOpen[item.id])}
-              likes={toggledLikes[item.id]}
-              onToggleLike={() => setLiked((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+              likes={displayLikes(item)}
+              comments={displayComments(item)}
+              likeBusy={likeBusyId === item.postId}
+              interestBusy={interestBusyId === (item.postId ?? item.id)}
+              onToggleLike={() => void handleToggleLike(item)}
               onToggleComments={() =>
                 setCommentOpen((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
               }
               onShare={() => onShare(item)}
-              onInterest={() => onInterest(item)}
+              onInterest={() => void onInterest(item)}
             />
-          );
-        }}
+          </TrendCardErrorBoundary>
+        )}
       />
     </View>
   );
 }
 
+export function TendenciasFeed(props) {
+  return (
+    <TendenciasErrorBoundary onBack={props.onBack}>
+      <TendenciasFeedInner {...props} />
+    </TendenciasErrorBoundary>
+  );
+}
+
 function TrendSlideCopy({ item }) {
+  const title = String(item.title || '').trim();
+  const caption = String(item.caption || '').trim();
+  const showTitle = title.length > 0 && title.toLowerCase() !== 'tendencia';
   return (
     <View style={styles.bottomCopy} pointerEvents="none">
-      <Text style={styles.slideTitle} numberOfLines={2}>
-        {item.title}
-      </Text>
-      <Text style={styles.slideCaption} numberOfLines={3}>
-        {item.caption}
-      </Text>
+      {showTitle ? (
+        <Text style={styles.slideTitle} numberOfLines={2}>
+          {title}
+        </Text>
+      ) : null}
+      {caption ? (
+        <Text style={styles.slideCaption} numberOfLines={4}>
+          {caption}
+        </Text>
+      ) : showTitle ? null : (
+        <Text style={styles.slideCaption} numberOfLines={2}>
+          Contenido del salón
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function TrendCardActions({
+  item: _item,
+  isLiked,
+  isCommentOpen,
+  likes,
+  comments,
+  likeBusy,
+  interestBusy,
+  onToggleLike,
+  onToggleComments,
+  onShare,
+  onInterest,
+  tc,
+}) {
+  return (
+    <View style={styles.actions}>
+      <TouchableOpacity style={styles.actionBtn} onPress={onToggleLike} disabled={likeBusy}>
+        <Heart
+          size={22}
+          color={isLiked ? '#FF4D6D' : '#FFFFFF'}
+          fill={isLiked ? '#FF4D6D' : 'transparent'}
+          strokeWidth={2}
+        />
+        <Text style={styles.actionTxt}>{likes}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.actionBtn} onPress={onToggleComments}>
+        <MessageCircle size={22} color={isCommentOpen ? tc.primary : '#FFF'} strokeWidth={2} />
+        <Text style={styles.actionTxt}>{comments}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.actionBtn} onPress={onShare}>
+        <Share2 size={22} color="#FFF" strokeWidth={2} />
+        <Text style={styles.actionTxt}>Compartir</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.actionBtn} onPress={onInterest} disabled={interestBusy}>
+        <CircleHelp size={22} color="#FFF" strokeWidth={2} />
+        <Text style={styles.actionTxt}>{interestBusy ? '…' : 'Me interesa'}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 function TrendMediaCard(props) {
   const isImage = Boolean(props.item.imageUri) || props.item.mediaType === 'image';
-  if (isImage) {
-    return <TrendImageCard {...props} />;
+  const videoUri = String(props.item.videoUri || '').trim();
+  const canPlayVideo = isPlayableMediaUrl(videoUri);
+  if (isImage || !canPlayVideo) {
+    return (
+      <TrendImageCard
+        {...props}
+        item={{
+          ...props.item,
+          imageUri: props.item.imageUri || (canPlayVideo ? null : props.item.imageUri),
+        }}
+      />
+    );
   }
-  return <TrendVideoCard {...props} />;
+  if (props.isActive) {
+    return <TrendVideoCardActive {...props} item={{ ...props.item, videoUri }} />;
+  }
+  return <TrendVideoCardIdle {...props} item={{ ...props.item, videoUri }} />;
 }
 
 function TrendImageCard({
@@ -758,6 +975,9 @@ function TrendImageCard({
   isLiked,
   isCommentOpen,
   likes,
+  comments,
+  likeBusy,
+  interestBusy,
   onToggleLike,
   onToggleComments,
   onShare,
@@ -772,91 +992,127 @@ function TrendImageCard({
       ) : null}
       <View style={styles.overlay}>
         <TrendSlideCopy item={item} />
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={onToggleLike}>
-            <Heart
-              size={22}
-              color={isLiked ? '#FF4D6D' : '#FFFFFF'}
-              fill={isLiked ? '#FF4D6D' : 'transparent'}
-              strokeWidth={2}
-            />
-            <Text style={styles.actionTxt}>{likes}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={onToggleComments}>
-            <MessageCircle
-              size={22}
-              color={isCommentOpen ? tc.primary : '#FFF'}
-              strokeWidth={2}
-            />
-            <Text style={styles.actionTxt}>{item.comments}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={onShare}>
-            <Share2 size={22} color="#FFF" strokeWidth={2} />
-            <Text style={styles.actionTxt}>Compartir</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={onInterest}>
-            <CircleHelp size={22} color="#FFF" strokeWidth={2} />
-            <Text style={styles.actionTxt}>Me interesa</Text>
-          </TouchableOpacity>
-        </View>
+        <TrendCardActions
+          item={item}
+          isLiked={isLiked}
+          isCommentOpen={isCommentOpen}
+          likes={likes}
+          comments={comments}
+          likeBusy={likeBusy}
+          interestBusy={interestBusy}
+          onToggleLike={onToggleLike}
+          onToggleComments={onToggleComments}
+          onShare={onShare}
+          onInterest={onInterest}
+          tc={tc}
+        />
       </View>
     </View>
   );
 }
 
-function TrendVideoCard({
+function TrendVideoCardIdle({
   item,
   width,
   height,
-  isActive,
   isLiked,
   isCommentOpen,
   likes,
+  comments,
+  likeBusy,
+  interestBusy,
   onToggleLike,
   onToggleComments,
   onShare,
   onInterest,
 }) {
   const { colors: tc } = useTheme();
-  const player = useVideoPlayer(item.videoUri || '', (p) => {
+  return (
+    <View style={[styles.videoCard, { width, height }]} collapsable={false}>
+      <View style={[styles.video, styles.videoIdle, { width, height }]} />
+      <View style={styles.overlay}>
+        <TrendSlideCopy item={item} />
+        <TrendCardActions
+          item={item}
+          isLiked={isLiked}
+          isCommentOpen={isCommentOpen}
+          likes={likes}
+          comments={comments}
+          likeBusy={likeBusy}
+          interestBusy={interestBusy}
+          onToggleLike={onToggleLike}
+          onToggleComments={onToggleComments}
+          onShare={onShare}
+          onInterest={onInterest}
+          tc={tc}
+        />
+      </View>
+    </View>
+  );
+}
+
+function TrendVideoCardActive({
+  item,
+  width,
+  height,
+  isLiked,
+  isCommentOpen,
+  likes,
+  comments,
+  likeBusy,
+  interestBusy,
+  onToggleLike,
+  onToggleComments,
+  onShare,
+  onInterest,
+}) {
+  const { colors: tc } = useTheme();
+  const videoUri = String(item.videoUri || '').trim();
+  const player = useVideoPlayer(videoUri, (p) => {
     p.loop = true;
     p.muted = false;
   });
 
   useEffect(() => {
-    if (!isActive) {
-      player.muted = true;
-      player.pause();
-      return undefined;
-    }
+    if (!videoUri) return undefined;
 
     player.muted = false;
 
     const tryPlay = () => {
-      if (player.status === 'readyToPlay') {
-        player.play();
+      try {
+        if (player.status === 'readyToPlay') {
+          player.play();
+        }
+      } catch {
+        /* reproductor liberado al desmontar */
       }
     };
 
     tryPlay();
     const statusSub = player.addListener('statusChange', ({ status }) => {
-      if (status === 'readyToPlay' && isActive) {
-        player.play();
+      if (status === 'readyToPlay') {
+        tryPlay();
       }
     });
     const endSub = player.addListener('playToEnd', () => {
-      if (!isActive) return;
-      player.replay();
+      try {
+        player.replay();
+      } catch {
+        /* noop */
+      }
     });
 
     return () => {
+      try {
+        player.pause();
+        player.muted = true;
+      } catch {
+        /* noop */
+      }
       statusSub.remove();
       endSub.remove();
     };
-  }, [isActive, player]);
+  }, [videoUri, player]);
 
   return (
     <View style={[styles.videoCard, { width, height }]} collapsable={false}>
@@ -869,42 +1125,79 @@ function TrendVideoCard({
       />
       <View style={styles.overlay}>
         <TrendSlideCopy item={item} />
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={onToggleLike}>
-            <Heart
-              size={22}
-              color={isLiked ? '#FF4D6D' : '#FFFFFF'}
-              fill={isLiked ? '#FF4D6D' : 'transparent'}
-              strokeWidth={2}
-            />
-            <Text style={styles.actionTxt}>{likes}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={onToggleComments}>
-            <MessageCircle
-              size={22}
-              color={isCommentOpen ? tc.primary : '#FFF'}
-              strokeWidth={2}
-            />
-            <Text style={styles.actionTxt}>{item.comments}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={onShare}>
-            <Share2 size={22} color="#FFF" strokeWidth={2} />
-            <Text style={styles.actionTxt}>Compartir</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtn} onPress={onInterest}>
-            <CircleHelp size={22} color="#FFF" strokeWidth={2} />
-            <Text style={styles.actionTxt}>Me interesa</Text>
-          </TouchableOpacity>
-        </View>
+        <TrendCardActions
+          item={item}
+          isLiked={isLiked}
+          isCommentOpen={isCommentOpen}
+          likes={likes}
+          comments={comments}
+          likeBusy={likeBusy}
+          interestBusy={interestBusy}
+          onToggleLike={onToggleLike}
+          onToggleComments={onToggleComments}
+          onShare={onShare}
+          onInterest={onInterest}
+          tc={tc}
+        />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  loadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  emptyFeedTitle: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 18,
+    color: '#FFF',
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  emptyFeedTxt: {
+    fontFamily: typography.fontSans,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: spacing.sm,
+  },
+  errorWrap: {
+    flex: 1,
+    backgroundColor: '#111',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  errorTitle: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 18,
+    color: '#FFF',
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  errorBody: {
+    fontFamily: typography.fontSans,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.lg,
+  },
+  errorBtn: {
+    borderRadius: radii.pill,
+    backgroundColor: '#C9A24D',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  errorBtnTxt: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 15,
+    color: '#1A1A1A',
+  },
   wrap: {
     flex: 1,
     backgroundColor: '#000',
@@ -937,6 +1230,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#111',
   },
+  videoIdle: {
+    backgroundColor: '#1a1a1a',
+  },
   video: {
     position: 'absolute',
     left: 0,
@@ -956,6 +1252,17 @@ const styles = StyleSheet.create({
     right: 80,
     bottom: spacing.xl + 12,
     zIndex: 2,
+  },
+  slidePubNo: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#E8D4A8',
+    marginBottom: 4,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   slideTitle: {
     fontFamily: typography.fontSansMedium,

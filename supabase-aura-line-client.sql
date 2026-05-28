@@ -50,7 +50,7 @@ AS $$
   INNER JOIN clientes c ON c.id = m.client_id
   WHERE c.user_id = auth.uid()
     AND m.status = 'pending_sync'
-    AND m.content_type IN ('chat', 'broadcast_promo');
+    AND m.content_type IN ('chat', 'broadcast_promo', 'incident_report', 'cita_confirmacion');
 $$;
 
 CREATE OR REPLACE FUNCTION public.client_mark_aura_delivered(p_ids bigint[])

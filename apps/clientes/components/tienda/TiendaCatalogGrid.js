@@ -23,27 +23,12 @@ import { ProductCardPlaceholder } from './ProductCardPlaceholder';
 
 const GAP = 10;
 
-function mapPostToPromoProduct(post) {
-  const id = post?.id != null ? String(post.id) : '';
-  const title = String(post?.title || 'Promoción').trim() || 'Promoción';
-  const uri = post?.media_url && String(post.media_url).trim() ? String(post.media_url).trim() : null;
-  return {
-    id: `promo-${id}`,
-    catalogKind: 'promo',
-    promoPostId: id,
-    title,
-    brandLine: 'PROMOCIÓN',
-    priceLabel: 'Ver promoción',
-    priceAmount: 0,
-    precioVariable: true,
-    imageUri: uri,
-    imageUris: uri ? [uri] : [],
-    rating: 5,
-    reviewCount: 0,
-    shippingLabel: 'Salon Andreas · consultá en recepción',
-    badge: 'Promo',
-    promoBody: String(post?.body || '').trim(),
-  };
+/** Solo productos de inventario con `visible_en_tienda` (App Salón). Sin marketing ni servicios. */
+function isTiendaProductRow(row) {
+  if (!row?.id) return false;
+  if (getArticuloTipo(row) === 'servicio') return false;
+  if (getArticuloTipo(row) === 'nuevo_stock') return false;
+  return true;
 }
 
 export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: productsProp }) {
@@ -54,27 +39,19 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
   const cardW = (innerW - GAP) / 2;
 
   const [liveProducts, setLiveProducts] = useState([]);
-  const [promoProducts, setPromoProducts] = useState([]);
   const [loading, setLoading] = useState(!productsProp);
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('nombre_asc');
-  const [filterKind, setFilterKind] = useState('todos');
   const [panelOpen, setPanelOpen] = useState(false);
 
   const loadRemote = useCallback(async () => {
     setLoading(true);
     try {
-      const [invRes, promoRes] = await Promise.all([
-        db.inventario.getVisiblesEnTienda(),
-        db.marketingPosts.getPublishedHomeCarousel(24),
-      ]);
+      const invRes = await db.inventario.getVisiblesEnTienda();
       const rows = !invRes.error && Array.isArray(invRes.data) ? invRes.data : [];
-      const productRows = rows.filter((r) => getArticuloTipo(r) !== 'servicio');
+      const productRows = rows.filter(isTiendaProductRow);
       const mapped = productRows.map(mapInventarioToTiendaProduct).filter(Boolean);
-      const withKind = mapped.map((p) => ({ ...p, catalogKind: 'producto' }));
-      setLiveProducts(withKind);
-      const posts = !promoRes.error && Array.isArray(promoRes.data) ? promoRes.data : [];
-      setPromoProducts(posts.map(mapPostToPromoProduct).filter((x) => x.imageUri));
+      setLiveProducts(mapped.map((p) => ({ ...p, catalogKind: 'producto' })));
     } finally {
       setLoading(false);
     }
@@ -92,16 +69,10 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
     };
   }, [productsProp, loadRemote]);
 
-  const baseCatalog = productsProp?.length ? productsProp : liveProducts;
-
-  const merged = useMemo(() => {
-    if (productsProp?.length) return baseCatalog;
-    const promos = filterKind === 'productos' ? [] : promoProducts;
-    return [...baseCatalog, ...promos];
-  }, [baseCatalog, promoProducts, productsProp, filterKind]);
+  const catalog = productsProp?.length ? productsProp : liveProducts;
 
   const filteredSorted = useMemo(() => {
-    let list = [...merged];
+    let list = [...catalog];
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter((p) => {
@@ -110,9 +81,6 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
         return t.includes(q) || b.includes(q);
       });
     }
-    if (filterKind === 'productos') list = list.filter((p) => p.catalogKind !== 'promo');
-    if (filterKind === 'promos') list = list.filter((p) => p.catalogKind === 'promo');
-
     const priceNum = (p) => Number(p.priceAmount ?? 0) || 0;
     const name = (p) => String(p.title || '').toLowerCase();
     if (sortKey === 'nombre_desc') list.sort((a, b) => name(b).localeCompare(name(a), 'es'));
@@ -120,7 +88,7 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
     else if (sortKey === 'precio_desc') list.sort((a, b) => priceNum(b) - priceNum(a));
     else if (sortKey === 'precio_asc') list.sort((a, b) => priceNum(a) - priceNum(b));
     return list;
-  }, [merged, search, sortKey, filterKind]);
+  }, [catalog, search, sortKey]);
 
   const slots = useMemo(() => {
     if (filteredSorted.length) {
@@ -141,12 +109,6 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
         : sortKey === 'precio_desc'
           ? 'Precio mayor'
           : 'Nombre A → Z';
-  const filterLabel =
-    filterKind === 'productos'
-      ? 'Solo productos'
-      : filterKind === 'promos'
-        ? 'Solo promociones'
-        : 'Todo';
 
   const styles = useMemo(
     () =>
@@ -161,10 +123,17 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
           borderColor: c.cardBorder,
           paddingVertical: 10,
           paddingHorizontal: spacing.md,
-          marginBottom: spacing.md,
+          marginBottom: spacing.sm,
           fontFamily: typography.fontSans,
           fontSize: 15,
           color: c.foreground,
+        },
+        hint: {
+          fontFamily: typography.fontSans,
+          fontSize: 12,
+          color: c.foregroundMuted,
+          lineHeight: 17,
+          marginBottom: spacing.md,
         },
         toolbar: {
           flexDirection: 'row',
@@ -244,35 +213,38 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
 
   return (
     <View style={styles.page}>
+      <Text style={styles.hint}>
+        Productos publicados desde inventario (App Salón). Los servicios y el carrusel de marketing están en
+        Mis citas e Inicio.
+      </Text>
       <TextInput
         style={styles.searchBar}
         value={search}
         onChangeText={setSearch}
-        placeholder="Buscar en tienda…"
+        placeholder="Buscar productos…"
         placeholderTextColor={c.foregroundSubtle}
         returnKeyType="search"
-        accessibilityLabel="Buscar en tienda"
+        accessibilityLabel="Buscar productos en tienda"
       />
 
       <View style={styles.toolbar}>
         <Text style={styles.resultMeta} numberOfLines={2}>
-          {loading ? 'Cargando…' : `${slots.filter((s) => s.product).length} resultados · ${filterLabel} · ${sortLabel}`}
+          {loading ? 'Cargando…' : `${slots.filter((s) => s.product).length} productos · ${sortLabel}`}
         </Text>
         <TouchableOpacity hitSlop={12} accessibilityRole="button" onPress={() => setPanelOpen(true)}>
-          <Text style={styles.sortLink}>Ordenar · filtros</Text>
+          <Text style={styles.sortLink}>Ordenar</Text>
         </TouchableOpacity>
       </View>
 
       <Modal visible={panelOpen} transparent animationType="slide" onRequestClose={() => setPanelOpen(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setPanelOpen(false)}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Ordenar y filtrar</Text>
+            <Text style={styles.modalTitle}>Ordenar productos</Text>
             <ScrollView
               style={styles.modalScroll}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.modalSection}>Ordenar por</Text>
               {[
                 { id: 'nombre_asc', label: 'Nombre A → Z' },
                 { id: 'nombre_desc', label: 'Nombre Z → A' },
@@ -283,21 +255,6 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
                   key={o.id}
                   style={chip(sortKey === o.id)}
                   onPress={() => setSortKey(o.id)}
-                  activeOpacity={0.88}
-                >
-                  <Text style={styles.chipTxt}>{o.label}</Text>
-                </TouchableOpacity>
-              ))}
-              <Text style={styles.modalSection}>Mostrar</Text>
-              {[
-                { id: 'todos', label: 'Todo (productos y promos)' },
-                { id: 'productos', label: 'Solo productos' },
-                { id: 'promos', label: 'Solo promociones' },
-              ].map((o) => (
-                <TouchableOpacity
-                  key={o.id}
-                  style={chip(filterKind === o.id)}
-                  onPress={() => setFilterKind(o.id)}
                   activeOpacity={0.88}
                 >
                   <Text style={styles.chipTxt}>{o.label}</Text>

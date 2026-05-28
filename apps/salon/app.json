@@ -2,7 +2,7 @@
   "expo": {
     "name": "AppSalon Pro - Gestión",
     "slug": "salon-andreas-salon",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -12,7 +12,7 @@
       "fallbackToCacheTimeout": 0
     },
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "icon": "./assets/icon.png",
     "splash": {
@@ -85,7 +85,12 @@
         }
       ],
       "expo-camera",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "color": "#C9A961"
+        }
+      ],
       "expo-image-picker",
       "expo-document-picker",
       "expo-calendar",

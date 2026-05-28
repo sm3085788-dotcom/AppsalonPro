@@ -44,10 +44,12 @@ import {
   isInvalidRefreshTokenError,
   uploadClientePhotoFromUri,
   fetchClientAuraUnreadCount,
+  fetchClientAuraMessages,
   sendClientAuraChat,
   buildBroadcastActionMessage,
   BROADCAST_PROMO_ACTIONS,
   parseBroadcastContent,
+  mapHomeCarouselPostToClientSlide,
 } from '@appsalon/shared-config';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
 import {
@@ -93,9 +95,21 @@ import { ClientAuthScreen } from './onboarding/ClientAuthScreen';
 import { SupabaseConfigScreen } from './onboarding/SupabaseConfigScreen';
 import { completeAuthFromRedirectUrl } from './utils/clientAuthEmail';
 import {
-  getCitaConfirmadaAlertadas,
-  addCitaConfirmadaAlertadas,
-} from './utils/historialCitaAlerts';
+  tryShowCitaConfirmacionAlert,
+  getCitaConfirmacionMsgAlertadas,
+} from './utils/citaConfirmacionMensajeAlerts';
+import {
+  promptClientPushPermissions,
+  addClientPushResponseListener,
+  configureClientPushHandler,
+  showLocalClientNotification,
+} from './utils/clientPush';
+import {
+  markAllClientNotificationsRead,
+  fetchClientInboxUnreadCount,
+  markClientNotificationsRead,
+  notifyClientFromMdmId,
+} from '@appsalon/shared-config';
 import { partitionCitasCliente } from './utils/citasLabels';
 import * as Linking from 'expo-linking';
 import { PostLoginIntroScreen } from './onboarding/PostLoginIntroScreen';
@@ -117,48 +131,6 @@ const hasSupabaseEnv = Boolean(
   process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim(),
 );
-
-/** `marketing_posts` con `audience === 'home_carousel'`: overlay en JSON en `body`. */
-function mapHomeCarouselPostToSlide(row) {
-  const id = String(row.id);
-  const uri = row.media_url;
-  let kicker = 'Publicidad';
-  let headline = row.title || 'Promoción';
-  let bodyText = '';
-  let priceLabel;
-  let buttonTitle = 'Ver más';
-  const raw = String(row.body || '').trim();
-  let inventarioId = null;
-  if (raw.startsWith('{')) {
-    try {
-      const o = JSON.parse(raw);
-      if (o && typeof o === 'object') {
-        if (o.kicker) kicker = String(o.kicker);
-        if (o.headline) headline = String(o.headline);
-        if (o.body != null) bodyText = String(o.body);
-        if (o.priceLabel) priceLabel = String(o.priceLabel);
-        if (o.buttonTitle) buttonTitle = String(o.buttonTitle);
-        if (o.inventarioId != null) inventarioId = Number(o.inventarioId);
-      }
-    } catch {
-      bodyText = raw;
-    }
-  } else {
-    bodyText = raw;
-  }
-  if (inventarioId) buttonTitle = buttonTitle || 'Ver servicio';
-  return {
-    id,
-    uri,
-    caption: headline,
-    kicker,
-    headline,
-    body: bodyText,
-    priceLabel,
-    buttonTitle,
-    inventarioId: Number.isFinite(inventarioId) ? inventarioId : null,
-  };
-}
 
 /** `marketing_posts` con `audience === 'home_hero'`: carrusel «Reserva tu cita». */
 function mapHomeHeroPostToSlide(row) {
@@ -473,7 +445,7 @@ function AppMain({ onLogout }) {
         return;
       }
       if (Array.isArray(data) && data.length > 0) {
-        setInicioPubSlides(data.map(mapHomeCarouselPostToSlide));
+        setInicioPubSlides(data.map(mapHomeCarouselPostToClientSlide));
       }
     })();
     return () => {
@@ -560,14 +532,22 @@ function AppMain({ onLogout }) {
     return refreshClienteFicha(u.id);
   }, [session?.user, refreshClienteFicha]);
 
+  const auraAlertsEnabled = notifPrefs.mensajes || notifPrefs.cambiosAgenda;
+
   const refreshAuraUnread = useCallback(async () => {
-    if (!hasSupabaseEnv || !clienteRow?.id || !notifPrefs.mensajes) {
+    if (!hasSupabaseEnv || !clienteRow?.id) {
       setAuraUnread(0);
       return;
     }
-    const { count } = await fetchClientAuraUnreadCount();
-    setAuraUnread(count || 0);
-  }, [clienteRow?.id, notifPrefs.mensajes]);
+    // Source of truth for bell: unread rows in client_notifications.
+    // Fallback to Aura pending count to stay compatible while older flows migrate.
+    const [{ count: notifUnread, error: notifErr }, { count: auraUnread }] = await Promise.all([
+      fetchClientInboxUnreadCount(),
+      fetchClientAuraUnreadCount(),
+    ]);
+    const next = notifErr ? Number(auraUnread) || 0 : Math.max(Number(notifUnread) || 0, Number(auraUnread) || 0);
+    setAuraUnread(next);
+  }, [clienteRow?.id]);
 
   const refreshPedidosActivos = useCallback(async () => {
     const userId = session?.user?.id;
@@ -598,9 +578,174 @@ function AppMain({ onLogout }) {
     void loadClientNotifPrefs(session?.user?.id ?? null).then(setNotifPrefs);
   }, [session?.user?.id]);
 
+  const openMensajesSub = useCallback(() => {
+    void (async () => {
+      await markAllClientNotificationsRead();
+      setAuraUnread(0);
+      void refreshAuraUnread();
+    })();
+    openSub(CLIENT_SUB.MENSAJES);
+  }, [openSub, refreshAuraUnread]);
+
+  const openMisPedidosSub = useCallback(() => {
+    void (async () => {
+      await markAllClientNotificationsRead();
+      setAuraUnread(0);
+      void refreshAuraUnread();
+    })();
+    openSub(CLIENT_SUB.MIS_PEDIDOS);
+  }, [openSub, refreshAuraUnread]);
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return undefined;
+    configureClientPushHandler();
+    void promptClientPushPermissions(uid);
+    return addClientPushResponseListener((data) => {
+      const screen = String(data?.target_screen || '');
+      if (screen === 'mis_pedidos') openMisPedidosSub();
+      else if (screen === 'mensajes') openMensajesSub();
+    });
+  }, [session?.user?.id, openMensajesSub, openMisPedidosSub]);
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return undefined;
+
+    const shouldShow = (row) => {
+      const t = String(row?.tipo || '');
+      if (t === 'pedido') return notifPrefs.pedidos;
+      if (t === 'promo') return notifPrefs.promociones;
+      if (t === 'cita') return notifPrefs.cambiosAgenda;
+      return notifPrefs.mensajes;
+    };
+
+    const channel = supabase
+      .channel(`client-notifications-${uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'client_notifications',
+          filter: `client_user_id=eq.${uid}`,
+        },
+        (payload) => {
+          const row = payload?.new;
+          if (!row || !shouldShow(row)) return;
+          const target = String(row.target_screen || '');
+          const onSub =
+            target === 'mis_pedidos'
+              ? CLIENT_SUB.MIS_PEDIDOS
+              : target === 'mensajes'
+                ? CLIENT_SUB.MENSAJES
+                : null;
+          const isInboxNotif = ['mensaje', 'cita', 'promo'].includes(String(row?.tipo || ''));
+          if ((onSub && openedSub === onSub) || (openedSub === CLIENT_SUB.MENSAJES && isInboxNotif)) {
+            if (row?.id != null) {
+              void markClientNotificationsRead([row.id]).then(() => {
+                void refreshAuraUnread();
+              });
+            }
+            return;
+          }
+          if (target === 'mis_pedidos') void refreshPedidosActivos();
+          if (target === 'mensajes' || row.tipo === 'cita') void refreshAuraUnread();
+          void showLocalClientNotification({
+            title: row.titulo,
+            body: row.mensaje,
+            data: {
+              target_screen: row.target_screen,
+              target_id: row.target_id,
+              tipo: row.tipo,
+            },
+          });
+          Alert.alert(row.titulo || 'Andreas Pro', row.mensaje || '', [
+            {
+              text: 'Ver',
+              onPress: () => {
+                if (target === 'mis_pedidos') openMisPedidosSub();
+                else openMensajesSub();
+              },
+            },
+            { text: 'OK', style: 'cancel' },
+          ]);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [
+    session?.user?.id,
+    notifPrefs,
+    openedSub,
+    openMensajesSub,
+    openMisPedidosSub,
+    refreshAuraUnread,
+    refreshPedidosActivos,
+  ]);
+
+  const handleCitaConfirmacionMessage = useCallback(
+    async (row) => {
+      const uid = session?.user?.id;
+      if (!uid || String(row?.content_type || '') !== 'cita_confirmacion') return;
+      const citaAlertsOn = notifPrefs.cambiosAgenda || notifPrefs.mensajes;
+      if (citaAlertsOn) {
+        void notifyClientFromMdmId(row?.id);
+        await refreshAuraUnread();
+        setAuraUnread((prev) => Math.max(prev, 1));
+      }
+      void showLocalClientNotification({
+        title: 'Tu cita está confirmada',
+        body: 'Revisá los detalles en Mensajes.',
+        data: { target_screen: 'mensajes', target_id: String(row?.id || '') },
+      });
+      const skipPopup = openedSub === CLIENT_SUB.MENSAJES;
+      await tryShowCitaConfirmacionAlert(row, uid, {
+        skipPopup,
+        onVerMensajes: openMensajesSub,
+      });
+      if (citaAlertsOn) void refreshAuraUnread();
+    },
+    [
+      session?.user?.id,
+      clienteRow?.id,
+      notifPrefs.cambiosAgenda,
+      notifPrefs.mensajes,
+      openedSub,
+      openMensajesSub,
+      refreshAuraUnread,
+    ],
+  );
+
+  const scanCitaConfirmacionAlerts = useCallback(async () => {
+    const uid = session?.user?.id;
+    if (!uid || !clienteRow?.id) return;
+    const alertadas = await getCitaConfirmacionMsgAlertadas(uid);
+    const { data } = await fetchClientAuraMessages(40);
+    const pending = (data || [])
+      .filter((m) => String(m.content_type || '') === 'cita_confirmacion')
+      .filter((m) => !alertadas.includes(String(m.id)))
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    if (pending[0]) await handleCitaConfirmacionMessage(pending[0]);
+  }, [session?.user?.id, clienteRow?.id, handleCitaConfirmacionMessage]);
+
   useEffect(() => {
     refreshAuraUnread();
-    if (!clienteRow?.id || !notifPrefs.mensajes) return undefined;
+    if (!clienteRow?.id) return undefined;
+    const onAuraRow = async (row) => {
+      if (!row) return;
+      void refreshAuraUnread();
+      if (row.status === 'pending_sync') {
+        setAuraUnread((prev) => Math.max(prev, 1));
+      }
+      if (row.content_type === 'cita_confirmacion') {
+        await handleCitaConfirmacionMessage(row);
+      }
+    };
+
     const channel = supabase
       .channel(`aura-unread-${clienteRow.id}`)
       .on(
@@ -611,15 +756,37 @@ function AppMain({ onLogout }) {
           table: 'marketing_direct_messages',
           filter: `client_id=eq.${clienteRow.id}`,
         },
-        () => refreshAuraUnread(),
+        (payload) => {
+          void onAuraRow(payload?.new);
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'marketing_direct_messages',
+          filter: `client_id=eq.${clienteRow.id}`,
+        },
+        (payload) => {
+          void onAuraRow(payload?.new);
+        },
       )
       .subscribe();
-    const iv = setInterval(refreshAuraUnread, 45000);
+    const iv = setInterval(() => {
+      void refreshAuraUnread();
+      void scanCitaConfirmacionAlerts();
+    }, 45000);
     return () => {
       supabase.removeChannel(channel);
       clearInterval(iv);
     };
-  }, [clienteRow?.id, notifPrefs.mensajes, refreshAuraUnread]);
+  }, [
+    clienteRow?.id,
+    refreshAuraUnread,
+    handleCitaConfirmacionMessage,
+    scanCitaConfirmacionAlerts,
+  ]);
 
   useEffect(() => {
     refreshPedidosActivos();
@@ -662,26 +829,33 @@ function AppMain({ onLogout }) {
     void loadClientNotifPrefs(session?.user?.id ?? null).then(setNotifPrefs);
   }, [tab, session?.user?.id]);
 
-  const openAuraLine = useCallback(async () => {
+  const openAuraLine = useCallback(() => {
     if (!session?.user) {
       Alert.alert('Andreas Pro', 'Iniciá sesión para ver mensajes del salón.');
       return;
     }
+    openMensajesSub();
     if (hasSupabaseEnv && !clienteRow?.id) {
-      await ensureClienteFicha();
+      void ensureClienteFicha();
     }
-    openSub(CLIENT_SUB.MENSAJES);
-  }, [session?.user, hasSupabaseEnv, clienteRow?.id, ensureClienteFicha, openSub]);
+  }, [session?.user, hasSupabaseEnv, clienteRow?.id, ensureClienteFicha, openMensajesSub]);
 
-  const handleCarouselServicio = useCallback((slide) => {
-    if (!slide) return;
-    if (slide.inventarioId) {
-      setHighlightInventarioId(slide.inventarioId);
+  const handleCarouselSlidePress = useCallback(
+    (slide) => {
+      if (!slide) return;
+      if (slide.articuloTipo === 'producto' && slide.inventarioId) {
+        openSub(CLIENT_SUB.TIENDA, { tiendaProductId: slide.inventarioId });
+        return;
+      }
+      if (slide.inventarioId) {
+        setHighlightInventarioId(slide.inventarioId);
+        setTab(TABS.CITAS);
+        return;
+      }
       setTab(TABS.CITAS);
-      return;
-    }
-    setTab(TABS.CITAS);
-  }, []);
+    },
+    [openSub],
+  );
 
   useEffect(() => {
     if (!session?.user?.id) {
@@ -724,7 +898,7 @@ function AppMain({ onLogout }) {
 
   const citasPartition = useMemo(() => partitionCitasCliente(citasRaw), [citasRaw]);
 
-  const { proximaCita, otrasProximas, pasadas, canceladasFuturas } = citasPartition;
+  const { proximaCita, otrasProximas, pasadas, canceladasRechazadas } = citasPartition;
 
   useEffect(() => {
     if (tab !== TABS.CITAS) return;
@@ -740,40 +914,9 @@ function AppMain({ onLogout }) {
 
   useEffect(() => {
     const uid = session?.user?.id;
-    if (!uid || !Array.isArray(citasRaw) || !citasRaw.length) return;
-    let cancelled = false;
-    (async () => {
-      const confirmados = citasRaw.filter(
-        (c) => String(c.estado || '').trim().toLowerCase() === 'confirmado' && c.id != null,
-      );
-      if (!confirmados.length) return;
-      const ya = await getCitaConfirmadaAlertadas(uid);
-      if (cancelled) return;
-      const setYa = new Set(ya);
-      const nuevos = confirmados.filter((c) => !setYa.has(String(c.id)));
-      if (!nuevos.length) return;
-      const lineas = nuevos.slice(0, 3).map((c) => {
-        const fh = new Date(c.fecha_hora).toLocaleString('es-GT', {
-          day: 'numeric',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        return `· ${c.servicio || 'Cita'} — ${fh}`;
-      });
-      const more =
-        nuevos.length > 3 ? `\n…y ${nuevos.length - 3} más. Revisá Historial.` : '';
-      const body =
-        nuevos.length === 1
-          ? `El salón confirmó tu cita en App Salón: ${String(lineas[0] || '').replace(/^· /, '')}.`
-          : `El salón confirmó ${nuevos.length} citas en App Salón:\n${lineas.join('\n')}${more}`;
-      Alert.alert('Cita confirmada', body, [{ text: 'OK' }]);
-      await addCitaConfirmadaAlertadas(uid, nuevos.map((c) => c.id));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.user?.id, citasRaw]);
+    if (!uid || !clienteRow?.id) return;
+    void scanCitaConfirmacionAlerts();
+  }, [session?.user?.id, clienteRow?.id, scanCitaConfirmacionAlerts]);
 
   const appVersion =
     Constants.expoConfig?.version ??
@@ -841,20 +984,22 @@ function AppMain({ onLogout }) {
           <View style={styles.sectionBlock}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionKickerGold, { marginBottom: 0 }]}>Acceso rápido</Text>
-              {notifPrefs.mensajes ? (
+              {session?.user ? (
                 <TouchableOpacity
                   style={[styles.messagesIconBtn, { borderColor: c.cardBorder, backgroundColor: c.card }]}
                   onPress={openAuraLine}
                   accessibilityRole="button"
-                  accessibilityLabel="Mensajes Andreas Pro"
+                  accessibilityLabel={
+                    auraUnread > 0
+                      ? `Mensajes Andreas Pro, ${auraUnread} sin leer`
+                      : 'Mensajes Andreas Pro'
+                  }
                   activeOpacity={0.85}
                 >
                   <MessageCircle size={22} color={c.primary} strokeWidth={2} />
                   {auraUnread > 0 ? (
-                    <View style={[styles.messagesBadge, { backgroundColor: c.error }]}>
-                      <Text style={[styles.messagesBadgeTxt, { color: '#FFFFFF' }]}>
-                        {auraUnread > 9 ? '9+' : auraUnread}
-                      </Text>
+                    <View style={[styles.messagesBellBadge, { backgroundColor: c.error, borderColor: c.card }]}>
+                      <Bell size={11} color="#FFFFFF" fill="#FFFFFF" strokeWidth={2.2} />
                     </View>
                   ) : null}
                 </TouchableOpacity>
@@ -884,7 +1029,7 @@ function AppMain({ onLogout }) {
               subtitle={QUICK_ACCESS.pedidosSubtitle}
               badgeCount={pedidosActivos}
               badgeTone="green"
-              onPress={() => openSub(CLIENT_SUB.MIS_PEDIDOS)}
+              onPress={openMisPedidosSub}
             />
           </View>
         </View>
@@ -896,9 +1041,9 @@ function AppMain({ onLogout }) {
             overlayKicker="Publicidad"
             headline="Promociones"
             body=""
-            buttonTitle="Ver servicio"
+            buttonTitle="Ver más"
             buttonVariant="heroGold"
-            onButtonPress={handleCarouselServicio}
+            onButtonPress={handleCarouselSlidePress}
             showAdvanceArrow={inicioPubSlides.length > 1}
             edgeToEdge
             squareCorners
@@ -929,14 +1074,13 @@ function AppMain({ onLogout }) {
       proximaCita={proximaCita}
       otrasProximas={otrasProximas}
       pasadas={pasadas}
-      canceladasFuturas={canceladasFuturas}
+      canceladasRechazadas={canceladasRechazadas}
       citasLoading={citasLoading}
       hasSupabaseEnv={hasSupabaseEnv}
       clienteRow={clienteRow}
       scrollBottom={scrollBottom}
       contentPaddingTop={insets.top + spacing.sm}
       onRefreshCitas={refreshCitas}
-      onVerHistorialCompleto={() => openSub(CLIENT_SUB.HISTORIAL_COMPLETO)}
       onGoTab={goTabFromSub}
     />
   );
@@ -1078,33 +1222,37 @@ function AppMain({ onLogout }) {
         style={
           isDark || openedSub === CLIENT_SUB.TENDENCIAS ? 'light' : 'dark'
         }
+        translucent
+        backgroundColor="transparent"
       />
       {openedSub && subTitles ? (
         openedSub === CLIENT_SUB.TENDENCIAS ? (
-          <ClientSubScreenBody
-            screenId={openedSub}
-            onClose={closeSub}
-            onGoTab={goTabFromSub}
-            privacyUrl={PRIVACY_URL}
-            onLogout={onLogout}
-            clienteRow={clienteRow}
-            onCitasChanged={refreshCitas}
-            sessionUser={session?.user ?? null}
-            notifPrefs={notifPrefs}
-            onNotifPrefChange={handleNotifPrefChange}
-            onAuraUnreadChange={refreshAuraUnread}
-            onClienteUpdated={() => {
-              if (session?.user?.id) void refreshClienteFicha(session.user.id);
-            }}
-            onPromoAction={handlePromoAction}
-            subPayload={subPayload}
-            onPromoFollowUp={notifyPromoFollowUp}
-            onOpenTienda={() => {
-              closeSub();
-              openSub(CLIENT_SUB.TIENDA);
-            }}
-            onPedidosChanged={refreshPedidosActivos}
-          />
+          <View style={styles.tendenciasShell}>
+            <ClientSubScreenBody
+              screenId={openedSub}
+              onClose={closeSub}
+              onGoTab={goTabFromSub}
+              privacyUrl={PRIVACY_URL}
+              onLogout={onLogout}
+              clienteRow={clienteRow}
+              onCitasChanged={refreshCitas}
+              sessionUser={session?.user ?? null}
+              notifPrefs={notifPrefs}
+              onNotifPrefChange={handleNotifPrefChange}
+              onAuraUnreadChange={refreshAuraUnread}
+              onClienteUpdated={() => {
+                if (session?.user?.id) void refreshClienteFicha(session.user.id);
+              }}
+              onPromoAction={handlePromoAction}
+              subPayload={subPayload}
+              onPromoFollowUp={notifyPromoFollowUp}
+              onOpenTienda={() => {
+                closeSub();
+                openSub(CLIENT_SUB.TIENDA);
+              }}
+              onPedidosChanged={refreshPedidosActivos}
+            />
+          </View>
         ) : (
           <SubScreenChrome
             title={subTitles.title}
@@ -1118,6 +1266,7 @@ function AppMain({ onLogout }) {
             disableBodyScroll={
               openedSub === CLIENT_SUB.MENSAJES || openedSub === CLIENT_SUB.MIS_PEDIDOS
             }
+            bodyPaddingHorizontal={openedSub === CLIENT_SUB.MENSAJES ? 0 : undefined}
             bottomPadding={
               openedSub === CLIENT_SUB.MENSAJES || openedSub === CLIENT_SUB.MIS_PEDIDOS ? 0 : undefined
             }
@@ -1394,6 +1543,10 @@ function buildAppStyles(c) {
     flex: 1,
     backgroundColor: c.background,
   },
+  tendenciasShell: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
   tabDock: {
     position: 'absolute',
     left: 0,
@@ -1454,20 +1607,16 @@ function buildAppStyles(c) {
     justifyContent: 'center',
     position: 'relative',
   },
-  messagesBadge: {
+  messagesBellBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    top: -4,
+    right: -4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  messagesBadgeTxt: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 10,
   },
 
   featuredWrap: {

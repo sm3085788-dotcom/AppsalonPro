@@ -1,19 +1,31 @@
 import { Alert } from 'react-native';
-import { db, buildCitaConfirmacionPayload } from '@appsalon/shared-config';
+import { db, buildCitaConfirmacionPayload, notifyClientFromMdmId } from '@appsalon/shared-config';
 import { offerEnviarCitaWhatsApp } from './citaWhatsApp';
 
 const SALON_NOMBRE = "Andrea's salón";
+
+function isCitaRechazada(estado) {
+  const v = String(estado || '').toLowerCase();
+  return v === 'rechazado' || v === 'rechazada' || v === 'cancelado' || v === 'cancelada';
+}
+
+function isCitaConfirmada(estado) {
+  return String(estado || '').toLowerCase() === 'confirmado';
+}
 
 /** Tarjeta luxury en Andreas Pro (JSON estructurado). */
 export function buildCitaInAppMessage(p) {
   return buildCitaConfirmacionPayload(p);
 }
 
-export async function sendCitaConfirmacionInApp({ clienteId, clienteNombre, clienteTelefono, message, sender }) {
+export async function sendCitaConfirmacionInApp({ clienteId, clienteNombre, clienteTelefono, message, sender, estado }) {
+  if (isCitaRechazada(estado)) {
+    return { data: null, error: { message: 'No se puede enviar mensaje en una cita rechazada.' } };
+  }
   if (!clienteId) {
     return { data: null, error: { message: 'El cliente no tiene ficha vinculada a App Clientes.' } };
   }
-  return db.marketingDirectMessages.create({
+  const { data, error } = await db.marketingDirectMessages.create({
     client_id: clienteId,
     client_name: clienteNombre || 'Cliente',
     client_phone: clienteTelefono || null,
@@ -23,12 +35,58 @@ export async function sendCitaConfirmacionInApp({ clienteId, clienteNombre, clie
     created_by: sender?.id || null,
     created_by_name: sender?.name || SALON_NOMBRE,
   });
+  if (!error && data?.id) {
+    const { error: notifErr } = await notifyClientFromMdmId(data.id);
+    if (notifErr && __DEV__) {
+      console.warn('[cita notif]', notifErr.message || notifErr);
+    }
+  }
+  return { data, error };
+}
+
+/**
+ * Tras confirmar cita en agenda: envía tarjeta a App Clientes y opcionalmente ofrece WhatsApp.
+ */
+export async function notifyClienteCitaConfirmada(params) {
+  if (!isCitaConfirmada(params?.estado)) {
+    Alert.alert(
+      'Solo citas confirmadas',
+      'El mensaje en la app solo se envía cuando la cita está confirmada.',
+    );
+    return false;
+  }
+  if (isCitaRechazada(params?.estado)) {
+    Alert.alert('Cita rechazada', 'No se puede enviar confirmación en una cita rechazada.');
+    return false;
+  }
+
+  const cliente = String(params?.clienteNombre || 'el cliente').trim();
+  const tieneTel = Boolean(String(params?.telefono || '').replace(/\D/g, ''));
+  const tieneApp = Boolean(params?.clienteId);
+  if (tieneTel || tieneApp) {
+    return offerConfirmacionCitaCliente({
+      ...params,
+      skipInAppPrompt: false,
+    });
+  }
+
+  Alert.alert(
+    'Confirmación',
+    'La cita quedó confirmada. Este cliente no tiene teléfono ni cuenta en App Clientes.',
+  );
+  return false;
 }
 
 /**
  * Tras confirmar o registrar cita: WhatsApp opcional o mensaje in-app (sin ir a Pedidos).
  */
 export function offerConfirmacionCitaCliente(params) {
+  if (isCitaRechazada(params?.estado)) {
+    Alert.alert('Cita rechazada', 'No se puede avisar al cliente de una cita rechazada.');
+    return Promise.resolve(false);
+  }
+
+  const skipInApp = Boolean(params?.skipInAppPrompt);
   const cliente = String(params?.clienteNombre || 'el cliente').trim();
   const tieneTel = Boolean(String(params?.telefono || '').replace(/\D/g, ''));
   const tieneApp = Boolean(params?.clienteId);
@@ -43,7 +101,7 @@ export function offerConfirmacionCitaCliente(params) {
 
   const buttons = [{ text: 'Ahora no', style: 'cancel', onPress: () => {} }];
 
-  if (tieneApp) {
+  if (tieneApp && !skipInApp && isCitaConfirmada(params?.estado)) {
     buttons.push({
       text: 'Mensaje en la app',
       onPress: () => {
@@ -55,6 +113,7 @@ export function offerConfirmacionCitaCliente(params) {
             clienteTelefono: params.telefono,
             message: msg,
             sender: params.sender,
+            estado: params.estado,
           });
           if (error) {
             Alert.alert('Mensaje en la app', error.message || 'No se pudo enviar.');

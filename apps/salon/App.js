@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   useWindowDimensions,
+  useColorScheme,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -44,6 +45,12 @@ import { MetasScreen } from './screens/MetasScreen';
 import { ReportesScreen } from './screens/ReportesScreen';
 import { MarketingScreen } from './screens/MarketingScreen';
 import { MensajesScreen } from './screens/MensajesScreen';
+import { isSalonInboundClientMessage } from './utils/salonMensajesInbound';
+import {
+  promptSalonPushPermissions,
+  showLocalSalonNotification,
+  configureSalonPushHandler,
+} from './utils/salonPush';
 import { IncidentesScreen } from './screens/IncidentesScreen';
 import { InventarioScreen } from './screens/InventarioScreen';
 import { BasureroScreen } from './screens/BasureroScreen';
@@ -53,7 +60,13 @@ import { PedidosScreen } from './screens/PedidosScreen';
 import { SalonModulePlaceholder } from './screens/SalonModulePlaceholder';
 import { ControlPanelScreen } from './screens/ControlPanelScreen';
 import { SalonAdminSignInScreen } from './screens/SalonAdminSignInScreen';
-import { db, supabase, isSalonAdminRole, isInvalidRefreshTokenError } from '@appsalon/shared-config';
+import {
+  db,
+  supabase,
+  isSalonAdminRole,
+  isInvalidRefreshTokenError,
+  fetchMarketingEngagementSince,
+} from '@appsalon/shared-config';
 
 const MAX_CONTENT_WIDTH = 1120;
 /** Ancho máximo de cada tarjeta del grid (evita cuadros gigantes en horizontal / BlueStacks). */
@@ -85,6 +98,7 @@ const BROWN_MODULE_IDS = new Set(['incidentes', 'inventory', 'basurero']);
 const BADGE_MODULE_IDS = ['agenda', 'cajas', 'clients', 'mensajes', 'inventory'];
 const SALON_MESSAGES_LAST_SEEN_KEY = '@appsalon/salon/mensajes_last_seen_at';
 const SALON_PEDIDOS_LAST_SEEN_KEY = '@appsalon/salon/pedidos_last_seen_at';
+const SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY = '@appsalon/salon/marketing_engagement_last_seen_at';
 
 function isPendingCashOrder(order) {
   const pay = String(order?.payment_method || '').toLowerCase();
@@ -102,7 +116,9 @@ function SalonAdminShell({ onSignOut }) {
   const [searchHits, setSearchHits] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasNewMensajes, setHasNewMensajes] = useState(false);
+  const [mensajesAlertReady, setMensajesAlertReady] = useState(false);
   const [hasNewPedidos, setHasNewPedidos] = useState(false);
+  const [hasNewMarketing, setHasNewMarketing] = useState(false);
   const [agendaPendientes, setAgendaPendientes] = useState(0);
   const [homeRefreshing, setHomeRefreshing] = useState(false);
   const searchTimerRef = useRef(null);
@@ -132,22 +148,38 @@ function SalonAdminShell({ onSignOut }) {
 
   const refreshMensajesAlert = useCallback(async () => {
     try {
-      const [{ data: authData }, { data: recentRes, error }] = await Promise.all([
+      const [{ data: authData }, { data: recentRes, error }, lastSeenAt] = await Promise.all([
         supabase.auth.getUser(),
         db.marketingDirectMessages.getRecentForInbox(500),
+        AsyncStorage.getItem(SALON_MESSAGES_LAST_SEEN_KEY),
       ]);
-      if (error) return;
       const uid = authData?.user?.id ? String(authData.user.id) : '';
-      const lastSeenAt = (await AsyncStorage.getItem(SALON_MESSAGES_LAST_SEEN_KEY)) || '';
+      if (!uid || error) {
+        setHasNewMensajes(false);
+        return;
+      }
       const lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
       const hasNew = (recentRes || []).some((m) => {
-        if (!m?.client_id) return false;
-        const by = m?.created_by ? String(m.created_by) : '';
+        if (!isSalonInboundClientMessage(m, uid)) return false;
         const createdMs = new Date(m.created_at).getTime();
-        const isFromClient = Boolean(by && uid && by !== uid);
-        return isFromClient && Number.isFinite(createdMs) && createdMs > lastSeenMs;
+        return Number.isFinite(createdMs) && createdMs > lastSeenMs;
       });
-      setHasNewMensajes(hasNew);
+      setHasNewMensajes((prev) => (prev === hasNew ? prev : hasNew));
+    } catch {
+      setHasNewMensajes(false);
+    } finally {
+      setMensajesAlertReady(true);
+    }
+  }, []);
+
+  const refreshMarketingAlert = useCallback(async () => {
+    try {
+      const lastSeenAt =
+        (await AsyncStorage.getItem(SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY)) || '';
+      const since = lastSeenAt || new Date(0).toISOString();
+      const { data, error } = await fetchMarketingEngagementSince(since);
+      if (error) return;
+      setHasNewMarketing((data || []).length > 0);
     } catch {
       // noop
     }
@@ -185,14 +217,39 @@ function SalonAdminShell({ onSignOut }) {
     refreshMensajesAlert();
     refreshPedidosAlert();
     refreshAgendaAlert();
-  }, [refreshMensajesAlert, refreshPedidosAlert, refreshAgendaAlert]);
+    refreshMarketingAlert();
+  }, [refreshMensajesAlert, refreshPedidosAlert, refreshAgendaAlert, refreshMarketingAlert]);
+
+  useEffect(() => {
+    configureSalonPushHandler();
+    void (async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data?.user?.id;
+      if (uid) void promptSalonPushPermissions(uid);
+    })();
+  }, []);
 
   useEffect(() => {
     const channel = supabase
       .channel('salon-home-citas-alert')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'citas' },
+        { event: 'INSERT', schema: 'public', table: 'citas' },
+        (payload) => {
+          const row = payload?.new;
+          if (String(row?.estado || '').toLowerCase() === 'pendiente') {
+            void showLocalSalonNotification({
+              title: 'Nueva cita',
+              body: 'Hay una reserva pendiente en la agenda',
+              data: { module: 'agenda' },
+            });
+          }
+          void refreshAgendaAlert();
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'citas' },
         () => {
           void refreshAgendaAlert();
         },
@@ -209,8 +266,20 @@ function SalonAdminShell({ onSignOut }) {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'marketing_direct_messages' },
-        () => {
-          void refreshMensajesAlert();
+        (payload) => {
+          void (async () => {
+            const row = payload?.new;
+            const { data: authData } = await supabase.auth.getUser();
+            const uid = authData?.user?.id ? String(authData.user.id) : '';
+            if (row && uid && isSalonInboundClientMessage(row, uid)) {
+              void showLocalSalonNotification({
+                title: row.client_name || 'Cliente',
+                body: 'Nuevo mensaje en Andreas Pro',
+                data: { module: 'mensajes' },
+              });
+            }
+            void refreshMensajesAlert();
+          })();
         },
       )
       .subscribe();
@@ -221,10 +290,44 @@ function SalonAdminShell({ onSignOut }) {
 
   useEffect(() => {
     const channel = supabase
+      .channel('salon-home-marketing-engagement')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'marketing_comments' },
+        () => void refreshMarketingAlert(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'marketing_post_likes' },
+        () => void refreshMarketingAlert(),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshMarketingAlert]);
+
+  useEffect(() => {
+    const channel = supabase
       .channel('salon-home-pedidos-alert')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'ecommerce_orders' },
+        { event: 'INSERT', schema: 'public', table: 'ecommerce_orders' },
+        (payload) => {
+          const row = payload?.new;
+          if (row && isPendingCashOrder(row)) {
+            void showLocalSalonNotification({
+              title: 'Nuevo pedido',
+              body: `Pedido ${row.tracking_code || '#' + row.id} · efectivo`,
+              data: { module: 'pedidos' },
+            });
+          }
+          void refreshPedidosAlert();
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ecommerce_orders' },
         () => {
           void refreshPedidosAlert();
         },
@@ -237,9 +340,8 @@ function SalonAdminShell({ onSignOut }) {
 
   const openModule = useCallback(async (id) => {
     if (id === 'mensajes') {
-      const nowIso = new Date().toISOString();
-      await AsyncStorage.setItem(SALON_MESSAGES_LAST_SEEN_KEY, nowIso);
       setHasNewMensajes(false);
+      void AsyncStorage.setItem(SALON_MESSAGES_LAST_SEEN_KEY, new Date().toISOString());
     }
     if (id === 'pedidos') {
       const nowIso = new Date().toISOString();
@@ -252,7 +354,12 @@ function SalonAdminShell({ onSignOut }) {
     setHomeRefreshing(true);
     try {
       const q = search.trim();
-      await Promise.all([refreshMensajesAlert(), refreshPedidosAlert(), refreshAgendaAlert()]);
+      await Promise.all([
+        refreshMensajesAlert(),
+        refreshPedidosAlert(),
+        refreshAgendaAlert(),
+        refreshMarketingAlert(),
+      ]);
       if (q.length >= SALON_SEARCH_MIN_LEN) {
         const gen = searchGenRef.current + 1;
         searchGenRef.current = gen;
@@ -328,7 +435,9 @@ function SalonAdminShell({ onSignOut }) {
   }
 
   if (openedModuleId === 'marketing') {
-    return <MarketingScreen onBack={closeModule} />;
+    return (
+      <MarketingScreen onBack={closeModule} onEngagementSeen={() => void refreshMarketingAlert()} />
+    );
   }
 
   if (openedModuleId === 'mensajes') {
@@ -373,7 +482,7 @@ function SalonAdminShell({ onSignOut }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={c.background} />
+      <StatusBar style={isDark ? 'light' : 'dark'} translucent backgroundColor="transparent" />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: scrollBottom }}
@@ -468,7 +577,9 @@ function SalonAdminShell({ onSignOut }) {
                   accent={accent}
                   badgeCount={BADGE_MODULE_IDS.includes(m.id) ? badgeCounts[m.id] ?? 0 : 0}
                   showAlertBell={
-                    (m.id === 'mensajes' && hasNewMensajes) || (m.id === 'pedidos' && hasNewPedidos)
+                    (m.id === 'mensajes' && mensajesAlertReady && hasNewMensajes) ||
+                    (m.id === 'pedidos' && hasNewPedidos) ||
+                    (m.id === 'marketing' && hasNewMarketing)
                   }
                   onPress={() => openModule(m.id)}
                 />
@@ -659,19 +770,24 @@ function SalonAppWithAuth() {
 }
 
 function MissingConfigScreen() {
+  const systemScheme = useColorScheme();
+  const isDark = systemScheme === 'dark';
+  const bg = isDark ? '#121212' : '#FDFBF7';
+  const fg = isDark ? '#F5F5F5' : '#1a1a1a';
+  const muted = isDark ? '#C8C8C8' : '#444';
   return (
     <View
       style={{
         flex: 1,
         justifyContent: 'center',
         padding: 24,
-        backgroundColor: '#FDFBF7',
+        backgroundColor: bg,
       }}
     >
-      <Text style={{ fontSize: 18, fontWeight: '600', color: '#1a1a1a', marginBottom: 12 }}>
+      <Text style={{ fontSize: 18, fontWeight: '600', color: fg, marginBottom: 12 }}>
         App no configurada
       </Text>
-      <Text style={{ fontSize: 15, lineHeight: 22, color: '#444' }}>
+      <Text style={{ fontSize: 15, lineHeight: 22, color: muted }}>
         Este APK se generó sin las claves de Supabase (EXPO_PUBLIC_SUPABASE_URL y
         EXPO_PUBLIC_SUPABASE_ANON_KEY). Hay que volver a compilar con eas env en Expo y
         reinstalar el APK nuevo.
@@ -685,6 +801,8 @@ export default function App() {
     return <MissingConfigScreen />;
   }
 
+  const systemScheme = useColorScheme();
+  const bootBg = systemScheme === 'dark' ? '#121212' : '#FDFBF7';
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -699,7 +817,7 @@ export default function App() {
           flex: 1,
           justifyContent: 'center',
           alignItems: 'center',
-          backgroundColor: '#121212',
+          backgroundColor: bootBg,
         }}
       >
         <ActivityIndicator color="#C9A961" size="large" />

@@ -1,5 +1,22 @@
 const SALON_NOMBRE = "Andrea's salón";
 
+export const CITA_COMPROMISO_NOTE =
+  'Tu compromiso es importante para nosotros, valoramos y cuidamos tu tiempo. Llámanos o enviá un mensaje para saber de cualquier cambio 3 horas antes de tu cita.';
+
+/** Segmentos para la tarjeta (negrita en frases clave). */
+export const CITA_COMPROMISO_NOTE_SEGMENTS = [
+  { t: 'Tu compromiso es importante para nosotros', bold: true },
+  { t: ', ' },
+  { t: 'valoramos y cuidamos tu tiempo', bold: true },
+  { t: '. Llámanos o enviá un mensaje para saber de cualquier cambio ' },
+  { t: '3 horas antes de tu cita', bold: true },
+  { t: '.' },
+];
+
+export const CITA_UBICACION_HINT = 'Para ubicación: Perfil → Contactos.';
+
+const OLD_NOTE_PREFIX = 'Cita confirmada por el salón';
+
 function firstName(full) {
   const p = String(full || '')
     .trim()
@@ -50,8 +67,8 @@ export function buildCitaConfirmacionPayload(p) {
     servicio,
     fecha: formatFecha(dt),
     hora: formatHora(dt),
-    note: 'Cita confirmada por el salón. Te enviamos todos los detalles aquí; revisalos por favor.',
-    footer: 'Para ubicación: Perfil → Contactos. Para cambios: pestaña Historial.',
+    note: CITA_COMPROMISO_NOTE,
+    ubicacion: CITA_UBICACION_HINT,
   };
   if (prof) payload.profesional = prof;
   if (precio) payload.precio = precio;
@@ -70,9 +87,44 @@ export function parseCitaConfirmacionContent(raw) {
   }
 }
 
+function isDefaultCompromisoNote(n) {
+  const s = String(n || '').trim();
+  if (!s || s.startsWith(OLD_NOTE_PREFIX)) return true;
+  if (s.startsWith('Tu compromiso')) return true;
+  return false;
+}
+
+export function resolveCitaConfirmacionNote(card) {
+  const n = String(card?.note || '').trim();
+  if (isDefaultCompromisoNote(n)) return CITA_COMPROMISO_NOTE;
+  return n;
+}
+
+export function resolveCitaConfirmacionNoteSegments(card) {
+  const n = String(card?.note || '').trim();
+  if (isDefaultCompromisoNote(n)) return CITA_COMPROMISO_NOTE_SEGMENTS;
+  return [{ t: n }];
+}
+
+export function resolveCitaConfirmacionUbicacion(card) {
+  if (card?.ubicacion) return String(card.ubicacion).trim();
+  const footer = String(card?.footer || '').trim();
+  if (!footer) return CITA_UBICACION_HINT;
+  const low = footer.toLowerCase();
+  const cambiosIdx = low.indexOf('para cambios');
+  if (cambiosIdx > 0) {
+    return footer.slice(0, cambiosIdx).trim().replace(/\s*\.\s*$/, '.');
+  }
+  if (/ubicaci[oó]n/i.test(footer)) {
+    const m = footer.match(/Para ubicaci[oó]n[^.]*\.?/i);
+    return m ? m[0].trim() : CITA_UBICACION_HINT;
+  }
+  return CITA_UBICACION_HINT;
+}
+
 /** Texto plano para vista previa en bandeja del salón. */
 export function citaConfirmacionPreviewText(raw) {
   const card = parseCitaConfirmacionContent(raw);
   if (!card) return String(raw || '').trim().slice(0, 120);
-  return card.note || card.headline || 'Confirmación de cita';
+  return card.headline || 'Confirmación de cita';
 }

@@ -38,7 +38,6 @@ import {
   formatCategoriaLabel,
   resolveServicioImageUris,
 } from '../../data/servicioCategoryArt';
-
 /** Más ancho que alto (menos altura en pantalla). */
 const IMAGE_ASPECT = 16 / 9;
 const STAR_GOLD = '#FFB800';

@@ -44,7 +44,10 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.CARRITO:
       return { title: 'Carrito', subtitle: 'Productos seleccionados.' };
     case CLIENT_SUB.SERVICIOS_CARRITO:
-      return { title: 'Servicios por agendar', subtitle: 'Lista para reservar cita.' };
+      return {
+        title: 'Servicios por agendar',
+        subtitle: 'Elegí fecha y hora de cada uno y enviá las solicitudes juntas.',
+      };
     case CLIENT_SUB.MIS_PEDIDOS:
       return { title: 'Mis pedidos', subtitle: 'QR de retiro, efectivo y envío a domicilio.' };
     case CLIENT_SUB.MEMBRESIAS:

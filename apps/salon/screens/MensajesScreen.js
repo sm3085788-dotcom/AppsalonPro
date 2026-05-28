@@ -50,6 +50,7 @@ import {
   citaConfirmacionPreviewText,
   mapInventarioToTiendaProduct,
   BROADCAST_LINK_TYPES,
+  notifyClientFromMdmId,
 } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 import { BroadcastPromoCard } from '../../clientes/components/mensajes/BroadcastPromoCard';
@@ -58,6 +59,10 @@ import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/
 import { useListSelection } from '../hooks/useListSelection';
 import { useTheme } from '../theme/ThemeProvider';
 import { saveChatImageWithAlert } from '../utils/saveChatImage';
+import { isSalonInboundClientMessage } from '../utils/salonMensajesInbound';
+
+/** Caché en memoria para entrada suave al reabrir Andreas Pro. */
+let inboxCache = null;
 
 function chatBubbleText(item) {
   const ct = String(item.content_type || '');
@@ -234,16 +239,18 @@ export function MensajesScreen({ onBack }) {
   const subStyles = useSubStyles();
   const styles = useMemo(() => createStyles(c), [c]);
   const listRef = useRef(null);
+  const chatStickToBottomRef = useRef(true);
+  const ignoreScrollStickRef = useRef(false);
   const sel = useListSelection();
 
-  const [clients, setClients] = useState([]);
-  const [inboxPreviews, setInboxPreviews] = useState([]);
+  const [clients, setClients] = useState(() => inboxCache?.clients ?? []);
+  const [inboxPreviews, setInboxPreviews] = useState(() => inboxCache?.previews ?? []);
   const [inboxQuery, setInboxQuery] = useState('');
   const [modalFiltros, setModalFiltros] = useState(false);
   const [sortMode, setSortMode] = useState('nombre_asc');
   const [filterTipo, setFilterTipo] = useState('todos');
   const [broadcastOnlyIds, setBroadcastOnlyIds] = useState(null);
-  const [loadingInbox, setLoadingInbox] = useState(true);
+  const [loadingInbox, setLoadingInbox] = useState(() => !inboxCache);
   const [refreshingInbox, setRefreshingInbox] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -264,6 +271,7 @@ export function MensajesScreen({ onBack }) {
   const [broadcasting, setBroadcasting] = useState(false);
   const [staffUserId, setStaffUserId] = useState(null);
   const [seenByClient, setSeenByClient] = useState({});
+  const [inboxHydrated, setInboxHydrated] = useState(false);
   const [unreadClientIds, setUnreadClientIds] = useState(() => new Set());
 
   const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
@@ -271,9 +279,27 @@ export function MensajesScreen({ onBack }) {
   const composerPadBottom = isKeyboardVisible ? spacing.xs : Math.max(insets.bottom, spacing.xs);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    let cancelled = false;
+    (async () => {
+      const [{ data: { user } }, raw] = await Promise.all([
+        supabase.auth.getUser(),
+        AsyncStorage.getItem(MENSAJES_SEEN_BY_CLIENT_KEY),
+      ]);
+      if (cancelled) return;
       setStaffUserId(user?.id ?? null);
-    });
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') setSeenByClient(parsed);
+        } catch {
+          // noop
+        }
+      }
+      setInboxHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -305,20 +331,6 @@ export function MensajesScreen({ onBack }) {
     };
   }, [broadcastOpen]);
 
-  useEffect(() => {
-    AsyncStorage.getItem(MENSAJES_SEEN_BY_CLIENT_KEY).then((raw) => {
-      if (!raw) return;
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-          setSeenByClient(parsed);
-        }
-      } catch {
-        // noop
-      }
-    });
-  }, []);
-
   const markClientSeen = useCallback(async (clientId) => {
     const id = String(clientId || '');
     if (!id) return;
@@ -336,25 +348,23 @@ export function MensajesScreen({ onBack }) {
   }, []);
 
   const refreshUnreadByClient = useCallback(async () => {
-    if (!staffUserId) return;
+    if (!staffUserId || !inboxHydrated) return;
     const { data, error } = await db.marketingDirectMessages.getRecentForInbox(700);
     if (error) return;
     const next = new Set();
     for (const row of data || []) {
-      if (!row?.client_id) continue;
-      const by = row.created_by ? String(row.created_by) : '';
-      const contentType = String(row.content_type || '');
-      const isAppointmentConfirm = contentType === 'cita_confirmacion';
-      const isInbound = Boolean(by && by !== String(staffUserId)) || isAppointmentConfirm;
-      if (!isInbound) continue;
+      if (!isSalonInboundClientMessage(row, staffUserId)) continue;
       const clientId = String(row.client_id);
       const createdMs = new Date(row.created_at).getTime();
       const seenMs = seenByClient?.[clientId] ? new Date(seenByClient[clientId]).getTime() : 0;
       if (!Number.isFinite(createdMs)) continue;
       if (!seenMs || createdMs > seenMs) next.add(clientId);
     }
-    setUnreadClientIds(next);
-  }, [seenByClient, staffUserId]);
+    setUnreadClientIds((prev) => {
+      if (prev.size === next.size && [...prev].every((id) => next.has(id))) return prev;
+      return next;
+    });
+  }, [seenByClient, staffUserId, inboxHydrated]);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -378,16 +388,20 @@ export function MensajesScreen({ onBack }) {
       if (cRes.error) throw cRes.error;
       if (pRes.error) throw pRes.error;
       const clientList = cRes.data || [];
+      const previews = pRes.data || [];
+      inboxCache = { clients: clientList, previews };
       setClients(clientList);
-      setInboxPreviews(pRes.data || []);
+      setInboxPreviews(previews);
     } catch (e) {
       if (!silent) {
         Alert.alert('Andreas Pro', e?.message || 'No se pudo cargar la bandeja.');
       }
-      setClients([]);
-      setInboxPreviews([]);
+      if (!inboxCache) {
+        setClients([]);
+        setInboxPreviews([]);
+      }
     } finally {
-      if (!silent) setLoadingInbox(false);
+      setLoadingInbox(false);
     }
   }, []);
 
@@ -402,7 +416,7 @@ export function MensajesScreen({ onBack }) {
   }, [loadInbox, refreshUnreadByClient]);
 
   useEffect(() => {
-    loadInbox();
+    void loadInbox({ silent: Boolean(inboxCache) });
   }, [loadInbox]);
 
   useEffect(() => {
@@ -430,7 +444,7 @@ export function MensajesScreen({ onBack }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [refreshUnreadByClient]);
 
   const verifiedClients = useMemo(() => clients.filter((cl) => isClienteAppVerificado(cl)), [clients]);
 
@@ -494,6 +508,7 @@ export function MensajesScreen({ onBack }) {
       } catch {
         // no bloquear apertura del chat si falla persistir "visto"
       }
+      chatStickToBottomRef.current = true;
       setSelectedClient(client);
     },
     [markClientSeen],
@@ -513,10 +528,35 @@ export function MensajesScreen({ onBack }) {
     );
   }, [clients.length, filterTipo, inboxQuery, c.foregroundMuted]);
 
-  const scrollChatToEnd = useCallback((animated = true) => {
-    requestAnimationFrame(() => {
+  const scrollChatToEnd = useCallback((animated = true, force = false) => {
+    if (!force && !chatStickToBottomRef.current) return;
+    ignoreScrollStickRef.current = true;
+    chatStickToBottomRef.current = true;
+    const scroll = () => {
       listRef.current?.scrollToEnd({ animated });
+      requestAnimationFrame(() => {
+        ignoreScrollStickRef.current = false;
+      });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(scroll));
+  }, []);
+
+  const onChatContentSizeChange = useCallback(() => {
+    if (!chatStickToBottomRef.current) return;
+    ignoreScrollStickRef.current = true;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+      requestAnimationFrame(() => {
+        ignoreScrollStickRef.current = false;
+      });
     });
+  }, []);
+
+  const onChatScroll = useCallback((e) => {
+    if (ignoreScrollStickRef.current) return;
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    chatStickToBottomRef.current = distFromBottom < 72;
   }, []);
 
   const loadChat = useCallback(async (clientId) => {
@@ -526,7 +566,8 @@ export function MensajesScreen({ onBack }) {
       if (error) throw error;
       const sorted = [...(data || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       setMessages(sorted);
-      scrollChatToEnd(false);
+      chatStickToBottomRef.current = true;
+      scrollChatToEnd(false, true);
     } catch (e) {
       Alert.alert('Chat', e?.message || 'No se pudieron cargar los mensajes.');
       setMessages([]);
@@ -540,6 +581,7 @@ export function MensajesScreen({ onBack }) {
       setMessages([]);
       return undefined;
     }
+    chatStickToBottomRef.current = true;
     loadChat(selectedClient.id);
     const channel = supabase
       .channel(`aura-line-${selectedClient.id}`)
@@ -558,7 +600,7 @@ export function MensajesScreen({ onBack }) {
             if (prev.some((m) => m.id === row.id)) return prev;
             return [...prev, row].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
           });
-          scrollChatToEnd(true);
+          scrollChatToEnd(true, false);
         },
       )
       .subscribe();
@@ -625,12 +667,14 @@ export function MensajesScreen({ onBack }) {
       });
       if (error) throw error;
       if (data) {
+        void notifyClientFromMdmId(data.id);
         setMessages((prev) => {
           if (prev.some((m) => m.id === data.id)) return prev;
           return [...prev, data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         });
         setInboxPreviews((prev) => mergeInboxPreview(prev, data));
-        scrollChatToEnd(true);
+        chatStickToBottomRef.current = true;
+        scrollChatToEnd(true, true);
       }
       setDraft('');
       setPendingImage(null);
@@ -806,7 +850,8 @@ export function MensajesScreen({ onBack }) {
             fechaTxt,
           ].filter(Boolean);
       const picked = sel.isSelected(client.id);
-      const hasUnread = !manual && unreadClientIds.has(String(client.id));
+      const hasUnread =
+        inboxHydrated && !manual && unreadClientIds.has(String(client.id));
 
       return (
         <TouchableOpacity
@@ -874,7 +919,7 @@ export function MensajesScreen({ onBack }) {
         </TouchableOpacity>
       );
     },
-    [c, isDark, openClientChat, sel, styles, unreadClientIds],
+    [c, inboxHydrated, isDark, openClientChat, sel, styles, unreadClientIds],
   );
 
   const promoDraftItem = useMemo(() => {
@@ -1157,30 +1202,50 @@ export function MensajesScreen({ onBack }) {
       <Fragment>
       <View style={[styles.shell, { backgroundColor: c.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <LinearGradient colors={['#1e1035', '#2d1b52', '#3b2766']} style={[styles.chatHeader, { paddingTop: insets.top + spacing.sm }]}>
-          <TouchableOpacity style={styles.chatBack} onPress={() => setSelectedClient(null)} hitSlop={12}>
-            <ArrowLeft size={22} color="#FFF" strokeWidth={2.2} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.chatTitle} numberOfLines={1}>
-              {selectedClient.nombre}
-            </Text>
-            <Text style={styles.chatSub}>Andreas Pro · en vivo</Text>
+        <View style={[styles.chatHeaderWrap, { paddingTop: insets.top + spacing.sm }]}>
+          <LinearGradient
+            colors={['#1e1035', '#2d1b52', '#3b2766']}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <View style={styles.chatHeaderRow} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.chatBack}
+              onPress={() => {
+                setClientDataOpen(false);
+                setSelectedClient(null);
+              }}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Volver"
+            >
+              <ArrowLeft size={22} color="#FFF" strokeWidth={2.2} />
+            </TouchableOpacity>
+            <View style={styles.chatHeaderTitles} pointerEvents="none">
+              <Text style={styles.chatTitle} numberOfLines={1}>
+                {selectedClient.nombre}
+              </Text>
+              <Text style={styles.chatSub}>Andreas Pro · en vivo</Text>
+            </View>
+            <Pressable
+              onPress={() => setClientDataOpen(true)}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+              accessibilityRole="button"
+              accessibilityLabel="Ver datos del cliente"
+              style={({ pressed }) => [
+                styles.chatHeaderVerBtn,
+                pressed && { opacity: 0.82 },
+              ]}
+              android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: false }}
+            >
+              <Text style={styles.chatHeaderVerTxt}>Ver</Text>
+            </Pressable>
           </View>
-          <TouchableOpacity
-            onPress={() => setClientDataOpen(true)}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Ver datos del cliente"
-            style={styles.chatHeaderVerBtn}
-          >
-            <Text style={styles.chatHeaderVerTxt}>Ver</Text>
-          </TouchableOpacity>
-        </LinearGradient>
+        </View>
 
         <KeyboardAvoidingView
           style={[styles.chatShell, { backgroundColor: c.background }]}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 72 : 0}
         >
           {loadingChat ? (
@@ -1193,15 +1258,12 @@ export function MensajesScreen({ onBack }) {
               renderItem={renderBubble}
               style={styles.chatList}
               keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              contentContainerStyle={{
-                paddingHorizontal: spacing.md,
-                paddingTop: spacing.md,
-                paddingBottom: spacing.sm,
-                flexGrow: 1,
-                justifyContent: 'flex-end',
-              }}
-              onContentSizeChange={() => scrollChatToEnd(false)}
+              keyboardDismissMode="on-drag"
+              nestedScrollEnabled
+              onScroll={onChatScroll}
+              scrollEventThrottle={80}
+              onContentSizeChange={onChatContentSizeChange}
+              contentContainerStyle={styles.chatListContent}
               ListEmptyComponent={
                 <Text style={[subStyles.muted, { textAlign: 'center', marginTop: spacing.xl }]}>
                   Aún no hay mensajes. Escribí el primero para {selectedClient.nombre}.
@@ -1251,17 +1313,22 @@ export function MensajesScreen({ onBack }) {
           </View>
         </KeyboardAvoidingView>
       </View>
-      {clientDataOpen ? (
       <Modal
-        visible
+        visible={clientDataOpen}
         transparent
         animationType="fade"
         onRequestClose={() => setClientDataOpen(false)}
       >
-        <Pressable style={styles.modalBackdrop} onPress={() => setClientDataOpen(false)}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.clientDataModalRoot}>
+          <Pressable
+            style={styles.clientDataModalBackdrop}
+            onPress={() => setClientDataOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar datos del cliente"
+          />
+          <View style={[styles.clientDataModalCard, { backgroundColor: c.background }]}>
             <View style={styles.modalHead}>
-              <Text style={styles.modalTitle}>Datos del cliente</Text>
+              <Text style={[styles.modalTitle, { color: c.foreground }]}>Datos del cliente</Text>
               <TouchableOpacity onPress={() => setClientDataOpen(false)} hitSlop={12}>
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
@@ -1274,7 +1341,14 @@ export function MensajesScreen({ onBack }) {
               </View>
               {selectedClient.telefono ? (
                 <View>
-                  <Text style={{ fontFamily: typography.fontSansMedium, color: c.foregroundSubtle, fontSize: 12, marginBottom: 4 }}>
+                  <Text
+                    style={{
+                      fontFamily: typography.fontSansMedium,
+                      color: c.foregroundSubtle,
+                      fontSize: 12,
+                      marginBottom: 4,
+                    }}
+                  >
                     Teléfono
                   </Text>
                   <Text style={{ fontFamily: typography.fontSans, color: c.foreground, fontSize: 14 }}>
@@ -1284,7 +1358,14 @@ export function MensajesScreen({ onBack }) {
               ) : null}
               {selectedClient.email ? (
                 <View>
-                  <Text style={{ fontFamily: typography.fontSansMedium, color: c.foregroundSubtle, fontSize: 12, marginBottom: 4 }}>
+                  <Text
+                    style={{
+                      fontFamily: typography.fontSansMedium,
+                      color: c.foregroundSubtle,
+                      fontSize: 12,
+                      marginBottom: 4,
+                    }}
+                  >
                     Email
                   </Text>
                   <Text style={{ fontFamily: typography.fontSans, color: c.foreground, fontSize: 14 }}>
@@ -1300,10 +1381,9 @@ export function MensajesScreen({ onBack }) {
               style={{ marginTop: spacing.lg }}
               onPress={() => setClientDataOpen(false)}
             />
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
-      ) : null}
       {broadcastModal}
       </Fragment>
     );
@@ -1348,7 +1428,7 @@ export function MensajesScreen({ onBack }) {
             {filtroResumen}
           </Text>
 
-          {loadingInbox ? (
+          {loadingInbox && clients.length === 0 ? (
             <ActivityIndicator style={{ marginTop: spacing.md }} color={c.primary} />
           ) : (
             <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
@@ -1356,6 +1436,8 @@ export function MensajesScreen({ onBack }) {
                 data={inboxRows}
                 keyExtractor={(r) => String(r.client.id)}
                 renderItem={renderInboxRow}
+                style={styles.inboxList}
+                nestedScrollEnabled
                 refreshControl={
                   <RefreshControl
                     refreshing={refreshingInbox}
@@ -1367,14 +1449,14 @@ export function MensajesScreen({ onBack }) {
                 }
                 contentContainerStyle={{
                   paddingBottom: sel.count ? 100 : padList,
-                  flexGrow: inboxRows.length === 0 ? 1 : 0,
+                  flexGrow: inboxRows.length === 0 ? 1 : undefined,
                 }}
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
                 ListEmptyComponent={inboxListEmpty}
-                initialNumToRender={16}
-                windowSize={8}
-                removeClippedSubviews
+                initialNumToRender={20}
+                windowSize={10}
               />
             </View>
           )}
@@ -1455,8 +1537,15 @@ export function MensajesScreen({ onBack }) {
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
-    chatShell: { flex: 1 },
+    chatShell: { flex: 1, minHeight: 0 },
     chatList: { flex: 1, backgroundColor: c.background },
+    chatListContent: {
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.lg,
+      flexGrow: 1,
+    },
+    inboxList: { flex: 1 },
     addPersonCircle: {
       width: 44,
       height: 44,
@@ -1474,6 +1563,7 @@ function createStyles(c) {
     },
     body: {
       flex: 1,
+      minHeight: 0,
       paddingHorizontal: spacing.sm,
       backgroundColor: c.background,
     },
@@ -1499,6 +1589,7 @@ function createStyles(c) {
     },
     listShell: {
       flex: 1,
+      minHeight: 0,
       borderWidth: 1,
       borderRadius: radii.md,
       overflow: 'hidden',
@@ -1642,24 +1733,54 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
     },
-    chatHeader: {
+    chatHeaderWrap: {
+      position: 'relative',
+      zIndex: 20,
+      elevation: 20,
+    },
+    chatHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: spacing.md,
       paddingBottom: spacing.md,
       gap: spacing.sm,
     },
+    chatHeaderTitles: {
+      flex: 1,
+      minWidth: 0,
+    },
     chatHeaderVerBtn: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 6,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 8,
       borderRadius: radii.lg,
       backgroundColor: 'rgba(255,255,255,0.14)',
       borderWidth: 1,
       borderColor: 'rgba(255,255,255,0.22)',
-      marginLeft: spacing.sm,
       alignItems: 'center',
       justifyContent: 'center',
-      minHeight: 36,
+      minHeight: 40,
+      minWidth: 52,
+      zIndex: 30,
+      elevation: 30,
+      flexShrink: 0,
+    },
+    clientDataModalRoot: {
+      flex: 1,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.lg,
+    },
+    clientDataModalBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    clientDataModalCard: {
+      borderRadius: radii.lg,
+      padding: spacing.lg,
+      maxWidth: 420,
+      width: '100%',
+      alignSelf: 'center',
+      zIndex: 2,
+      elevation: 8,
     },
     chatHeaderVerTxt: {
       fontFamily: typography.fontSansMedium,

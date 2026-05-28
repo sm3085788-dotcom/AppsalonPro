@@ -135,6 +135,7 @@ function createChromeStyles(c) {
     },
     scrollInnerNoScroll: {
       flex: 1,
+      minHeight: 0,
       paddingTop: spacing.sm,
       backgroundColor: c.background,
     },

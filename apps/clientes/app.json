@@ -2,7 +2,7 @@
   "expo": {
     "name": "AppSalon Pro - Clientes",
     "slug": "salon-andreas-client",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -13,7 +13,7 @@
     },
     "scheme": "appsalonclientes",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "resizeMode": "contain",
@@ -95,7 +95,12 @@
         }
       ],
       "expo-camera",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "color": "#B8860B"
+        }
+      ],
       "expo-image-picker",
       "expo-document-picker",
       "expo-calendar",

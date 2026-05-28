@@ -2,6 +2,10 @@ import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Calendar, Clock, Sparkles, User, MapPin } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
+import {
+  resolveCitaConfirmacionNoteSegments,
+  resolveCitaConfirmacionUbicacion,
+} from '@appsalon/shared-config';
 function DetailRow({ icon: Icon, label, value, styles, accent }) {
   return (
     <View style={styles.detailRow}>
@@ -24,6 +28,8 @@ export function CitaConfirmacionCard({ data, metaLabel }) {
   };
 
   const confirmada = data?.confirmada !== false;
+  const noteSegments = resolveCitaConfirmacionNoteSegments(data);
+  const ubicacion = resolveCitaConfirmacionUbicacion(data);
 
   return (
     <View style={styles.wrap}>
@@ -63,12 +69,20 @@ export function CitaConfirmacionCard({ data, metaLabel }) {
           </View>
         ) : null}
 
-        {data?.note ? <Text style={styles.note}>{data.note}</Text> : null}
+        {noteSegments?.length ? (
+          <Text style={styles.note}>
+            {noteSegments.map((seg, i) => (
+              <Text key={i} style={seg.bold ? styles.noteStrong : null}>
+                {seg.t}
+              </Text>
+            ))}
+          </Text>
+        ) : null}
 
-        {data?.footer ? (
+        {ubicacion ? (
           <View style={styles.footerBox}>
             <MapPin size={13} color={accent.gold} strokeWidth={2} />
-            <Text style={styles.footerTxt}>{data.footer}</Text>
+            <Text style={styles.footerTxt}>{ubicacion}</Text>
           </View>
         ) : null}
 
@@ -80,7 +94,7 @@ export function CitaConfirmacionCard({ data, metaLabel }) {
 
 function createStyles() {
   return StyleSheet.create({
-    wrap: { width: '100%', maxWidth: 340, alignSelf: 'flex-start' },
+    wrap: { width: '100%', alignSelf: 'stretch' },
     card: {
       borderRadius: radii.lg,
       padding: spacing.md,
@@ -174,9 +188,13 @@ function createStyles() {
     note: {
       fontFamily: typography.fontSans,
       fontSize: 13,
-      lineHeight: 19,
+      lineHeight: 20,
       color: 'rgba(255,255,255,0.88)',
       marginBottom: spacing.sm,
+    },
+    noteStrong: {
+      fontFamily: typography.fontSansMedium,
+      color: '#FFFFFF',
     },
     footerBox: {
       flexDirection: 'row',

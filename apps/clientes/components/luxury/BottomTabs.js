@@ -21,7 +21,8 @@ export function BottomTabs({ items, activeId, onChange }) {
           alignItems: 'flex-start',
           justifyContent: 'space-around',
           paddingTop: 8,
-          backgroundColor: c.tabBarBg,
+          // Match root screen background to avoid a visible "band" near system nav area.
+          backgroundColor: c.background,
           borderTopWidth: 1,
           borderTopColor: c.tabBarBorder,
         },

@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +16,7 @@ import * as Clipboard from 'expo-clipboard';
 import {
   Award,
   Crown,
+  Sparkles,
   Gift,
   Share2,
   Copy,
@@ -144,7 +146,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
     }
     const msg =
       `¡Te invito a Salon Andreas! Descargá la app de clientes, creá tu cuenta verificada y usá mi código ${codigo}. ` +
-      `Programa ANDREAS: al referir 3 personas verificadas con su primera compra en la app, quien comparte gana 29,99% en un servicio más sesión de fotos e imagen impresa, canjeable en el salón.`;
+      `Programa ANDREAS: si 3 nuevos usuarios crean cuenta verificada con tu código y realizan su primera compra en efectivo o con tarjeta, o agendan su primera cita, ganás 29,99% en un servicio más sesión de fotos e imagen impresa, canjeable en Salon Andreas.`;
     try {
       await Share.share({
         message: msg,
@@ -196,7 +198,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
       id: 'salon',
       titulo: '19,99% próximo producto (salón físico)',
       detalle:
-        'Las compras de producto en el salón físico las registra el equipo en tu ficha (`andreas_premios.salon_fisico_unidades`). Con 8 unidades verificadas, 19,99% en la siguiente compra de producto en salón físico.',
+        'Cuando adquirís un producto en el salón, la compra se registra con tu nombre y la vinculación de tu perfil en la app; podés ver cómo sube la barra. Con 8 unidades verificadas: 19,99% en la siguiente compra de producto en salón físico.',
     },
   ];
 
@@ -215,46 +217,67 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
 
   return (
     <>
-      <LinearGradient
-        colors={['#3A3532', '#2D2926', '#4A3F2E']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.hero}
-      >
-        <View style={styles.heroTop}>
-          <View style={styles.heroBadge}>
-            <Crown size={14} color={tc.primary} strokeWidth={2.2} />
-            <Text style={styles.heroBadgeTxt}>ANDREAS</Text>
+      <View style={styles.heroWrap}>
+        <LinearGradient
+          colors={['#1A1612', '#0C0B0A', '#000000']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.hero, { borderColor: styles.heroBorderColor }]}
+        >
+          <LinearGradient
+            colors={['rgba(201, 162, 77, 0.2)', 'rgba(201, 162, 77, 0.04)', 'transparent']}
+            start={{ x: 1, y: 0 }}
+            end={{ x: 0.2, y: 1 }}
+            style={styles.heroSheen}
+            pointerEvents="none"
+          />
+          <View style={styles.heroInner}>
+            <View style={styles.heroTop}>
+              <View style={[styles.heroBadge, { borderColor: styles.heroGoldBorder }]}>
+                <Crown size={14} color={tc.primary} strokeWidth={2.2} />
+                <Text style={styles.heroBadgeTxt}>ANDREAS</Text>
+              </View>
+              <View style={styles.heroActions}>
+                <TouchableOpacity
+                  onPress={() => setModalSalonFisico(true)}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver progreso salón físico"
+                  activeOpacity={0.85}
+                  style={[styles.heroIconBtn, { borderColor: styles.heroGoldBorderSoft }]}
+                >
+                  <Store size={18} color="#F5E6A8" strokeWidth={2} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => void load()}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Actualizar puntos"
+                  activeOpacity={0.85}
+                  disabled={loading}
+                  style={[styles.heroIconBtn, { borderColor: styles.heroGoldBorderSoft }]}
+                >
+                  <RefreshCw size={18} color="rgba(255,255,255,0.65)" strokeWidth={2} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.heroTitleRow}>
+              <Sparkles size={16} color={tc.primary} strokeWidth={2} />
+              <Text style={styles.heroEyebrow}>Programa exclusivo</Text>
+            </View>
+            <Text style={styles.heroPoints}>Premios</Text>
+            <View style={[styles.heroDivider, { backgroundColor: tc.primary }]} />
+            <Text style={styles.heroPointsLabel}>Programa de puntos Salon Andreas</Text>
+
+            <View style={[styles.heroTaglineBox, { borderColor: styles.heroGoldBorder, backgroundColor: styles.heroTaglineBg }]}>
+              <Text style={[styles.heroTagline, { color: styles.heroTaglineColor }]}>
+                Cada acción que realizás con Salon Andreas tiene recompensa; todo lo que hacés tiene valor.
+              </Text>
+            </View>
           </View>
-          <View style={styles.heroActions}>
-            <TouchableOpacity
-              onPress={() => setModalSalonFisico(true)}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Ver progreso salón físico"
-              activeOpacity={0.85}
-            >
-              <Store size={20} color="rgba(255,255,255,0.9)" strokeWidth={2} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => void load()}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Actualizar puntos"
-              activeOpacity={0.85}
-              disabled={loading}
-            >
-              <RefreshCw size={20} color="rgba(255,255,255,0.55)" strokeWidth={2} />
-            </TouchableOpacity>
-          </View>
-        </View>
-        <Text style={styles.heroPoints}>Premios</Text>
-        <Text style={styles.heroPointsLabel}>Programa de puntos Salon Andreas</Text>
-        <Text style={styles.heroMeta}>
-          Pedidos app entregados (efectivo + retiro o tarjeta + domicilio) y citas completadas se calculan solos. Compras
-          en salón físico: las registra recepción.
-        </Text>
-      </LinearGradient>
+        </LinearGradient>
+      </View>
 
       {loading ? (
         <ActivityIndicator style={{ marginVertical: spacing.lg }} color={tc.primary} />
@@ -268,7 +291,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
       {!loading && !loadErr && resumen?.rpcMissing ? (
         <View style={[styles.card, { marginBottom: spacing.md, borderColor: tc.primary }]}>
           <Text style={styles.cardLead}>
-            Para contar referidos con primera compra, ejecutá en Supabase el script{' '}
+            Para contar referidos (compra o primera cita), ejecutá en Supabase el script{' '}
             <Text style={styles.leadStrong}>supabase-andreas-premios.sql</Text> (función RPC). El resto de contadores
             ya debería funcionar.
           </Text>
@@ -311,7 +334,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
             <RuleProgress
               icon={Store}
               title="Producto en salón físico"
-              body="Unidades que registra el salón en tu ficha (JSON andreas_premios). 8: 19,99% en la siguiente compra de producto en salón físico."
+              body="Cuando adquirís un producto en el salón, la compra se registra con tu nombre y la vinculación de tu perfil en la app; podés ver cómo sube la barra. Con 8 unidades: 19,99% en la siguiente compra de producto en salón físico."
               current={salonFisico}
               meta={META_SALON}
               tc={tc}
@@ -322,8 +345,9 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
             <Text style={styles.cardTitle}>Referidos verificados</Text>
             <Text style={styles.cardLead}>
               Si <Text style={styles.leadStrong}>3 nuevos usuarios</Text> crean cuenta verificada, se registran con tu
-              código o vinculación y realizan su <Text style={styles.leadStrong}>primera compra</Text> entregada en la
-              app, como referidor ganás: <Text style={styles.leadStrong}>29,99% en un servicio</Text>, más{' '}
+              código y realizan su <Text style={styles.leadStrong}>primera compra en efectivo o con tarjeta</Text>, o{' '}
+              <Text style={styles.leadStrong}>agendan su primera cita</Text>, como referidor ganás{' '}
+              <Text style={styles.leadStrong}>29,99% en un servicio</Text>, más{' '}
               <Text style={styles.leadStrong}>sesión de fotos e imagen impresa</Text>, canjeable en Salon Andreas.
             </Text>
             <View style={[localStyles.ruleCard, { borderColor: tc.cardBorder, marginBottom: spacing.md }]}>
@@ -343,7 +367,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
                 />
               </View>
               <Text style={[localStyles.ruleMeta, { color: tc.foregroundSubtle ?? '#888', marginTop: 4 }]}>
-                {referidosOk} de {META_REFERIDOS} referidos con primera compra entregada
+                {referidosOk} de {META_REFERIDOS} referidos verificados (compra o primera cita)
               </Text>
             </View>
 
@@ -458,23 +482,82 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
 }
 
 function createPremiosStyles(c) {
+  const gold = c.primary ?? '#C9A24D';
+  const goldLight = '#E8D4A8';
+  const goldBorder = 'rgba(201, 162, 77, 0.38)';
+  const goldBorderSoft = 'rgba(201, 162, 77, 0.22)';
+
   return StyleSheet.create({
+    heroBorderColor: goldBorder,
+    heroGoldBorder: goldBorder,
+    heroGoldBorderSoft: goldBorderSoft,
+    heroTaglineBg: 'rgba(201, 162, 77, 0.1)',
+    heroTaglineColor: goldLight,
+    heroWrap: {
+      marginBottom: spacing.md,
+      borderRadius: radii.lg,
+      ...Platform.select({
+        ios: {
+          shadowColor: gold,
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: 0.28,
+          shadowRadius: 18,
+        },
+        android: { elevation: 10 },
+      }),
+    },
     hero: {
       borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.md,
       overflow: 'hidden',
+      borderWidth: 1,
+    },
+    heroSheen: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    heroInner: {
+      padding: spacing.lg,
+      paddingTop: spacing.md,
     },
     heroTop: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: spacing.sm,
+      marginBottom: spacing.md,
     },
     heroActions: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
+    },
+    heroIconBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    heroTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 4,
+    },
+    heroEyebrow: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+      letterSpacing: 1.6,
+      textTransform: 'uppercase',
+      color: goldLight,
+    },
+    heroDivider: {
+      width: 44,
+      height: 2,
+      borderRadius: 1,
+      marginTop: spacing.xs,
+      marginBottom: spacing.sm,
+      opacity: 0.9,
     },
     modalBackdrop: {
       flex: 1,
@@ -497,34 +580,46 @@ function createPremiosStyles(c) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      backgroundColor: 'rgba(255,255,255,0.08)',
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      backgroundColor: 'rgba(201, 162, 77, 0.14)',
+      paddingHorizontal: 12,
+      paddingVertical: 7,
       borderRadius: radii.pill,
+      borderWidth: 1,
     },
     heroBadgeTxt: {
       fontFamily: typography.fontSansMedium,
-      fontSize: 12,
-      color: '#FFF',
-      letterSpacing: 0.4,
+      fontSize: 11,
+      color: goldLight,
+      letterSpacing: 1.2,
     },
     heroPoints: {
       fontFamily: typography.fontDisplay,
-      fontSize: 32,
-      color: '#FFF',
-      letterSpacing: -0.5,
+      fontSize: 36,
+      color: '#FFFFFF',
+      letterSpacing: -0.8,
+      textShadowColor: 'rgba(201, 162, 77, 0.35)',
+      textShadowOffset: { width: 0, height: 2 },
+      textShadowRadius: 8,
     },
     heroPointsLabel: {
       fontFamily: typography.fontSans,
-      fontSize: 13,
-      color: 'rgba(255,255,255,0.72)',
-      marginBottom: spacing.sm,
-    },
-    heroMeta: {
-      fontFamily: typography.fontSans,
       fontSize: 12,
-      color: 'rgba(255,255,255,0.65)',
-      lineHeight: 16,
+      color: 'rgba(255,255,255,0.68)',
+      letterSpacing: 0.3,
+      marginBottom: spacing.md,
+    },
+    heroTaglineBox: {
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+    },
+    heroTagline: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      lineHeight: 21,
+      letterSpacing: 0.2,
+      textAlign: 'center',
     },
     card: {
       backgroundColor: c.card,

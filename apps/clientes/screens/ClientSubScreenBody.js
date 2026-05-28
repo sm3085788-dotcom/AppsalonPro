@@ -48,11 +48,13 @@ function useAccentChipStyle() {
 function NotificationsBody({ prefs, onPrefChange }) {
   const subStyles = useSubStyles();
   const chipText = useAccentChipStyle();
+  const { colors: tc } = useTheme();
   const p = prefs || {
     recordatorios: true,
     promociones: false,
     cambiosAgenda: true,
     mensajes: true,
+    pedidos: true,
   };
 
   const Row = ({ k, label, sub }) => (
@@ -64,7 +66,8 @@ function NotificationsBody({ prefs, onPrefChange }) {
       <Switch
         value={Boolean(p[k])}
         onValueChange={(v) => onPrefChange?.(k, v)}
-        trackColor={{ false: '#888', true: undefined }}
+        trackColor={{ false: tc.foregroundSubtle, true: tc.primary }}
+        thumbColor={Boolean(p[k]) ? tc.heroCtaText : tc.card}
       />
     </View>
   );
@@ -80,7 +83,13 @@ function NotificationsBody({ prefs, onPrefChange }) {
       <Row
         k="mensajes"
         label="Mensajes"
-        sub="Muestra el ícono Andreas Pro en Inicio y avisos del salón."
+        sub="Ícono Andreas Pro, alertas y push cuando el salón te escribe."
+      />
+      <View style={subStyles.divider} />
+      <Row
+        k="pedidos"
+        label="Pedidos de tienda"
+        sub="Estado de tu compra y entrega (push fuera de la app)."
       />
       <Text style={[subStyles.muted, { marginTop: spacing.sm, fontSize: 12 }]}>
         Estado mensajes:{' '}
@@ -466,8 +475,10 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.SERVICIOS_CARRITO:
       return (
         <ServiciosCarritoBody
+          clienteRow={clienteRow}
           onClose={onClose}
-          onContinuarAgendar={onContinuarAgendarDesdeCarrito}
+          onCitasChanged={onCitasChanged}
+          onGoTab={onGoTab}
         />
       );
 
