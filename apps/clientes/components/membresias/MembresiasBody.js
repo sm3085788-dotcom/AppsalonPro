@@ -33,7 +33,7 @@ const TIER_BENEFITS = {
   ],
 };
 
-export function MembresiasBody({ clienteRow, onMembershipChanged }) {
+export function MembresiasBody({ clienteRow, onMembershipChanged, onClose }) {
   const { colors: c } = useTheme();
   const activeTier = getMembresiaTier(clienteRow?.membresia_nivel);
 
@@ -132,7 +132,11 @@ export function MembresiasBody({ clienteRow, onMembershipChanged }) {
 
   return (
     <>
-      <ActivarMembresiaCard clienteRow={clienteRow} onActivated={onMembershipChanged} />
+      <ActivarMembresiaCard
+        clienteRow={clienteRow}
+        onActivated={onMembershipChanged}
+        onDone={onClose}
+      />
 
       <Text style={styles.intro}>
         {activeTier

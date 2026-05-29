@@ -38,6 +38,7 @@ import {
   FileText,
   MessageCircle,
 } from 'lucide-react-native';
+import { useWindowDimensions } from 'react-native';
 import {
   supabase,
   db,
@@ -68,6 +69,8 @@ import {
   HeroImageCarousel,
   LuxuryImageCarousel,
 } from './components/luxury';
+import { QuickPosterGrid } from './components/luxury/QuickPosterGrid';
+import { MembresiaBadge } from './components/MembresiaBadge';
 import { CLIENT_SUB } from './navigation/clientSubScreens';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
@@ -240,7 +243,14 @@ function labelEstadoCita(estado) {
 
 function AppMain({ onLogout }) {
   const insets = useSafeAreaInsets();
+  const { height: windowH } = useWindowDimensions();
   const scrollBottom = paddingForTabBar(insets);
+  // Alturas proporcionales para que ambos carruseles quepan en pantalla
+  const TAB_BAR_H = 60;
+  const HEADER_H = insets.top + 56;
+  const AVAIL_H = windowH - TAB_BAR_H - HEADER_H;
+  const heroH = Math.round(AVAIL_H * 0.30);
+  const promoH = Math.round(AVAIL_H * 0.28);
   const [tab, setTab] = useState(TABS.INICIO);
   const [highlightInventarioId, setHighlightInventarioId] = useState(null);
   const [session, setSession] = useState(null);
@@ -509,16 +519,19 @@ function AppMain({ onLogout }) {
     const { data, error } = await db.clientes.getByUserId(userId);
     setPerfilLoading(false);
     if (error) {
-      setClienteRow(null);
+      // No vaciar clienteRow en error — mantener estado anterior para no romper la UI
       setPerfilMeta({ error: error.message });
       return null;
     }
-    setClienteRow(data ?? null);
-    setPerfilMeta({ error: null });
-    if (data?.photo_url) {
-      setAvatarUri(data.photo_url);
+    if (data) {
+      setClienteRow(data);
+      setPerfilMeta({ error: null });
+      if (data.photo_url) setAvatarUri(data.photo_url);
+      return data;
     }
-    return data ?? null;
+    // Si no hay error pero tampoco datos, mantener clienteRow existente
+    setPerfilMeta({ error: null });
+    return null;
   }, []);
 
   const ensureClienteFicha = useCallback(async () => {
@@ -757,15 +770,23 @@ function AppMain({ onLogout }) {
   useEffect(() => {
     refreshAuraUnread();
     if (!clienteRow?.id) return undefined;
-    const onAuraRow = async (row) => {
+    const onAuraInsert = async (row) => {
       if (!row) return;
-      void refreshAuraUnread();
+      // Mensaje entrante del salón (chat, promo, cita, incidente): encender campanita directo.
+      // NO llamar refreshAuraUnread() aquí porque puede resolverse con 0 por race condition
+      // o fallo del RPC y apagar la campanita que recién apareció.
       if (row.status === 'pending_sync') {
         setAuraUnread((prev) => Math.max(prev, 1));
       }
       if (row.content_type === 'cita_confirmacion') {
         await handleCitaConfirmacionMessage(row);
       }
+    };
+
+    const onAuraUpdate = (row) => {
+      if (!row) return;
+      // En UPDATE (ej: mensaje marcado delivered) sí sincronizar con DB
+      void refreshAuraUnread();
     };
 
     const channel = supabase
@@ -779,7 +800,7 @@ function AppMain({ onLogout }) {
           filter: `client_id=eq.${clienteRow.id}`,
         },
         (payload) => {
-          void onAuraRow(payload?.new);
+          void onAuraInsert(payload?.new);
         },
       )
       .on(
@@ -791,7 +812,7 @@ function AppMain({ onLogout }) {
           filter: `client_id=eq.${clienteRow.id}`,
         },
         (payload) => {
-          void onAuraRow(payload?.new);
+          onAuraUpdate(payload?.new);
         },
       )
       .subscribe();
@@ -1000,62 +1021,71 @@ function AppMain({ onLogout }) {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <HeroImageCarousel slides={inicioHeroSlides} onAgendar={() => setTab(TABS.CITAS)} />
+        <HeroImageCarousel slides={inicioHeroSlides} onAgendar={() => setTab(TABS.CITAS)} height={heroH} />
 
         <View style={styles.inicioBelowHero}>
           <View style={styles.sectionBlock}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionKickerGold, { marginBottom: 0 }]}>Acceso rápido</Text>
-              {session?.user ? (
-                <TouchableOpacity
-                  style={[styles.messagesIconBtn, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-                  onPress={openAuraLine}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    auraUnread > 0
-                      ? `Mensajes Andreas Pro, ${auraUnread} sin leer`
-                      : 'Mensajes Andreas Pro'
-                  }
-                  activeOpacity={0.85}
-                >
-                  <MessageCircle size={22} color={c.primary} strokeWidth={2} />
-                  {auraUnread > 0 ? (
-                    <View style={[styles.messagesBellBadge, { backgroundColor: c.error, borderColor: c.card }]}>
-                      <Bell size={11} color="#FFFFFF" fill="#FFFFFF" strokeWidth={2.2} />
-                    </View>
-                  ) : null}
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            <QuickAccessRow
-              icon={Store}
-              iconColor={isDark ? '#60A5FA' : '#1D4ED8'}
-              title="Tienda"
-              subtitle={QUICK_ACCESS.tiendaSubtitle}
-              onPress={() => openSub(CLIENT_SUB.TIENDA)}
-            />
-            <QuickAccessRow
-              icon={Flame}
-              iconColor={isDark ? '#FB923C' : '#EA580C'}
-              title="Tendencias"
-              subtitle={QUICK_ACCESS.tendenciasSubtitle}
-              onPress={() => openSub(CLIENT_SUB.TENDENCIAS)}
-            />
-            <QuickAccessRow
-              icon={Award}
-              iconColor={isDark ? '#E8C97A' : '#9A6B1F'}
-              title="Premios"
-              subtitle={QUICK_ACCESS.premiosSubtitle}
-              onPress={() => openSub(CLIENT_SUB.PREMIOS)}
-            />
-            <QuickAccessRow
-              icon={Package}
-              iconColor={isDark ? c.success : '#15803D'}
-              title="Pedidos"
-              subtitle={QUICK_ACCESS.pedidosSubtitle}
-              badgeCount={pedidosActivos}
-              badgeTone="green"
-              onPress={openMisPedidosSub}
+            <QuickPosterGrid
+              columns={1}
+              items={[
+                {
+                  id: 'mensajes',
+                  label: 'Mensajes',
+                  emoji: '💬',
+                  sub: 'Andreas Pro · en vivo',
+                  gradient: ['#1a1035', '#2d1b52', '#3b2766'],
+                  accent: '#8B5CF6',
+                  onPress: openAuraLine,
+                  bellBadge: auraUnread > 0,
+                },
+                {
+                  id: 'tienda',
+                  label: 'Tienda',
+                  emoji: '🛍️',
+                  sub: 'Productos y kits profesionales',
+                  gradient: ['#0F2D4C', '#1A5080', '#1E6DB0'],
+                  accent: '#60A5FA',
+                  onPress: () => openSub(CLIENT_SUB.TIENDA),
+                },
+                {
+                  id: 'tendencias',
+                  label: 'Tendencias',
+                  emoji: '🔥',
+                  sub: 'Looks de temporada',
+                  gradient: ['#3D1410', '#7A2A1A', '#B04020'],
+                  accent: '#FB923C',
+                  onPress: () => openSub(CLIENT_SUB.TENDENCIAS),
+                },
+                {
+                  id: 'premios',
+                  label: 'Premios',
+                  emoji: '🏆',
+                  sub: 'Puntos, canjes y referidos',
+                  gradient: ['#1a0f00', '#2e1c05', '#4a2e0a'],
+                  accent: '#C9A24D',
+                  onPress: () => openSub(CLIENT_SUB.PREMIOS),
+                },
+                {
+                  id: 'pedidos',
+                  label: 'Pedidos',
+                  emoji: '📦',
+                  sub: 'Mis compras y estado',
+                  gradient: ['#0F3D1A', '#1A6B2A', '#22963A'],
+                  accent: '#4ADE80',
+                  onPress: openMisPedidosSub,
+                  badge: true,
+                  badgeCount: pedidosActivos,
+                },
+                {
+                  id: 'citas',
+                  label: 'Citas',
+                  emoji: '✂️',
+                  sub: 'Agenda y gestión',
+                  gradient: ['#2D0F4C', '#561A8A', '#7B2DBF'],
+                  accent: '#C084FC',
+                  onPress: () => setTab(TABS.CITAS),
+                },
+              ]}
             />
           </View>
         </View>
@@ -1074,7 +1104,7 @@ function AppMain({ onLogout }) {
             edgeToEdge
             squareCorners
             autoAdvance={false}
-            height={240}
+            height={promoH}
             containerStyle={{ marginTop: 0 }}
           />
         </View>
@@ -1604,13 +1634,11 @@ function buildAppStyles(c) {
     marginBottom: 0,
   },
 
-  inicioBelowHero: {
-    paddingHorizontal: spacing.lg,
-  },
+  inicioBelowHero: {},
 
   sectionBlock: {
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
+    marginTop: 0,
+    marginBottom: 0,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -1648,7 +1676,7 @@ function buildAppStyles(c) {
   },
 
   featuredWrap: {
-    marginTop: spacing.lg,
+    marginTop: 0,
   },
   featureCard: {
     backgroundColor: c.card,

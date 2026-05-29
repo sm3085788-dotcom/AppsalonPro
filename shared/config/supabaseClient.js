@@ -3910,12 +3910,16 @@ export const db = {
       const select = options.forClientApp
         ? '*'
         : '*, cliente:clientes(id, nombre, telefono, email)';
-      const { data, error } = await supabase
+      let q = supabase
         .from('marketing_direct_messages')
         .select(select)
         .eq('client_id', clientId)
         .order('created_at', { ascending: false });
-      return { data, error };
+      if (options.limit) q = q.limit(options.limit);
+      const { data, error } = await q;
+      // Con límite: llegan los N más recientes en DESC → revertir a cronológico ASC
+      const result = options.limit && Array.isArray(data) ? [...data].reverse() : data;
+      return { data: result, error };
     },
 
     getByCreator: async (creatorId) => {

@@ -553,7 +553,11 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.MEMBRESIAS:
       return (
         <>
-          <MembresiasBody clienteRow={clienteRow} onMembershipChanged={onClienteUpdated} />
+          <MembresiasBody
+            clienteRow={clienteRow}
+            onMembershipChanged={onClienteUpdated}
+            onClose={onClose}
+          />
           <SalonButton
             variant="outlineGray"
             title="Cerrar"

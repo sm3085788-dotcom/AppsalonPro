@@ -5,7 +5,7 @@ import { db, getMembresiaTier, membresiaLabel, normalizeMembresiaCodigoInput } f
 import { SalonButton } from '../luxury/SalonButton';
 import { useTheme } from '../../theme/ThemeProvider';
 
-export function ActivarMembresiaCard({ clienteRow, onActivated }) {
+export function ActivarMembresiaCard({ clienteRow, onActivated, onDone }) {
   const { colors: c } = useTheme();
   const [codigo, setCodigo] = useState('');
   const [loading, setLoading] = useState(false);
@@ -84,8 +84,12 @@ export function ActivarMembresiaCard({ clienteRow, onActivated }) {
     }
     setCodigo('');
     const label = data?.label || membresiaLabel(data?.nivel) || 'Membresía';
-    Alert.alert('¡Listo!', `Tu membresía ${label} quedó activa en tu perfil.`);
     onActivated?.();
+    Alert.alert(
+      '¡Listo!',
+      `Tu membresía ${label} quedó activa en tu perfil.`,
+      [{ text: 'Ver mi perfil', onPress: () => onDone?.() }],
+    );
   };
 
   return (

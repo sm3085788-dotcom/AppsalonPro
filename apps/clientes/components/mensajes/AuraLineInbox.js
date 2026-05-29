@@ -107,8 +107,8 @@ function isFromClientMessage(item, sessionUserId) {
 /** Altura aprox. del encabezado SubScreenChrome (Volver + título + subtítulo). */
 const CHROME_HEADER_EST = 118;
 const SYNC_POLL_MS = 60000;
-/** Suficiente para ver difusiones, confirmaciones de cita y chat reciente. */
-const MSG_FETCH_LIMIT = 500;
+/** 30 mensajes recientes al abrir: renderizado instantáneo sin scroll visible. */
+const MSG_FETCH_LIMIT = 30;
 
 /** Caché del hilo para no vaciar la lista al reentrar a Mensajes. */
 let auraThreadCache = { clienteId: null, rows: [] };

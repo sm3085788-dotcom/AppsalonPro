@@ -605,7 +605,7 @@ export function MensajesScreen({ onBack }) {
     const silent = Boolean(opts.silent);
     if (!silent) setLoadingChat(true);
     try {
-      const { data, error } = await db.marketingDirectMessages.getByClient(clientId);
+      const { data, error } = await db.marketingDirectMessages.getByClient(clientId, { limit: 30 });
       if (String(selectedClientIdRef.current) !== id) return;
       if (error) throw error;
       const sorted = [...(data || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));

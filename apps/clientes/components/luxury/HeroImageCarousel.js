@@ -4,7 +4,7 @@ import { HOME_HERO_SLIDES } from '../../data/remoteHeroImages';
 /**
  * Carrusel hero (Inicio) — «Reserva tu cita». Slides remotos desde Marketing o mocks.
  */
-export function HeroImageCarousel({ slides, onAgendar }) {
+export function HeroImageCarousel({ slides, onAgendar, height }) {
   const list = slides?.length ? slides : HOME_HERO_SLIDES;
   const usePerSlide = slides?.length > 0;
   return (
@@ -22,6 +22,7 @@ export function HeroImageCarousel({ slides, onAgendar }) {
       edgeToEdge
       dockTop
       squareCorners
+      height={height}
     />
   );
 }

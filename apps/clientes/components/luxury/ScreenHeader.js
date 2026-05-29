@@ -155,12 +155,10 @@ export function ScreenHeader({
   }
 
   if (profileFirstName != null && String(profileFirstName).trim() !== '') {
-    const name = String(profileFirstName).trim();
     return (
       <View style={[styles.wrap, wrapStyle]}>
         <View style={styles.profileCopy}>
           <Text style={styles.kicker}>Bienvenida</Text>
-          <Text style={styles.profileName}>{name}</Text>
         </View>
       </View>
     );
