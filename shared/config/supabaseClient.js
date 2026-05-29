@@ -3395,7 +3395,12 @@ export const db = {
         p_limit: limit,
       });
       if (!rpcError && Array.isArray(rpcData)) {
-        const filtered = rpcData.filter(filterMedia);
+        const filtered = rpcData.filter((r) => {
+          // Excluir siempre contenido de carrusel e hero de Inicio
+          const aud = String(r?.audience || '');
+          if (aud === 'home_carousel' || aud === 'home_hero') return false;
+          return filterMedia(r);
+        });
         return { data: enrichTendenciasFeedPosts(filtered, rankRows), error: null };
       }
       const { data, error } = await supabase

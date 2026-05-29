@@ -371,7 +371,7 @@ function CanjeTicket({ titulo, detalle, isActive, onPress, tc }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
+export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeReady }) {
   const [canjeTap, setCanjeTap] = useState(null);
   const [loading, setLoading] = useState(true);
   const [resumen, setResumen] = useState(null);
@@ -398,7 +398,17 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow }) {
       return;
     }
     setResumen(r);
-  }, [clientUserId, clienteRow]);
+    // Notificar si alguna regla está lista para canjear
+    const tier = getMembershipTier(clienteRow?.membresia_nivel);
+    const meta = tier?.meta ?? BASE_META;
+    const anyReady =
+      (r.productosAppEfectivoRetiro   ?? 0) >= meta ||
+      (r.productosAppTarjetaDelivery  ?? 0) >= meta ||
+      (r.citasVerificadas             ?? 0) >= meta ||
+      (r.productosSalonFisico         ?? 0) >= meta ||
+      (r.referidosPrimeraCompra       ?? 0) >= META_REFERIDOS;
+    onPrizeReady?.(anyReady);
+  }, [clientUserId, clienteRow, onPrizeReady]);
 
   useEffect(() => {
     void load();

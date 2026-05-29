@@ -322,7 +322,7 @@ export function MisCitasTab({
       >
         <View style={styles.titleRow}>
           <View style={styles.titleCopy}>
-            <Text style={styles.pageDisplay}>Mis citas</Text>
+            <Text style={styles.pageDisplay}>Agendar</Text>
             <Text style={styles.pageLead}>
               Agregá servicios con + y agendá desde el carrito.
             </Text>

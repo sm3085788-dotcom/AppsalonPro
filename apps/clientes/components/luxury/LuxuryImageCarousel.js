@@ -247,17 +247,7 @@ export function LuxuryImageCarousel({
           />
         </View>
 
-        <View style={styles.dots}>
-          {slides.map((s, i) => (
-            <View
-              key={s.id}
-              style={[
-                styles.dot,
-                i === active && { backgroundColor: c.primary, width: 16, borderRadius: 6 },
-              ]}
-            />
-          ))}
-        </View>
+        {/* dots ocultos — lógica de índice activo preservada */}
       </View>
     </View>
   );

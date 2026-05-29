@@ -275,6 +275,7 @@ export function ClientSubScreenBody({
   onPedidosChanged,
   onAgendarServicio,
   onContinuarAgendarDesdeCarrito,
+  onPrizeReady,
 }) {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
@@ -547,7 +548,12 @@ export function ClientSubScreenBody({
 
     case CLIENT_SUB.PREMIOS:
       return (
-        <PremiosDashboard onClose={onClose} clientUserId={sessionUser?.id} clienteRow={clienteRow} />
+        <PremiosDashboard
+          onClose={onClose}
+          clientUserId={sessionUser?.id}
+          clienteRow={clienteRow}
+          onPrizeReady={onPrizeReady}
+        />
       );
 
     case CLIENT_SUB.MEMBRESIAS:

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet,
@@ -71,6 +72,7 @@ import {
 } from './components/luxury';
 import { QuickPosterGrid } from './components/luxury/QuickPosterGrid';
 import { MembresiaBadge } from './components/MembresiaBadge';
+import { PremiosCelebrationModal } from './components/luxury/PremiosCelebrationModal';
 import { CLIENT_SUB } from './navigation/clientSubScreens';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
@@ -180,7 +182,7 @@ const TABS = {
 
 const TAB_ITEMS = [
   { id: TABS.INICIO, label: 'Inicio', icon: Sparkles },
-  { id: TABS.CITAS, label: 'Mis citas', icon: Calendar },
+  { id: TABS.CITAS, label: 'Agendar', icon: Calendar },
   { id: TABS.HISTORIAL, label: 'Historial', icon: Clock },
   { id: TABS.PERFIL, label: 'Perfil', icon: User },
 ];
@@ -265,6 +267,9 @@ function AppMain({ onLogout }) {
   const [notifPrefs, setNotifPrefs] = useState(DEFAULT_CLIENT_NOTIF_PREFS);
   const [auraUnread, setAuraUnread] = useState(0);
   const [pedidosActivos, setPedidosActivos] = useState(0);
+  const [premiosBadge, setPremiosBadge] = useState(false);
+  const [premiosCanjeReady, setPremiosCanjeReady] = useState(false);
+  const [premiosCelebrationVisible, setPremiosCelebrationVisible] = useState(false);
   const { cartCount } = useTiendaCart();
   const [openedSub, setOpenedSub] = useState(null);
   const [subPayload, setSubPayload] = useState(null);
@@ -914,6 +919,19 @@ function AppMain({ onLogout }) {
     })();
   }, [session?.user?.id, hasSupabaseEnv, refreshClienteFicha, ensureClienteFicha]);
 
+  // Campanita en Premios cuando cambia el nivel de membresía
+  const MEMBRESIA_SEEN_KEY = '@appsalon/clientes/membresia_nivel_seen';
+  useEffect(() => {
+    const nivel = clienteRow?.membresia_nivel;
+    if (!nivel) return;
+    void (async () => {
+      const seen = await AsyncStorage.getItem(MEMBRESIA_SEEN_KEY);
+      if (seen !== nivel) {
+        setPremiosBadge(true);
+      }
+    })();
+  }, [clienteRow?.membresia_nivel]);
+
   useEffect(() => {
     if (!hasSupabaseEnv || !clienteRow?.id) {
       setCitasRaw([]);
@@ -994,97 +1012,32 @@ function AppMain({ onLogout }) {
 
   const renderInicio = () => (
     <View style={styles.inicioShell}>
-      <View
-        style={[
-          styles.inicioHeaderSticky,
-          {
-            paddingTop: insets.top + spacing.sm,
-          },
-        ]}
-      >
-        <ScreenHeader
-          showHomeBar
-          searchValue={headerSearch}
-          onSearchChange={setHeaderSearch}
-          onCartPress={openTiendaCart}
-          cartBadgeCount={cartCount}
-          wrapStyle={styles.inicioHeaderWrapTight}
-        />
-      </View>
+      {/* Sin search bar — el carrusel ocupa desde arriba incluyendo el safe area */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollInner,
-          {
-            paddingBottom: scrollBottom,
-          },
+          { paddingBottom: scrollBottom },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <HeroImageCarousel slides={inicioHeroSlides} onAgendar={() => setTab(TABS.CITAS)} height={heroH} />
+        <HeroImageCarousel
+          slides={inicioHeroSlides}
+          onAgendar={() => setTab(TABS.CITAS)}
+          height={heroH + insets.top + 56}
+        />
 
         <View style={styles.inicioBelowHero}>
           <View style={styles.sectionBlock}>
             <QuickPosterGrid
               columns={1}
               items={[
-                {
-                  id: 'mensajes',
-                  label: 'Mensajes',
-                  emoji: '💬',
-                  sub: 'Andreas Pro · en vivo',
-                  gradient: ['#1a1035', '#2d1b52', '#3b2766'],
-                  accent: '#8B5CF6',
-                  onPress: openAuraLine,
-                  bellBadge: auraUnread > 0,
-                },
-                {
-                  id: 'tienda',
-                  label: 'Tienda',
-                  emoji: '🛍️',
-                  sub: 'Productos y kits profesionales',
-                  gradient: ['#0F2D4C', '#1A5080', '#1E6DB0'],
-                  accent: '#60A5FA',
-                  onPress: () => openSub(CLIENT_SUB.TIENDA),
-                },
-                {
-                  id: 'tendencias',
-                  label: 'Tendencias',
-                  emoji: '🔥',
-                  sub: 'Looks de temporada',
-                  gradient: ['#3D1410', '#7A2A1A', '#B04020'],
-                  accent: '#FB923C',
-                  onPress: () => openSub(CLIENT_SUB.TENDENCIAS),
-                },
-                {
-                  id: 'premios',
-                  label: 'Premios',
-                  emoji: '🏆',
-                  sub: 'Puntos, canjes y referidos',
-                  gradient: ['#1a0f00', '#2e1c05', '#4a2e0a'],
-                  accent: '#C9A24D',
-                  onPress: () => openSub(CLIENT_SUB.PREMIOS),
-                },
-                {
-                  id: 'pedidos',
-                  label: 'Pedidos',
-                  emoji: '📦',
-                  sub: 'Mis compras y estado',
-                  gradient: ['#0F3D1A', '#1A6B2A', '#22963A'],
-                  accent: '#4ADE80',
-                  onPress: openMisPedidosSub,
-                  badge: true,
-                  badgeCount: pedidosActivos,
-                },
-                {
-                  id: 'citas',
-                  label: 'Citas',
-                  emoji: '✂️',
-                  sub: 'Agenda y gestión',
-                  gradient: ['#2D0F4C', '#561A8A', '#7B2DBF'],
-                  accent: '#C084FC',
-                  onPress: () => setTab(TABS.CITAS),
-                },
+                { id: 'mensajes',   label: 'Mensajes',   iconName: 'MessageCircle', sub: 'Andreas Pro · en vivo',         onPress: openAuraLine,                   bellBadge: auraUnread > 0 },
+                { id: 'tienda',     label: 'Tienda',     iconName: 'ShoppingBag',   sub: 'Productos y kits profesionales', onPress: () => openSub(CLIENT_SUB.TIENDA) },
+                { id: 'tendencias', label: 'Tendencias', iconName: 'Sparkles',      sub: 'Looks de temporada',             onPress: () => openSub(CLIENT_SUB.TENDENCIAS) },
+                { id: 'premios',    label: 'Premios',    iconName: 'Award',         sub: 'Puntos, canjes y referidos',     onPress: () => { setPremiosBadge(false); setPremiosCanjeReady(false); void AsyncStorage.setItem(MEMBRESIA_SEEN_KEY, clienteRow?.membresia_nivel ?? ''); openSub(CLIENT_SUB.PREMIOS); }, bellBadge: premiosBadge, prizeBadge: premiosCanjeReady },
+                { id: 'pedidos',    label: 'Pedidos',    iconName: 'Package',       sub: 'Mis compras y estado',           onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
+                { id: 'citas',      label: 'Citas',      iconName: 'Scissors',      sub: 'Agenda y gestión',               onPress: () => setTab(TABS.CITAS) },
               ]}
             />
           </View>
@@ -1307,6 +1260,7 @@ function AppMain({ onLogout }) {
                 openSub(CLIENT_SUB.TIENDA);
               }}
               onPedidosChanged={refreshPedidosActivos}
+              onPrizeReady={(ready) => { setPremiosCanjeReady(ready); if (ready) setPremiosCelebrationVisible(true); }}
             />
           </View>
         ) : (
@@ -1357,6 +1311,7 @@ function AppMain({ onLogout }) {
               onPedidosChanged={refreshPedidosActivos}
               onAgendarServicio={openAgendarServicio}
               onContinuarAgendarDesdeCarrito={openAgendarDesdeCarrito}
+              onPrizeReady={(ready) => { setPremiosCanjeReady(ready); if (ready) setPremiosCelebrationVisible(true); }}
             />
           </SubScreenChrome>
         )
@@ -1368,10 +1323,23 @@ function AppMain({ onLogout }) {
               items={TAB_ITEMS}
               activeId={tab}
               onChange={setTab}
+              cartCount={cartCount}
+              onCartPress={openTiendaCart}
             />
           </View>
         </>
       )}
+
+      {/* Modal de celebración de premio */}
+      <PremiosCelebrationModal
+        visible={premiosCelebrationVisible}
+        onVerPremio={() => {
+          setPremiosCelebrationVisible(false);
+          setPremiosCanjeReady(false);
+          openSub(CLIENT_SUB.PREMIOS);
+        }}
+        onDismiss={() => setPremiosCelebrationVisible(false)}
+      />
     </View>
   );
 }

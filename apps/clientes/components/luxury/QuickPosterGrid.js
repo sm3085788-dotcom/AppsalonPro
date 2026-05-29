@@ -1,168 +1,138 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Bell } from 'lucide-react-native';
-import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import {
+  MessageCircle, ShoppingBag, Sparkles, Award,
+  Package, Scissors, Bell, ChevronRight,
+} from 'lucide-react-native';
+import { typography, spacing } from '@appsalon/design-tokens';
+import { useTheme } from '../../theme/ThemeProvider';
 
-/**
- * Grid de acceso rápido en estilo "poster" para la pantalla Inicio.
- * columns=1 → lista vertical full-width  (por defecto)
- * columns=2 → grid 2 columnas
- */
-export function QuickPosterGrid({ items, columns = 1 }) {
-  if (columns === 1) {
-    return (
-      <View style={styles.list}>
-        {items.map((item, index) => (
-          <PosterTile
-            key={item.id}
-            item={item}
-            fullWidth
-            isFirst={index === 0}
-            isLast={index === items.length - 1}
-          />
-        ))}
-      </View>
-    );
-  }
+const ICON_MAP = {
+  MessageCircle, ShoppingBag, Sparkles, Award, Package, Scissors,
+};
 
-  // 2 columnas
-  const rows = [];
-  for (let i = 0; i < items.length; i += 2) {
-    rows.push(items.slice(i, i + 2));
-  }
+const GOLD = '#C5A368';
+
+export function QuickPosterGrid({ items }) {
+  const { colors: c, isDark } = useTheme();
+
+  const palette = isDark
+    ? {
+        container: c.background,
+        row:       c.card,
+        divider:   c.cardBorder,
+        label:     c.foreground,
+        sub:       GOLD,
+        iconBg:    'rgba(197,163,104,0.12)',
+        iconRing:  'rgba(197,163,104,0.30)',
+      }
+    : {
+        container: '#FDFAF5',
+        row:       '#FFFFFF',
+        divider:   '#F0EAE0',
+        label:     '#1A1510',
+        sub:       GOLD,
+        iconBg:    'rgba(197,163,104,0.10)',
+        iconRing:  'rgba(197,163,104,0.28)',
+      };
+
   return (
-    <View style={styles.grid}>
-      {rows.map((pair, ri) => (
-        <View key={ri} style={styles.row}>
-          {pair.map((item) => (
-            <PosterTile key={item.id} item={item} />
-          ))}
-          {pair.length === 1 ? <View style={styles.tileFlex} /> : null}
-        </View>
+    <View style={[styles.container, { backgroundColor: palette.container }]}>
+      {items.map((item, index) => (
+        <MenuItem
+          key={item.id}
+          item={item}
+          isLast={index === items.length - 1}
+          palette={palette}
+        />
       ))}
     </View>
   );
 }
 
-function PosterTile({ item, fullWidth = false, isFirst = false, isLast = false }) {
+function MenuItem({ item, isLast, palette }) {
   const hasBadge = item.badge && item.badgeCount > 0;
+  const Icon = ICON_MAP[item.iconName] ?? MessageCircle;
 
   return (
     <TouchableOpacity
-      style={fullWidth ? styles.tileFullWidth : styles.tileFlex}
+      style={[
+        styles.row,
+        { backgroundColor: palette.row },
+        !isLast && { borderBottomWidth: 1, borderBottomColor: palette.divider },
+      ]}
       onPress={item.onPress}
-      activeOpacity={0.88}
+      activeOpacity={0.78}
       accessibilityRole="button"
       accessibilityLabel={item.label}
     >
-      <LinearGradient
-        colors={item.gradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={[
-          styles.tile,
-          fullWidth ? styles.tileH : styles.tileHGrid,
-          fullWidth && styles.tileFlat,
-          !fullWidth && { borderColor: item.accent + '55' },
-        ]}
-      >
-        {/* Emoji + badges */}
-        <View style={styles.emojiCol}>
-          <Text style={styles.emoji}>{item.emoji}</Text>
-        </View>
+      <View style={[styles.iconCircle, { backgroundColor: palette.iconBg, borderColor: palette.iconRing }]}>
+        <Icon size={20} color={GOLD} strokeWidth={1.8} />
+      </View>
 
-        {/* Texto */}
-        <View style={styles.textCol}>
-          <Text style={styles.label}>{item.label}</Text>
-          {item.sub ? (
-            <Text style={styles.sub} numberOfLines={1}>{item.sub}</Text>
-          ) : null}
-        </View>
+      <View style={styles.textCol}>
+        <Text style={[styles.label, { color: palette.label }]}>{item.label}</Text>
+        <Text style={[styles.sub, { color: palette.sub }]} numberOfLines={1}>{item.sub}</Text>
+      </View>
 
-        {/* Badges al lado derecho */}
-        <View style={styles.rightCol}>
-          {hasBadge ? (
-            <View style={styles.countBadge}>
-              <Text style={styles.countTxt}>
-                {item.badgeCount > 99 ? '99+' : String(item.badgeCount)}
-              </Text>
-            </View>
-          ) : null}
-          {item.bellBadge ? (
-            <View style={styles.bellBadge}>
-              <Bell size={10} color="#FFF" strokeWidth={2.5} />
-            </View>
-          ) : null}
-        </View>
-      </LinearGradient>
+      <View style={styles.rightCol}>
+        {hasBadge ? (
+          <View style={styles.countBadge}>
+            <Text style={styles.countTxt}>
+              {item.badgeCount > 99 ? '99+' : String(item.badgeCount)}
+            </Text>
+          </View>
+        ) : null}
+        {item.bellBadge ? (
+          <View style={styles.bellBadge}>
+            <Bell size={9} color="#FFF" strokeWidth={2.5} />
+          </View>
+        ) : null}
+        {item.prizeBadge ? (
+          <View style={styles.prizeBadge}>
+            <Text style={styles.prizeTxt}>★</Text>
+          </View>
+        ) : null}
+        <ChevronRight size={16} color={GOLD} strokeWidth={1.8} />
+      </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  // 1-columna (sin gaps, pegados)
-  list: {},
-  tileFullWidth: {
-    width: '100%',
-  },
-  tileH: {
-    height: 72,
-  },
-  tileFlat: {
-    borderRadius: 0,
-    borderWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
-  },
-  // 2-columnas
-  grid: {
-    gap: spacing.md,
+  container: {
+    ...Platform.select({
+      ios:     { shadowColor: '#C5A368', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6 },
+      android: { elevation: 2 },
+    }),
   },
   row: {
     flexDirection: 'row',
-    gap: spacing.md,
-  },
-  tileFlex: {
-    flex: 1,
-  },
-  tileHGrid: {
-    minHeight: 148,
-    flexDirection: 'column',
-    justifyContent: 'flex-end',
-    paddingTop: spacing.lg,
-  },
-  // tile base (el borderRadius se sobreescribe por isFirst/isLast en 1-col)
-  tile: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    height: 76,
+    paddingHorizontal: spacing.lg,
+    gap: 14,
   },
-  emojiCol: {
+  iconCircle: {
     width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
     alignItems: 'center',
-  },
-  emoji: {
-    fontSize: 26,
-    lineHeight: 30,
+    justifyContent: 'center',
   },
   textCol: {
     flex: 1,
+    gap: 3,
   },
   label: {
-    fontFamily: typography.fontSansMedium,
-    fontSize: 16,
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
+    fontFamily: typography.fontDisplay,
+    fontSize: 18,
+    letterSpacing: 0.1,
   },
   sub: {
     fontFamily: typography.fontSans,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.65)',
-    marginTop: 2,
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
   rightCol: {
     flexDirection: 'row',
@@ -170,12 +140,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   countBadge: {
-    backgroundColor: '#16A34A',
-    borderRadius: radii.pill,
+    borderRadius: 11,
     paddingHorizontal: 7,
     paddingVertical: 2,
     minWidth: 22,
     alignItems: 'center',
+    backgroundColor: '#16A34A',
   },
   countTxt: {
     fontFamily: typography.fontSansMedium,
@@ -189,5 +159,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#DC2626',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  prizeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 22,
+  },
+  prizeTxt: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 10,
+    color: '#FFF',
+    lineHeight: 14,
   },
 });

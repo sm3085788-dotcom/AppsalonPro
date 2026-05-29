@@ -72,7 +72,14 @@ const MAX_VIDEO_SECONDS = 50;
 
 /** Recomendación práctica para staff (no es límite técnico del código). */
 const CAPACITY_HINT =
-  'Recomendación: fotos hasta ~8 MB c/u; videos hasta 50 s (≈20–40 MB en 720p). No superar ~50 MB por archivo al subir. En Supabase Storage creá el bucket público `tendencias` y un límite de objeto (p. ej. 100 MB) según tu plan.';
+  'Recomendación: fotos hasta ~8 MB c/u; videos hasta 50 s (≈20–40 MB en 720p). No superar ~50 MB por archivo al subir.';
+
+/** Tamaños recomendados por destino para no romper la calidad en la app. */
+const CONTENT_SIZES = [
+  { dest: 'Tendencias (feed vertical)',  size: '1080 × 1920 px', ratio: '9:16', hint: 'Foto o video vertical. Mín. 720p.' },
+  { dest: 'Carrusel Inicio (publicidad)', size: '1200 × 500 px',  ratio: '12:5', hint: 'Foto horizontal. JPG/PNG < 300 KB.' },
+  { dest: 'Hero «Reserva tu cita»',       size: '1080 × 720 px',  ratio: '3:2',  hint: 'Foto horizontal. Se recorta al centro.' },
+];
 
 function guessExtension(uri, mimeType, kind) {
   if (mimeType?.includes('jpeg')) return 'jpg';
@@ -1031,6 +1038,19 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
             refreshControl={refreshControl}
           >
             <Text style={[subStyles.muted, styles.hint]}>{CAPACITY_HINT}</Text>
+            {/* Tabla de tamaños por destino */}
+            <View style={[styles.sizesCard, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
+              <Text style={[styles.sizesTitle, { color: c.foreground }]}>📐 Tamaños recomendados por destino</Text>
+              {CONTENT_SIZES.map((row, i) => (
+                <View key={i} style={[styles.sizesRow, i < CONTENT_SIZES.length - 1 && { borderBottomWidth: 1, borderBottomColor: c.cardBorder }]}>
+                  <Text style={[styles.sizesDest, { color: c.foreground }]}>{row.dest}</Text>
+                  <View style={styles.sizesMeta}>
+                    <Text style={[styles.sizesSize, { color: c.primary }]}>{row.size}</Text>
+                    <Text style={[subStyles.muted, { fontSize: 11 }]}>{row.ratio} · {row.hint}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
             <View style={styles.selectToolbar}>
               <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
               {sel.active ? (
@@ -1665,8 +1685,14 @@ function createStyles(c) {
     body: { flex: 1, paddingTop: spacing.xs, backgroundColor: c.background },
     fillScroll: { flex: 1, backgroundColor: c.background },
     modalScrollFill: { backgroundColor: c.background },
-    hint: { marginBottom: spacing.md, lineHeight: 20, fontSize: 13 },
+    hint: { marginBottom: spacing.sm, lineHeight: 20, fontSize: 13 },
     subHint: { marginBottom: spacing.md, fontSize: 12 },
+    sizesCard: { borderRadius: radii.md, borderWidth: 1, marginBottom: spacing.md, overflow: 'hidden' },
+    sizesTitle: { fontFamily: typography.fontSansMedium, fontSize: 13, padding: spacing.sm },
+    sizesRow: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+    sizesDest: { fontFamily: typography.fontSansMedium, fontSize: 12 },
+    sizesMeta: { marginTop: 2 },
+    sizesSize: { fontFamily: typography.fontSansMedium, fontSize: 13 },
     sectionTitle: {
       fontFamily: typography.fontSansMedium,
       fontSize: 15,
