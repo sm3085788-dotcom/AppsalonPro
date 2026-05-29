@@ -167,7 +167,10 @@ AS $$
     m.content_type,
     m.status
   FROM marketing_direct_messages m
-  WHERE m.content_type IN ('chat', 'broadcast_promo', 'incident_report')
+  WHERE m.content_type IN (
+    'chat', 'broadcast_promo', 'incident_report', 'cita_confirmacion',
+    'tendencias_interest', 'carousel_interest'
+  )
   ORDER BY m.client_id, m.created_at DESC;
 $$;
 

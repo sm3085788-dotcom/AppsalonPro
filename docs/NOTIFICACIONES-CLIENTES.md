@@ -27,9 +27,10 @@ En [Supabase SQL Editor](https://supabase.com/dashboard) del proyecto **nqqntgvo
 
 1. Ejecutá **`supabase-client-notifications.sql`** (completo).
 2. Ejecutá **`supabase-client-notifications-patch.sql`**.
-3. Ejecutá **`supabase-aura-line-client.sql`** si la campana de no leídos no existe.
-4. **Database → Replication** → activá `client_notifications` y `marketing_direct_messages`.
-5. Ejecutá **`supabase-client-notifications-diagnostico.sql`** → todo lo crítico debe decir **OK**.
+3. Ejecutá **`supabase-aura-line-client.sql`** y **`supabase-aura-line-client-chat-media.sql`**.
+4. Ejecutá **`supabase-fix-mensajes-facturas.sql`** (Mis facturas + difusiones + confirmación de cita en bandeja).
+5. **Database → Replication** → activá `client_notifications` y `marketing_direct_messages`.
+6. Ejecutá **`supabase-client-notifications-diagnostico.sql`** → todo lo crítico debe decir **OK**.
 
 Comprobación rápida después de confirmar una cita en el salón:
 

@@ -19,6 +19,7 @@ export {
 } from './metaGlobal.js';
 export { confirmarCompraConTarjeta, mapInventarioToTiendaProduct, buildTiendaProductFicha } from './tiendaCheckout.js';
 export { crearPedidoEfectivo, crearPedidoTarjetaPendiente, confirmarCobroPedidoSalon } from './pedidoSalon.js';
+export { fetchClientMisFacturas } from './clientVentas.js';
 export {
   CLIENTE_ENVIO_JSON_MARK,
   splitClienteNotasEnvio,
@@ -65,6 +66,7 @@ export {
   mergeAuraMessage,
   sortAuraMessages,
 } from './auraLineClient.js';
+export { sendSalonAuraMessage } from './auraLineSalon.js';
 export {
   syncClientNotifPrefsToServer,
   upsertClientPushToken,

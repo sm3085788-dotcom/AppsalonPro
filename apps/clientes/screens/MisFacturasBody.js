@@ -3,42 +3,37 @@ import {
   View,
   Text,
   TextInput,
+  FlatList,
   StyleSheet,
   TouchableOpacity,
   Alert,
   Modal,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { FileText, X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronRight, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db } from '@appsalon/shared-config';
+import { fetchClientMisFacturas } from '@appsalon/shared-config';
+import {
+  formatQ,
+  montoVenta,
+  facturaLabel,
+  profesionalLabel,
+} from '../../../shared/utils/ventaFactura';
+import { FacturaDetalleModal } from '../components/facturas/FacturaDetalleModal';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { useTheme } from '../theme/ThemeProvider';
 
-function formatQ(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return 'Q 0.00';
-  return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function montoVenta(v) {
-  return Number(v?.total ?? v?.monto ?? 0);
-}
-
-function facturaLabel(v) {
-  const n = v?.no_factura?.trim();
-  return n || `Venta ${String(v?.id || '').slice(0, 8)}…`;
-}
-
 /**
- * Facturas de compras/servicios completados asociados a la ficha `clientes` del usuario.
- * Misma tabla `ventas` que ve el salón en Papelería; aquí filtrado por `cliente_id`.
+ * Facturas del cliente — misma presentación que Papelería (App Salón).
  */
-export function MisFacturasBody({ clienteId, onClose }) {
+export function MisFacturasBody({ clienteId, clienteNombre, onClose, initialVentaId = null }) {
   const { colors: c } = useTheme();
+  const insets = useSafeAreaInsets();
   const subStyles = useSubStyles();
-  const styles = useMemo(() => createStyles(c), [c]);
+  const styles = useMemo(() => createStyles(), []);
 
   const [ventas, setVentas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +42,9 @@ export function MisFacturasBody({ clienteId, onClose }) {
   const [modalFiltros, setModalFiltros] = useState(false);
   const [sortMode, setSortMode] = useState('fecha_desc');
   const [filterFactura, setFilterFactura] = useState('todas');
+  const [detalleVenta, setDetalleVenta] = useState(null);
+
+  const padBottom = Math.max(insets.bottom + spacing.md, spacing.lg);
 
   const load = useCallback(
     async (isRefresh) => {
@@ -59,7 +57,7 @@ export function MisFacturasBody({ clienteId, onClose }) {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       try {
-        const { data, error } = await db.ventas.getByCliente(clienteId);
+        const { data, error } = await fetchClientMisFacturas(300);
         if (error) throw error;
         setVentas(Array.isArray(data) ? data : []);
       } catch (e) {
@@ -76,6 +74,18 @@ export function MisFacturasBody({ clienteId, onClose }) {
   useEffect(() => {
     load(false);
   }, [load]);
+
+  useEffect(() => {
+    if (!initialVentaId || loading) return;
+    if (ventas.some((v) => String(v.id) === String(initialVentaId))) return;
+    load(true);
+  }, [initialVentaId, loading, ventas, load]);
+
+  useEffect(() => {
+    if (!initialVentaId || loading) return;
+    const hit = ventas.find((v) => String(v.id) === String(initialVentaId));
+    if (hit) setDetalleVenta(hit);
+  }, [initialVentaId, loading, ventas]);
 
   const onRefresh = () => load(true);
 
@@ -98,7 +108,9 @@ export function MisFacturasBody({ clienteId, onClose }) {
     const q = query.trim().toLowerCase();
     if (q) {
       rows = rows.filter((v) => {
-        const blob = [facturaLabel(v), v?.metodo_pago, v?.vendedor?.nombre, v?.notas].join(' ').toLowerCase();
+        const blob = [facturaLabel(v), v?.metodo_pago, profesionalLabel(v), v?.notas]
+          .join(' ')
+          .toLowerCase();
         return blob.includes(q);
       });
     }
@@ -120,22 +132,44 @@ export function MisFacturasBody({ clienteId, onClose }) {
     return rows;
   }, [ventas, query, sortMode, filterFactura]);
 
-  const verDetalle = (v) => {
-    const lines = [
-      `Factura / folio: ${facturaLabel(v)}`,
-      `Fecha: ${v?.fecha ? new Date(v.fecha).toLocaleString('es-GT') : '—'}`,
-      `Vendedor: ${v?.vendedor?.nombre || '—'}`,
-      `Total: ${formatQ(montoVenta(v))}`,
-      `Pago: ${v?.metodo_pago || '—'}`,
-    ].join('\n');
-    let items = '';
-    try {
-      items = v?.items != null ? `\n\nDetalle (JSON):\n${JSON.stringify(v.items, null, 2)}` : '';
-    } catch {
-      items = '';
-    }
-    Alert.alert('Tu factura', `${lines}${items}`.slice(0, 8000), [{ text: 'Cerrar' }], { cancelable: true });
-  };
+  const renderItem = useCallback(
+    ({ item: v }) => {
+      const prof = profesionalLabel(v) || 'Salón';
+      const fecha = v?.fecha
+        ? new Date(v.fecha).toLocaleString('es-GT', {
+            day: '2-digit',
+            month: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '—';
+      const subParts = [prof, fecha, v?.metodo_pago].filter(Boolean);
+
+      return (
+        <TouchableOpacity
+          style={[styles.row, { borderBottomColor: c.cardBorder }]}
+          onPress={() => setDetalleVenta(v)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rowBody}>
+            <View style={styles.rowTop}>
+              <Text style={[styles.folio, { color: c.foreground }]} numberOfLines={1}>
+                {facturaLabel(v)}
+              </Text>
+              <Text style={[styles.monto, { color: c.primary }]} numberOfLines={1}>
+                {formatQ(montoVenta(v))}
+              </Text>
+            </View>
+            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+              {subParts.length ? subParts.join(' · ') : '—'}
+            </Text>
+          </View>
+          <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
+        </TouchableOpacity>
+      );
+    },
+    [c, styles],
+  );
 
   if (!clienteId) {
     return (
@@ -153,79 +187,90 @@ export function MisFacturasBody({ clienteId, onClose }) {
   }
 
   return (
-    <>
+    <View style={styles.body}>
       <TextInput
         style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
-        placeholder="Buscar por folio, método, notas…"
+        placeholder="Buscar folio, método, notas…"
         placeholderTextColor={c.foregroundSubtle}
         value={query}
         onChangeText={setQuery}
         autoCorrect={false}
+        accessibilityLabel="Buscar facturas"
       />
 
       <View style={styles.toolbar}>
         <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
           {loading ? '…' : `${filtered.length} factura${filtered.length === 1 ? '' : 's'}`}
         </Text>
-        <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)} accessibilityRole="button">
-          <Text style={[styles.toolbarLink, { color: c.primary }]}>Ordenar · filtros</Text>
+        <TouchableOpacity
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Ordenar y filtros"
+          onPress={() => setModalFiltros(true)}
+        >
+          <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
         </TouchableOpacity>
       </View>
-      <Text style={[subStyles.muted, { fontSize: 12, lineHeight: 17, marginBottom: spacing.md }]} numberOfLines={2}>
+      <Text style={[styles.filtroResumen, { color: c.foregroundSubtle }]} numberOfLines={2}>
         {filtroResumen}
       </Text>
 
-      <TouchableOpacity
-        onPress={() => onRefresh()}
-        disabled={refreshing || loading}
-        style={{ marginBottom: spacing.sm }}
-        accessibilityRole="button"
-        accessibilityLabel="Actualizar lista de facturas"
-      >
-        <Text style={[styles.toolbarLink, { color: c.primary }]}>
-          {refreshing ? 'Actualizando…' : 'Actualizar'}
-        </Text>
-      </TouchableOpacity>
-
       {loading ? (
-        <ActivityIndicator style={{ marginVertical: spacing.lg }} color={c.primary} />
-      ) : filtered.length === 0 ? (
-        <Text style={subStyles.muted}>
-          {ventas.length === 0
-            ? 'Aún no hay ventas registradas a tu nombre. Después de pagar en salón, el folio aparecerá aquí.'
-            : 'Ningún resultado con los filtros actuales.'}
-        </Text>
+        <ActivityIndicator style={{ marginTop: spacing.md }} color={c.primary} />
       ) : (
-        filtered.map((v) => (
-          <TouchableOpacity
-            key={String(v.id)}
-            style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-            onPress={() => verDetalle(v)}
-            activeOpacity={0.88}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-              <FileText size={20} color={c.foregroundMuted} strokeWidth={2} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[styles.title, { color: c.foreground }]} numberOfLines={1}>
-                {facturaLabel(v)}
+        <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+          <FlatList
+            data={filtered}
+            keyExtractor={(v) => String(v.id)}
+            renderItem={renderItem}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={c.primary}
+                colors={[c.primary]}
+                progressBackgroundColor={c.card}
+              />
+            }
+            contentContainerStyle={{
+              paddingBottom: padBottom,
+              flexGrow: filtered.length === 0 ? 1 : 0,
+            }}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
+                {ventas.length === 0
+                  ? 'Aún no hay ventas registradas a tu nombre. Después de pagar en salón, el folio aparecerá aquí.'
+                  : 'Ningún resultado con la búsqueda o filtros actuales.'}
               </Text>
-              <Text style={[subStyles.muted, styles.meta]} numberOfLines={2}>
-                {formatQ(montoVenta(v))} · {v?.vendedor?.nombre || 'Salón'}
-              </Text>
-              <Text style={[subStyles.muted, styles.meta]} numberOfLines={1}>
-                {v?.fecha ? new Date(v.fecha).toLocaleString('es-GT') : '—'} · {v?.metodo_pago || '—'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))
+            }
+          />
+        </View>
       )}
 
-      <SalonButton variant="outlineGray" title="Cerrar" fullWidth onPress={onClose} style={{ marginTop: spacing.md }} />
+      <SalonButton
+        variant="outlineGray"
+        title="Cerrar"
+        fullWidth
+        onPress={onClose}
+        style={{ marginTop: spacing.sm }}
+      />
+
+      <FacturaDetalleModal
+        venta={detalleVenta}
+        visible={!!detalleVenta}
+        onClose={() => setDetalleVenta(null)}
+        clienteNombre={clienteNombre}
+      />
 
       <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
         <View style={styles.filterBackdrop}>
-          <View style={[styles.filterSheet, { backgroundColor: c.background }]}>
+          <View
+            style={[
+              styles.filterSheet,
+              { backgroundColor: c.background, paddingBottom: Math.max(insets.bottom + spacing.lg, spacing.xl) },
+            ]}
+          >
             <View style={styles.filterHead}>
               <Text style={[styles.filterTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
               <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
@@ -281,47 +326,89 @@ export function MisFacturasBody({ clienteId, onClose }) {
           </View>
         </View>
       </Modal>
-    </>
+    </View>
   );
 }
 
-function createStyles(c) {
+function createStyles() {
   return StyleSheet.create({
+    body: {
+      flex: 1,
+      minHeight: 0,
+    },
     search: {
       fontFamily: typography.fontSans,
-      fontSize: 15,
-      minHeight: 48,
-      borderRadius: radii.lg,
+      fontSize: 14,
+      minHeight: 40,
+      borderRadius: radii.md,
       borderWidth: 1,
-      paddingHorizontal: spacing.md,
-      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      marginBottom: spacing.xs,
     },
     toolbar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
+      marginBottom: 2,
+    },
+    toolbarMeta: { fontFamily: typography.fontSansMedium, fontSize: 12 },
+    toolbarLink: { fontFamily: typography.fontSansMedium, fontSize: 12 },
+    filtroResumen: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
       marginBottom: spacing.xs,
     },
-    toolbarMeta: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    toolbarLink: { fontFamily: typography.fontSansMedium, fontSize: 13 },
-    card: {
+    listShell: {
+      flex: 1,
+      minHeight: 120,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    row: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
+      paddingVertical: 9,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      gap: spacing.xs,
     },
-    iconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+    rowBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    rowTop: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
     },
-    title: { fontFamily: typography.fontSansMedium, fontSize: 16 },
-    meta: { fontSize: 12, marginTop: 4 },
+    folio: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    monto: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    rowSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    rowChev: {
+      flexShrink: 0,
+    },
+    emptyTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      textAlign: 'center',
+      paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.sm,
+    },
     filterBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
@@ -331,6 +418,7 @@ function createStyles(c) {
       borderTopLeftRadius: radii.lg,
       borderTopRightRadius: radii.lg,
       padding: spacing.lg,
+      maxHeight: '92%',
     },
     filterHead: {
       flexDirection: 'row',
@@ -355,6 +443,7 @@ function createStyles(c) {
       paddingVertical: spacing.sm,
       borderRadius: radii.md,
       borderWidth: 1,
+      maxWidth: '100%',
     },
     chipTxt: { fontFamily: typography.fontSansMedium, fontSize: 13 },
   });

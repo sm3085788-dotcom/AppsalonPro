@@ -1,5 +1,10 @@
 import { Alert } from 'react-native';
-import { db, buildCitaConfirmacionPayload, notifyClientFromMdmId } from '@appsalon/shared-config';
+import {
+  buildCitaConfirmacionPayload,
+  isClienteAppVerificado,
+  notifyClientFromMdmId,
+  sendSalonAuraMessage,
+} from '@appsalon/shared-config';
 import { offerEnviarCitaWhatsApp } from './citaWhatsApp';
 
 const SALON_NOMBRE = "Andrea's salón";
@@ -25,14 +30,13 @@ export async function sendCitaConfirmacionInApp({ clienteId, clienteNombre, clie
   if (!clienteId) {
     return { data: null, error: { message: 'El cliente no tiene ficha vinculada a App Clientes.' } };
   }
-  const { data, error } = await db.marketingDirectMessages.create({
+  const { data, error } = await sendSalonAuraMessage({
     client_id: clienteId,
     client_name: clienteNombre || 'Cliente',
     client_phone: clienteTelefono || null,
     content: message,
     content_type: 'cita_confirmacion',
     status: 'pending_sync',
-    created_by: sender?.id || null,
     created_by_name: sender?.name || SALON_NOMBRE,
   });
   if (!error && data?.id) {
@@ -62,11 +66,39 @@ export async function notifyClienteCitaConfirmada(params) {
 
   const cliente = String(params?.clienteNombre || 'el cliente').trim();
   const tieneTel = Boolean(String(params?.telefono || '').replace(/\D/g, ''));
-  const tieneApp = Boolean(params?.clienteId);
+  const tieneApp = Boolean(params?.clienteId) && isClienteAppVerificado(params?.cliente || { user_id: params?.clienteUserId });
+
+  if (tieneApp) {
+    const msg = buildCitaInAppMessage(params);
+    const { error } = await sendCitaConfirmacionInApp({
+      clienteId: params.clienteId,
+      clienteNombre: params.clienteNombre,
+      clienteTelefono: params.telefono,
+      message: msg,
+      sender: params.sender,
+      estado: params.estado,
+    });
+    if (error) {
+      const rls = /row-level security|permission denied|is_staff_or_admin/i.test(
+        String(error.message || ''),
+      );
+      Alert.alert(
+        'Mensaje en la app',
+        rls
+          ? `${error.message || 'No se pudo enviar.'}\n\nVerificá que tu usuario salón sea admin y que existan las políticas de marketing_direct_messages en Supabase.`
+          : error.message || 'No se pudo enviar la confirmación.',
+      );
+      if (!tieneTel) return false;
+    } else if (!tieneTel) {
+      Alert.alert('Confirmación enviada', `La tarjeta de cita llegó a Andreas Pro de ${cliente}.`);
+      return true;
+    }
+  }
+
   if (tieneTel || tieneApp) {
     return offerConfirmacionCitaCliente({
       ...params,
-      skipInAppPrompt: false,
+      skipInAppPrompt: true,
     });
   }
 
@@ -89,7 +121,7 @@ export function offerConfirmacionCitaCliente(params) {
   const skipInApp = Boolean(params?.skipInAppPrompt);
   const cliente = String(params?.clienteNombre || 'el cliente').trim();
   const tieneTel = Boolean(String(params?.telefono || '').replace(/\D/g, ''));
-  const tieneApp = Boolean(params?.clienteId);
+  const tieneApp = Boolean(params?.clienteId) && isClienteAppVerificado(params?.cliente || { user_id: params?.clienteUserId });
 
   if (!tieneTel && !tieneApp) {
     Alert.alert(

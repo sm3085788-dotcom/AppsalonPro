@@ -421,6 +421,8 @@ export function ClientSubScreenBody({
             onGoTab={onGoTab}
             onCitasChanged={onCitasChanged}
             initialServicioNombre={subPayload?.agendarServicioNombre || null}
+            initialServicioId={subPayload?.agendarServicioId || null}
+            soloServicioVinculado={Boolean(subPayload?.soloServicioVinculado)}
             modoCarrito={Boolean(subPayload?.agendarDesdeCarrito)}
             onCitaBooked={() => {
               if (subPayload?.promoItem) {
@@ -563,7 +565,14 @@ export function ClientSubScreenBody({
       );
 
     case CLIENT_SUB.MIS_FACTURAS:
-      return <MisFacturasBody clienteId={clienteRow?.id} onClose={onClose} />;
+      return (
+        <MisFacturasBody
+          clienteId={clienteRow?.id}
+          clienteNombre={clienteRow?.nombre}
+          onClose={onClose}
+          initialVentaId={subPayload?.ventaId ?? null}
+        />
+      );
 
     case CLIENT_SUB.MIS_PEDIDOS:
       return (

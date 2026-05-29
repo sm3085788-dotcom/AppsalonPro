@@ -4,6 +4,9 @@ import { Bell } from 'lucide-react-native';
 import { typography, spacing, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../theme/ThemeProvider';
 
+/** Rojo alerta visible (mismo tono que Mensajes / Marketing). */
+const ALERT_BELL_RED = '#E53935';
+
 /**
  * Tarjeta táctil para el grid del panel admin (tablet / teléfono).
  */
@@ -23,8 +26,8 @@ export function AdminModuleTile({
   const subtitleColor = hasAccent && isDark ? '#4A4A4A' : c.foregroundMuted;
   const iconColor = hasAccent ? (accent.icon ?? c.primary) : c.primary;
   const badgeRing = accent?.bg ?? c.card;
-  const alertBg = c.error;
-  const alertFg = c.heroCtaText;
+  const alertBg = ALERT_BELL_RED;
+  const alertFg = '#FFFFFF';
   const styles = useMemo(
     () =>
       StyleSheet.create({

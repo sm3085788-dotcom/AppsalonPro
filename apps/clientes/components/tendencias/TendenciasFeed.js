@@ -16,6 +16,7 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Heart, MessageCircle, Share2, CircleHelp, ChevronLeft, Send } from 'lucide-react-native';
@@ -31,6 +32,7 @@ import {
   clientMarketingLikedPostIds,
 } from '@appsalon/shared-config';
 import { uploadTendenciasInterestThumbnail } from '../../utils/tendenciasInterestMedia';
+import { keyboardComposerLift } from '../../../../shared/utils/chatKeyboard';
 
 function initialsFromDisplayName(name) {
   const parts = name
@@ -45,6 +47,33 @@ function initialsFromDisplayName(name) {
     return parts[0].slice(0, 2).toUpperCase();
   }
   return '??';
+}
+
+async function fetchAuthorPhotoMap(authorIds) {
+  const ids = [...new Set((authorIds || []).filter(Boolean).map(String))];
+  if (!ids.length) return {};
+  const { data, error } = await supabase
+    .from('clientes')
+    .select('user_id, photo_url')
+    .in('user_id', ids);
+  if (error || !Array.isArray(data)) return {};
+  return Object.fromEntries(
+    data
+      .filter((c) => c.user_id && c.photo_url)
+      .map((c) => [String(c.user_id), c.photo_url]),
+  );
+}
+
+function mapVisibleComments(data, photoMap = {}) {
+  return (data || [])
+    .filter((row) => row.moderation_status === 'visible')
+    .map((row) => ({
+      id: String(row.id),
+      displayName: row.author_name || 'Cliente',
+      body: row.content || '',
+      ago: formatRelativeAgo(row.created_at),
+      photoUrl: row.author_id ? photoMap[String(row.author_id)] || null : null,
+    }));
 }
 
 function formatRelativeAgo(iso) {
@@ -65,12 +94,35 @@ function formatRelativeAgo(iso) {
   }
 }
 
-function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
+function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded, onComposerLiftChange }) {
   const { colors: c } = useTheme();
+  const insets = useSafeAreaInsets();
   const [apiRows, setApiRows] = useState([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [composerLift, setComposerLift] = useState(0);
+  const composerPadBottom =
+    composerLift > 0 ? spacing.sm : Math.max(insets.bottom, spacing.xs);
+  const listMaxHeight = composerLift > 0 ? 140 : 300;
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = Keyboard.addListener(showEvt, (e) => {
+      setComposerLift(keyboardComposerLift(e, insets.bottom));
+    });
+    const onHide = Keyboard.addListener(hideEvt, () => setComposerLift(0));
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [insets.bottom]);
+
+  useEffect(() => {
+    onComposerLiftChange?.(composerLift);
+    return () => onComposerLiftChange?.(0);
+  }, [composerLift, onComposerLiftChange]);
 
   useEffect(() => {
     if (postId == null) {
@@ -87,15 +139,9 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
         setApiRows([]);
         return;
       }
-      const filtered = data.filter((row) => row.moderation_status === 'visible');
-      setApiRows(
-        filtered.map((row) => ({
-          id: String(row.id),
-          displayName: row.author_name || 'Cliente',
-          body: row.content || '',
-          ago: formatRelativeAgo(row.created_at),
-        })),
-      );
+      const visible = data.filter((row) => row.moderation_status === 'visible');
+      const photoMap = await fetchAuthorPhotoMap(visible.map((row) => row.author_id));
+      setApiRows(mapVisibleComments(data, photoMap));
     })();
     return () => {
       alive = false;
@@ -107,6 +153,10 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
   const styles = useMemo(
     () =>
       StyleSheet.create({
+        commentKeyboardRoot: {
+          width: '100%',
+          maxHeight: '100%',
+        },
         commentBox: {
           width: '100%',
           backgroundColor: c.card,
@@ -138,7 +188,8 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
         },
         commentListScroll: {
           marginTop: spacing.sm,
-          maxHeight: 300,
+          flexGrow: 0,
+          flexShrink: 1,
         },
         commentListContent: {
           paddingBottom: spacing.xs,
@@ -166,6 +217,12 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
           backgroundColor: c.iconCircleBg,
           alignItems: 'center',
           justifyContent: 'center',
+          overflow: 'hidden',
+        },
+        avatarImage: {
+          width: 36,
+          height: 36,
+          borderRadius: 18,
         },
         avatarTxt: {
           fontFamily: typography.fontSansMedium,
@@ -239,15 +296,9 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
     if (postId == null) return;
     const { data, error } = await db.marketingComments.getByPost(postId);
     if (error || !data) return;
-    const filtered = data.filter((row) => row.moderation_status === 'visible');
-    setApiRows(
-      filtered.map((row) => ({
-        id: String(row.id),
-        displayName: row.author_name || 'Cliente',
-        body: row.content || '',
-        ago: formatRelativeAgo(row.created_at),
-      })),
-    );
+    const visible = data.filter((row) => row.moderation_status === 'visible');
+    const photoMap = await fetchAuthorPhotoMap(visible.map((row) => row.author_id));
+    setApiRows(mapVisibleComments(data, photoMap));
   };
 
   const handleSend = async () => {
@@ -286,7 +337,8 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
   };
 
   return (
-    <View style={styles.commentBox}>
+    <View style={styles.commentKeyboardRoot}>
+      <View style={styles.commentBox}>
       <View style={styles.sheetHandle} accessibilityElementsHidden />
       <View style={styles.commentHeaderRow}>
         <Text style={styles.commentTitle}>Comentarios</Text>
@@ -301,11 +353,12 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
       </View>
 
       <ScrollView
-        style={styles.commentListScroll}
+        style={[styles.commentListScroll, { maxHeight: listMaxHeight }]}
         contentContainerStyle={styles.commentListContent}
         nestedScrollEnabled
         showsVerticalScrollIndicator={rows.length > 3}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {apiLoading ? (
           <Text style={styles.commentEmpty}>Cargando comentarios…</Text>
@@ -314,9 +367,13 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
         ) : (
           rows.map((row) => (
             <View key={row.id} style={styles.commentRow}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarTxt}>{initialsFromDisplayName(row.displayName)}</Text>
-              </View>
+              {row.photoUrl ? (
+                <Image source={{ uri: row.photoUrl }} style={styles.avatarImage} resizeMode="cover" />
+              ) : (
+                <View style={styles.avatarCircle}>
+                  <Text style={styles.avatarTxt}>{initialsFromDisplayName(row.displayName)}</Text>
+                </View>
+              )}
               <View style={styles.commentBodyCol}>
                 <Text style={styles.commentAuthor} selectable={false}>
                   {row.displayName}
@@ -329,7 +386,7 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
         )}
       </ScrollView>
 
-      <View style={styles.commentComposer}>
+      <View style={[styles.commentComposer, { paddingBottom: composerPadBottom }]}>
         <TextInput
           style={styles.commentInput}
           placeholder="Escribí un comentario…"
@@ -352,6 +409,7 @@ function CommentsPanel({ postId, publicationNo, onClose, onCommentAdded }) {
         >
           <Send size={22} color={c.primary} strokeWidth={2.2} />
         </TouchableOpacity>
+      </View>
       </View>
     </View>
   );
@@ -496,6 +554,7 @@ function TendenciasFeedInner({ onBack }) {
   const [likeBusyId, setLikeBusyId] = useState(null);
   const [interestBusyId, setInterestBusyId] = useState(null);
   const [commentOpen, setCommentOpen] = useState({});
+  const [commentSheetLift, setCommentSheetLift] = useState(0);
 
   const loadFeed = useCallback(async () => {
     const { data, error } = await db.marketingPosts.getPublishedTendenciasFeed(40);
@@ -675,6 +734,8 @@ function TendenciasFeedInner({ onBack }) {
 
   const closeCommentsModal = () => {
     if (!openCommentsVideoId) return;
+    Keyboard.dismiss();
+    setCommentSheetLift(0);
     setCommentOpen((prev) => ({ ...prev, [openCommentsVideoId]: false }));
   };
 
@@ -700,7 +761,7 @@ function TendenciasFeedInner({ onBack }) {
         mediaUrl = await uploadTendenciasInterestThumbnail(video.videoUri);
       }
 
-      const { error } = await registerMarketingInterest({
+      const { data, error } = await registerMarketingInterest({
         type: MARKETING_INTEREST_TYPES.TENDENCIAS,
         title: video.title,
         headline: video.title,
@@ -708,6 +769,7 @@ function TendenciasFeedInner({ onBack }) {
         postId: video.postId ?? null,
         publicationNo: video.publicationNo ?? null,
         mediaUrl,
+        buttonLabel: 'Me interesa',
       });
       if (error) {
         Alert.alert(
@@ -719,7 +781,9 @@ function TendenciasFeedInner({ onBack }) {
       }
       Alert.alert(
         '¡Listo!',
-        'Tu solicitud sobre esta publicación llegó al salón. Revisá tus mensajes en la app.',
+        data?.id
+          ? 'Tu solicitud quedó en Andreas Pro (Mensajes). El salón la verá en la conversación contigo.'
+          : 'Tu solicitud llegó al salón. Abrí Andreas Pro en Mensajes para verla.',
       );
     } finally {
       setInterestBusyId(null);
@@ -798,7 +862,11 @@ function TendenciasFeedInner({ onBack }) {
           <View
             style={[
               styles.commentSheetOuter,
-              { paddingBottom: Math.max(insets.bottom, spacing.md) },
+              {
+                marginBottom: commentSheetLift,
+                paddingBottom:
+                  commentSheetLift > 0 ? spacing.sm : Math.max(insets.bottom, spacing.md),
+              },
             ]}
           >
             {openCommentsVideoId ? (
@@ -807,6 +875,7 @@ function TendenciasFeedInner({ onBack }) {
                 publicationNo={openCommentsPublicationNo}
                 onClose={closeCommentsModal}
                 onCommentAdded={handleCommentAdded}
+                onComposerLiftChange={setCommentSheetLift}
               />
             ) : null}
           </View>

@@ -1,4 +1,4 @@
-import { db } from './supabaseClient.js';
+import { sendSalonAuraMessage } from './auraLineSalon.js';
 import { isClienteAppVerificado } from './clienteAppMeta.js';
 
 export const INCIDENT_REPORT_CONTENT_TYPE = 'incident_report';
@@ -49,7 +49,7 @@ export async function sendIncidentReportToClient(client, dto, sender = {}) {
     };
   }
   const content = buildIncidentClientMessage(dto);
-  return db.marketingDirectMessages.create({
+  return sendSalonAuraMessage({
     client_id: client.id,
     client_name: client.nombre,
     client_phone: client.telefono || null,
@@ -58,7 +58,6 @@ export async function sendIncidentReportToClient(client, dto, sender = {}) {
     media_url: dto.imagen_url || null,
     media_kind: dto.imagen_url ? 'image' : null,
     status: 'pending_sync',
-    created_by: sender.id || null,
     created_by_name: sender.name || 'Salón',
   });
 }

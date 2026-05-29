@@ -26,6 +26,23 @@ function defaultNextSlot() {
   return d;
 }
 
+function normNombreServicio(s) {
+  return String(s || '')
+    .trim()
+    .toLowerCase();
+}
+
+function servicioCoincideVinculo(s, linkId, linkName) {
+  const id = String(linkId || '').trim();
+  if (id) {
+    if (String(s.inventarioId || '') === id) return true;
+    if (String(s.id || '') === id || String(s.id || '') === `inv-${id}`) return true;
+  }
+  const want = normNombreServicio(linkName);
+  if (want && normNombreServicio(s.nombre) === want) return true;
+  return false;
+}
+
 /**
  * Solicitud de cita desde la app clientes: queda en estado `pendiente` hasta que el salón confirme o rechace.
  */
@@ -35,6 +52,8 @@ export function AgendarCitaForm({
   onGoTab,
   onCitasChanged,
   initialServicioNombre = null,
+  initialServicioId = null,
+  soloServicioVinculado = false,
   onCitaBooked,
   modoCarrito = false,
 }) {
@@ -74,13 +93,34 @@ export function AgendarCitaForm({
       else setServicioSel(null);
       return;
     }
-    const want = String(initialServicioNombre || '')
-      .trim()
-      .toLowerCase();
-    if (!want || !servicios.length) return;
-    const hit = servicios.find((s) => String(s.nombre || '').trim().toLowerCase() === want);
+    if (!servicios.length) return;
+    if (soloServicioVinculado) {
+      const hit = servicios.find((s) =>
+        servicioCoincideVinculo(s, initialServicioId, initialServicioNombre),
+      );
+      if (hit) setServicioSel(hit);
+      return;
+    }
+    const want = normNombreServicio(initialServicioNombre);
+    if (!want) return;
+    const hit = servicios.find((s) => normNombreServicio(s.nombre) === want);
     if (hit) setServicioSel(hit);
-  }, [modoCarrito, cartItems, initialServicioNombre, servicios]);
+  }, [
+    modoCarrito,
+    cartItems,
+    initialServicioNombre,
+    initialServicioId,
+    soloServicioVinculado,
+    servicios,
+  ]);
+
+  const serviciosCatalogo = useMemo(() => {
+    if (!soloServicioVinculado) return servicios;
+    const hits = servicios.filter((s) =>
+      servicioCoincideVinculo(s, initialServicioId, initialServicioNombre),
+    );
+    return hits.length ? hits : servicios;
+  }, [servicios, soloServicioVinculado, initialServicioId, initialServicioNombre]);
 
   const cartTotal = cartItems.length;
   const cartTotalFijo = cartInicialRef.current || cartTotal;
@@ -89,9 +129,11 @@ export function AgendarCitaForm({
 
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    if (!q) return servicios;
-    return servicios.filter((s) => String(s.nombre || '').toLowerCase().includes(q));
-  }, [busqueda, servicios]);
+    if (!q) return serviciosCatalogo;
+    return serviciosCatalogo.filter((s) => String(s.nombre || '').toLowerCase().includes(q));
+  }, [busqueda, serviciosCatalogo]);
+
+  const mostrarListaServicios = !soloServicioVinculado || serviciosCatalogo.length > 1;
 
   const styles = useMemo(
     () =>
@@ -294,20 +336,38 @@ export function AgendarCitaForm({
             {formatServicioPrecio(servicioSel)} · {formatServicioDuracion(servicioSel)}
           </Text>
         </View>
+      ) : soloServicioVinculado ? (
+        loadingCat ? (
+          <ActivityIndicator style={{ marginVertical: spacing.lg }} color={tc.primary} />
+        ) : servicioSel ? (
+          <View style={[subStyles.card, { marginBottom: spacing.md }]}>
+            <Text style={styles.sectionTitle}>Servicio de la promoción</Text>
+            <Text style={[styles.svcName, { marginTop: spacing.xs }]}>{servicioSel.nombre}</Text>
+            <Text style={styles.svcMeta}>
+              {formatServicioPrecio(servicioSel)} · {formatServicioDuracion(servicioSel)}
+            </Text>
+          </View>
+        ) : (
+          <Text style={[styles.hint, { marginBottom: spacing.md }]}>
+            No encontramos el servicio de la promoción en el catálogo. Pedí ayuda al salón.
+          </Text>
+        )
       ) : (
         <View>
           <Text style={styles.sectionTitle}>Servicios</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Nombre del servicio…"
-            placeholderTextColor={tc.foregroundSubtle}
-            value={busqueda}
-            onChangeText={setBusqueda}
-          />
+          {mostrarListaServicios ? (
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Nombre del servicio…"
+              placeholderTextColor={tc.foregroundSubtle}
+              value={busqueda}
+              onChangeText={setBusqueda}
+            />
+          ) : null}
           {loadingCat ? (
             <ActivityIndicator style={{ marginTop: spacing.md }} color={tc.primary} />
           ) : (
-            <View style={{ marginTop: spacing.md, maxHeight: 300 }}>
+            <View style={{ marginTop: spacing.md, maxHeight: mostrarListaServicios ? 300 : undefined }}>
               {filtrados.slice(0, 40).map((s) => {
                 const on = servicioSel?.id === s.id;
                 return (

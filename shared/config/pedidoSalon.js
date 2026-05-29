@@ -1,6 +1,8 @@
 import { db, supabase, isPostgrestSingleRowError } from './supabaseClient.js';
 import { registrarMontoVentaEnMeta } from './metaGlobal.js';
 import { requireCajaAbierta } from './cajaGuard.js';
+import { enqueueClientNotification } from './clientNotifications.js';
+import { formatQ } from '../utils/ventaFactura.js';
 
 function friendlyOrderDbError(err) {
   const msg = String(err?.message || '');
@@ -229,8 +231,24 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
   const payMethod = String(order.payment_method || 'efectivo').toLowerCase();
   const isTarjeta = payMethod === 'tarjeta';
 
-  const { error: vErr } = await db.ventas.create(
+  let clienteId = null;
+  if (order.client_user_id) {
+    const { data: resolvedId, error: resolveErr } = await supabase.rpc('ensure_cliente_for_auth_user', {
+      p_user_id: order.client_user_id,
+      p_nombre: order.customer_name || null,
+      p_telefono: order.customer_phone || null,
+    });
+    if (!resolveErr && resolvedId) {
+      clienteId = resolvedId;
+    } else {
+      const { data: clienteRow } = await db.clientes.getByUserId(order.client_user_id);
+      clienteId = clienteRow?.id ?? null;
+    }
+  }
+
+  const { data: ventaInsert, error: vErr } = await db.ventas.create(
     {
+      cliente_id: clienteId,
       cliente_nombre: order.customer_name,
       total: subtotal,
       monto: subtotal,
@@ -246,6 +264,7 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
   );
 
   if (vErr) return { ok: false, error: friendlyOrderDbError(vErr) };
+  const ventaId = ventaInsert?.id ?? null;
 
   for (const line of items) {
     const { error: dErr } = await db.inventario.decrementarStock(line.product_id, line.qty);
@@ -267,5 +286,17 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
 
   if (uErr) return { ok: false, error: friendlyOrderDbError(uErr) };
 
-  return { ok: true, noFactura, total: subtotal };
+  if (order.client_user_id && clienteId) {
+    void enqueueClientNotification({
+      clientUserId: order.client_user_id,
+      clienteId,
+      tipo: 'pedido',
+      titulo: 'Tu factura está lista',
+      mensaje: `Folio ${noFactura} · ${formatQ(subtotal)}. Ya está en Mis facturas.`,
+      targetScreen: 'mis_facturas',
+      targetId: ventaId != null ? String(ventaId) : noFactura,
+    });
+  }
+
+  return { ok: true, noFactura, total: subtotal, ventaId };
 }

@@ -219,7 +219,10 @@ export function PedidosScreen({ onBack }) {
       Alert.alert('Error', res.error?.message || 'No se pudo confirmar.');
       return;
     }
-    Alert.alert('Listo', `Cobro registrado · folio ${res.noFactura}. La venta ya aparece en Caja.`);
+    Alert.alert(
+      'Listo',
+      `Cobro registrado · folio ${res.noFactura}. La venta está en Caja y la factura en App Clientes (Mis facturas).`,
+    );
     setDetail(null);
     setScannerOpen(false);
     load(true);

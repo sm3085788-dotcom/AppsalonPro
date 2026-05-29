@@ -15,6 +15,8 @@ export function QuickAccessRow({
   title,
   subtitle,
   onPress,
+  /** Color del ícono en la burbuja (cada acceso rápido puede tener el suyo). */
+  iconColor,
   /** Contador sobre la fila (p. ej. pedidos activos). */
   badgeCount = 0,
   /** 'green' | 'red' | 'gold' */
@@ -96,7 +98,7 @@ export function QuickAccessRow({
       }
     >
       <View style={styles.iconBubble}>
-        {Icon ? <Icon size={20} color={c.foreground} strokeWidth={1.7} /> : null}
+        {Icon ? <Icon size={20} color={iconColor ?? c.foreground} strokeWidth={1.7} /> : null}
       </View>
       <View style={styles.mid}>
         <Text style={styles.title}>{title}</Text>

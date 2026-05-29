@@ -79,6 +79,10 @@ export function BroadcastPromoCard({ item, createdAtLabel, onAction, busy, readO
     linkType === BROADCAST_LINK_TYPES.SERVICE && linkName
       ? `Agendar · ${linkName}`
       : 'Agendar cita';
+  const hasLinkedProduct =
+    linkType === BROADCAST_LINK_TYPES.PRODUCT && Boolean(linkName);
+  const hasLinkedService =
+    linkType === BROADCAST_LINK_TYPES.SERVICE && Boolean(linkName);
 
   return (
     <View style={styles.post}>
@@ -127,8 +131,20 @@ export function BroadcastPromoCard({ item, createdAtLabel, onAction, busy, readO
 
         {!readOnly ? (
           <View style={styles.ctaStack}>
-            <CtaButton icon={ShoppingBag} label={buyLabel} variant="gold" onPress={() => fire(BROADCAST_PROMO_ACTIONS.BUY)} disabled={busy} />
-            <CtaButton icon={Calendar} label={bookLabel} variant="outline" onPress={() => fire(BROADCAST_PROMO_ACTIONS.BOOK)} disabled={busy} />
+            <CtaButton
+              icon={ShoppingBag}
+              label={buyLabel}
+              variant={hasLinkedProduct ? 'gold' : 'outline'}
+              onPress={() => fire(BROADCAST_PROMO_ACTIONS.BUY)}
+              disabled={busy}
+            />
+            <CtaButton
+              icon={Calendar}
+              label={bookLabel}
+              variant={hasLinkedService ? 'gold' : 'outline'}
+              onPress={() => fire(BROADCAST_PROMO_ACTIONS.BOOK)}
+              disabled={busy}
+            />
             <CtaButton icon={Phone} label="Que me llamen" variant="outline" onPress={() => fire(BROADCAST_PROMO_ACTIONS.CALL)} disabled={busy} />
           </View>
         ) : null}

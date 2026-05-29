@@ -27,7 +27,10 @@ import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPa
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { db, supabase } from '@appsalon/shared-config';
-import { notifyClienteCitaConfirmada, offerConfirmacionCitaCliente } from '../utils/citaConfirmacionCliente';
+import {
+  notifyClienteCitaConfirmada,
+  offerConfirmacionCitaCliente,
+} from '../utils/citaConfirmacionCliente';
 import { applyNativeChromeTheme } from '../theme/applyNativeChromeTheme';
 
 const MEDICAL_ITEMS = [
@@ -467,6 +470,8 @@ export function AppointmentsScreen({ onBack }) {
     const u = authData?.user;
     return {
       clienteId: cita?.cliente_id || cita?.cliente?.id || null,
+      cliente: cita?.cliente || null,
+      clienteUserId: cita?.cliente?.user_id || null,
       telefono: cita?.cliente?.telefono,
       clienteNombre: cita?.cliente?.nombre,
       servicio: cita?.servicio,
@@ -492,11 +497,7 @@ export function AppointmentsScreen({ onBack }) {
         return;
       }
       const params = await paramsConfirmacionCita(cita, estadoEfectivo);
-      if (isCitaConfirmada(estadoEfectivo)) {
-        await notifyClienteCitaConfirmada(params);
-      } else {
-        void offerConfirmacionCitaCliente(params);
-      }
+      void offerConfirmacionCitaCliente(params);
     })();
   };
 
@@ -509,7 +510,12 @@ export function AppointmentsScreen({ onBack }) {
     void solicitarActualizacionEstado(id, 'confirmado').then((ok) => {
       if (!ok) return;
       setDetailCita((prev) => (prev?.id === id ? { ...prev, estado: 'confirmado' } : prev));
-      if (cita) avisarClienteCita({ ...cita, estado: 'confirmado' }, 'confirmado');
+      if (cita) {
+        void (async () => {
+          const params = await paramsConfirmacionCita({ ...cita, estado: 'confirmado' }, 'confirmado');
+          await notifyClienteCitaConfirmada(params);
+        })();
+      }
     });
   };
 

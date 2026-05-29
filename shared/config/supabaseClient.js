@@ -817,7 +817,7 @@ export const db = {
         .from('citas')
         .select(`
           *,
-          cliente:clientes(id, nombre, telefono, email),
+          cliente:clientes(id, nombre, telefono, email, user_id, tipo_registro),
           empleado:empleados(id, nombre)
         `)
         .order('fecha_hora', { ascending: false });
@@ -3906,10 +3906,13 @@ export const db = {
       return { data, error };
     },
 
-    getByClient: async (clientId) => {
+    getByClient: async (clientId, options = {}) => {
+      const select = options.forClientApp
+        ? '*'
+        : '*, cliente:clientes(id, nombre, telefono, email)';
       const { data, error } = await supabase
         .from('marketing_direct_messages')
-        .select('*, cliente:clientes(id, nombre, telefono, email)')
+        .select(select)
         .eq('client_id', clientId)
         .order('created_at', { ascending: false });
       return { data, error };
@@ -3962,30 +3965,41 @@ export const db = {
       return { data, error };
     },
 
-    create: async (data) => {
+    create: async (data, options = {}) => {
       const messageData = {
         ...data,
-        created_at: new Date().toISOString(),
+        created_at: data.created_at || new Date().toISOString(),
       };
 
-      const { data: newMessage, error } = await supabase
+      const selectCols = options.forClientApp
+        ? 'id, client_id, client_name, client_phone, content, content_type, status, created_at, media_url, media_kind, created_by, created_by_name, delivered_at'
+        : '*, cliente:clientes(id, nombre, telefono, email)';
+
+      const { data: row, error } = await supabase
         .from('marketing_direct_messages')
         .insert([messageData])
-        .select('*, cliente:clientes(id, nombre, telefono, email)')
-        .single();
-      return { data: newMessage, error };
+        .select(selectCols)
+        .maybeSingle();
+
+      if (row) return { data: row, error: null };
+      if (error && !isPostgrestSingleRowError(error)) return { data: null, error };
+      return {
+        data: null,
+        error: error || { message: 'Mensaje guardado pero no se pudo leer la respuesta. Recargá el chat.' },
+      };
     },
 
     createBulk: async (messages) => {
-      const messagesData = messages.map(msg => ({
+      const messagesData = messages.map((msg) => ({
         ...msg,
-        created_at: new Date().toISOString(),
+        created_at: msg.created_at || new Date().toISOString(),
       }));
 
       const { data, error } = await supabase
         .from('marketing_direct_messages')
         .insert(messagesData)
-        .select('*, cliente:clientes(id, nombre, telefono, email)');
+        .select('id, client_id, content, content_type, status, created_at, media_url, media_kind, created_by, created_by_name');
+
       return { data, error };
     },
 
@@ -4076,7 +4090,14 @@ export const db = {
       const { data: fallback, error: fbErr } = await supabase
         .from('marketing_direct_messages')
         .select('client_id, content, created_at, content_type, status')
-        .in('content_type', ['chat', 'broadcast_promo', 'incident_report'])
+        .in('content_type', [
+          'chat',
+          'broadcast_promo',
+          'incident_report',
+          'cita_confirmacion',
+          'tendencias_interest',
+          'carousel_interest',
+        ])
         .order('created_at', { ascending: false })
         .limit(5000);
       if (fbErr) return { data: [], error: fbErr };

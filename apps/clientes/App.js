@@ -48,6 +48,7 @@ import {
   sendClientAuraChat,
   buildBroadcastActionMessage,
   BROADCAST_PROMO_ACTIONS,
+  BROADCAST_LINK_TYPES,
   parseBroadcastContent,
   mapHomeCarouselPostToClientSlide,
 } from '@appsalon/shared-config';
@@ -324,9 +325,12 @@ function AppMain({ onLogout }) {
       }
 
       if (action === BROADCAST_PROMO_ACTIONS.BOOK) {
+        const esServicio = parsed.linkType === BROADCAST_LINK_TYPES.SERVICE;
         openSub(CLIENT_SUB.AGENDAR_FLUJO, {
           ...payload,
-          agendarServicioNombre: parsed.linkType === 'service' ? parsed.linkName : null,
+          agendarServicioNombre: esServicio ? parsed.linkName : null,
+          agendarServicioId: esServicio ? parsed.linkId : null,
+          soloServicioVinculado: esServicio && Boolean(parsed.linkName || parsed.linkId),
         });
       }
     },
@@ -580,12 +584,15 @@ function AppMain({ onLogout }) {
 
   const openMensajesSub = useCallback(() => {
     void (async () => {
+      if (hasSupabaseEnv && session?.user?.id && !clienteRow?.id) {
+        await ensureClienteFicha();
+      }
       await markAllClientNotificationsRead();
       setAuraUnread(0);
       void refreshAuraUnread();
     })();
     openSub(CLIENT_SUB.MENSAJES);
-  }, [openSub, refreshAuraUnread]);
+  }, [openSub, refreshAuraUnread, hasSupabaseEnv, session?.user?.id, clienteRow?.id, ensureClienteFicha]);
 
   const openMisPedidosSub = useCallback(() => {
     void (async () => {
@@ -596,6 +603,16 @@ function AppMain({ onLogout }) {
     openSub(CLIENT_SUB.MIS_PEDIDOS);
   }, [openSub, refreshAuraUnread]);
 
+  const openMisFacturasSub = useCallback(
+    (ventaId = null) => {
+      openSub(
+        CLIENT_SUB.MIS_FACTURAS,
+        ventaId != null ? { ventaId: String(ventaId) } : null,
+      );
+    },
+    [openSub],
+  );
+
   useEffect(() => {
     const uid = session?.user?.id;
     if (!uid) return undefined;
@@ -604,9 +621,10 @@ function AppMain({ onLogout }) {
     return addClientPushResponseListener((data) => {
       const screen = String(data?.target_screen || '');
       if (screen === 'mis_pedidos') openMisPedidosSub();
+      else if (screen === 'mis_facturas') openMisFacturasSub(data?.target_id);
       else if (screen === 'mensajes') openMensajesSub();
     });
-  }, [session?.user?.id, openMensajesSub, openMisPedidosSub]);
+  }, [session?.user?.id, openMensajesSub, openMisPedidosSub, openMisFacturasSub]);
 
   useEffect(() => {
     const uid = session?.user?.id;
@@ -637,9 +655,11 @@ function AppMain({ onLogout }) {
           const onSub =
             target === 'mis_pedidos'
               ? CLIENT_SUB.MIS_PEDIDOS
-              : target === 'mensajes'
-                ? CLIENT_SUB.MENSAJES
-                : null;
+              : target === 'mis_facturas'
+                ? CLIENT_SUB.MIS_FACTURAS
+                : target === 'mensajes'
+                  ? CLIENT_SUB.MENSAJES
+                  : null;
           const isInboxNotif = ['mensaje', 'cita', 'promo'].includes(String(row?.tipo || ''));
           if ((onSub && openedSub === onSub) || (openedSub === CLIENT_SUB.MENSAJES && isInboxNotif)) {
             if (row?.id != null) {
@@ -665,6 +685,7 @@ function AppMain({ onLogout }) {
               text: 'Ver',
               onPress: () => {
                 if (target === 'mis_pedidos') openMisPedidosSub();
+                else if (target === 'mis_facturas') openMisFacturasSub(row.target_id);
                 else openMensajesSub();
               },
             },
@@ -683,6 +704,7 @@ function AppMain({ onLogout }) {
     openedSub,
     openMensajesSub,
     openMisPedidosSub,
+    openMisFacturasSub,
     refreshAuraUnread,
     refreshPedidosActivos,
   ]);
@@ -1007,24 +1029,28 @@ function AppMain({ onLogout }) {
             </View>
             <QuickAccessRow
               icon={Store}
+              iconColor={isDark ? '#60A5FA' : '#1D4ED8'}
               title="Tienda"
               subtitle={QUICK_ACCESS.tiendaSubtitle}
               onPress={() => openSub(CLIENT_SUB.TIENDA)}
             />
             <QuickAccessRow
               icon={Flame}
+              iconColor={isDark ? '#FB923C' : '#EA580C'}
               title="Tendencias"
               subtitle={QUICK_ACCESS.tendenciasSubtitle}
               onPress={() => openSub(CLIENT_SUB.TENDENCIAS)}
             />
             <QuickAccessRow
               icon={Award}
+              iconColor={isDark ? '#E8C97A' : '#9A6B1F'}
               title="Premios"
               subtitle={QUICK_ACCESS.premiosSubtitle}
               onPress={() => openSub(CLIENT_SUB.PREMIOS)}
             />
             <QuickAccessRow
               icon={Package}
+              iconColor={isDark ? c.success : '#15803D'}
               title="Pedidos"
               subtitle={QUICK_ACCESS.pedidosSubtitle}
               badgeCount={pedidosActivos}
@@ -1264,7 +1290,9 @@ function AppMain({ onLogout }) {
               ) : null
             }
             disableBodyScroll={
-              openedSub === CLIENT_SUB.MENSAJES || openedSub === CLIENT_SUB.MIS_PEDIDOS
+              openedSub === CLIENT_SUB.MENSAJES ||
+              openedSub === CLIENT_SUB.MIS_PEDIDOS ||
+              openedSub === CLIENT_SUB.MIS_FACTURAS
             }
             bodyPaddingHorizontal={openedSub === CLIENT_SUB.MENSAJES ? 0 : undefined}
             bottomPadding={

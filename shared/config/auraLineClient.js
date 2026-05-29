@@ -45,7 +45,7 @@ export async function fetchClientAuraMessages(limit = 200) {
     p_limit: limit,
   });
   if (!rpcError && Array.isArray(rpcData)) {
-    return { data: rpcData, error: null };
+    return { data: sortAuraMessages(rpcData), error: null };
   }
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData?.session?.user?.id;

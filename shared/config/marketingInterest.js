@@ -11,8 +11,44 @@ function interestLabel(contentType) {
   return 'Tendencias';
 }
 
+function buildInterestContent({
+  type,
+  title,
+  detail,
+  postId,
+  publicationNo,
+  buttonLabel,
+  kicker,
+  headline,
+  priceLabel,
+  clientName,
+  clientPhone,
+}) {
+  const source = interestLabel(type);
+  const titular = String(headline || title || 'Publicación').trim();
+  const extra = String(detail || '').trim();
+  const pubLine =
+    type === MARKETING_INTEREST_TYPES.TENDENCIAS
+      ? formatTendenciasPublicationLine(publicationNo)
+      : postId != null
+        ? `Publicación #${postId}`
+        : null;
+  const lines = [
+    `📣 Solicitud · ${source}`,
+    pubLine,
+    kicker ? `Etiqueta: ${String(kicker).trim()}` : null,
+    `Titular: ${titular}`,
+    extra ? `Descripción: ${extra}` : null,
+    priceLabel ? `Precio: ${String(priceLabel).trim()}` : null,
+    buttonLabel ? `Botón tocado: «${String(buttonLabel).trim()}»` : null,
+    `Cliente: ${clientName}`,
+    clientPhone ? `Tel: ${clientPhone}` : null,
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
 /**
- * Registra interés del cliente en marketing_direct_messages (bandeja Pedidos del salón).
+ * Registra interés del cliente en marketing_direct_messages (visible en Andreas Pro salón y clientes).
  */
 export async function registerMarketingInterest({
   type,
@@ -66,38 +102,72 @@ export async function registerMarketingInterest({
 
   const clientName = cliente.nombre || user.user_metadata?.full_name || 'Cliente';
   const clientPhone = cliente.telefono || user.phone || null;
-  const source = interestLabel(type);
-  const titular = String(headline || title || 'Publicación').trim();
-  const extra = String(detail || '').trim();
-  const pubLine =
-    type === MARKETING_INTEREST_TYPES.TENDENCIAS
-      ? formatTendenciasPublicationLine(publicationNo)
-      : postId != null
-        ? `Publicación #${postId}`
-        : null;
-  const lines = [
-    `📣 Solicitud · ${source}`,
-    pubLine,
-    kicker ? `Etiqueta: ${String(kicker).trim()}` : null,
-    `Titular: ${titular}`,
-    extra ? `Descripción: ${extra}` : null,
-    priceLabel ? `Precio: ${String(priceLabel).trim()}` : null,
-    buttonLabel ? `Botón tocado: «${String(buttonLabel).trim()}»` : null,
-    `Cliente: ${clientName}`,
-    clientPhone ? `Tel: ${clientPhone}` : null,
-  ].filter(Boolean);
-  const content = lines.join('\n');
-
-  return db.marketingDirectMessages.create({
-    client_id: cliente.id,
-    client_name: clientName,
-    client_phone: clientPhone,
-    content,
-    content_type: type,
-    media_url: mediaUrl || null,
-    media_kind: mediaUrl ? 'image' : null, // miniatura JPEG, no el video completo
-    status: 'delivered',
-    created_by: user.id,
-    created_by_name: clientName,
+  const content = buildInterestContent({
+    type,
+    title,
+    detail,
+    postId,
+    publicationNo,
+    buttonLabel,
+    kicker,
+    headline,
+    priceLabel,
+    clientName,
+    clientPhone,
   });
+
+  const rpcPayload = {
+    p_client_name: clientName,
+    p_client_phone: clientPhone || '',
+    p_content: content,
+    p_content_type: type,
+    p_media_kind: mediaUrl ? 'image' : '',
+    p_media_url: mediaUrl || '',
+  };
+
+  const { data: rpcRow, error: rpcError } = await supabase.rpc(
+    'client_register_marketing_interest',
+    rpcPayload,
+  );
+
+  const rpcMissing =
+    rpcError &&
+    /could not find the function|schema cache|PGRST202/i.test(String(rpcError.message || ''));
+
+  if (!rpcError && rpcRow?.id) {
+    return { data: rpcRow, error: null };
+  }
+
+  if (rpcError && !rpcMissing) {
+    return { data: null, error: rpcError };
+  }
+
+  const { data, error } = await db.marketingDirectMessages.create(
+    {
+      client_id: cliente.id,
+      client_name: clientName,
+      client_phone: clientPhone,
+      content,
+      content_type: type,
+      media_url: mediaUrl || null,
+      media_kind: mediaUrl ? 'image' : null,
+      status: 'delivered',
+      created_by: user.id,
+      created_by_name: clientName,
+    },
+    { forClientApp: true },
+  );
+
+  if (error?.message?.includes('row-level security') || error?.message?.includes('policy')) {
+    return {
+      data: null,
+      error: {
+        message:
+          'No se pudo registrar tu interés. En Supabase ejecutá supabase-marketing-interest.sql (política + RPC client_register_marketing_interest).',
+      },
+    };
+  }
+
+  if (data?.id) return { data, error: null };
+  return { data: null, error: error || rpcError };
 }

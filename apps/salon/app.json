@@ -38,6 +38,7 @@
     },
     "android": {
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.appsalon.pro.salon",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

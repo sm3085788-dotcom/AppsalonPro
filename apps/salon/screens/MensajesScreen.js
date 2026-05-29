@@ -51,6 +51,7 @@ import {
   mapInventarioToTiendaProduct,
   BROADCAST_LINK_TYPES,
   notifyClientFromMdmId,
+  sendSalonAuraMessage,
 } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 import { BroadcastPromoCard } from '../../clientes/components/mensajes/BroadcastPromoCard';
@@ -60,9 +61,12 @@ import { useListSelection } from '../hooks/useListSelection';
 import { useTheme } from '../theme/ThemeProvider';
 import { saveChatImageWithAlert } from '../utils/saveChatImage';
 import { isSalonInboundClientMessage } from '../utils/salonMensajesInbound';
+import { keyboardComposerLift } from '../../../shared/utils/chatKeyboard';
 
 /** Caché en memoria para entrada suave al reabrir Andreas Pro. */
 let inboxCache = null;
+/** Hilos de chat por cliente (evita vaciar la lista al reabrir). */
+const chatCacheByClient = new Map();
 
 function chatBubbleText(item) {
   const ct = String(item.content_type || '');
@@ -116,6 +120,8 @@ const INBOX_PREVIEW_TYPES = new Set([
   'broadcast_promo',
   'incident_report',
   'cita_confirmacion',
+  'tendencias_interest',
+  'carousel_interest',
 ]);
 const INBOX_OPEN_HINT = 'Tocá para abrir Andreas Pro';
 /** Mismo verde que Clientes para fichas manuales (sin App Clientes). */
@@ -168,6 +174,43 @@ function initials(name) {
   return '?';
 }
 
+function ClientAvatar({ client, size = 34, styles, c, letterColor, emptyBg }) {
+  const uri = String(client?.photo_url || '').trim();
+  const radius = size / 2;
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={[styles.rowAvatar, { width: size, height: size, borderRadius: radius }]}
+        resizeMode="cover"
+      />
+    );
+  }
+  return (
+    <View
+      style={[
+        styles.rowAvatar,
+        styles.rowAvatarEmpty,
+        {
+          width: size,
+          height: size,
+          borderRadius: radius,
+          backgroundColor: emptyBg || c.surfaceMuted,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.rowAvatarLetter,
+          { color: letterColor || c.foregroundMuted, fontSize: Math.round(size * 0.38) },
+        ]}
+      >
+        {initials(client?.nombre)}
+      </Text>
+    </View>
+  );
+}
+
 function NewMessageBell({ size = 14 }) {
   const swing = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -218,7 +261,9 @@ function buildInboxRows(allClients, previews) {
           ? broadcastPreviewText(last.content) || INBOX_OPEN_HINT
           : String(last.content_type || '') === 'cita_confirmacion'
             ? citaConfirmacionPreviewText(last.content) || INBOX_OPEN_HINT
-            : last.content || INBOX_OPEN_HINT
+            : last.content_type === 'tendencias_interest' || last.content_type === 'carousel_interest'
+              ? String(last.content || '').split('\n')[0] || 'Interés · publicación'
+              : last.content || INBOX_OPEN_HINT
         : INBOX_OPEN_HINT,
       lastAt: last?.created_at || null,
     };
@@ -241,6 +286,7 @@ export function MensajesScreen({ onBack }) {
   const listRef = useRef(null);
   const chatStickToBottomRef = useRef(true);
   const ignoreScrollStickRef = useRef(false);
+  const selectedClientIdRef = useRef(null);
   const sel = useListSelection();
 
   const [clients, setClients] = useState(() => inboxCache?.clients ?? []);
@@ -258,7 +304,7 @@ export function MensajesScreen({ onBack }) {
   const [draft, setDraft] = useState('');
   const [pendingImage, setPendingImage] = useState(null);
   const [sending, setSending] = useState(false);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [composerLift, setComposerLift] = useState(0);
 
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [clientDataOpen, setClientDataOpen] = useState(false);
@@ -276,7 +322,9 @@ export function MensajesScreen({ onBack }) {
 
   const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
   const padBottom = padList;
-  const composerPadBottom = isKeyboardVisible ? spacing.xs : Math.max(insets.bottom, spacing.xs);
+  const composerPadBottom =
+    composerLift > 0 ? spacing.md : Math.max(insets.bottom, spacing.xs);
+  const composerMarginBottom = Platform.OS === 'android' ? composerLift : 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -365,17 +413,6 @@ export function MensajesScreen({ onBack }) {
       return next;
     });
   }, [seenByClient, staffUserId, inboxHydrated]);
-
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const onShow = Keyboard.addListener(showEvt, () => setIsKeyboardVisible(true));
-    const onHide = Keyboard.addListener(hideEvt, () => setIsKeyboardVisible(false));
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, []);
 
   const loadInbox = useCallback(async (opts = {}) => {
     const silent = Boolean(opts.silent);
@@ -509,6 +546,10 @@ export function MensajesScreen({ onBack }) {
         // no bloquear apertura del chat si falla persistir "visto"
       }
       chatStickToBottomRef.current = true;
+      const id = String(client.id);
+      const cached = chatCacheByClient.get(id);
+      setMessages(cached?.length ? cached : []);
+      setLoadingChat(!cached?.length);
       setSelectedClient(client);
     },
     [markClientSeen],
@@ -559,30 +600,76 @@ export function MensajesScreen({ onBack }) {
     chatStickToBottomRef.current = distFromBottom < 72;
   }, []);
 
-  const loadChat = useCallback(async (clientId) => {
-    setLoadingChat(true);
+  const loadChat = useCallback(async (clientId, opts = {}) => {
+    const id = String(clientId || '');
+    const silent = Boolean(opts.silent);
+    if (!silent) setLoadingChat(true);
     try {
       const { data, error } = await db.marketingDirectMessages.getByClient(clientId);
+      if (String(selectedClientIdRef.current) !== id) return;
       if (error) throw error;
       const sorted = [...(data || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      if (String(selectedClientIdRef.current) !== id) return;
+      chatCacheByClient.set(id, sorted);
       setMessages(sorted);
       chatStickToBottomRef.current = true;
-      scrollChatToEnd(false, true);
+      if (!silent || sorted.length) scrollChatToEnd(false, true);
     } catch (e) {
-      Alert.alert('Chat', e?.message || 'No se pudieron cargar los mensajes.');
-      setMessages([]);
+      if (String(selectedClientIdRef.current) === id) {
+        if (!silent) {
+          Alert.alert('Chat', e?.message || 'No se pudieron cargar los mensajes.');
+          setMessages([]);
+        }
+      }
     } finally {
-      setLoadingChat(false);
+      if (String(selectedClientIdRef.current) === id) setLoadingChat(false);
     }
   }, [scrollChatToEnd]);
 
   useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = Keyboard.addListener(showEvt, (e) => {
+      setComposerLift(keyboardComposerLift(e, insets.bottom));
+      if (chatStickToBottomRef.current) scrollChatToEnd(true, true);
+    });
+    const onHide = Keyboard.addListener(hideEvt, () => setComposerLift(0));
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [insets.bottom, scrollChatToEnd]);
+
+  useEffect(() => {
+    selectedClientIdRef.current = selectedClient?.id ? String(selectedClient.id) : null;
     if (!selectedClient?.id) {
       setMessages([]);
+      setLoadingChat(false);
       return undefined;
     }
     chatStickToBottomRef.current = true;
-    loadChat(selectedClient.id);
+    const id = String(selectedClient.id);
+    const cached = chatCacheByClient.get(id);
+    loadChat(selectedClient.id, { silent: Boolean(cached?.length) });
+
+    const mergeChatRow = (row) => {
+      if (!row?.id) return;
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === row.id);
+        let next;
+        if (idx >= 0) {
+          next = [...prev];
+          next[idx] = row;
+        } else {
+          next = [...prev, row];
+        }
+        const sorted = next.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        chatCacheByClient.set(id, sorted);
+        return sorted;
+      });
+      scrollChatToEnd(true, false);
+    };
+
     const channel = supabase
       .channel(`aura-line-${selectedClient.id}`)
       .on(
@@ -593,15 +680,17 @@ export function MensajesScreen({ onBack }) {
           table: 'marketing_direct_messages',
           filter: `client_id=eq.${selectedClient.id}`,
         },
-        (payload) => {
-          const row = payload.new;
-          if (!row?.id) return;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === row.id)) return prev;
-            return [...prev, row].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-          });
-          scrollChatToEnd(true, false);
+        (payload) => mergeChatRow(payload.new),
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'marketing_direct_messages',
+          filter: `client_id=eq.${selectedClient.id}`,
         },
+        (payload) => mergeChatRow(payload.new),
       )
       .subscribe();
     return () => {
@@ -653,7 +742,7 @@ export function MensajesScreen({ onBack }) {
         mediaKind = 'image';
       }
       const content = text || (mediaUrl ? 'Imagen' : ' ');
-      const { data, error } = await db.marketingDirectMessages.create({
+      const { data, error } = await sendSalonAuraMessage({
         client_id: selectedClient.id,
         client_name: selectedClient.nombre,
         client_phone: selectedClient.telefono || null,
@@ -662,7 +751,6 @@ export function MensajesScreen({ onBack }) {
         media_url: mediaUrl,
         media_kind: mediaKind,
         status: 'pending_sync',
-        created_by: sender.id,
         created_by_name: sender.name,
       });
       if (error) throw error;
@@ -670,7 +758,9 @@ export function MensajesScreen({ onBack }) {
         void notifyClientFromMdmId(data.id);
         setMessages((prev) => {
           if (prev.some((m) => m.id === data.id)) return prev;
-          return [...prev, data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          const sorted = [...prev, data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          chatCacheByClient.set(String(selectedClient.id), sorted);
+          return sorted;
         });
         setInboxPreviews((prev) => mergeInboxPreview(prev, data));
         chatStickToBottomRef.current = true;
@@ -761,26 +851,50 @@ export function MensajesScreen({ onBack }) {
         setBroadcasting(false);
         return;
       }
-      const rows = targets.map((cl) => ({
-        client_id: cl.id,
-        client_name: cl.nombre,
-        client_phone: cl.telefono || null,
-        content,
-        content_type: 'broadcast_promo',
-        media_url: mediaUrl,
-        media_kind: mediaKind,
-        status: 'pending_sync',
-        created_by: sender.id,
-        created_by_name: sender.name,
-      }));
-      for (let i = 0; i < rows.length; i += BULK_CHUNK) {
-        const slice = rows.slice(i, i + BULK_CHUNK);
-        const { error } = await db.marketingDirectMessages.createBulk(slice);
-        if (error) throw error;
+      let sent = 0;
+      let failed = 0;
+      for (let i = 0; i < targets.length; i += BULK_CHUNK) {
+        const slice = targets.slice(i, i + BULK_CHUNK);
+        const results = await Promise.all(
+          slice.map((cl) =>
+            sendSalonAuraMessage({
+              client_id: cl.id,
+              client_name: cl.nombre,
+              client_phone: cl.telefono || null,
+              content,
+              content_type: 'broadcast_promo',
+              media_url: mediaUrl,
+              media_kind: mediaKind,
+              status: 'pending_sync',
+              created_by_name: sender.name,
+            }),
+          ),
+        );
+        for (const res of results) {
+          if (res.error || !res.data?.id) failed += 1;
+          else {
+            sent += 1;
+            const cid = String(res.data.client_id);
+            const prev = chatCacheByClient.get(cid) || [];
+            if (!prev.some((m) => m.id === res.data.id)) {
+              chatCacheByClient.set(
+                cid,
+                [...prev, res.data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+              );
+            }
+          }
+        }
+      }
+      if (!sent && failed) {
+        throw new Error('No se pudo enviar la difusión. Verificá permisos de salón en Supabase.');
       }
       const skipNote =
         skipped > 0 ? ` (${skipped} ficha${skipped === 1 ? '' : 's'} manual omitida${skipped === 1 ? '' : 's'})` : '';
-      Alert.alert('Pulso masivo', `Se encolaron ${targets.length} mensajes para clientes con App Clientes${skipNote}.`);
+      const failNote = failed > 0 ? ` (${failed} no se enviaron)` : '';
+      Alert.alert(
+        'Pulso masivo',
+        `Se enviaron ${sent} mensajes a clientes con App Clientes${failNote}${skipNote}.`,
+      );
       setBroadcastOpen(false);
       setBroadcastOnlyIds(null);
       setPromoTitle('');
@@ -887,11 +1001,7 @@ export function MensajesScreen({ onBack }) {
             </View>
           ) : null}
           <View style={styles.rowAvatarWrap}>
-            <View style={[styles.rowAvatar, styles.rowAvatarEmpty, { backgroundColor: c.surfaceMuted }]}>
-              <Text style={[styles.rowAvatarLetter, { color: c.foregroundMuted }]}>
-                {initials(client.nombre)}
-              </Text>
-            </View>
+            <ClientAvatar client={client} styles={styles} c={c} />
           </View>
           <View style={styles.rowBody}>
             <View style={styles.rowTopLine}>
@@ -1221,6 +1331,16 @@ export function MensajesScreen({ onBack }) {
             >
               <ArrowLeft size={22} color="#FFF" strokeWidth={2.2} />
             </TouchableOpacity>
+            <View style={styles.chatHeaderAvatarWrap} pointerEvents="none">
+              <ClientAvatar
+                client={selectedClient}
+                size={36}
+                styles={styles}
+                c={c}
+                letterColor="rgba(255,255,255,0.9)"
+                emptyBg="rgba(255,255,255,0.18)"
+              />
+            </View>
             <View style={styles.chatHeaderTitles} pointerEvents="none">
               <Text style={styles.chatTitle} numberOfLines={1}>
                 {selectedClient.nombre}
@@ -1248,7 +1368,7 @@ export function MensajesScreen({ onBack }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 72 : 0}
         >
-          {loadingChat ? (
+          {loadingChat && messages.length === 0 ? (
             <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
           ) : (
             <FlatList
@@ -1272,6 +1392,7 @@ export function MensajesScreen({ onBack }) {
             />
           )}
 
+          <View style={{ marginBottom: composerMarginBottom }}>
           {pendingImage ? (
             <View style={[styles.previewBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
               <Image source={{ uri: pendingImage.uri }} style={styles.previewThumb} />
@@ -1300,6 +1421,9 @@ export function MensajesScreen({ onBack }) {
               placeholderTextColor={c.foregroundSubtle}
               value={draft}
               onChangeText={setDraft}
+              onFocus={() => {
+                if (chatStickToBottomRef.current) scrollChatToEnd(true, true);
+              }}
               multiline
               maxLength={2000}
             />
@@ -1310,6 +1434,7 @@ export function MensajesScreen({ onBack }) {
             >
               <Send size={20} color={isDark ? '#141414' : '#1a1024'} strokeWidth={2.2} />
             </TouchableOpacity>
+          </View>
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -1333,12 +1458,13 @@ export function MensajesScreen({ onBack }) {
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
+            <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
+              <ClientAvatar client={selectedClient} size={72} styles={styles} c={c} />
+            </View>
             <View style={{ gap: spacing.sm }}>
-              <View>
-                <Text style={{ fontFamily: typography.fontSansMedium, color: c.foreground, fontSize: 16 }}>
-                  {selectedClient.nombre}
-                </Text>
-              </View>
+              <Text style={{ fontFamily: typography.fontSansMedium, color: c.foreground, fontSize: 16 }}>
+                {selectedClient.nombre}
+              </Text>
               {selectedClient.telefono ? (
                 <View>
                   <Text
@@ -1744,6 +1870,9 @@ function createStyles(c) {
       paddingHorizontal: spacing.md,
       paddingBottom: spacing.md,
       gap: spacing.sm,
+    },
+    chatHeaderAvatarWrap: {
+      flexShrink: 0,
     },
     chatHeaderTitles: {
       flex: 1,

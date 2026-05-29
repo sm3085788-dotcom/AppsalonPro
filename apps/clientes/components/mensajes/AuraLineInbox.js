@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Send, FileText, Image as ImageIcon, X, Download } from 'lucide-react-native';
+import { Send, FileText, Image as ImageIcon, X, Download, Sparkles } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   supabase,
@@ -30,8 +30,10 @@ import {
   broadcastPreviewText,
   parseCitaConfirmacionContent,
   citaConfirmacionPreviewText,
+  MARKETING_INTEREST_TYPES,
 } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
+import { keyboardComposerLift } from '../../../../shared/utils/chatKeyboard';
 import { SalonButton } from '../luxury/SalonButton';
 import { saveChatImageWithAlert } from '../../utils/saveChatImage';
 import { BroadcastPromoCard } from './BroadcastPromoCard';
@@ -105,7 +107,18 @@ function isFromClientMessage(item, sessionUserId) {
 /** Altura aprox. del encabezado SubScreenChrome (Volver + título + subtítulo). */
 const CHROME_HEADER_EST = 118;
 const SYNC_POLL_MS = 60000;
-const INITIAL_MSG_LIMIT = 60;
+/** Suficiente para ver difusiones, confirmaciones de cita y chat reciente. */
+const MSG_FETCH_LIMIT = 500;
+
+/** Caché del hilo para no vaciar la lista al reentrar a Mensajes. */
+let auraThreadCache = { clienteId: null, rows: [] };
+
+function isMarketingInterestMessage(item) {
+  const ct = String(item?.content_type || '');
+  return (
+    ct === MARKETING_INTEREST_TYPES.TENDENCIAS || ct === MARKETING_INTEREST_TYPES.CAROUSEL
+  );
+}
 
 /** Burbuja del cliente (vos): distinta a la del salón (card blanca). */
 const CLIENT_BUBBLE = {
@@ -133,11 +146,11 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   const [sending, setSending] = useState(false);
   const [promoBusy, setPromoBusy] = useState(false);
   const [pendingImage, setPendingImage] = useState(null);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [composerLift, setComposerLift] = useState(0);
   const markDeliveredOnOpenRef = useRef(false);
-  const composerPadBottom = isKeyboardVisible
-    ? spacing.xs
-    : Math.max(insets.bottom, Platform.OS === 'android' ? 6 : 4);
+  const composerPadBottom =
+    composerLift > 0 ? spacing.md : Math.max(insets.bottom, Platform.OS === 'android' ? 6 : 4);
+  const composerMarginBottom = Platform.OS === 'android' ? composerLift : 0;
 
   const scrollToEnd = useCallback((animated = true, force = false) => {
     if (!force && !chatStickToBottomRef.current) return;
@@ -208,8 +221,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
         setLoading(true);
         setLoadError(null);
       }
-      const limit = silent ? 300 : INITIAL_MSG_LIMIT;
-      const { data, error } = await fetchClientAuraMessages(limit);
+      const { data, error } = await fetchClientAuraMessages(MSG_FETCH_LIMIT);
       if (!silent) setLoading(false);
       if (error) {
         if (!silent) {
@@ -221,6 +233,9 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
       const marked = await markSalonMessagesDelivered(data || [], {
         onlyIfViewing: true,
       });
+      if (clienteRow?.id) {
+        auraThreadCache = { clienteId: clienteRow.id, rows: marked };
+      }
       setMessages(marked);
       setLoadError(null);
       if (!silent) {
@@ -235,7 +250,11 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   const applyIncomingRow = useCallback(
     async (row) => {
       if (!row?.id) return;
-      setMessages((prev) => mergeAuraMessage(prev, row));
+      setMessages((prev) => {
+        const next = mergeAuraMessage(prev, row);
+        if (clienteRow?.id) auraThreadCache = { clienteId: clienteRow.id, rows: next };
+        return next;
+      });
       const fromSalon =
         isSalonOutboundMessage(row) && !isFromClientMessage(row, sessionUser?.id);
       if (fromSalon && row.status === 'pending_sync') {
@@ -246,17 +265,27 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
         scrollToEnd(true, true);
       }
     },
-    [scrollToEnd, sessionUser?.id],
+    [scrollToEnd, sessionUser?.id, clienteRow?.id],
   );
 
   useEffect(() => {
+    if (!clienteRow?.id) {
+      setMessages([]);
+      setLoading(false);
+      return undefined;
+    }
     chatStickToBottomRef.current = true;
     markDeliveredOnOpenRef.current = false;
+    const hasCache = auraThreadCache.clienteId === clienteRow.id && auraThreadCache.rows.length > 0;
+    if (hasCache) {
+      setMessages(auraThreadCache.rows);
+      setLoading(false);
+    }
+    void loadMessages({ silent: hasCache });
     const openTimer = setTimeout(() => {
       markDeliveredOnOpenRef.current = true;
       void loadMessages({ silent: true });
     }, 700);
-    void loadMessages({ silent: false });
     return () => clearTimeout(openTimer);
   }, [clienteRow?.id, loadMessages]);
 
@@ -307,13 +336,16 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const onShow = Keyboard.addListener(showEvt, () => setIsKeyboardVisible(true));
-    const onHide = Keyboard.addListener(hideEvt, () => setIsKeyboardVisible(false));
+    const onShow = Keyboard.addListener(showEvt, (e) => {
+      setComposerLift(keyboardComposerLift(e, insets.bottom));
+      if (chatStickToBottomRef.current) scrollToEnd(true, true);
+    });
+    const onHide = Keyboard.addListener(hideEvt, () => setComposerLift(0));
     return () => {
       onShow.remove();
       onHide.remove();
     };
-  }, []);
+  }, [insets.bottom, scrollToEnd]);
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -377,7 +409,11 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
       setDraft('');
       setPendingImage(null);
       if (data) {
-        setMessages((prev) => mergeAuraMessage(prev, data));
+        setMessages((prev) => {
+          const next = mergeAuraMessage(prev, data);
+          if (clienteRow?.id) auraThreadCache = { clienteId: clienteRow.id, rows: next };
+          return next;
+        });
         chatStickToBottomRef.current = true;
         scrollToEnd(true, true);
       } else {
@@ -400,10 +436,13 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
 
   const renderItem = ({ item }) => {
     const isFromClient = isFromClientMessage(item, sessionUser?.id);
-    const fromSalon = isSalonOutboundMessage(item) && !isFromClient;
+    const isInterest = isMarketingInterestMessage(item);
+    const fromSalon = isSalonOutboundMessage(item) && !isFromClient && !isInterest;
     const isBroadcast = String(item.content_type || '').includes('broadcast');
     const isIncident = String(item.content_type || '') === 'incident_report';
     const isCitaConfirm = String(item.content_type || '') === 'cita_confirmacion';
+    const interestSource =
+      item.content_type === MARKETING_INTEREST_TYPES.CAROUSEL ? 'Carrusel inicio' : 'Tendencias';
     const citaCard = isCitaConfirm ? parseCitaConfirmacionContent(item.content) : null;
     const whenLabel = `${formatWhen(item.created_at)} · ${item.created_by_name || (fromSalon ? 'Aura Salón' : 'Vos')}`;
 
@@ -441,6 +480,14 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
                 },
           ]}
         >
+          {isInterest ? (
+            <View style={styles.badgeRow}>
+              <Sparkles size={12} color={c.primary} />
+              <Text style={[styles.badgeTxt, { color: c.primary }]}>
+                Tu solicitud · {interestSource}
+              </Text>
+            </View>
+          ) : null}
           {isIncident ? (
             <View style={styles.badgeRow}>
               <FileText size={12} color={c.primary} />
@@ -500,7 +547,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
           data={messages}
           keyExtractor={(m) => String(m.id)}
           renderItem={renderItem}
-          style={styles.list}
+          style={[styles.list, styles.listFlex]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           nestedScrollEnabled
@@ -537,6 +584,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
           }
         />
       )}
+      <View style={{ marginBottom: composerMarginBottom }}>
       {pendingImage ? (
         <View style={[styles.previewBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
           <Image source={{ uri: pendingImage.uri }} style={styles.previewThumb} />
@@ -572,6 +620,9 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
             placeholderTextColor={c.foregroundSubtle}
             value={draft}
             onChangeText={setDraft}
+            onFocus={() => {
+              if (chatStickToBottomRef.current) scrollToEnd(true, true);
+            }}
             multiline
             maxLength={2000}
             textAlignVertical="center"
@@ -585,6 +636,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
           <Send size={20} color={c.heroCtaText} strokeWidth={2.2} />
         </TouchableOpacity>
       </View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -592,6 +644,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
 function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1, minHeight: 0, backgroundColor: c.background },
+    listFlex: { flex: 1, minHeight: 0 },
     list: { flex: 1, backgroundColor: c.background },
     listContent: {
       padding: spacing.md,

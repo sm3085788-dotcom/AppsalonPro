@@ -37,6 +37,7 @@
     },
     "android": {
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.appsalon.pro.clientes",
       "permissions": [
         "android.permission.CAMERA",
