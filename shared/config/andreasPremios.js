@@ -56,3 +56,24 @@ export function mergeAndreasPremiosSalonFisico(andreasPremios, unidades) {
   base.salon_fisico_unidades = Math.max(0, Math.floor(Number(unidades) || 0));
   return base;
 }
+
+/** Unidades de producto (no servicios) en ítems de una venta del módulo Vender. */
+export function countProductoUnidadesFromVentaItems(items) {
+  if (!Array.isArray(items)) return 0;
+  let total = 0;
+  for (const it of items) {
+    const tipo = String(it.articulo_tipo || it.tipo || 'producto').toLowerCase();
+    if (tipo === 'servicio') continue;
+    const q = Number(it.cantidad ?? it.qty ?? 1);
+    if (Number.isFinite(q) && q > 0) total += Math.floor(q);
+  }
+  return total;
+}
+
+export function ventaSalonFisicoYaProcesada(andreasPremios, ventaId) {
+  if (!ventaId || !andreasPremios || typeof andreasPremios !== 'object') return false;
+  const ids = andreasPremios.salon_fisico_venta_ids;
+  if (!Array.isArray(ids)) return false;
+  const key = String(ventaId);
+  return ids.some((x) => String(x) === key);
+}

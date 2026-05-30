@@ -14,6 +14,7 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,10 +27,13 @@ import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
-import { db, supabase } from '@appsalon/shared-config';
+import { db, supabase, visitaQrImageUrl } from '@appsalon/shared-config';
+import { CitaVisitaQrScannerModal } from '../components/CitaVisitaQrScannerModal';
 import {
   notifyClienteCitaConfirmada,
   offerConfirmacionCitaCliente,
+  citaVisitaYaValidada,
+  citaPermiteMensajeCliente,
 } from '../utils/citaConfirmacionCliente';
 import { applyNativeChromeTheme } from '../theme/applyNativeChromeTheme';
 
@@ -59,7 +63,8 @@ function isCitaRechazada(est) {
 }
 
 function isCitaConfirmada(est) {
-  return normalizeEstadoCita(est) === 'confirmado';
+  const v = normalizeEstadoCita(est);
+  return v === 'confirmado' || v === 'confirmada';
 }
 
 function estadoLabel(est) {
@@ -162,6 +167,27 @@ export function AppointmentsScreen({ onBack }) {
   const [refreshing, setRefreshing] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
   const [detailCita, setDetailCita] = useState(null);
+  const [visitaScannerOpen, setVisitaScannerOpen] = useState(false);
+
+  useEffect(() => {
+    const id = detailCita?.id;
+    if (!id || !isCitaConfirmada(detailCita.estado) || detailCita.visita_qr_token || detailCita.visita_validada_en) {
+      return;
+    }
+    let cancelled = false;
+    void supabase.rpc('cita_asegurar_visita_qr', { p_cita_id: id }).then(({ data, error }) => {
+      if (cancelled || error || !data) return;
+      const token = String(data).trim();
+      if (!token) return;
+      setDetailCita((prev) => (prev?.id === id ? { ...prev, visita_qr_token: token } : prev));
+      setCitas((prev) =>
+        prev.map((row) => (row.id === id ? { ...row, visita_qr_token: token } : row)),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailCita?.id, detailCita?.estado, detailCita?.visita_qr_token, detailCita?.visita_validada_en]);
 
   const styles = useMemo(() => createStyles(c), [c]);
 
@@ -486,7 +512,18 @@ export function AppointmentsScreen({ onBack }) {
     };
   }, []);
 
+  const openCitaDetalle = useCallback((item) => {
+    setDetailCita(item);
+  }, []);
+
   const avisarClienteCita = (cita, estado = 'pendiente') => {
+    if (!citaPermiteMensajeCliente(cita)) {
+      Alert.alert(
+        'Cita finalizada',
+        'Esta cita ya fue validada en salón. No se envía otro mensaje automático a la app.',
+      );
+      return;
+    }
     void (async () => {
       const estadoEfectivo = normalizeEstadoCita(cita?.estado || estado);
       if (isCitaRechazada(estadoEfectivo)) {
@@ -507,17 +544,74 @@ export function AppointmentsScreen({ onBack }) {
         ? citaOrId
         : citas.find((c) => c.id === citaOrId) || (detailCita?.id === citaOrId ? detailCita : null);
     const id = cita?.id ?? citaOrId;
-    void solicitarActualizacionEstado(id, 'confirmado').then((ok) => {
+    void solicitarActualizacionEstado(id, 'confirmado').then(async (ok) => {
       if (!ok) return;
-      setDetailCita((prev) => (prev?.id === id ? { ...prev, estado: 'confirmado' } : prev));
-      if (cita) {
+      let visitaToken = null;
+      try {
+        const { data: token } = await supabase.rpc('cita_asegurar_visita_qr', { p_cita_id: id });
+        if (token) visitaToken = String(token);
+      } catch {
+        /* RPC opcional hasta ejecutar SQL */
+      }
+      setDetailCita((prev) =>
+        prev?.id === id ? { ...prev, estado: 'confirmado', visita_qr_token: visitaToken || prev?.visita_qr_token } : prev,
+      );
+      if (cita && !citaVisitaYaValidada(cita)) {
         void (async () => {
           const params = await paramsConfirmacionCita({ ...cita, estado: 'confirmado' }, 'confirmado');
           await notifyClienteCitaConfirmada(params);
+          if (params?.clienteUserId && params?.clienteId) {
+            const { db, REFERIDO_PREMIOS_COPY } = await import('@appsalon/shared-config');
+            void db.premiosAndreas.notifyReferidoAccion({
+              clientUserId: params.clienteUserId,
+              clienteId: params.clienteId,
+              titulo: 'Cita confirmada',
+              mensaje: REFERIDO_PREMIOS_COPY.citaConfirmada,
+              targetScreen: 'premios',
+            });
+          }
         })();
       }
     });
   };
+
+  const validarVisitaReferido = useCallback(async () => {
+    if (!detailCita?.id || !detailCita?.visita_qr_token) return;
+    const { data, error } = await supabase.rpc('validar_referido_primera_cita', {
+      p_cita_id: detailCita.id,
+      p_token: detailCita.visita_qr_token,
+    });
+    if (error) {
+      Alert.alert('Visita', error.message || 'No se pudo validar.');
+      return;
+    }
+    if (data?.ok) {
+      Alert.alert('Listo', 'Visita validada. Si aplica referido, sumó al programa ANDREAS del referidor.');
+      setDetailCita((prev) =>
+        prev
+          ? {
+              ...prev,
+              visita_validada_en: new Date().toISOString(),
+              estado: 'completada',
+            }
+          : prev,
+      );
+      setCitas((prev) =>
+        prev.map((row) =>
+          row.id === detailCita.id
+            ? {
+                ...row,
+                visita_validada_en: new Date().toISOString(),
+                estado: 'completada',
+              }
+            : row,
+        ),
+      );
+    } else if (data?.error) {
+      Alert.alert('Visita', String(data.error));
+    }
+    setVisitaScannerOpen(false);
+  }, [detailCita]);
 
   const rechazarCita = (id) => {
     Alert.alert('Rechazar cita', '¿Marcar esta reserva como rechazada?', [
@@ -734,7 +828,7 @@ export function AppointmentsScreen({ onBack }) {
                       activeOpacity={0.85}
                       onPress={() => {
                         if (sel.active) sel.toggleId(item.id);
-                        else setDetailCita(item);
+                        else openCitaDetalle(item);
                       }}
                       onLongPress={() => {
                         if (!sel.active) sel.setActive(true);
@@ -1017,7 +1111,8 @@ export function AppointmentsScreen({ onBack }) {
                   ) : null}
                 </ScrollView>
                 {(detailCita.cliente_id || detailCita.cliente?.telefono) &&
-                !isCitaRechazada(detailCita.estado) ? (
+                !isCitaRechazada(detailCita.estado) &&
+                citaPermiteMensajeCliente(detailCita) ? (
                   <SalonButton
                     title={
                       isCitaConfirmada(detailCita.estado)
@@ -1034,6 +1129,10 @@ export function AppointmentsScreen({ onBack }) {
                     }
                     style={{ marginTop: spacing.md }}
                   />
+                ) : citaVisitaYaValidada(detailCita) ? (
+                  <Text style={[styles.detailValue, { color: c.success, marginTop: spacing.md }]}>
+                    Visita validada · no se reenvían mensajes automáticos
+                  </Text>
                 ) : null}
                 {String(detailCita.estado || 'pendiente').toLowerCase() === 'pendiente' ? (
                   <View style={[styles.citaActions, { marginTop: spacing.md }]}>
@@ -1051,6 +1150,37 @@ export function AppointmentsScreen({ onBack }) {
                     </TouchableOpacity>
                   </View>
                 ) : null}
+                {isCitaConfirmada(detailCita.estado) && detailCita.visita_qr_token ? (
+                  <>
+                    <View style={[styles.visitaQrWrap, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                      {visitaQrImageUrl(detailCita.visita_qr_token) ? (
+                        <Image
+                          source={{ uri: visitaQrImageUrl(detailCita.visita_qr_token, 180) }}
+                          style={{ width: 180, height: 180, borderRadius: radii.md }}
+                        />
+                      ) : null}
+                      <Text style={[styles.detailValue, { marginTop: spacing.sm }]}>
+                        Visita · {detailCita.visita_qr_token}
+                      </Text>
+                      <Text style={[styles.detailLabel, { textAlign: 'center', marginTop: 4 }]}>
+                        El cliente muestra este QR. Escanealo al llegar para validar referido.
+                      </Text>
+                    </View>
+                    {!detailCita.visita_validada_en ? (
+                      <SalonButton
+                        title="Escanear QR y validar visita"
+                        variant="heroGold"
+                        fullWidth
+                        onPress={() => setVisitaScannerOpen(true)}
+                        style={{ marginTop: spacing.sm }}
+                      />
+                    ) : (
+                      <Text style={[styles.detailValue, { color: c.success, marginTop: spacing.sm }]}>
+                        Visita validada
+                      </Text>
+                    )}
+                  </>
+                ) : null}
                 <SalonButton
                   title="Cerrar"
                   variant="outlineGray"
@@ -1063,6 +1193,13 @@ export function AppointmentsScreen({ onBack }) {
           </View>
         </View>
       </Modal>
+
+      <CitaVisitaQrScannerModal
+        visible={visitaScannerOpen}
+        expectedToken={detailCita?.visita_qr_token || ''}
+        onClose={() => setVisitaScannerOpen(false)}
+        onVerified={() => void validarVisitaReferido()}
+      />
 
       <Modal
         visible={composerOpen}
@@ -1646,6 +1783,13 @@ function createStyles(c) {
     },
     citaActBtnTxtFilled: {
       color: '#FFFFFF',
+    },
+    visitaQrWrap: {
+      alignItems: 'center',
+      padding: spacing.md,
+      borderRadius: radii.lg,
+      borderWidth: 1,
+      marginTop: spacing.md,
     },
     detailSheet: {
       borderTopLeftRadius: radii.lg,

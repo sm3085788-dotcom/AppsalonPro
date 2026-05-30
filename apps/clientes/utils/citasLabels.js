@@ -41,7 +41,15 @@ export function clientePuedeReprogramarCita(estado) {
 }
 
 export function citaEstaConfirmada(estado) {
-  return normalizeEstadoCita(estado) === 'confirmado';
+  const s = normalizeEstadoCita(estado);
+  return s === 'confirmado' || s === 'confirmada';
+}
+
+/** Confirmada y falta escanear QR en salón (suma «en camino» en Premios). */
+export function citaNecesitaValidacionVisita(cita) {
+  if (!cita) return false;
+  if (!citaEstaConfirmada(cita.estado)) return false;
+  return !cita.visita_validada_en;
 }
 
 export function citaEstaCancelada(estado) {

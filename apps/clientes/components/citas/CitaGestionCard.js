@@ -5,19 +5,20 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  Platform,
+  Image,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Calendar, Clock } from 'lucide-react-native';
+import { CitaFechaHoraPicker } from './CitaFechaHoraPicker';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { SalonButton } from '../luxury/SalonButton';
-import { db } from '@appsalon/shared-config';
+import { db, visitaQrImageUrl } from '@appsalon/shared-config';
 import {
   labelEstadoCita,
   estadoCitaTone,
   clientePuedeModificarCita,
   citaEstaConfirmada,
+  citaNecesitaValidacionVisita,
 } from '../../utils/citasLabels';
 
 /**
@@ -27,18 +28,48 @@ export function CitaGestionCard({ cita, onRefreshCitas, onGoTab, compact = false
   const { colors: c } = useTheme();
   const styles = useMemo(() => createStyles(c, compact), [c, compact]);
   const [reprogramOpen, setReprogramOpen] = useState(false);
-  const [showDate, setShowDate] = useState(false);
-  const [showTime, setShowTime] = useState(false);
   const [nuevaFecha, setNuevaFecha] = useState(() =>
     cita?.fecha_hora ? new Date(cita.fecha_hora) : new Date(),
   );
   const [saving, setSaving] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState(null);
+  const [visitaToken, setVisitaToken] = useState(() => String(cita?.visita_qr_token || '').trim());
 
   useEffect(() => {
     if (cita?.fecha_hora) {
       setNuevaFecha(new Date(cita.fecha_hora));
     }
   }, [cita?.id, cita?.fecha_hora]);
+
+  useEffect(() => {
+    setVisitaToken(String(cita?.visita_qr_token || '').trim());
+    setQrError(null);
+  }, [cita?.id, cita?.visita_qr_token, cita?.visita_validada_en]);
+
+  const cargarQrVisita = useCallback(async () => {
+    if (!cita?.id || !citaEstaConfirmada(cita.estado) || cita.visita_validada_en) return;
+    setQrLoading(true);
+    setQrError(null);
+    const { data, error } = await db.citas.asegurarVisitaQr(cita.id, { allowClientFallback: true });
+    setQrLoading(false);
+    if (error) {
+      setQrError(error.message || 'No se pudo generar el QR. Pedí ayuda en recepción.');
+      return;
+    }
+    if (data) {
+      setVisitaToken(String(data).trim());
+      onRefreshCitas?.();
+    }
+  }, [cita?.id, cita?.estado, cita?.visita_validada_en, onRefreshCitas]);
+
+  useEffect(() => {
+    if (!cita?.id || !citaNecesitaValidacionVisita(cita) || visitaToken) {
+      setQrLoading(false);
+      return;
+    }
+    void cargarQrVisita();
+  }, [cita?.id, cita?.estado, cita?.visita_validada_en, visitaToken, cargarQrVisita]);
 
   useEffect(() => {
     if (cita && !clientePuedeModificarCita(cita.estado)) {
@@ -145,60 +176,45 @@ export function CitaGestionCard({ cita, onRefreshCitas, onGoTab, compact = false
         </Text>
       ) : null}
 
-      {confirmada ? (
-        <Text style={styles.hint}>
-          Cita confirmada. Revisá el detalle en Andreas Pro (Mensajes).
-        </Text>
+      {citaNecesitaValidacionVisita(cita) ? (
+        <View style={styles.visitaQrBox}>
+          <Text style={styles.visitaQrTitle}>Tu código de visita</Text>
+          <Text style={styles.hint}>
+            Mostrá este QR al llegar al salón. Recepción lo escanea y ahí suma el punto en Premios (y tu referido, si
+            aplica).
+          </Text>
+          {qrLoading ? (
+            <Text style={[styles.hint, { marginTop: spacing.sm }]}>Generando tu QR…</Text>
+          ) : visitaToken && visitaQrImageUrl(visitaToken, 200) ? (
+            <Image
+              source={{ uri: visitaQrImageUrl(visitaToken, 200) }}
+              style={styles.visitaQrImg}
+              accessibilityLabel="Código QR de visita"
+            />
+          ) : (
+            <>
+              <Text style={[styles.hint, { marginTop: spacing.xs, color: c.destructive || '#C62828' }]}>
+                {qrError || 'No se pudo cargar el QR.'}
+              </Text>
+              <SalonButton
+                title="Generar QR de visita"
+                variant="outlineGray"
+                fullWidth
+                style={{ marginTop: spacing.sm }}
+                disabled={qrLoading}
+                onPress={() => void cargarQrVisita()}
+              />
+            </>
+          )}
+        </View>
+      ) : confirmada ? (
+        <Text style={styles.hint}>Visita validada en salón. El punto ya sumó en Premios.</Text>
       ) : null}
 
       {puedeModificar && reprogramOpen ? (
         <View style={styles.reprogramBox}>
           <Text style={styles.reprogramLabel}>Nueva fecha y hora</Text>
-          <TouchableOpacity style={styles.dateRow} onPress={() => setShowDate(true)} activeOpacity={0.85}>
-            <Text style={styles.dateTxt}>
-              {nuevaFecha.toLocaleDateString('es-GT', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </Text>
-            <Calendar size={18} color={c.foregroundSubtle} strokeWidth={1.8} />
-          </TouchableOpacity>
-          {showDate ? (
-            <DateTimePicker
-              mode="date"
-              value={nuevaFecha}
-              minimumDate={new Date()}
-              onChange={(_, d) => {
-                if (Platform.OS !== 'ios') setShowDate(false);
-                if (d) {
-                  const next = new Date(nuevaFecha);
-                  next.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
-                  setNuevaFecha(next);
-                }
-              }}
-            />
-          ) : null}
-          <TouchableOpacity style={styles.dateRow} onPress={() => setShowTime(true)} activeOpacity={0.85}>
-            <Text style={styles.dateTxt}>
-              {nuevaFecha.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-            <Clock size={18} color={c.foregroundSubtle} strokeWidth={1.8} />
-          </TouchableOpacity>
-          {showTime ? (
-            <DateTimePicker
-              mode="time"
-              value={nuevaFecha}
-              onChange={(_, d) => {
-                if (Platform.OS !== 'ios') setShowTime(false);
-                if (d) {
-                  const next = new Date(nuevaFecha);
-                  next.setHours(d.getHours(), d.getMinutes(), 0, 0);
-                  setNuevaFecha(next);
-                }
-              }}
-            />
-          ) : null}
+          <CitaFechaHoraPicker value={nuevaFecha} onChange={setNuevaFecha} />
           <SalonButton
             title={saving ? 'Guardando…' : 'Guardar nueva fecha'}
             variant="solidGold"
@@ -302,6 +318,29 @@ function createStyles(c, compact) {
       color: c.foregroundMuted,
       lineHeight: 18,
       marginBottom: spacing.sm,
+    },
+    visitaQrBox: {
+      marginTop: spacing.xs,
+      marginBottom: spacing.sm,
+      padding: spacing.md,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      backgroundColor: c.surfaceMuted,
+      alignItems: 'center',
+    },
+    visitaQrTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      color: c.foreground,
+      marginBottom: 4,
+      alignSelf: 'flex-start',
+    },
+    visitaQrImg: {
+      width: 200,
+      height: 200,
+      marginTop: spacing.sm,
+      borderRadius: radii.sm,
     },
     reprogramBox: { marginTop: spacing.xs },
     reprogramLabel: {

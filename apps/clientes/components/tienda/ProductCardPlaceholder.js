@@ -3,6 +3,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { useMemo } from 'react';
 import { Image as ImageIcon, Plus, Star, Truck } from 'lucide-react-native';
@@ -58,11 +59,16 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress, onA
           borderColor: c.cardBorder,
           marginBottom: 10,
           overflow: 'hidden',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.08,
-          shadowRadius: 3,
-          elevation: 2,
+          ...Platform.select({
+            ios: {
+              shadowColor: 'transparent',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0,
+              shadowRadius: 0,
+            },
+            android: { elevation: 0 },
+            default: {},
+          }),
         },
         imageZone: {
           aspectRatio: 1,
@@ -204,8 +210,14 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress, onA
 
   const emptyStar = isDark ? '#525252' : '#E3E3E3';
 
+  const flatCard = Platform.select({
+    ios: { shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 } },
+    android: { elevation: 0 },
+    default: {},
+  });
+
   return (
-    <View style={[styles.card, { width }]}>
+    <View style={[styles.card, flatCard, { width }]}>
       <View style={styles.imageZone}>
         {hasProduct && galleryUris.length > 0 ? (
           <ProductImageStrip uris={galleryUris} badgeText={product.badge} style={{ flex: 1 }} />

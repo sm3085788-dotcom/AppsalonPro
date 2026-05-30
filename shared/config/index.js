@@ -121,6 +121,28 @@ export {
   isPedidoAppTarjetaDelivery,
 } from './andreasPremios.js';
 export {
+  ANDREAS_REFERRAL_PRIZES,
+  ANDREAS_REFERRAL_META,
+  getReferralPrizeByCiclo,
+  parseReferidosPremiosState,
+} from './andreasReferidos.js';
+export { computeMembresiaStatusFromRow } from './membresiaStatus.js';
+export {
+  ANDREAS_ORDER_STATUSES_PENDIENTES,
+  CITA_ESTADOS_PENDIENTES_PREMIO,
+  parseReferidoInvitadoState,
+  tallyAndreasProductoPuntos,
+  countCitasPremios,
+  REFERIDO_PREMIOS_COPY,
+} from './referidoPremios.js';
+export {
+  buildVisitaQrPayload,
+  parseVisitaQrPayload,
+  visitaTokensMatch,
+  visitaQrImageUrl,
+  VISITA_QR_PREFIX,
+} from './visitaQr.js';
+export {
   SERVICIO_CATEGORIAS,
   normalizeServicioCategoria,
 } from './servicioCategorias.js';

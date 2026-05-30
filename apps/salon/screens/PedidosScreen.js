@@ -62,9 +62,24 @@ function orderCardStyle(o, c, isDark) {
     };
   }
   if (st === 'cancelled') {
-    return { opacity: 0.55 };
+    return {
+      backgroundColor: isDark ? 'rgba(176,0,32,0.14)' : '#FFF5F5',
+      borderLeftWidth: 3,
+      borderLeftColor: '#B00020',
+      opacity: 0.92,
+    };
   }
   return { backgroundColor: c.card };
+}
+
+function statusLabelSalon(status) {
+  const s = String(status || '');
+  if (s === 'pending') return 'Pendiente';
+  if (s === 'delivered') return 'Completado';
+  if (s === 'cancelled') return 'Cancelado';
+  if (s === 'confirmed') return 'Confirmado';
+  if (s === 'prepared') return 'Listo para retirar';
+  return s || '—';
 }
 
 function matchesTab(o, tab) {
@@ -259,6 +274,8 @@ export function PedidosScreen({ onBack }) {
   const renderItem = ({ item: o }) => {
     const picked = sel.isSelected(o.id);
     const cardBg = orderCardStyle(o, c, isDark);
+    const cancelled = String(o?.status) === 'cancelled';
+    const delivered = String(o?.status) === 'delivered';
     return (
       <TouchableOpacity
         activeOpacity={0.7}
@@ -278,39 +295,61 @@ export function PedidosScreen({ onBack }) {
         ]}
         accessibilityRole="button"
       >
-        {sel.active ? (
-          <View
-            style={[
-              styles.check,
-              {
-                borderColor: picked ? c.primary : c.cardBorder,
-                backgroundColor: picked ? c.primary : 'transparent',
-              },
-            ]}
-          >
-            {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+        {cancelled ? (
+          <View style={styles.cancelStrip} pointerEvents="none">
+            <Text style={styles.cancelStripTitle}>Cancelado</Text>
+            {o.cancelled_reason ? (
+              <Text style={styles.cancelStripReason} numberOfLines={2}>
+                {o.cancelled_reason}
+              </Text>
+            ) : (
+              <Text style={styles.cancelStripReason}>Cancelado por el cliente</Text>
+            )}
           </View>
         ) : null}
-        <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
-          <Package size={16} color={c.foregroundMuted} strokeWidth={2} />
-        </View>
-        <View style={styles.rowBody}>
-          <View style={styles.rowTop}>
-            <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
-              {o.customer_name || 'Cliente'}
+        <View style={styles.rowMain}>
+          {sel.active ? (
+            <View
+              style={[
+                styles.check,
+                {
+                  borderColor: picked ? c.primary : c.cardBorder,
+                  backgroundColor: picked ? c.primary : 'transparent',
+                },
+              ]}
+            >
+              {picked ? <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} /> : null}
+            </View>
+          ) : null}
+          <View style={[styles.iconWrap, { backgroundColor: c.surfaceMuted }]}>
+            <Package size={16} color={c.foregroundMuted} strokeWidth={2} />
+          </View>
+          <View style={styles.rowBody}>
+            <View style={styles.rowTop}>
+              <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
+                {o.customer_name || 'Cliente'}
+              </Text>
+              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
+                Compra tienda
+              </Text>
+            </View>
+            <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+              {o.tracking_code} · Q{Number(o.total_amount || 0).toFixed(2)} · {o.payment_method || '—'}
             </Text>
-            <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
-              Compra tienda
+            <Text
+              style={[
+                styles.rowSub,
+                {
+                  color: delivered ? '#2E7D32' : cancelled ? '#B00020' : c.foregroundSubtle,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {formatWhen(o.created_at)} · {statusLabelSalon(o.status)}
             </Text>
           </View>
-          <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
-            {o.tracking_code} · Q{Number(o.total_amount || 0).toFixed(2)} · {o.payment_method || '—'}
-          </Text>
-          <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
-            {formatWhen(o.created_at)} · {String(o.status || '—')}
-          </Text>
+          {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} /> : null}
         </View>
-        {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} /> : null}
       </TouchableOpacity>
     );
   };
@@ -322,7 +361,8 @@ export function PedidosScreen({ onBack }) {
       `Cliente: ${o.customer_name}`,
       `Tel: ${o.customer_phone || '—'}`,
       `Tracking: ${o.tracking_code}`,
-      `Estado: ${o.status}`,
+      `Estado: ${statusLabelSalon(o.status)}`,
+      o.cancelled_reason ? `Motivo cancelación: ${o.cancelled_reason}` : '',
       `Pago: ${o.payment_method || '—'}`,
       `Total: Q${Number(o.total_amount || 0).toFixed(2)}`,
       `Entrega: ${o.fulfillment_type || '—'}`,
@@ -582,12 +622,37 @@ function createStyles(c) {
       overflow: 'hidden',
     },
     row: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection: 'column',
       paddingVertical: 9,
       paddingHorizontal: spacing.sm,
       borderBottomWidth: StyleSheet.hairlineWidth,
+      overflow: 'hidden',
+    },
+    rowMain: {
+      flexDirection: 'row',
+      alignItems: 'center',
       gap: spacing.sm,
+    },
+    cancelStrip: {
+      width: '100%',
+      marginBottom: 6,
+      paddingVertical: 6,
+      paddingHorizontal: spacing.sm,
+      backgroundColor: 'rgba(176, 0, 32, 0.1)',
+      borderRadius: radii.sm,
+    },
+    cancelStripTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      color: '#B00020',
+    },
+    cancelStripReason: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      color: '#B00020',
+      marginTop: 2,
+      lineHeight: 15,
+      opacity: 0.9,
     },
     check: {
       width: 22,

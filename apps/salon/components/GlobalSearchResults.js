@@ -46,7 +46,7 @@ export function GlobalSearchResults({
     return (
       <View style={styles.wrap}>
         <Text style={[styles.empty, { color: c.foregroundMuted }]}>
-          Sin coincidencias para «{q}». Probá nombre, teléfono, SKU, servicio o folio de factura.
+          Sin coincidencias para «{q}». Probá nombre de cliente, teléfono, servicio, agenda, SKU o folio.
         </Text>
       </View>
     );

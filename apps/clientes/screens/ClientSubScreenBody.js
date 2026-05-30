@@ -586,7 +586,11 @@ export function ClientSubScreenBody({
 
     case CLIENT_SUB.MIS_PEDIDOS:
       return (
-        <MisPedidosBody sessionUser={sessionUser} onOpenTienda={onOpenTienda} />
+        <MisPedidosBody
+          sessionUser={sessionUser}
+          onOpenTienda={onOpenTienda}
+          onPedidosChanged={onPedidosChanged}
+        />
       );
 
     case CLIENT_SUB.CARRITO:

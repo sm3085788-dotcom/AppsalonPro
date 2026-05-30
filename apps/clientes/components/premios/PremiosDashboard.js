@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -31,13 +31,12 @@ import {
   ChevronRight,
   Star,
   Camera,
-  Scissors,
   Check,
 } from 'lucide-react-native';
 import { SalonButton } from '../luxury/SalonButton';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
-import { db, ANDREAS_META } from '@appsalon/shared-config';
+import { db, supabase, ANDREAS_META, getReferralPrizeByCiclo, ANDREAS_REFERRAL_META } from '@appsalon/shared-config';
 
 const BASE_META = ANDREAS_META.appEfectivoRetiro;   // 8 por defecto
 const META_SALON_BASE = ANDREAS_META.salon;          // para el modal de salón físico
@@ -58,12 +57,24 @@ function getMembershipTier(nivel) {
   const meta = BASE_META - bonus.metaReduction;          // 7, 6, or 5
   const discount = (BASE_DISCOUNT + bonus.discountBonus).toFixed(2); // 24.99, 34.99, 49.99
   return {
+    id,
     ...bonus,
     meta,
     discount,
     bonusDesc: `Membresía ${bonus.label}: descuento ${discount}% (en vez de ${BASE_DISCOUNT}%) · meta ${meta} pts (en vez de 8)`,
   };
 }
+
+const MEMBRESIA_PREVIEW_OPTIONS = [
+  { id: 'estandar', label: 'Estándar', meta: BASE_META, discount: BASE_DISCOUNT.toFixed(2), accent: '#888888' },
+  ...Object.entries(MEMBRESIA_BONUS).map(([id, b]) => ({
+    id,
+    label: b.label,
+    meta: BASE_META - b.metaReduction,
+    discount: (BASE_DISCOUNT + b.discountBonus).toFixed(2),
+    accent: b.accent,
+  })),
+];
 
 // ─── Póster visual por regla ────────────────────────────────────────────────
 
@@ -102,11 +113,29 @@ const RULE_POSTER_CONFIG = {
   },
 };
 
-function PosterRuleCard({ icon: Icon, iconKey, title, body, current, meta, discount, tc }) {
+function ReferidoInvitadoBanner({ tc, pendingTotal }) {
+  return (
+    <View style={[overviewStyles.referidoBanner, { backgroundColor: tc.surfaceMuted, borderColor: tc.primary }]}>
+      <Text style={[overviewStyles.referidoBannerTitle, { color: tc.primary }]}>Invitado ANDREAS</Text>
+      <Text style={[overviewStyles.referidoBannerTxt, { color: tc.foregroundMuted }]}>
+        Entraste con código de referido: cada compra y cita suman puntos en tu cuenta Estándar, igual que cualquier
+        cliente.
+        {pendingTotal > 0
+          ? ` Tenés ${pendingTotal} punto${pendingTotal === 1 ? '' : 's'} en camino hasta que el salón verifique tu pedido o visita.`
+          : ''}
+      </Text>
+    </View>
+  );
+}
+
+function PosterRuleCard({ icon: Icon, iconKey, title, body, current, pending = 0, meta, discount, tc }) {
   const cfg = RULE_POSTER_CONFIG[iconKey] || RULE_POSTER_CONFIG.wallet;
-  const progress = Math.min(1, meta > 0 ? current / meta : 0);
-  const remaining = Math.max(0, meta - current);
-  const completed = progress >= 1;
+  const verified = Math.max(0, Number(current) || 0);
+  const enCamino = Math.max(0, Number(pending) || 0);
+  const displayTotal = verified + enCamino;
+  const progress = Math.min(1, meta > 0 ? displayTotal / meta : 0);
+  const remaining = Math.max(0, meta - verified);
+  const completed = verified >= meta;
 
   return (
     <View style={posterStyles.cardWrap}>
@@ -145,7 +174,10 @@ function PosterRuleCard({ icon: Icon, iconKey, title, body, current, meta, disco
               </View>
             ) : (
               <View style={[posterStyles.countBadge, { borderColor: cfg.accent + '80', backgroundColor: 'rgba(0,0,0,0.35)' }]}>
-                <Text style={[posterStyles.countNum, { color: '#FFF' }]}>{current}</Text>
+                <Text style={[posterStyles.countNum, { color: '#FFF' }]}>
+                  {verified}
+                  {enCamino > 0 ? `+${enCamino}` : ''}
+                </Text>
                 <Text style={[posterStyles.countOf, { color: 'rgba(255,255,255,0.65)' }]}>/{meta}</Text>
               </View>
             )}
@@ -164,7 +196,11 @@ function PosterRuleCard({ icon: Icon, iconKey, title, body, current, meta, disco
             <View style={[posterStyles.fill, { width: `${progress * 100}%`, backgroundColor: cfg.accent }]} />
           </View>
           <Text style={[posterStyles.progressLabel, { color: completed ? cfg.accent : tc.foregroundSubtle }]}>
-            {completed ? '¡Podés canjear!' : `Faltan ${remaining}`}
+            {completed
+              ? '¡Podés canjear!'
+              : enCamino > 0
+                ? `Faltan ${remaining} · +${enCamino} en camino`
+                : `Faltan ${remaining}`}
           </Text>
         </View>
       </View>
@@ -174,7 +210,7 @@ function PosterRuleCard({ icon: Icon, iconKey, title, body, current, meta, disco
 
 // ─── Tarjeta intro de premios (overview visual) ─────────────────────────────
 
-function PremiosOverview({ tc, membershipTier }) {
+function PremiosOverview({ tc, membershipTier, selectedMembresiaId, onSelectMembresia, efectiveMeta }) {
   const items = [
     { emoji: '💵', label: 'Efectivo\nRetiro', color: '#22A05A' },
     { emoji: '📦', label: 'Tarjeta\nDelivery', color: '#1E6DB0' },
@@ -182,6 +218,8 @@ function PremiosOverview({ tc, membershipTier }) {
     { emoji: '🛍️', label: 'Salón\nFísico', color: '#BF7B2D' },
     { emoji: '👥', label: 'Referidos', color: '#C9A24D' },
   ];
+  const activePreview = MEMBRESIA_PREVIEW_OPTIONS.find((o) => o.id === selectedMembresiaId) ?? MEMBRESIA_PREVIEW_OPTIONS[0];
+
   return (
     <View style={[overviewStyles.wrap, { backgroundColor: tc.card, borderColor: tc.cardBorder }]}>
       <Text style={[overviewStyles.title, { color: tc.foreground }]}>5 formas de ganar puntos</Text>
@@ -195,10 +233,45 @@ function PremiosOverview({ tc, membershipTier }) {
           </View>
         ))}
       </View>
-      {membershipTier ? (
+
+      <Text style={[overviewStyles.membresiaLbl, { color: tc.foregroundMuted }]}>Tu membresía · meta de canje</Text>
+      <View style={overviewStyles.membresiaRow}>
+        {MEMBRESIA_PREVIEW_OPTIONS.map((opt) => {
+          const on = selectedMembresiaId === opt.id;
+          return (
+            <TouchableOpacity
+              key={opt.id}
+              style={[
+                overviewStyles.membresiaChip,
+                { borderColor: on ? opt.accent : tc.cardBorder, backgroundColor: on ? opt.accent + '22' : tc.surfaceMuted },
+              ]}
+              onPress={() => onSelectMembresia(opt.id)}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={`${opt.label}, ${opt.meta} puntos para canjear`}
+            >
+              <Text style={[overviewStyles.membresiaChipLbl, { color: on ? opt.accent : tc.foregroundMuted }]}>
+                {opt.label}
+              </Text>
+              <Text style={[overviewStyles.membresiaChipMeta, { color: on ? tc.foreground : tc.foregroundSubtle }]}>
+                {opt.meta} pts
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {membershipTier && selectedMembresiaId === membershipTier.id ? (
         <View style={[overviewStyles.bonusBanner, { backgroundColor: membershipTier.accent + '18', borderColor: membershipTier.accent + '55' }]}>
           <Text style={[overviewStyles.bonusTxt, { color: membershipTier.accent }]}>
             {membershipTier.bonusDesc}
+          </Text>
+        </View>
+      ) : selectedMembresiaId !== 'estandar' ? (
+        <View style={[overviewStyles.bonusBanner, { backgroundColor: activePreview.accent + '18', borderColor: activePreview.accent + '55' }]}>
+          <Text style={[overviewStyles.bonusTxt, { color: activePreview.accent }]}>
+            Vista {activePreview.label}: canje con {efectiveMeta} puntos · {activePreview.discount}% de descuento
           </Text>
         </View>
       ) : null}
@@ -211,10 +284,11 @@ function PremiosOverview({ tc, membershipTier }) {
 
 // ─── Tarjeta de referidos visual ────────────────────────────────────────────
 
-function ReferidosPoster({ referidosOk, meta, codigo, onCopy, onShare, tc }) {
+function ReferidosPoster({ referidosOk, meta, codigo, onCopy, onShare, tc, prize }) {
   const progress = Math.min(1, meta > 0 ? referidosOk / meta : 0);
   const remaining = Math.max(0, meta - referidosOk);
   const completed = progress >= 1;
+  const p = prize || getReferralPrizeByCiclo(0);
 
   return (
     <View style={[refStyles.cardWrap, { borderColor: 'rgba(201,162,77,0.4)' }]}>
@@ -248,21 +322,13 @@ function ReferidosPoster({ referidosOk, meta, codigo, onCopy, onShare, tc }) {
               ))}
               <Text style={refStyles.personsLabel}>{referidosOk}/3</Text>
             </View>
-            <Text style={refStyles.bannerTitle}>Referidos ANDREAS</Text>
+            <Text style={refStyles.bannerTitle}>Referidos ANDREAS · Premio {p.ciclo + 1}/3</Text>
             <View style={refStyles.rewardRow}>
-              <View style={refStyles.rewardChip}>
-                <Percent size={10} color="#C9A24D" strokeWidth={2.5} />
-                <Text style={refStyles.rewardChipTxt}>29,99%</Text>
-              </View>
-              <Text style={refStyles.plusSign}>+</Text>
-              <View style={refStyles.rewardChip}>
-                <Camera size={10} color="#C9A24D" strokeWidth={2} />
-                <Text style={refStyles.rewardChipTxt}>Sesión fotos</Text>
-              </View>
+              <Text style={refStyles.rewardChipTxt}>{p.emoji} {p.shortTitle}</Text>
             </View>
           </View>
           <View style={refStyles.bannerRight}>
-            <Text style={refStyles.bigEmoji}>🎁</Text>
+            <Text style={refStyles.bigEmoji}>{p.emoji}</Text>
             {completed && (
               <View style={refStyles.completedStamp}>
                 <Star size={12} color="#1a0f00" strokeWidth={2} />
@@ -286,7 +352,7 @@ function ReferidosPoster({ referidosOk, meta, codigo, onCopy, onShare, tc }) {
       {/* Bottom: code + share */}
       <View style={[refStyles.codeSection, { backgroundColor: tc.card }]}>
         <Text style={[refStyles.codeLead, { color: tc.foregroundMuted }]}>
-          Compartí tu código — si 3 nuevos clientes se registran y compran o agendan cita, ganás el premio completo.
+          {p.detail}
         </Text>
         <TouchableOpacity
           style={[refStyles.codeBox, { backgroundColor: tc.surfaceMuted, borderColor: 'rgba(201,162,77,0.4)' }]}
@@ -312,10 +378,16 @@ function ReferidosPoster({ referidosOk, meta, codigo, onCopy, onShare, tc }) {
 
 // ─── Canje ticket visual ──────────────────────────────────────────────────────
 
-function CanjeTicket({ titulo, detalle, isActive, onPress, tc }) {
+function metaChipLabel(ruleId, meta) {
+  if (ruleId === 'citas') return `${meta} citas`;
+  return `${meta} puntos`;
+}
+
+function CanjeTicket({ titulo, detalle, isActive, onPress, tc, meta, ruleId }) {
   const discountMatch = titulo.match(/(\d+,\d+%)/);
   const discount = discountMatch ? discountMatch[1] : '19,99%';
   const shortTitle = titulo.replace(/\d+,\d+%\s*·?\s*/, '').trim();
+  const metaLabel = metaChipLabel(ruleId, meta ?? BASE_META);
 
   return (
     <TouchableOpacity
@@ -360,7 +432,7 @@ function CanjeTicket({ titulo, detalle, isActive, onPress, tc }) {
         </Text>
         <View style={ticketStyles.bodyFooter}>
           <View style={[ticketStyles.condChip, { borderColor: tc.cardBorder }]}>
-            <Text style={[ticketStyles.condTxt, { color: tc.foregroundSubtle }]}>8 puntos</Text>
+            <Text style={[ticketStyles.condTxt, { color: tc.foregroundSubtle }]}>{metaLabel}</Text>
           </View>
           <ChevronRight size={14} color={tc.foregroundSubtle} strokeWidth={2} />
         </View>
@@ -371,60 +443,139 @@ function CanjeTicket({ titulo, detalle, isActive, onPress, tc }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeReady }) {
+export function PremiosDashboard({
+  onClose,
+  clientUserId,
+  clienteRow,
+  onPrizeReady,
+}) {
   const [canjeTap, setCanjeTap] = useState(null);
+  const [selectedMembresiaId, setSelectedMembresiaId] = useState('estandar');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [resumen, setResumen] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [modalSalonFisico, setModalSalonFisico] = useState(false);
   const insets = useSafeAreaInsets();
   const { colors: tc } = useTheme();
   const styles = useMemo(() => createPremiosStyles(tc), [tc]);
-
-  const load = useCallback(async () => {
-    if (!clientUserId || !clienteRow?.id) {
-      setResumen(null);
-      setLoadErr(null);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setLoadErr(null);
-    const r = await db.premiosAndreas.getResumen({ clientUserId, clienteRow });
-    setLoading(false);
-    if (r.error) {
-      setLoadErr(String(r.error.message || 'No se pudo cargar'));
-      setResumen(null);
-      return;
-    }
-    setResumen(r);
-    // Notificar si alguna regla está lista para canjear
-    const tier = getMembershipTier(clienteRow?.membresia_nivel);
-    const meta = tier?.meta ?? BASE_META;
-    const anyReady =
-      (r.productosAppEfectivoRetiro   ?? 0) >= meta ||
-      (r.productosAppTarjetaDelivery  ?? 0) >= meta ||
-      (r.citasVerificadas             ?? 0) >= meta ||
-      (r.productosSalonFisico         ?? 0) >= meta ||
-      (r.referidosPrimeraCompra       ?? 0) >= META_REFERIDOS;
-    onPrizeReady?.(anyReady);
-  }, [clientUserId, clienteRow, onPrizeReady]);
+  const clienteId = clienteRow?.id;
+  const membresiaNivel = clienteRow?.membresia_nivel;
+  const clienteRowRef = useRef(clienteRow);
+  const onPrizeReadyRef = useRef(onPrizeReady);
+  const loadSeqRef = useRef(0);
 
   useEffect(() => {
-    void load();
+    clienteRowRef.current = clienteRow;
+  }, [clienteRow]);
+
+  useEffect(() => {
+    onPrizeReadyRef.current = onPrizeReady;
+  }, [onPrizeReady]);
+
+  const load = useCallback(
+    async (opts = { showSpinner: true, manual: false }) => {
+      const row = clienteRowRef.current;
+      if (!clientUserId || !row?.id) {
+        setResumen(null);
+        setLoadErr(null);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+      const seq = ++loadSeqRef.current;
+      if (opts.showSpinner) setLoading(true);
+      if (opts.manual) setRefreshing(true);
+      setLoadErr(null);
+      try {
+        const r = await db.premiosAndreas.getResumen({ clientUserId, clienteRow: row });
+        if (seq !== loadSeqRef.current) return;
+        if (r.error) {
+          setLoadErr(String(r.error.message || 'No se pudo cargar'));
+          setResumen(null);
+          return;
+        }
+        setResumen(r);
+        const tier = getMembershipTier(membresiaNivel);
+        const meta = tier?.meta ?? BASE_META;
+        const anyReady =
+          (r.productosAppEfectivoRetiro ?? 0) >= meta ||
+          (r.productosAppTarjetaDelivery ?? 0) >= meta ||
+          (r.citasVerificadas ?? 0) >= meta ||
+          (r.productosSalonFisico ?? 0) >= meta ||
+          (r.referidosPrimeraCompra ?? 0) >= META_REFERIDOS;
+        onPrizeReadyRef.current?.(anyReady);
+      } catch (e) {
+        if (seq !== loadSeqRef.current) return;
+        setLoadErr(String(e?.message || 'No se pudo cargar'));
+        setResumen(null);
+      } finally {
+        if (seq === loadSeqRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [clientUserId, clienteId, membresiaNivel],
+  );
+
+  const manualRefresh = useCallback(() => {
+    void load({ showSpinner: false, manual: true });
   }, [load]);
 
+  useEffect(() => {
+    void load({ showSpinner: true });
+  }, [load]);
+
+  useEffect(() => {
+    const clienteId = clienteRow?.id;
+    if (!clientUserId || !clienteId) return undefined;
+    const channel = supabase
+      .channel(`premios-salon-fisico-${clienteId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'clientes',
+          filter: `id=eq.${clienteId}`,
+        },
+        () => {
+          void load({ showSpinner: false });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [clientUserId, clienteRow?.id, load]);
+
+  useEffect(() => {
+    const n = String(clienteRow?.membresia_nivel || '').toLowerCase().trim();
+    setSelectedMembresiaId(MEMBRESIA_BONUS[n] ? n : 'estandar');
+  }, [clienteRow?.membresia_nivel]);
+
   const membershipTier = getMembershipTier(clienteRow?.membresia_nivel);
-  // Meta efectiva según membresía (sin membresía = 8; bronce = 7; plata = 6; vip = 5)
-  const efectiveMeta = membershipTier?.meta ?? BASE_META;
-  const efectiveDiscount = membershipTier?.discount ?? BASE_DISCOUNT.toFixed(2);
+  const previewTier =
+    selectedMembresiaId === 'estandar' ? null : getMembershipTier(selectedMembresiaId);
+  // Meta efectiva según membresía elegida (sin membresía = 8; bronce = 7; plata = 6; vip = 5)
+  const efectiveMeta = previewTier?.meta ?? BASE_META;
+  const efectiveDiscount = previewTier?.discount ?? BASE_DISCOUNT.toFixed(2);
 
   const codigo = resumen?.codigoReferido?.trim() || '—';
   const productosAppEfectivoRetiro = resumen?.productosAppEfectivoRetiro ?? 0;
   const productosAppTarjetaDelivery = resumen?.productosAppTarjetaDelivery ?? 0;
+  const productosEfectivoPendiente = resumen?.productosAppEfectivoRetiroPendiente ?? 0;
+  const productosTarjetaPendiente = resumen?.productosAppTarjetaDeliveryPendiente ?? 0;
   const citasOk = resumen?.citasVerificadas ?? 0;
+  const citasPendientes = resumen?.citasPendientes ?? 0;
   const salonFisico = resumen?.productosSalonFisico ?? 0;
+  const esReferidoInvitado = Boolean(resumen?.esReferidoInvitado);
+  const puntosEnCamino =
+    productosEfectivoPendiente + productosTarjetaPendiente + citasPendientes;
   const referidosOk = resumen?.referidosPrimeraCompra ?? 0;
+  const referidosCiclo = resumen?.referidosCiclo ?? 0;
+  const referidosPrize = getReferralPrizeByCiclo(referidosCiclo);
 
   const shareReferral = async () => {
     if (!codigo || codigo === '—') {
@@ -433,7 +584,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
     }
     const msg =
       `¡Te invito a Salon Andreas! Descargá la app de clientes, creá tu cuenta verificada y usá mi código ${codigo}. ` +
-      `Programa ANDREAS: si 3 nuevos usuarios crean cuenta verificada con tu código y realizan su primera compra en efectivo o con tarjeta, o agendan su primera cita, ganás 29,99% en un servicio más sesión de fotos e imagen impresa, canjeable en Salon Andreas.`;
+      `Programa ANDREAS: con 3 referidos verificados (primera compra en tienda o primera cita confirmada en salón) ganás: ${referidosPrize.title}.`;
     try {
       await Share.share({ message: msg, title: 'Invitación Salon Andreas' });
     } catch {
@@ -532,13 +683,16 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
                   <Store size={18} color="#F5E6A8" strokeWidth={2} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => void load()}
+                  onPress={manualRefresh}
                   hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Actualizar puntos"
                   activeOpacity={0.85}
-                  disabled={loading}
-                  style={[styles.heroIconBtn, { borderColor: styles.heroGoldBorderSoft }]}
+                  disabled={refreshing}
+                  style={[
+                    styles.heroIconBtn,
+                    { borderColor: styles.heroGoldBorderSoft, opacity: refreshing ? 0.55 : 1 },
+                  ]}
                 >
                   <RefreshCw size={18} color="rgba(255,255,255,0.65)" strokeWidth={2} />
                 </TouchableOpacity>
@@ -567,7 +721,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
       ) : loadErr ? (
         <View style={[styles.card, { marginBottom: spacing.md }]}>
           <Text style={styles.cardLead}>{loadErr}</Text>
-          <SalonButton variant="mutedFill" title="Reintentar" fullWidth onPress={() => void load()} />
+          <SalonButton variant="mutedFill" title="Reintentar" fullWidth onPress={() => void load({ showSpinner: true })} />
         </View>
       ) : null}
 
@@ -584,7 +738,17 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
       {!loading && !loadErr ? (
         <>
           {/* Overview visual */}
-          <PremiosOverview tc={tc} membershipTier={membershipTier} />
+          <PremiosOverview
+            tc={tc}
+            membershipTier={membershipTier}
+            selectedMembresiaId={selectedMembresiaId}
+            onSelectMembresia={setSelectedMembresiaId}
+            efectiveMeta={efectiveMeta}
+          />
+
+          {esReferidoInvitado ? (
+            <ReferidoInvitadoBanner tc={tc} pendingTotal={puntosEnCamino} />
+          ) : null}
 
           {/* Tarjetas póster por regla */}
           <Text style={[styles.sectionLabel, { color: tc.foregroundSubtle }]}>TUS PUNTOS POR REGLA</Text>
@@ -595,6 +759,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
             title="App · efectivo y retiro en salón"
             body={`1 punto por cada producto en pedidos de la app pagados en efectivo con retiro en Salon Andreas. ${efectiveMeta} puntos: ${efectiveDiscount}% de descuento en tu próxima compra.`}
             current={productosAppEfectivoRetiro}
+            pending={productosEfectivoPendiente}
             meta={efectiveMeta}
             discount={efectiveDiscount}
             tc={tc}
@@ -605,16 +770,18 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
             title="App · tarjeta y envío a domicilio"
             body={`1 punto por cada producto en pedidos de la app con tarjeta y envío a domicilio. ${efectiveMeta} puntos: ${efectiveDiscount}% en tu próxima compra con delivery.`}
             current={productosAppTarjetaDelivery}
+            pending={productosTarjetaPendiente}
             meta={efectiveMeta}
             discount={efectiveDiscount}
             tc={tc}
           />
           <PosterRuleCard
-            icon={Scissors}
+            icon={Calendar}
             iconKey="calendar"
             title="Citas verificadas"
-            body={`1 punto por cada cita en estado completada. ${efectiveMeta} citas verificadas: ${efectiveDiscount}% de descuento en servicio + producto.`}
+            body={`1 punto por cita cuando recepción escanea tu QR en Historial (citas confirmadas). «En camino» = confirmadas sin escanear aún. ${efectiveMeta} citas verificadas: ${efectiveDiscount}% de descuento.`}
             current={citasOk}
+            pending={citasPendientes}
             meta={efectiveMeta}
             discount={efectiveDiscount}
             tc={tc}
@@ -623,7 +790,7 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
             icon={Store}
             iconKey="store"
             title="Producto en salón físico"
-            body={`Cada producto comprado en el salón lo registra recepción en tu ficha. ${efectiveMeta} unidades: ${efectiveDiscount}% en la siguiente compra en salón.`}
+            body={`Cada producto en una venta de caja con tu cuenta vinculada suma automáticamente. ${efectiveMeta} unidades: ${efectiveDiscount}% en la siguiente compra en salón.`}
             current={salonFisico}
             meta={efectiveMeta}
             discount={efectiveDiscount}
@@ -634,11 +801,12 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
           <Text style={[styles.sectionLabel, { color: tc.foregroundSubtle }]}>REFERIDOS</Text>
           <ReferidosPoster
             referidosOk={referidosOk}
-            meta={META_REFERIDOS}
+            meta={ANDREAS_REFERRAL_META}
             codigo={codigo}
             onCopy={copyCode}
             onShare={shareReferral}
             tc={tc}
+            prize={referidosPrize}
           />
 
           {/* Canjes como tickets */}
@@ -656,6 +824,8 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
                 isActive={canjeTap === c.id}
                 onPress={() => onCanjeInfo(c.id, c.titulo, c.detalle)}
                 tc={tc}
+                meta={efectiveMeta}
+                ruleId={c.id}
               />
             ))}
           </View>
@@ -685,7 +855,8 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
               </TouchableOpacity>
             </View>
             <Text style={styles.cardLead}>
-              Cada producto que comprás en el salón (no en la app) lo registra recepción en tu ficha. Llevás{' '}
+              Cada producto que comprás en el salón (no en la app), con tu nombre de la cuenta vinculada, suma solo al
+              registrar la venta en caja. Llevás{' '}
               <Text style={styles.leadStrong}>{salonFisico}</Text> de{' '}
               <Text style={styles.leadStrong}>{efectiveMeta}</Text> unidades verificadas.
             </Text>
@@ -699,15 +870,16 @@ export function PremiosDashboard({ onClose, clientUserId, clienteRow, onPrizeRea
             <Text style={[styles.cardLead, { marginBottom: spacing.md }]}>
               Al completar {efectiveMeta} unidades, podés canjear{' '}
               <Text style={styles.leadStrong}>19,99%</Text> de descuento en la compra del siguiente producto en Salon
-              Andreas. Si acabás de comprar en salón y no ves el cambio, pedí en recepción que lo registren y tocá
-              actualizar.
+              Andreas. La barra se actualiza sola cuando recepción registra tu compra; el botón de abajo es solo por si
+              querés refrescar.
             </Text>
             <SalonButton
-              variant="heroGold"
-              title={loading ? 'Actualizando…' : 'Actualizar progreso'}
+              variant="outlineGray"
+              title={refreshing ? 'Actualizando…' : 'Refrescar progreso'}
               fullWidth
-              disabled={loading}
-              onPress={() => void load()}
+              loading={refreshing}
+              disabled={refreshing}
+              onPress={manualRefresh}
             />
             <SalonButton
               variant="outlineGray"
@@ -915,6 +1087,36 @@ const overviewStyles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 13,
   },
+  membresiaLbl: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 11,
+    marginBottom: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  membresiaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  membresiaChip: {
+    flexGrow: 1,
+    minWidth: '22%',
+    borderWidth: 1,
+    borderRadius: radii.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+  },
+  membresiaChipLbl: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 11,
+  },
+  membresiaChipMeta: {
+    fontFamily: typography.fontSans,
+    fontSize: 10,
+    marginTop: 2,
+  },
   sub: {
     fontFamily: typography.fontSans,
     fontSize: 10,
@@ -934,6 +1136,22 @@ const overviewStyles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  referidoBanner: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  referidoBannerTitle: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  referidoBannerTxt: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    lineHeight: 18,
   },
 });
 

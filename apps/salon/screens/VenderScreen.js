@@ -346,6 +346,7 @@ export function VenderScreen({ onBack }) {
         cantidad: l.qty,
         precio_unitario: l.precioUnit,
         subtotal: Math.round(l.qty * l.precioUnit * 100) / 100,
+        articulo_tipo: l.esServicio ? 'servicio' : 'producto',
       };
       if (l.volumenTrabajo) item.volumen_trabajo = l.volumenTrabajo;
       return item;

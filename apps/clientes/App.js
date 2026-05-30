@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -74,6 +74,11 @@ import { QuickPosterGrid } from './components/luxury/QuickPosterGrid';
 import { MembresiaBadge } from './components/MembresiaBadge';
 import { PremiosCelebrationModal } from './components/luxury/PremiosCelebrationModal';
 import { CLIENT_SUB } from './navigation/clientSubScreens';
+import {
+  PREMIOS_PROGRESS_STORAGE_KEY,
+  buildPremiosProgressSnapshot,
+  premiosProgressIncreased,
+} from './utils/premiosPointsAlert';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
 import { MisCitasTab } from './components/citas/MisCitasTab';
@@ -257,8 +262,14 @@ function AppMain({ onLogout }) {
   const [highlightInventarioId, setHighlightInventarioId] = useState(null);
   const [session, setSession] = useState(null);
   const [clienteRow, setClienteRow] = useState(null);
+  const clienteRowRef = useRef(null);
   const [perfilLoading, setPerfilLoading] = useState(false);
   const [perfilMeta, setPerfilMeta] = useState({ error: null });
+  const fichaLoadSeqRef = useRef(0);
+
+  useEffect(() => {
+    clienteRowRef.current = clienteRow;
+  }, [clienteRow]);
 
   const [headerSearch, setHeaderSearch] = useState('');
   const [avatarUri, setAvatarUri] = useState(null);
@@ -270,6 +281,8 @@ function AppMain({ onLogout }) {
   const [premiosBadge, setPremiosBadge] = useState(false);
   const [premiosCanjeReady, setPremiosCanjeReady] = useState(false);
   const [premiosCelebrationVisible, setPremiosCelebrationVisible] = useState(false);
+  const premiosSnapshotRef = useRef(null);
+  const openedSubRef = useRef(null);
   const { cartCount } = useTiendaCart();
   const [openedSub, setOpenedSub] = useState(null);
   const [subPayload, setSubPayload] = useState(null);
@@ -277,6 +290,76 @@ function AppMain({ onLogout }) {
     setSubPayload(payload);
     setOpenedSub(id);
   }, []);
+
+  useEffect(() => {
+    openedSubRef.current = openedSub;
+  }, [openedSub]);
+
+  const refreshPremiosPointsAlert = useCallback(async () => {
+    const userId = session?.user?.id;
+    const row = clienteRowRef.current;
+    if (!hasSupabaseEnv || !userId || !row?.id) return;
+    const r = await db.premiosAndreas.getResumen({ clientUserId: userId, clienteRow: row });
+    if (r.error) return;
+    const next = buildPremiosProgressSnapshot(r);
+    if (!next) return;
+    premiosSnapshotRef.current = next;
+
+    let prev = null;
+    try {
+      const raw = await AsyncStorage.getItem(PREMIOS_PROGRESS_STORAGE_KEY);
+      if (raw) prev = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+
+    if (!prev) {
+      try {
+        await AsyncStorage.setItem(PREMIOS_PROGRESS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    if (
+      premiosProgressIncreased(prev, next) &&
+      openedSubRef.current !== CLIENT_SUB.PREMIOS
+    ) {
+      setPremiosBadge(true);
+    }
+  }, [session?.user?.id, hasSupabaseEnv]);
+
+  const refreshPremiosPointsAlertRef = useRef(refreshPremiosPointsAlert);
+  useEffect(() => {
+    refreshPremiosPointsAlertRef.current = refreshPremiosPointsAlert;
+  }, [refreshPremiosPointsAlert]);
+
+  const handlePrizeReady = useCallback((ready) => {
+    setPremiosCanjeReady(ready);
+    if (ready && openedSubRef.current !== CLIENT_SUB.PREMIOS) {
+      setPremiosCelebrationVisible(true);
+    }
+  }, []);
+
+  const acknowledgePremiosProgress = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (hasSupabaseEnv && userId && clienteRow?.id) {
+      const r = await db.premiosAndreas.getResumen({ clientUserId: userId, clienteRow });
+      if (!r.error) {
+        const snap = buildPremiosProgressSnapshot(r);
+        if (snap) {
+          premiosSnapshotRef.current = snap;
+          try {
+            await AsyncStorage.setItem(PREMIOS_PROGRESS_STORAGE_KEY, JSON.stringify(snap));
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    setPremiosBadge(false);
+  }, [session?.user?.id, clienteRow, hasSupabaseEnv]);
 
   const openAgendarServicio = useCallback(
     (nombre) => {
@@ -357,9 +440,12 @@ function AppMain({ onLogout }) {
     else if (slug === 'citas') setTab(TABS.CITAS);
     else if (slug === 'historial') setTab(TABS.HISTORIAL);
     else if (slug === 'perfil') setTab(TABS.PERFIL);
+    const wasPremios = openedSubRef.current === CLIENT_SUB.PREMIOS;
+    openedSubRef.current = null;
     setOpenedSub(null);
     setSubPayload(null);
-  }, []);
+    if (wasPremios) void refreshPremiosPointsAlert();
+  }, [refreshPremiosPointsAlert]);
 
   const { colors: c, isDark } = useTheme();
   const styles = useMemo(() => buildAppStyles(c), [c]);
@@ -398,7 +484,7 @@ function AppMain({ onLogout }) {
         return;
       }
       setAvatarUri(publicUrl);
-      await refreshClienteFicha(session.user.id);
+      await refreshClienteFicha(session.user.id, { showPerfilSpinner: false });
     };
 
     try {
@@ -514,30 +600,45 @@ function AppMain({ onLogout }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const refreshClienteFicha = useCallback(async (userId) => {
+  const refreshClienteFicha = useCallback(async (userId, opts = { showPerfilSpinner: true }) => {
     if (!hasSupabaseEnv || !userId) {
       setClienteRow(null);
       return null;
     }
-    setPerfilLoading(true);
+    const seq = ++fichaLoadSeqRef.current;
+    const showSpinner = opts.showPerfilSpinner && !clienteRowRef.current;
+    if (showSpinner) setPerfilLoading(true);
     setPerfilMeta({ error: null });
     const { data, error } = await db.clientes.getByUserId(userId);
-    setPerfilLoading(false);
+    if (seq !== fichaLoadSeqRef.current) return clienteRowRef.current;
+    if (showSpinner) setPerfilLoading(false);
     if (error) {
       // No vaciar clienteRow en error — mantener estado anterior para no romper la UI
       setPerfilMeta({ error: error.message });
       return null;
     }
     if (data) {
+      const { data: syncPayload } = await db.membresias.syncVigencia(data.id);
+      if (syncPayload?.expired) {
+        const { data: refreshed } = await db.clientes.getByUserId(userId);
+        const row = refreshed || { ...data, membresia_nivel: null, membresia_vence_en: null };
+        if (seq !== fichaLoadSeqRef.current) return clienteRowRef.current;
+        setClienteRow(row);
+        void refreshPremiosPointsAlertRef.current?.();
+        Alert.alert('Membresía', syncPayload.message || 'Tu cuenta volvió a Estándar. Pedí un nuevo código en el salón.');
+        return row;
+      }
+      if (seq !== fichaLoadSeqRef.current) return clienteRowRef.current;
       setClienteRow(data);
       setPerfilMeta({ error: null });
       if (data.photo_url) setAvatarUri(data.photo_url);
+      void refreshPremiosPointsAlertRef.current?.();
       return data;
     }
     // Si no hay error pero tampoco datos, mantener clienteRow existente
     setPerfilMeta({ error: null });
     return null;
-  }, []);
+  }, [hasSupabaseEnv]);
 
   const ensureClienteFicha = useCallback(async () => {
     if (!hasSupabaseEnv || !session?.user?.id) return null;
@@ -580,7 +681,12 @@ function AppMain({ onLogout }) {
     const { data, error } = await db.orders.getByCliente(userId);
     if (error) return;
     setPedidosActivos(countActivePedidos(data));
-  }, [session?.user?.id]);
+    await refreshPremiosPointsAlert();
+  }, [session?.user?.id, refreshPremiosPointsAlert]);
+
+  const handlePedidosChanged = useCallback(async () => {
+    await refreshPedidosActivos();
+  }, [refreshPedidosActivos]);
 
   const handleNotifPrefChange = useCallback(
     async (key, value) => {
@@ -865,12 +971,15 @@ function AppMain({ onLogout }) {
   }, [openSub]);
 
   const closeSub = useCallback(() => {
+    const wasPremios = openedSubRef.current === CLIENT_SUB.PREMIOS;
+    openedSubRef.current = null;
     setOpenedSub(null);
     setSubPayload(null);
     void loadClientNotifPrefs(session?.user?.id ?? null).then(setNotifPrefs);
     void refreshAuraUnread();
     void refreshPedidosActivos();
-  }, [session?.user?.id, refreshAuraUnread, refreshPedidosActivos]);
+    if (wasPremios) void refreshPremiosPointsAlert();
+  }, [session?.user?.id, refreshAuraUnread, refreshPedidosActivos, refreshPremiosPointsAlert]);
 
   useEffect(() => {
     if (tab !== TABS.INICIO) return;
@@ -914,10 +1023,10 @@ function AppMain({ onLogout }) {
     }
     if (!hasSupabaseEnv) return;
     void (async () => {
-      const row = await refreshClienteFicha(session.user.id);
+      const row = await refreshClienteFicha(session.user.id, { showPerfilSpinner: true });
       if (!row) await ensureClienteFicha();
     })();
-  }, [session?.user?.id, hasSupabaseEnv, refreshClienteFicha, ensureClienteFicha]);
+  }, [session?.user?.id, hasSupabaseEnv]);
 
   // Campanita en Premios cuando cambia el nivel de membresía
   const MEMBRESIA_SEEN_KEY = '@appsalon/clientes/membresia_nivel_seen';
@@ -940,6 +1049,11 @@ function AppMain({ onLogout }) {
     let alive = true;
     (async () => {
       setCitasLoading(true);
+      try {
+        await db.citas.syncVisitaQrCliente();
+      } catch {
+        /* RPC opcional hasta actualizar Supabase */
+      }
       const { data, error } = await db.citas.getByCliente(clienteRow.id, { forClientApp: true });
       if (!alive) return;
       setCitasLoading(false);
@@ -1035,7 +1149,7 @@ function AppMain({ onLogout }) {
                 { id: 'mensajes',   label: 'Mensajes',   iconName: 'MessageCircle', sub: 'Andreas Pro · en vivo',         onPress: openAuraLine,                   bellBadge: auraUnread > 0 },
                 { id: 'tienda',     label: 'Tienda',     iconName: 'ShoppingBag',   sub: 'Productos y kits profesionales', onPress: () => openSub(CLIENT_SUB.TIENDA) },
                 { id: 'tendencias', label: 'Tendencias', iconName: 'Sparkles',      sub: 'Looks de temporada',             onPress: () => openSub(CLIENT_SUB.TENDENCIAS) },
-                { id: 'premios',    label: 'Premios',    iconName: 'Award',         sub: 'Puntos, canjes y referidos',     onPress: () => { setPremiosBadge(false); setPremiosCanjeReady(false); void AsyncStorage.setItem(MEMBRESIA_SEEN_KEY, clienteRow?.membresia_nivel ?? ''); openSub(CLIENT_SUB.PREMIOS); }, bellBadge: premiosBadge, prizeBadge: premiosCanjeReady },
+                { id: 'premios',    label: 'Premios',    iconName: 'Award',         sub: 'Puntos, canjes y referidos',     onPress: () => { setPremiosBadge(false); setPremiosCanjeReady(false); void AsyncStorage.setItem(MEMBRESIA_SEEN_KEY, clienteRow?.membresia_nivel ?? ''); openSub(CLIENT_SUB.PREMIOS); void acknowledgePremiosProgress(); }, bellBadge: premiosBadge, prizeBadge: premiosCanjeReady },
                 { id: 'pedidos',    label: 'Pedidos',    iconName: 'Package',       sub: 'Mis compras y estado',           onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
                 { id: 'citas',      label: 'Citas',      iconName: 'Scissors',      sub: 'Agenda y gestión',               onPress: () => setTab(TABS.CITAS) },
               ]}
@@ -1250,7 +1364,9 @@ function AppMain({ onLogout }) {
               onNotifPrefChange={handleNotifPrefChange}
               onAuraUnreadChange={refreshAuraUnread}
               onClienteUpdated={() => {
-                if (session?.user?.id) void refreshClienteFicha(session.user.id);
+                if (session?.user?.id) {
+                  void refreshClienteFicha(session.user.id, { showPerfilSpinner: false });
+                }
               }}
               onPromoAction={handlePromoAction}
               subPayload={subPayload}
@@ -1259,8 +1375,8 @@ function AppMain({ onLogout }) {
                 closeSub();
                 openSub(CLIENT_SUB.TIENDA);
               }}
-              onPedidosChanged={refreshPedidosActivos}
-              onPrizeReady={(ready) => { setPremiosCanjeReady(ready); if (ready) setPremiosCelebrationVisible(true); }}
+              onPedidosChanged={handlePedidosChanged}
+              onPrizeReady={handlePrizeReady}
             />
           </View>
         ) : (
@@ -1299,7 +1415,9 @@ function AppMain({ onLogout }) {
               onNotifPrefChange={handleNotifPrefChange}
               onAuraUnreadChange={refreshAuraUnread}
               onClienteUpdated={() => {
-                if (session?.user?.id) void refreshClienteFicha(session.user.id);
+                if (session?.user?.id) {
+                  void refreshClienteFicha(session.user.id, { showPerfilSpinner: false });
+                }
               }}
               onPromoAction={handlePromoAction}
               subPayload={subPayload}
@@ -1308,10 +1426,10 @@ function AppMain({ onLogout }) {
                 closeSub();
                 openSub(CLIENT_SUB.TIENDA);
               }}
-              onPedidosChanged={refreshPedidosActivos}
+              onPedidosChanged={handlePedidosChanged}
               onAgendarServicio={openAgendarServicio}
               onContinuarAgendarDesdeCarrito={openAgendarDesdeCarrito}
-              onPrizeReady={(ready) => { setPremiosCanjeReady(ready); if (ready) setPremiosCelebrationVisible(true); }}
+              onPrizeReady={handlePrizeReady}
             />
           </SubScreenChrome>
         )

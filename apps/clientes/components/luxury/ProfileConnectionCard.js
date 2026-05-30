@@ -12,7 +12,7 @@ function estadoLine(session, perfilLoading, perfilMeta, clienteRow) {
   if (!session?.user) {
     return 'Estado: sin sesión iniciada';
   }
-  if (perfilLoading) {
+  if (perfilLoading && !clienteRow) {
     return 'Estado: comprobando…';
   }
   if (perfilMeta?.error) {
@@ -104,7 +104,7 @@ export function ProfileConnectionCard({ session, perfilLoading, perfilMeta, clie
         <View style={styles.textCol}>
           <Text style={styles.title}>Tu cuenta</Text>
           <Text style={styles.status}>{status}</Text>
-          {session?.user && perfilLoading ? (
+          {session?.user && perfilLoading && !clienteRow ? (
             <ActivityIndicator
               style={styles.spinner}
               color={c.primary}

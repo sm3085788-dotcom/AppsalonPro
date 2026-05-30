@@ -303,15 +303,16 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
           borderColor: colors.cardBorder,
           marginBottom: GAP,
           overflow: 'hidden',
-          ...(isDark
-            ? { elevation: 0, shadowOpacity: 0 }
-            : {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.08,
-                shadowRadius: 3,
-                elevation: 2,
-              }),
+          ...Platform.select({
+            ios: {
+              shadowColor: 'transparent',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0,
+              shadowRadius: 0,
+            },
+            android: { elevation: 0 },
+            default: {},
+          }),
         },
         body: { padding: compact ? 5 : spacing.sm },
         brandLine: {
@@ -415,8 +416,14 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
     [colors, compact, product.visibleTienda, isDark],
   );
 
+  const flatCard = Platform.select({
+    ios: { shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 } },
+    android: { elevation: 0 },
+    default: {},
+  });
+
   return (
-    <TouchableOpacity style={[styles.card, { width }]} onPress={onPress} activeOpacity={0.92}>
+    <TouchableOpacity style={[styles.card, flatCard, { width }]} onPress={onPress} activeOpacity={0.92}>
       <GalleryStrip
         uris={product.imageUris}
         badgeText={product.badge}

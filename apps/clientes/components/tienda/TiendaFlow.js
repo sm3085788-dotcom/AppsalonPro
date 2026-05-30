@@ -22,6 +22,7 @@ import {
   splitClienteNotasEnvio,
   mergeClienteNotasEnvio,
   normalizeEnvioGuardado,
+  REFERIDO_PREMIOS_COPY,
 } from '@appsalon/shared-config';
 
 const STAR_GOLD = '#FFB800';
@@ -124,7 +125,48 @@ export function TiendaFlow({
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [gridCartToast, setGridCartToast] = useState(null);
+  const [referidorCheckout, setReferidorCheckout] = useState(null);
+  const [referidorCodigoInput, setReferidorCodigoInput] = useState('');
   const deepLinkDone = useRef(false);
+
+  useEffect(() => {
+    if (!clientUserId) {
+      setReferidorCheckout(null);
+      return;
+    }
+    void db.referidosAndreas.checkoutInfo(clientUserId).then(({ data }) => {
+      if (data?.needs_code) {
+        setReferidorCheckout(data);
+        setReferidorCodigoInput(String(data.referidor_codigo || '').trim().toUpperCase());
+      } else {
+        setReferidorCheckout(null);
+      }
+    });
+  }, [clientUserId]);
+
+  const avisarPremiosPedidoCreado = () => {
+    if (!clientUserId || !clienteId) return;
+    void db.premiosAndreas.notifyReferidoAccion({
+      clientUserId,
+      clienteId,
+      titulo: 'Pedido registrado',
+      mensaje: REFERIDO_PREMIOS_COPY.compraPendiente,
+      targetScreen: 'premios',
+    });
+  };
+
+  const buildCheckoutSnapshot = () => {
+    if (!referidorCheckout?.needs_code) return null;
+    const codigo = String(referidorCodigoInput || referidorCheckout.referidor_codigo || '')
+      .trim()
+      .toUpperCase();
+    if (!codigo) return null;
+    return {
+      referidor_codigo: codigo,
+      referidor_user_id: referidorCheckout.referidor_user_id || null,
+      primera_compra_referido: true,
+    };
+  };
   const gridToastTimer = useRef(null);
 
   useEffect(() => {
@@ -878,6 +920,27 @@ export function TiendaFlow({
             equipo antes de preparar tu compra.
           </Text>
 
+          {referidorCheckout?.needs_code ? (
+            <View style={[subStyles.card, { marginBottom: spacing.md, borderColor: tc.primary }]}>
+              <Text style={subStyles.rowLabel}>Código de quien te invitó</Text>
+              <Text style={subStyles.bullets}>
+                Es tu primera compra con referido. Usá el mismo código una sola vez; el salón lo validará al escanear tu
+                QR al retirar o entregar.
+              </Text>
+              <TextInput
+                style={[
+                  styles.referralInput,
+                  { borderColor: tc.cardBorder, color: tc.foreground, backgroundColor: tc.card },
+                ]}
+                value={referidorCodigoInput}
+                onChangeText={(t) => setReferidorCodigoInput(t.toUpperCase())}
+                autoCapitalize="characters"
+                placeholder="ANDREAS-…"
+                placeholderTextColor={tc.foregroundSubtle}
+              />
+            </View>
+          ) : null}
+
           {payOptions.map(({ id, label, sub, Icon }) => (
             <TouchableOpacity
               key={id}
@@ -996,6 +1059,11 @@ export function TiendaFlow({
                   );
                   return;
                 }
+                const snapCard = buildCheckoutSnapshot();
+                if (referidorCheckout?.needs_code && !snapCard?.referidor_codigo) {
+                  Alert.alert('Código de referido', 'Ingresá el código de quien te invitó para tu primera compra.');
+                  return;
+                }
                 setCheckoutBusy(true);
                 const res = await confirmarCompraConTarjeta({
                   clienteNombre,
@@ -1006,6 +1074,7 @@ export function TiendaFlow({
                   homeAddressType,
                   deliveryAddress: buildDeliveryAddressSnapshot(),
                   cardLast4: cardLast4FromSelection(),
+                  checkout_snapshot: snapCard,
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {
@@ -1028,6 +1097,7 @@ export function TiendaFlow({
                 });
                 setPhase('success');
                 setCartItems([]);
+                avisarPremiosPedidoCreado();
                 onPurchaseComplete?.();
                 onPedidosChanged?.();
                 return;
@@ -1054,6 +1124,11 @@ export function TiendaFlow({
                   return;
                 }
                 setCheckoutBusy(true);
+                const snap = buildCheckoutSnapshot();
+                if (referidorCheckout?.needs_code && !snap?.referidor_codigo) {
+                  Alert.alert('Código de referido', 'Ingresá el código de quien te invitó para tu primera compra.');
+                  return;
+                }
                 const res = await crearPedidoEfectivo({
                   clienteNombre: clienteNombre || 'Cliente tienda',
                   clienteTelefono: clienteTelefono || '—',
@@ -1062,6 +1137,7 @@ export function TiendaFlow({
                   shipId,
                   homeAddressType,
                   deliveryAddress: buildDeliveryAddressSnapshot(),
+                  checkout_snapshot: snap,
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {
@@ -1083,6 +1159,7 @@ export function TiendaFlow({
                 });
                 setPhase('success');
                 setCartItems([]);
+                avisarPremiosPedidoCreado();
                 onPurchaseComplete?.();
                 onPedidosChanged?.();
                 return;
@@ -1551,6 +1628,16 @@ function createTiendaStyles(c) {
     color: c.foregroundMuted,
     marginTop: spacing.sm,
     marginBottom: 4,
+  },
+  referralInput: {
+    minHeight: 48,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    fontFamily: typography.fontSansMedium,
+    fontSize: 15,
+    letterSpacing: 0.8,
   },
   formField: {
     minHeight: 48,

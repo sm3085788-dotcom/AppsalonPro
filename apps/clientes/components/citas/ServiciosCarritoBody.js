@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  Platform,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { Calendar, Clock, X } from 'lucide-react-native';
+import { X } from 'lucide-react-native';
+import { CitaFechaHoraPicker, openAndroidCitaPicker } from './CitaFechaHoraPicker';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -44,7 +44,6 @@ export function ServiciosCarritoBody({
   const n = items.length;
 
   const [schedules, setSchedules] = useState({});
-  const [activePicker, setActivePicker] = useState(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -148,17 +147,15 @@ export function ServiciosCarritoBody({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.intro}>
-        {n > 0
-          ? `Elegí fecha y hora de cada servicio en esta pantalla y enviá ${n === 1 ? 'la solicitud' : 'todas juntas'}.`
-          : 'Agregá servicios con el botón + en Mis citas. Cuando termines, volvé aquí para agendar.'}
-      </Text>
+      {n === 0 ? (
+        <Text style={styles.intro}>
+          Agregá servicios con el botón + en Mis citas. Cuando termines, volvé aquí para agendar.
+        </Text>
+      ) : null}
 
       {items.map((s, index) => {
         const key = servicioKey(s);
         const fechaHora = schedules[key] ?? defaultSlotForIndex(index);
-        const datePickerId = `${key}-date`;
-        const timePickerId = `${key}-time`;
 
         return (
           <View key={key} style={styles.card}>
@@ -179,68 +176,21 @@ export function ServiciosCarritoBody({
             </View>
 
             <Text style={styles.whenLbl}>Fecha y hora</Text>
-            <TouchableOpacity
-              style={styles.dateRow}
-              onPress={() => setActivePicker(datePickerId)}
-              activeOpacity={0.85}
-            >
-              <Calendar size={16} color={c.primary} strokeWidth={1.8} />
-              <Text style={styles.dateTxt}>
-                {fechaHora.toLocaleDateString('es-GT', {
-                  weekday: 'short',
-                  day: 'numeric',
-                  month: 'short',
-                })}
-              </Text>
-            </TouchableOpacity>
-            {activePicker === datePickerId ? (
-              <DateTimePicker
-                mode="date"
-                value={fechaHora}
-                minimumDate={new Date()}
-                onChange={(event, d) => {
-                  if (Platform.OS !== 'ios') setActivePicker(null);
-                  if (event?.type === 'dismissed') {
-                    setActivePicker(null);
-                    return;
-                  }
-                  if (d) {
-                    const next = new Date(fechaHora);
-                    next.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
-                    setScheduleFor(key, next);
-                  }
-                }}
-              />
-            ) : null}
-
-            <TouchableOpacity
-              style={styles.dateRow}
-              onPress={() => setActivePicker(timePickerId)}
-              activeOpacity={0.85}
-            >
-              <Clock size={16} color={c.primary} strokeWidth={1.8} />
-              <Text style={styles.dateTxt}>
-                {fechaHora.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            </TouchableOpacity>
-            {activePicker === timePickerId ? (
-              <DateTimePicker
-                mode="time"
-                value={fechaHora}
-                onChange={(event, d) => {
-                  if (Platform.OS !== 'ios') setActivePicker(null);
-                  if (event?.type === 'dismissed') {
-                    setActivePicker(null);
-                    return;
-                  }
-                  if (d) {
-                    const next = new Date(fechaHora);
-                    next.setHours(d.getHours(), d.getMinutes(), 0, 0);
-                    setScheduleFor(key, next);
-                  }
-                }}
-              />
-            ) : null}
+            <CitaFechaHoraPicker
+              value={fechaHora}
+              onChange={(next) => setScheduleFor(key, next)}
+              onRequestAndroidPicker={
+                Platform.OS === 'android'
+                  ? (mode) => {
+                      openAndroidCitaPicker({
+                        mode,
+                        value: fechaHora,
+                        onCommit: (next) => setScheduleFor(key, next),
+                      });
+                    }
+                  : undefined
+              }
+            />
           </View>
         );
       })}

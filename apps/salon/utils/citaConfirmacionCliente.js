@@ -14,8 +14,31 @@ function isCitaRechazada(estado) {
   return v === 'rechazado' || v === 'rechazada' || v === 'cancelado' || v === 'cancelada';
 }
 
+function normalizeEstadoCita(estado) {
+  return String(estado || '').trim().toLowerCase();
+}
+
 function isCitaConfirmada(estado) {
-  return String(estado || '').toLowerCase() === 'confirmado';
+  const v = normalizeEstadoCita(estado);
+  return v === 'confirmado' || v === 'confirmada';
+}
+
+function isCitaCompletada(estado) {
+  const v = normalizeEstadoCita(estado);
+  return v === 'completada' || v === 'completado';
+}
+
+/** Cita con visita escaneada o marcada completada: no reenviar mensajes. */
+export function citaVisitaYaValidada(citaOrParams) {
+  const row = citaOrParams || {};
+  if (row.visita_validada_en) return true;
+  return isCitaCompletada(row.estado);
+}
+
+export function citaPermiteMensajeCliente(citaOrParams) {
+  if (!citaOrParams) return false;
+  if (isCitaRechazada(citaOrParams.estado)) return false;
+  return !citaVisitaYaValidada(citaOrParams);
 }
 
 /** Tarjeta luxury en Andreas Pro (JSON estructurado). */
@@ -52,6 +75,9 @@ export async function sendCitaConfirmacionInApp({ clienteId, clienteNombre, clie
  * Tras confirmar cita en agenda: envía tarjeta a App Clientes y opcionalmente ofrece WhatsApp.
  */
 export async function notifyClienteCitaConfirmada(params) {
+  if (citaVisitaYaValidada(params)) {
+    return false;
+  }
   if (!isCitaConfirmada(params?.estado)) {
     Alert.alert(
       'Solo citas confirmadas',
@@ -113,6 +139,9 @@ export async function notifyClienteCitaConfirmada(params) {
  * Tras confirmar o registrar cita: WhatsApp opcional o mensaje in-app (sin ir a Pedidos).
  */
 export function offerConfirmacionCitaCliente(params) {
+  if (citaVisitaYaValidada(params)) {
+    return Promise.resolve(false);
+  }
   if (isCitaRechazada(params?.estado)) {
     Alert.alert('Cita rechazada', 'No se puede avisar al cliente de una cita rechazada.');
     return Promise.resolve(false);

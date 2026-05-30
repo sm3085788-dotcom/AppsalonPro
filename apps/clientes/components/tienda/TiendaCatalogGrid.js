@@ -128,13 +128,6 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
           fontSize: 15,
           color: c.foreground,
         },
-        hint: {
-          fontFamily: typography.fontSans,
-          fontSize: 12,
-          color: c.foregroundMuted,
-          lineHeight: 17,
-          marginBottom: spacing.md,
-        },
         toolbar: {
           flexDirection: 'row',
           justifyContent: 'space-between',
@@ -213,10 +206,6 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
 
   return (
     <View style={styles.page}>
-      <Text style={styles.hint}>
-        Productos publicados desde inventario (App Salón). Los servicios y el carrusel de marketing están en
-        Mis citas e Inicio.
-      </Text>
       <TextInput
         style={styles.searchBar}
         value={search}

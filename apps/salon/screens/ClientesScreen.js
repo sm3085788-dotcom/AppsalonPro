@@ -17,7 +17,13 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UserPlus, X, ChevronRight, Check, Store } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, MEMBRESIA_TIERS, membresiaLabel, isClienteAppVerificado } from '@appsalon/shared-config';
+import {
+  db,
+  MEMBRESIA_TIERS,
+  membresiaLabel,
+  isClienteAppVerificado,
+  computeMembresiaStatusFromRow,
+} from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { SalonFichaSheet } from '../components/SalonFichaSheet';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
@@ -201,6 +207,25 @@ export function ClientesScreen({ onBack }) {
     }
   }, [detailCliente, loadCodigosPendientes]);
 
+  useEffect(() => {
+    const id = detailCliente?.id;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      const { data: syncPayload } = await db.membresias.syncVigencia(id);
+      if (cancelled) return;
+      if (syncPayload?.expired) {
+        const { data: refreshed } = await db.clientes.getById(id);
+        if (refreshed) {
+          setDetailCliente((p) => (p?.id === id ? { ...p, ...refreshed } : p));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detailCliente?.id]);
+
   const asignarMembresiaManual = async () => {
     if (!detailCliente?.id) return;
     setAsignandoMembresia(true);
@@ -216,7 +241,10 @@ export function ClientesScreen({ onBack }) {
     const actualizado = data || { ...detailCliente, membresia_nivel: nivelCodigo };
     setDetailCliente(actualizado);
     setClientes((prev) => prev.map((c) => (c.id === actualizado.id ? { ...c, ...actualizado } : c)));
-    Alert.alert('Listo', `Membresía ${membresiaLabel(nivelCodigo)} asignada en la ficha (sin código).`);
+    Alert.alert(
+      'Listo',
+      `Membresía ${membresiaLabel(nivelCodigo)} activa 29 días en la ficha (sin código).`,
+    );
   };
 
   const syncClienteInList = useCallback((updated) => {
@@ -661,9 +689,26 @@ export function ClientesScreen({ onBack }) {
                 <Text style={styles.detailVal}>
                   {detailCliente.membresia_nivel
                     ? membresiaLabel(detailCliente.membresia_nivel)
-                    : 'Sin activar'}
+                    : 'Sin activar · Estándar'}
                 </Text>
               </View>
+              {(() => {
+                const st = computeMembresiaStatusFromRow(detailCliente);
+                if (!st.active || !detailCliente.membresia_vence_en) return null;
+                const vence = new Date(detailCliente.membresia_vence_en).toLocaleDateString('es-GT', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                });
+                return (
+                  <Text style={[styles.membresiaBlockHint, { color: c.foregroundMuted, marginBottom: spacing.xs }]}>
+                    Vigencia 29 días · vence {vence}
+                    {st.showRenewalReminder
+                      ? ` · renovar en ${st.daysLeft} día${st.daysLeft === 1 ? '' : 's'}`
+                      : ''}
+                  </Text>
+                );
+              })()}
               {(() => {
                 const conApp = isClienteAppVerificado(detailCliente);
                 return (

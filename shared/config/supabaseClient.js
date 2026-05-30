@@ -23,10 +23,14 @@ import {
 import {
   parseSalonFisicoUnidades,
   mergeAndreasPremiosSalonFisico,
-  isPedidoAppEfectivoRetiroSalon,
-  isPedidoAppTarjetaDelivery,
   ANDREAS_META,
 } from './andreasPremios.js';
+import {
+  tallyAndreasProductoPuntos,
+  countCitasPremios,
+  parseReferidoInvitadoState,
+  REFERIDO_PREMIOS_COPY,
+} from './referidoPremios.js';
 import { enrichTendenciasFeedPosts, isTendenciasFeedPost } from './tendenciasPublication.js';
 
 export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
@@ -319,6 +323,7 @@ export const db = {
       const notas = referralCode ? `Código referido: ${String(referralCode).trim()}` : null;
       const referidor = await resolveReferidorUserIdForSignup(referralCode, userId);
       const codigo_referido = buildDefaultCodigoReferido(userId);
+      const refCodigoPendiente = referralCode ? String(referralCode).trim().toUpperCase() : null;
       const insertPayload = {
         user_id: userId,
         nombre: nom,
@@ -328,6 +333,7 @@ export const db = {
         notas,
         referido_por: referidor,
         codigo_referido,
+        referido_codigo_pendiente: referidor && refCodigoPendiente ? refCodigoPendiente : null,
       };
       let { data, error } = await supabase.from('clientes').insert(insertPayload).select().single();
       if (
@@ -347,6 +353,19 @@ export const db = {
           .select()
           .single();
         return { data: fallback.data, error: fallback.error, created: !fallback.error };
+      }
+      if (!error && data?.id && referidor) {
+        void supabase.rpc('referido_registrar_invitacion', { p_cliente_id: data.id });
+        void import('./clientNotifications.js').then(({ enqueueClientNotification }) =>
+          enqueueClientNotification({
+            clientUserId: userId,
+            clienteId: data.id,
+            tipo: 'premios',
+            titulo: 'Bienvenida ANDREAS',
+            mensaje: REFERIDO_PREMIOS_COPY.bienvenida,
+            targetScreen: 'premios',
+          }),
+        );
       }
       return { data, error, created: !error };
     },
@@ -422,9 +441,14 @@ export const db = {
       const empty = {
         productosAppEfectivoRetiro: 0,
         productosAppTarjetaDelivery: 0,
+        productosAppEfectivoRetiroPendiente: 0,
+        productosAppTarjetaDeliveryPendiente: 0,
         citasVerificadas: 0,
+        citasPendientes: 0,
         productosSalonFisico: 0,
         referidosPrimeraCompra: 0,
+        esReferidoInvitado: false,
+        referidoInvitado: false,
         codigoReferido: null,
         meta,
         error: null,
@@ -436,9 +460,16 @@ export const db = {
 
       const { data: freshCliente, error: eFresh } = await supabase
         .from('clientes')
-        .select('codigo_referido, andreas_premios')
+        .select('codigo_referido, andreas_premios, referido_por')
         .eq('id', clienteRow.id)
         .maybeSingle();
+
+      const esReferidoInvitado = Boolean(
+        freshCliente?.referido_por ?? clienteRow.referido_por,
+      );
+      if (esReferidoInvitado) {
+        void supabase.rpc('referido_registrar_invitacion', { p_cliente_id: clienteRow.id });
+      }
       if (eFresh && !/column|does not exist/i.test(String(eFresh.message || ''))) {
         return { ...empty, error: eFresh };
       }
@@ -467,41 +498,52 @@ export const db = {
         .from('ecommerce_orders')
         .select('id, status, payment_method, fulfillment_type')
         .eq('client_user_id', clientUserId)
-        .eq('status', 'delivered');
+        .in('status', ['pending', 'confirmed', 'prepared', 'ready', 'delivered']);
       if (eOrd) {
-        return { ...empty, codigoReferido: codigoReferidoFinal, productosSalonFisico, error: eOrd };
+        return {
+          ...empty,
+          codigoReferido: codigoReferidoFinal,
+          productosSalonFisico,
+          esReferidoInvitado,
+          error: eOrd,
+        };
       }
-      const deliveredOrders = Array.isArray(orders) ? orders : [];
-      const orderById = new Map(deliveredOrders.map((o) => [String(o.id), o]));
-      const deliveredIds = deliveredOrders.map((o) => o.id).filter(Boolean);
+      const allOrders = Array.isArray(orders) ? orders : [];
+      const orderById = new Map(allOrders.map((o) => [String(o.id), o]));
+      const orderIds = allOrders.map((o) => o.id).filter(Boolean);
 
       let productosAppEfectivoRetiro = 0;
       let productosAppTarjetaDelivery = 0;
-      if (deliveredIds.length) {
+      let productosAppEfectivoRetiroPendiente = 0;
+      let productosAppTarjetaDeliveryPendiente = 0;
+      if (orderIds.length) {
         const { data: lines, error: eItems } = await supabase
           .from('ecommerce_order_items')
           .select('qty, order_id, product:inventario(notas)')
-          .in('order_id', deliveredIds);
+          .in('order_id', orderIds);
         if (!eItems && Array.isArray(lines)) {
-          for (const line of lines) {
-            if (getArticuloTipo(line.product) !== 'producto') continue;
-            const qty = Math.max(0, Math.floor(Number(line.qty) || 0));
-            if (qty < 1) continue;
-            const ord = orderById.get(String(line.order_id));
-            if (isPedidoAppEfectivoRetiroSalon(ord)) productosAppEfectivoRetiro += qty;
-            if (isPedidoAppTarjetaDelivery(ord)) productosAppTarjetaDelivery += qty;
-          }
+          const tallies = tallyAndreasProductoPuntos(allOrders, lines, orderById);
+          productosAppEfectivoRetiro = tallies.efectivoRetiro;
+          productosAppTarjetaDelivery = tallies.tarjetaDelivery;
+          productosAppEfectivoRetiroPendiente = tallies.efectivoRetiroPendiente;
+          productosAppTarjetaDeliveryPendiente = tallies.tarjetaDeliveryPendiente;
         }
       }
 
       let citasVerificadas = 0;
+      let citasPendientes = 0;
       const { data: citas, error: eCit } = await supabase
         .from('citas')
-        .select('estado')
+        .select('estado, visita_qr_token, visita_validada_en, fecha_hora')
         .eq('cliente_id', clienteRow.id);
       if (!eCit && Array.isArray(citas)) {
-        citasVerificadas = citas.filter((c) => String(c.estado || '').toLowerCase() === 'completada').length;
+        const cc = countCitasPremios(citas);
+        citasVerificadas = cc.verificadas;
+        citasPendientes = cc.pendientes;
       }
+
+      const refInv = parseReferidoInvitadoState(ap);
+      const referidoInvitado = esReferidoInvitado && refInv.invitado;
 
       let referidosPrimeraCompra = 0;
       let rpcMissing = false;
@@ -525,17 +567,51 @@ export const db = {
         referidosPrimeraCompra = Math.max(0, Math.floor(Number(refCount) || 0));
       }
 
+      let referidosCiclo = 0;
+      const { parseReferidosPremiosState } = await import('./andreasReferidos.js');
+      const st = parseReferidosPremiosState(ap);
+      referidosCiclo = st.ciclo;
+      const { data: refResumen } = await supabase.rpc('premios_andreas_referidos_resumen', {
+        p_referidor: clientUserId,
+      });
+      if (refResumen && typeof refResumen === 'object' && refResumen.en_ciclo != null) {
+        referidosPrimeraCompra = Math.max(0, Math.floor(Number(refResumen.en_ciclo) || 0));
+        referidosCiclo = Math.max(0, Math.min(2, Math.floor(Number(refResumen.ciclo) || 0)));
+      } else if (!eRpc) {
+        referidosPrimeraCompra = st.enCiclo;
+      }
+
       return {
         productosAppEfectivoRetiro,
         productosAppTarjetaDelivery,
+        productosAppEfectivoRetiroPendiente,
+        productosAppTarjetaDeliveryPendiente,
         citasVerificadas,
+        citasPendientes,
         productosSalonFisico,
         referidosPrimeraCompra,
+        referidosCiclo,
+        esReferidoInvitado,
+        referidoInvitado,
         codigoReferido: codigoReferidoFinal,
         meta,
         error: null,
         rpcMissing,
       };
+    },
+
+    /** Aviso en app al invitado referido (compras, citas, bienvenida). */
+    notifyReferidoAccion: async ({ clientUserId, clienteId, titulo, mensaje, targetScreen = 'premios' }) => {
+      if (!clientUserId) return { data: null, error: { message: 'Sin usuario' } };
+      const { enqueueClientNotification } = await import('./clientNotifications.js');
+      return enqueueClientNotification({
+        clientUserId,
+        clienteId,
+        tipo: 'premios',
+        titulo,
+        mensaje,
+        targetScreen,
+      });
     },
 
     /** Registra unidades de producto compradas en salón físico (staff · columna andreas_premios). */
@@ -570,6 +646,18 @@ export const db = {
       if (e0) return { data: null, error: e0 };
       const cur = parseSalonFisicoUnidades(row?.andreas_premios);
       return db.premiosAndreas.updateSalonFisicoUnidades(clienteId, cur + d);
+    },
+
+    /** Tras registrar venta en salón: suma productos a salon_fisico_unidades si el cliente tiene app. */
+    procesarVentaSalonFisico: async (ventaId) => {
+      if (!ventaId) return { data: null, error: { message: 'Venta no indicada' } };
+      const { data, error } = await supabase.rpc('premios_andreas_procesar_venta_salon', {
+        p_venta_id: ventaId,
+      });
+      if (error && /function|does not exist|42883/i.test(String(error.message || ''))) {
+        return { data: null, error, rpcMissing: true };
+      }
+      return { data, error };
     },
   },
 
@@ -622,9 +710,12 @@ export const db = {
       }
       const categoria =
         id === 'vip' ? 'VIP' : id === 'plata' ? 'Plata' : id === 'bronce' ? 'Bronce' : undefined;
+      const vence = new Date();
+      vence.setDate(vence.getDate() + 29);
       const patch = {
         membresia_nivel: id,
         membresia_activada_en: new Date().toISOString(),
+        membresia_vence_en: vence.toISOString(),
       };
       if (categoria) patch.categoria = categoria;
       return db.clientes.update(clienteId, patch);
@@ -643,6 +734,31 @@ export const db = {
         return { data: null, error: { message: payload.error || 'No se pudo activar el código.' } };
       }
       return { data: payload, error: null };
+    },
+
+    syncVigencia: async (clienteId = null) => {
+      const { data, error } = await supabase.rpc('sync_membresia_cliente', {
+        p_cliente_id: clienteId,
+      });
+      if (error) return { data: null, error };
+      return { data: data && typeof data === 'object' ? data : {}, error: null };
+    },
+  },
+
+  referidosAndreas: {
+    checkoutInfo: async (userId = null) => {
+      const { data, error } = await supabase.rpc('cliente_referidor_checkout_info', {
+        p_user_id: userId,
+      });
+      if (error) return { data: null, error };
+      return { data: data && typeof data === 'object' ? data : {}, error: null };
+    },
+    registrarInvitacion: async (clienteId) => {
+      if (!clienteId) return { data: null, error: { message: 'Sin cliente' } };
+      const { data, error } = await supabase.rpc('referido_registrar_invitacion', {
+        p_cliente_id: clienteId,
+      });
+      return { data, error };
     },
   },
 
@@ -893,18 +1009,70 @@ export const db = {
     },
 
     search: async (query, limit = 20) => {
-      const q = String(query || '').trim();
+      const q = String(query || '')
+        .trim()
+        .replace(/[%(),]/g, '')
+        .slice(0, 80);
       if (!q) return { data: [], error: null };
-      return await supabase
-        .from('citas')
-        .select(`
+
+      const select = `
           *,
           cliente:clientes(id, nombre, telefono, email),
           empleado:empleados(id, nombre)
-        `)
+        `;
+      const cap = Math.max(1, Math.min(40, Math.floor(Number(limit) || 20)));
+
+      const { data: byFields, error: eFields } = await supabase
+        .from('citas')
+        .select(select)
         .or(`servicio.ilike.%${q}%,notas_servicio.ilike.%${q}%,estado.ilike.%${q}%`)
         .order('fecha_hora', { ascending: false })
-        .limit(limit);
+        .limit(cap);
+
+      const [{ data: clientes }, { data: empleados }] = await Promise.all([
+        supabase
+          .from('clientes')
+          .select('id')
+          .or(`nombre.ilike.%${q}%,telefono.ilike.%${q}%,email.ilike.%${q}%`)
+          .limit(20),
+        supabase
+          .from('empleados')
+          .select('id')
+          .or(`nombre.ilike.%${q}%,telefono.ilike.%${q}%,email.ilike.%${q}%`)
+          .limit(15),
+      ]);
+
+      const clienteIds = (Array.isArray(clientes) ? clientes : []).map((c) => c.id).filter(Boolean);
+      const empleadoIds = (Array.isArray(empleados) ? empleados : []).map((e) => e.id).filter(Boolean);
+
+      const extraRows = [];
+      if (clienteIds.length) {
+        const { data } = await supabase
+          .from('citas')
+          .select(select)
+          .in('cliente_id', clienteIds)
+          .order('fecha_hora', { ascending: false })
+          .limit(cap);
+        if (Array.isArray(data)) extraRows.push(...data);
+      }
+      if (empleadoIds.length) {
+        const { data } = await supabase
+          .from('citas')
+          .select(select)
+          .in('empleado_id', empleadoIds)
+          .order('fecha_hora', { ascending: false })
+          .limit(cap);
+        if (Array.isArray(data)) extraRows.push(...data);
+      }
+
+      const byId = new Map();
+      for (const row of [...(Array.isArray(byFields) ? byFields : []), ...extraRows]) {
+        if (row?.id) byId.set(row.id, row);
+      }
+      const merged = Array.from(byId.values()).sort(
+        (a, b) => new Date(b.fecha_hora || 0).getTime() - new Date(a.fecha_hora || 0).getTime(),
+      );
+      return { data: merged.slice(0, cap), error: eFields };
     },
 
     // Crear nueva cita
@@ -969,6 +1137,60 @@ export const db = {
         .eq('id', id)
         .select()
         .single();
+    },
+
+    /** Genera o devuelve QR de visita si la cita está confirmada (app clientes o salón). */
+    asegurarVisitaQr: async (citaId, options = {}) => {
+      if (!citaId) return { data: null, error: { message: 'Sin cita' } };
+      const { data, error } = await supabase.rpc('cita_asegurar_visita_qr', { p_cita_id: citaId });
+      if (!error) {
+        const token = data != null ? String(data).trim() : '';
+        if (token) return { data: token, error: null };
+      }
+      if (!options.allowClientFallback) {
+        return {
+          data: null,
+          error: error || { message: 'No se pudo generar el QR de visita.' },
+        };
+      }
+      const msg = String(error?.message || error?.hint || '');
+      const rpcMissing = /function|does not exist|schema cache|pgcrypto|gen_random_bytes/i.test(msg);
+      if (error && !rpcMissing) {
+        return { data: null, error };
+      }
+      const token = `V${Date.now().toString(36).toUpperCase().slice(-6)}${Math.random()
+        .toString(36)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 6)}`;
+      const { data: row, error: upErr } = await supabase
+        .from('citas')
+        .update({ visita_qr_token: token })
+        .eq('id', citaId)
+        .select('visita_qr_token')
+        .single();
+      if (upErr) {
+        const upMsg = String(upErr.message || '');
+        if (/visita_qr_token|column/i.test(upMsg)) {
+          return {
+            data: null,
+            error: {
+              message:
+                'Falta configurar Supabase: ejecutá supabase-membresias-referidos-programa.sql en el SQL Editor.',
+            },
+          };
+        }
+        return { data: null, error: upErr };
+      }
+      const saved = String(row?.visita_qr_token || token).trim();
+      return { data: saved || null, error: null };
+    },
+
+    /** Sincroniza QR para todas las citas confirmadas del cliente (sesión actual). */
+    syncVisitaQrCliente: async () => {
+      const { data, error } = await supabase.rpc('citas_sync_visita_qr_cliente');
+      if (error) return { data: null, error };
+      return { data: data && typeof data === 'object' ? data : {}, error: null };
     },
 
     // Cancelar cita
@@ -2081,8 +2303,16 @@ export const db = {
         vendedor_id: data.vendedor_id || null,
         caja_id: data.caja_id || null,
       };
+      const finishVenta = async (result) => {
+        const ventaId = result?.data?.id;
+        if (!result?.error && ventaId) {
+          void db.premiosAndreas.procesarVentaSalonFisico(ventaId);
+        }
+        return result;
+      };
       if (options.minimalReturn) {
-        return await supabase.from('ventas').insert(payload).select('id').maybeSingle();
+        const r = await supabase.from('ventas').insert(payload).select('id').maybeSingle();
+        return finishVenta(r);
       }
       const { data: row, error } = await supabase
         .from('ventas')
@@ -2093,9 +2323,10 @@ export const db = {
           vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
         `)
         .maybeSingle();
-      if (row) return { data: row, error: null };
+      if (row) return finishVenta({ data: row, error: null });
       if (error && !isPostgrestSingleRowError(error)) return { data: null, error };
-      return await supabase.from('ventas').insert(payload).select('id').maybeSingle();
+      const r2 = await supabase.from('ventas').insert(payload).select('id').maybeSingle();
+      return finishVenta(r2);
     },
 
     // Actualizar venta
@@ -2867,7 +3098,7 @@ export const db = {
         .single();
     },
 
-    // Cancelar orden
+    // Cancelar orden (salón / staff con RLS update)
     cancelar: async (id, reason) => {
       return await supabase
         .from('ecommerce_orders')
@@ -2880,6 +3111,17 @@ export const db = {
         .eq('id', id)
         .select()
         .single();
+    },
+
+    /** Cancelar pedido propio desde App Clientes (RPC `client_cancel_pedido`). */
+    cancelarPorCliente: async (orderId, reason) => {
+      const { data, error } = await supabase.rpc('client_cancel_pedido', {
+        p_order_id: orderId,
+        p_reason: reason ?? null,
+      });
+      if (error) return { data: null, error };
+      const row = Array.isArray(data) ? data[0] : data;
+      return { data: row ?? null, error: null };
     },
 
     // Eliminar orden

@@ -3,7 +3,14 @@ import { View, Text, StyleSheet, Platform, TouchableOpacity, TextInput, Alert, A
 import { LinearGradient } from 'expo-linear-gradient';
 import { Crown, Medal, Sparkles, Check, KeyRound, Gem } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { MEMBRESIA_TIERS, getMembresiaTier, db, membresiaLabel, normalizeMembresiaCodigoInput } from '@appsalon/shared-config';
+import {
+  MEMBRESIA_TIERS,
+  getMembresiaTier,
+  db,
+  membresiaLabel,
+  normalizeMembresiaCodigoInput,
+  computeMembresiaStatusFromRow,
+} from '@appsalon/shared-config';
 import { SalonButton } from '../luxury/SalonButton';
 import { useTheme } from '../../theme/ThemeProvider';
 
@@ -146,7 +153,7 @@ function CodigoCard({ clienteRow, onActivated, onDone, c }) {
     onActivated?.();
     Alert.alert(
       '¡Listo!',
-      `Tu membresía ${label} quedó activa en tu perfil.`,
+      `Tu membresía ${label} quedó activa por 29 días. Tres días antes del vencimiento te recordaremos renovar en el salón.`,
       [{ text: 'Ver mi perfil', onPress: () => onDone?.() }],
     );
   };
@@ -210,9 +217,23 @@ function CodigoCard({ clienteRow, onActivated, onDone, c }) {
 export function MembresiasBody({ clienteRow, onMembershipChanged, onClose }) {
   const { colors: c } = useTheme();
   const activeTier = getMembresiaTier(clienteRow?.membresia_nivel);
+  const membresiaStatus = useMemo(() => computeMembresiaStatusFromRow(clienteRow), [clienteRow]);
 
   return (
     <>
+      {membresiaStatus.showRenewalReminder && membresiaStatus.active ? (
+        <View style={[heroStyles.reminderBanner, { backgroundColor: c.surfaceMuted, borderColor: c.primary }]}>
+          <Text style={[heroStyles.reminderTitle, { color: c.primary }]}>Renovación en {membresiaStatus.daysLeft} días</Text>
+          <Text style={[heroStyles.reminderTxt, { color: c.foregroundMuted }]}>
+            {membresiaStatus.renewalMessage}
+          </Text>
+        </View>
+      ) : null}
+      {membresiaStatus.active && membresiaStatus.venceEn ? (
+        <Text style={[heroStyles.vigenciaTxt, { color: c.foregroundSubtle }]}>
+          Vigencia: 29 días · vence {new Date(membresiaStatus.venceEn).toLocaleDateString('es-GT')}
+        </Text>
+      ) : null}
       {/* Hero estilo Premios */}
       <View style={heroStyles.wrap}>
         <LinearGradient
@@ -286,6 +307,28 @@ export function MembresiasBody({ clienteRow, onMembershipChanged, onClose }) {
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 
 const heroStyles = StyleSheet.create({
+  reminderBanner: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  reminderTitle: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  reminderTxt: {
+    fontFamily: typography.fontSans,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  vigenciaTxt: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
   wrap: {
     marginBottom: spacing.md,
     borderRadius: radii.lg,

@@ -7,15 +7,13 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Platform,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { Calendar, Clock } from 'lucide-react-native';
+import { CitaFechaHoraPicker } from '../components/citas/CitaFechaHoraPicker';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { useTheme } from '../theme/ThemeProvider';
-import { db } from '@appsalon/shared-config';
+import { db, REFERIDO_PREMIOS_COPY } from '@appsalon/shared-config';
 import { loadServiciosTiendaCatalog, formatServicioPrecio, formatServicioDuracion } from '../services/salonServiciosTienda';
 import { useServiciosCart } from '../context/ServiciosCartContext';
 
@@ -66,8 +64,6 @@ export function AgendarCitaForm({
   const [servicioSel, setServicioSel] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [fechaHora, setFechaHora] = useState(() => defaultNextSlot());
-  const [showDate, setShowDate] = useState(false);
-  const [showTime, setShowTime] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -187,24 +183,6 @@ export function AgendarCitaForm({
           color: tc.foreground,
           marginBottom: spacing.xs,
         },
-        dateRow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          minHeight: 48,
-          borderRadius: radii.md,
-          borderWidth: 1,
-          borderColor: tc.cardBorder,
-          backgroundColor: tc.card,
-          paddingHorizontal: spacing.md,
-          marginBottom: spacing.sm,
-        },
-        dateTxt: {
-          fontFamily: typography.fontSans,
-          fontSize: 15,
-          color: tc.foreground,
-          flex: 1,
-        },
       }),
     [tc],
   );
@@ -249,6 +227,16 @@ export function AgendarCitaForm({
     }
     onCitasChanged?.();
     onCitaBooked?.();
+
+    if (clienteRow?.user_id && clienteRow?.id) {
+      void db.premiosAndreas.notifyReferidoAccion({
+        clientUserId: clienteRow.user_id,
+        clienteId: clienteRow.id,
+        titulo: 'Cita solicitada',
+        mensaje: REFERIDO_PREMIOS_COPY.citaSolicitada,
+        targetScreen: 'premios',
+      });
+    }
 
     const nombreEnviado = servicioSel.nombre;
     const quedan = modoCarrito ? cartItems.length - 1 : 0;
@@ -394,49 +382,7 @@ export function AgendarCitaForm({
 
       <View style={[subStyles.card, { marginTop: spacing.md }]}>
         <Text style={subStyles.rowLabel}>Fecha y hora</Text>
-        <TouchableOpacity style={[styles.dateRow, { marginTop: spacing.sm }]} onPress={() => setShowDate(true)}>
-          <Text style={styles.dateTxt}>
-            {fechaHora.toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' })}
-          </Text>
-          <Calendar size={18} color={tc.foregroundSubtle} strokeWidth={1.8} />
-        </TouchableOpacity>
-        {showDate ? (
-          <DateTimePicker
-            mode="date"
-            value={fechaHora}
-            minimumDate={new Date()}
-            maximumDate={new Date(new Date().getFullYear() + 1, 11, 31)}
-            onChange={(_, d) => {
-              if (Platform.OS !== 'ios') setShowDate(false);
-              if (d) {
-                const next = new Date(fechaHora);
-                next.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
-                setFechaHora(next);
-              }
-            }}
-          />
-        ) : null}
-
-        <TouchableOpacity style={styles.dateRow} onPress={() => setShowTime(true)}>
-          <Text style={styles.dateTxt}>
-            {fechaHora.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
-          </Text>
-          <Clock size={18} color={tc.foregroundSubtle} strokeWidth={1.8} />
-        </TouchableOpacity>
-        {showTime ? (
-          <DateTimePicker
-            mode="time"
-            value={fechaHora}
-            onChange={(_, d) => {
-              if (Platform.OS !== 'ios') setShowTime(false);
-              if (d) {
-                const next = new Date(fechaHora);
-                next.setHours(d.getHours(), d.getMinutes(), 0, 0);
-                setFechaHora(next);
-              }
-            }}
-          />
-        ) : null}
+        <CitaFechaHoraPicker value={fechaHora} onChange={setFechaHora} />
       </View>
 
       <SalonButton

@@ -2,6 +2,7 @@ import { db, supabase, isPostgrestSingleRowError } from './supabaseClient.js';
 import { registrarMontoVentaEnMeta } from './metaGlobal.js';
 import { requireCajaAbierta } from './cajaGuard.js';
 import { enqueueClientNotification } from './clientNotifications.js';
+import { REFERIDO_PREMIOS_COPY } from './referidoPremios.js';
 import { formatQ } from '../utils/ventaFactura.js';
 
 function friendlyOrderDbError(err) {
@@ -54,6 +55,7 @@ async function crearPedidoTiendaCliente({
   payment_method,
   card_last4,
   notes,
+  checkout_snapshot = null,
 }) {
   const lines = (cartItems || []).filter((i) => i?.id && Number(i.qty) > 0);
   if (!lines.length) {
@@ -99,6 +101,7 @@ async function crearPedidoTiendaCliente({
     fulfillment_type: fulfillment.fulfillment_type,
     delivery_reference: fulfillment.delivery_reference,
     delivery_address: deliveryAddress || null,
+    checkout_snapshot: checkout_snapshot || null,
   });
 
   if (oErr || !order) {
@@ -134,6 +137,7 @@ export async function crearPedidoEfectivo({
   homeAddressType,
   notes,
   deliveryAddress = null,
+  checkout_snapshot = null,
 }) {
   return crearPedidoTiendaCliente({
     clienteNombre,
@@ -146,6 +150,7 @@ export async function crearPedidoEfectivo({
     payment_method: 'efectivo',
     card_last4: null,
     notes: notes || 'Pedido app clientes · pago en efectivo',
+    checkout_snapshot,
   });
 }
 
@@ -162,6 +167,7 @@ export async function crearPedidoTarjetaPendiente({
   homeAddressType,
   deliveryAddress = null,
   cardLast4 = null,
+  checkout_snapshot = null,
 }) {
   return crearPedidoTiendaCliente({
     clienteNombre,
@@ -175,6 +181,7 @@ export async function crearPedidoTarjetaPendiente({
     card_last4: cardLast4,
     notes:
       'Pedido app clientes · tarjeta (pendiente de captura). El salón cobra con su pasarela y confirma en Pedidos antes de preparar el envío o retiro.',
+    checkout_snapshot,
   });
 }
 
@@ -286,6 +293,8 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
 
   if (uErr) return { ok: false, error: friendlyOrderDbError(uErr) };
 
+  void supabase.rpc('validar_referido_primera_compra', { p_order_id: orderId });
+
   if (order.client_user_id && clienteId) {
     void enqueueClientNotification({
       clientUserId: order.client_user_id,
@@ -295,6 +304,14 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
       mensaje: `Folio ${noFactura} · ${formatQ(subtotal)}. Ya está en Mis facturas.`,
       targetScreen: 'mis_facturas',
       targetId: ventaId != null ? String(ventaId) : noFactura,
+    });
+    void enqueueClientNotification({
+      clientUserId: order.client_user_id,
+      clienteId,
+      tipo: 'premios',
+      titulo: 'Sumaste puntos en Premios',
+      mensaje: REFERIDO_PREMIOS_COPY.compraVerificada,
+      targetScreen: 'premios',
     });
   }
 

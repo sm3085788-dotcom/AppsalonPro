@@ -81,3 +81,171 @@ $$;
 REVOKE ALL ON FUNCTION public.premios_andreas_referidos_primera_compra(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.premios_andreas_referidos_primera_compra(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.premios_andreas_referidos_primera_compra(uuid) TO service_role;
+
+-- ─── Salón físico: sumar unidades al registrar venta (cliente con app vinculada) ───
+
+CREATE OR REPLACE FUNCTION public.premios_andreas_es_servicio_inventario(p_notas text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT COALESCE(p_notas, '') LIKE '%"articuloTipo":"servicio"%'
+      OR COALESCE(p_notas, '') LIKE '%"articuloTipo": "servicio"%';
+$$;
+
+CREATE OR REPLACE FUNCTION public.premios_andreas_contar_productos_items(p_items jsonb)
+RETURNS integer
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_item jsonb;
+  v_pid uuid;
+  v_qty integer;
+  v_tipo text;
+  v_notas text;
+  v_total integer := 0;
+BEGIN
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' THEN
+    RETURN 0;
+  END IF;
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
+  LOOP
+    v_tipo := lower(trim(COALESCE(v_item->>'articulo_tipo', v_item->>'tipo', '')));
+    IF v_tipo = 'servicio' THEN
+      CONTINUE;
+    END IF;
+    v_qty := GREATEST(0, FLOOR(COALESCE((v_item->>'cantidad')::numeric, (v_item->>'qty')::numeric, 1)));
+    IF v_qty < 1 THEN
+      CONTINUE;
+    END IF;
+    IF v_tipo = 'producto' THEN
+      v_total := v_total + v_qty;
+      CONTINUE;
+    END IF;
+    BEGIN
+      v_pid := NULLIF(trim(COALESCE(v_item->>'producto_id', v_item->>'productoId', '')), '')::uuid;
+    EXCEPTION WHEN OTHERS THEN
+      v_pid := NULL;
+    END;
+    IF v_pid IS NULL THEN
+      v_total := v_total + v_qty;
+      CONTINUE;
+    END IF;
+    SELECT i.notas INTO v_notas FROM public.inventario i WHERE i.id = v_pid;
+    IF NOT FOUND OR NOT public.premios_andreas_es_servicio_inventario(v_notas) THEN
+      v_total := v_total + v_qty;
+    END IF;
+  END LOOP;
+  RETURN v_total;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.premios_andreas_procesar_venta_salon(p_venta_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_venta record;
+  v_cliente_id uuid;
+  v_cli record;
+  v_ap jsonb;
+  v_ids jsonb;
+  v_delta integer;
+  v_cur integer;
+  v_new integer;
+BEGIN
+  IF p_venta_id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'sin_venta');
+  END IF;
+
+  SELECT v.id, v.cliente_id, v.cliente_nombre, v.items
+  INTO v_venta
+  FROM public.ventas v
+  WHERE v.id = p_venta_id;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'venta_no_encontrada');
+  END IF;
+
+  v_delta := public.premios_andreas_contar_productos_items(v_venta.items);
+  IF v_delta < 1 THEN
+    RETURN jsonb_build_object('ok', true, 'delta', 0, 'reason', 'sin_productos');
+  END IF;
+
+  v_cliente_id := v_venta.cliente_id;
+  IF v_cliente_id IS NULL AND NULLIF(trim(COALESCE(v_venta.cliente_nombre, '')), '') IS NOT NULL THEN
+    SELECT c.id INTO v_cliente_id
+    FROM public.clientes c
+    WHERE c.user_id IS NOT NULL
+      AND lower(trim(c.nombre)) = lower(trim(v_venta.cliente_nombre))
+    ORDER BY c.created_at DESC NULLS LAST
+    LIMIT 1;
+  END IF;
+
+  IF v_cliente_id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'sin_cliente_vinculado');
+  END IF;
+
+  SELECT c.id, c.user_id, c.andreas_premios
+  INTO v_cli
+  FROM public.clientes c
+  WHERE c.id = v_cliente_id;
+
+  IF NOT FOUND OR v_cli.user_id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'cliente_sin_app');
+  END IF;
+
+  v_ap := COALESCE(v_cli.andreas_premios, '{}'::jsonb);
+  v_ids := COALESCE(v_ap->'salon_fisico_venta_ids', '[]'::jsonb);
+  IF v_ids @> to_jsonb(p_venta_id::text) THEN
+    RETURN jsonb_build_object('ok', true, 'delta', 0, 'reason', 'ya_procesada');
+  END IF;
+
+  v_cur := GREATEST(0, COALESCE((v_ap->>'salon_fisico_unidades')::integer, 0));
+  v_new := v_cur + v_delta;
+  v_ap := jsonb_set(v_ap, '{salon_fisico_unidades}', to_jsonb(v_new), true);
+  v_ap := jsonb_set(
+    v_ap,
+    '{salon_fisico_venta_ids}',
+    v_ids || to_jsonb(p_venta_id::text),
+    true
+  );
+
+  UPDATE public.clientes
+  SET andreas_premios = v_ap
+  WHERE id = v_cliente_id;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'delta', v_delta,
+    'salon_fisico_unidades', v_new,
+    'cliente_id', v_cliente_id
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.premios_andreas_trg_venta_salon_fisico()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  PERFORM public.premios_andreas_procesar_venta_salon(NEW.id);
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_ventas_andreas_salon_fisico ON public.ventas;
+CREATE TRIGGER trg_ventas_andreas_salon_fisico
+  AFTER INSERT ON public.ventas
+  FOR EACH ROW
+  EXECUTE FUNCTION public.premios_andreas_trg_venta_salon_fisico();
+
+REVOKE ALL ON FUNCTION public.premios_andreas_procesar_venta_salon(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.premios_andreas_procesar_venta_salon(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.premios_andreas_procesar_venta_salon(uuid) TO service_role;

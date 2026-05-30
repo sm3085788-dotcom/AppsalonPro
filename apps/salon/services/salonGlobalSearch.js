@@ -214,7 +214,7 @@ export async function runSalonGlobalSearch(rawQuery) {
     push(hits, {
       id: `cita-${ci.id}`,
       moduleId: 'agenda',
-      category: 'Agenda',
+      category: 'Agenda / citas',
       title: ci.servicio || 'Cita',
       subtitle: [
         ci.cliente?.nombre,

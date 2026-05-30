@@ -14,6 +14,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import {
   labelEstadoCita,
   estadoCitaTone,
+  citaNecesitaValidacionVisita,
 } from '../../utils/citasLabels';
 import { CitaGestionCard } from './CitaGestionCard';
 
@@ -165,7 +166,19 @@ export function HistorialCitasTab({
 
       <Text style={[styles.sectionKicker, { marginTop: spacing.md }]}>Visitas anteriores</Text>
       {pasadas.length > 0 ? (
-        pasadas.map((h) => <CitaResumenCard key={h.id} cita={h} styles={styles} themeColors={c} />)
+        pasadas.map((h) =>
+          citaNecesitaValidacionVisita(h) ? (
+            <CitaGestionCard
+              key={h.id}
+              cita={h}
+              compact
+              onRefreshCitas={onRefreshCitas}
+              onGoTab={onGoTab}
+            />
+          ) : (
+            <CitaResumenCard key={h.id} cita={h} styles={styles} themeColors={c} />
+          ),
+        )
       ) : (
         <Text style={styles.pageLead}>Aún no hay visitas anteriores registradas.</Text>
       )}
