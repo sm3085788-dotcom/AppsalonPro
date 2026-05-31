@@ -1,5 +1,11 @@
 /** Utilidades compartidas para listas y detalle de facturas (ventas). */
 
+import {
+  parseSalonCanjeFromVentaNotas,
+  stripSalonCanjeMarkerFromVentaNotas,
+} from '../config/andreasPremiosCycles.js';
+import { parseCanjeFromNotasServicio } from '../config/andreasPremiosCitasAgenda.js';
+
 export function formatQ(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return 'Q 0.00';
@@ -64,4 +70,40 @@ export function formatMetodoPago(m) {
   const s = String(m || '').trim();
   if (!s) return '—';
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Notas de venta legibles en UI/ticket (sin JSON ni URL del canje ANDREAS). */
+export function formatVentaNotasParaDisplay(notas) {
+  const raw = String(notas || '').trim();
+  if (!raw) return null;
+
+  let staff = stripSalonCanjeMarkerFromVentaNotas(raw);
+  const canjeSalon = parseSalonCanjeFromVentaNotas(raw);
+  const canjeServ = parseCanjeFromNotasServicio(raw);
+  if (staff) {
+    staff = staff.replace(/\s*·\s*ANDREAS_CANJE:[^·\n]+/gi, '').replace(/ANDREAS_CANJE:[^·\n]+/gi, '').trim();
+  }
+  const parts = [];
+
+  if (staff) parts.push(staff);
+
+  if (canjeSalon && (canjeSalon.descuento_pct > 0 || canjeSalon.descuento_monto > 0)) {
+    const det = [];
+    if (canjeSalon.descuento_pct > 0) det.push(`${canjeSalon.descuento_pct}%`);
+    if (canjeSalon.descuento_monto > 0) det.push(`descuento ${formatQ(canjeSalon.descuento_monto)}`);
+    parts.push(`Canje premio ANDREAS en productos${det.length ? ` (${det.join(' · ')})` : ''}`);
+  } else if (/ANDREAS_CANJE_SALON/i.test(raw)) {
+    parts.push('Canje premio ANDREAS en productos (salón)');
+  }
+
+  if (canjeServ && (canjeServ.descuento_pct > 0 || canjeServ.descuento_monto > 0)) {
+    const det = [];
+    if (canjeServ.descuento_pct > 0) det.push(`${canjeServ.descuento_pct}%`);
+    if (canjeServ.descuento_monto > 0) det.push(`descuento ${formatQ(canjeServ.descuento_monto)}`);
+    parts.push(`Canje premio ANDREAS en servicio${det.length ? ` (${det.join(' · ')})` : ''}`);
+  } else if (/ANDREAS_CANJE:/i.test(raw) && !/ANDREAS_CANJE_SALON/i.test(raw)) {
+    parts.push('Canje premio ANDREAS en servicio');
+  }
+
+  return parts.length ? parts.join('\n') : null;
 }

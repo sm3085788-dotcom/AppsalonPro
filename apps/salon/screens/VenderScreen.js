@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,13 @@ import {
   getPreciosPorVolumenFromRow,
   VOLUMEN_TRABAJO_OPCIONES,
   volumenTrabajoLabel,
+  calcSalonCanjeDescuentoEnLineas,
+  calcCitasCanjeDescuentoEnLineas,
+  countProductoQtyEnLineasVenta,
+  countServicioQtyEnLineasVenta,
+  mergeVentaNotasConCanjeSalon,
+  mergeNotasServicioConCanje,
+  labelCanjeAndreasCliente,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
@@ -124,7 +131,10 @@ export function VenderScreen({ onBack }) {
   const [efectivoRecibidoStr, setEfectivoRecibidoStr] = useState('');
   const [notas, setNotas] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const ventaSubmitLockRef = useRef(false);
   const [volumenPickProduct, setVolumenPickProduct] = useState(null);
+  const [salonCanje, setSalonCanje] = useState(null);
+  const [citasCanje, setCitasCanje] = useState(null);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -165,6 +175,30 @@ export function VenderScreen({ onBack }) {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  const refreshClienteCanjes = useCallback(async (row) => {
+    if (!row?.id) {
+      setSalonCanje(null);
+      setCitasCanje(null);
+      return;
+    }
+    const [{ data: salon }, { data: citas }] = await Promise.all([
+      db.premiosAndreas.getSalonCanjeParaVenta({ clienteRow: row }),
+      db.premiosAndreas.getCitasCanjeParaVenta({ clienteRow: row }),
+    ]);
+    setSalonCanje(salon || null);
+    setCitasCanje(citas || null);
+  }, []);
+
+  useEffect(() => {
+    if (!clienteSel?.id) {
+      setSalonCanje(null);
+      setCitasCanje(null);
+      return;
+    }
+    void refreshClienteCanjes(clienteSel);
+    // Solo al cambiar de cliente (evita bucle al persistir andreas_premios).
+  }, [clienteSel?.id, refreshClienteCanjes]);
 
   const { refreshing, onRefresh } = useSalonPullRefresh(loadAll);
 
@@ -222,10 +256,35 @@ export function VenderScreen({ onBack }) {
     return Math.min(100, Math.max(0, raw));
   }, [descuentoPctStr]);
 
-  const descuentoNum = useMemo(() => {
-    if (subtotal <= 0 || descuentoPct <= 0) return 0;
+  const salonCanjeCalc = useMemo(
+    () => calcSalonCanjeDescuentoEnLineas(lines, salonCanje),
+    [lines, salonCanje],
+  );
+  const citasCanjeCalc = useMemo(
+    () => calcCitasCanjeDescuentoEnLineas(lines, citasCanje),
+    [lines, citasCanje],
+  );
+
+  const tieneCanjeSalonPendiente = Boolean(salonCanje && clienteSel?.user_id);
+  const tieneCanjeCitasPendiente = Boolean(citasCanje);
+  const hayProductosEnCarrito = lines.some((l) => !l.esServicio);
+  const hayServiciosEnCarrito = lines.some((l) => l.esServicio);
+  const usaCanjeSalon = Boolean(
+    tieneCanjeSalonPendiente && hayProductosEnCarrito && salonCanjeCalc.descuentoMonto > 0,
+  );
+  const usaCanjeCitas = Boolean(
+    tieneCanjeCitasPendiente && hayServiciosEnCarrito && citasCanjeCalc.descuentoMonto > 0,
+  );
+  const tieneCanjeAndreasPendiente = tieneCanjeSalonPendiente || tieneCanjeCitasPendiente;
+
+  const descuentoManualNum = useMemo(() => {
+    if (subtotal <= 0 || descuentoPct <= 0 || tieneCanjeAndreasPendiente) return 0;
     return Math.round(subtotal * (descuentoPct / 100) * 100) / 100;
-  }, [subtotal, descuentoPct]);
+  }, [subtotal, descuentoPct, tieneCanjeAndreasPendiente]);
+
+  const descuentoSalonNum = usaCanjeSalon ? salonCanjeCalc.descuentoMonto : 0;
+  const descuentoCitasNum = usaCanjeCitas ? citasCanjeCalc.descuentoMonto : 0;
+  const descuentoNum = descuentoSalonNum + descuentoCitasNum + descuentoManualNum;
 
   const total = useMemo(() => Math.max(0, subtotal - descuentoNum), [subtotal, descuentoNum]);
 
@@ -371,6 +430,7 @@ export function VenderScreen({ onBack }) {
   };
 
   const registrarVenta = async () => {
+    if (ventaSubmitLockRef.current || submitting) return;
     if (lines.length === 0) {
       Alert.alert('Venta', 'Agregá al menos un producto a la factura.');
       return;
@@ -398,6 +458,7 @@ export function VenderScreen({ onBack }) {
     const noFactura = nextNoFactura();
     const items = buildItemsPayload();
 
+    ventaSubmitLockRef.current = true;
     setSubmitting(true);
     try {
       const { data: cajaAbierta } = await db.cajas.getCajaActual();
@@ -412,22 +473,72 @@ export function VenderScreen({ onBack }) {
 
       const profNombre = profesionalSel?.nombre?.trim() || profesionalSearch.trim() || null;
 
-      const { error: vErr } = await db.ventas.create({
-        cliente_id: clienteSel?.id ?? null,
-        cliente_nombre: clienteSel?.nombre?.trim() || null,
-        profesional: profNombre,
-        vendedor_id: profesionalSel?.id ?? null,
-        total,
-        monto: total,
-        metodo_pago: metodoPago,
-        items,
-        no_factura: noFactura,
-        descuento: descuentoNum,
-        notas: notas.trim() || null,
-        caja_id: cajaId,
-      });
+      const productQty = countProductoQtyEnLineasVenta(lines);
+      const serviceQty = countServicioQtyEnLineasVenta(lines);
+      const aplicaCanjeSalon =
+        Boolean(salonCanje && clienteSel?.user_id && productQty > 0 && salonCanjeCalc.canjeSnap);
+      const aplicaCanjeCitas =
+        Boolean(citasCanje && serviceQty > 0 && citasCanjeCalc.canjeSnap);
+
+      let notasFinal = notas.trim() || null;
+      if (aplicaCanjeSalon) {
+        notasFinal = mergeVentaNotasConCanjeSalon(notasFinal, salonCanjeCalc.canjeSnap);
+      }
+      if (aplicaCanjeCitas) {
+        notasFinal = mergeNotasServicioConCanje(notasFinal, citasCanjeCalc.canjeSnap);
+      }
+
+      const { data: ventaRow, error: vErr } = await db.ventas.create(
+        {
+          cliente_id: clienteSel?.id ?? null,
+          cliente_nombre: clienteSel?.nombre?.trim() || null,
+          profesional: profNombre,
+          vendedor_id: profesionalSel?.id ?? null,
+          total,
+          monto: total,
+          metodo_pago: metodoPago,
+          items,
+          no_factura: noFactura,
+          descuento: descuentoNum,
+          notas: notasFinal,
+          caja_id: cajaId,
+        },
+        {
+          minimalReturn: true,
+          skipSalonFisicoPremios: aplicaCanjeSalon || aplicaCanjeCitas || productQty < 1,
+        },
+      );
 
       if (vErr) throw vErr;
+
+      if (aplicaCanjeSalon && ventaRow?.id && clienteSel?.id) {
+        const { error: canjeErr } = await db.premiosAndreas.registrarCanjeSalonFisicoVenta({
+          clienteId: clienteSel.id,
+          ventaId: ventaRow.id,
+          productQty,
+        });
+        if (canjeErr) {
+          Alert.alert(
+            'Venta registrada',
+            `Folio ${noFactura} guardado, pero no se actualizó el premio en la app del cliente: ${canjeErr.message || 'error'}.`,
+          );
+        }
+        setSalonCanje(null);
+      }
+
+      if (aplicaCanjeCitas && ventaRow?.id && clienteSel?.id) {
+        const { error: canjeCitErr } = await db.premiosAndreas.registrarCanjeCitasVenta({
+          clienteId: clienteSel.id,
+          ventaId: ventaRow.id,
+        });
+        if (canjeCitErr) {
+          Alert.alert(
+            'Venta registrada',
+            `Folio ${noFactura} guardado, pero no se actualizó el canje de servicio en la app: ${canjeCitErr.message || 'error'}.`,
+          );
+        }
+        setCitasCanje(null);
+      }
 
       for (const l of lines) {
         if (l.esServicio) continue;
@@ -445,33 +556,36 @@ export function VenderScreen({ onBack }) {
 
       await registrarMontoVentaEnMeta(total);
 
-      try {
-        await printVentaTicket({
-          no_factura: noFactura,
-          fecha: new Date().toISOString(),
-          cliente_nombre: clienteSel?.nombre?.trim() || null,
-          profesional: profNombre,
-          items,
-          subtotal,
-          descuento: descuentoNum,
-          total,
-          metodo_pago: metodoPago,
-          efectivo_recibido: metodoPago === 'efectivo' ? efectivoRecibido : null,
-          cambio: metodoPago === 'efectivo' ? cambio : null,
-          notas: notas.trim() || null,
-        });
-      } catch (printErr) {
-        Alert.alert(
-          'Venta guardada',
-          `Folio ${noFactura} registrado, pero no se pudo abrir el ticket: ${printErr?.message || 'error de impresión'}.`,
-        );
-      }
-
       await loadAll();
       resetFormPartial();
+      setSalonCanje(null);
+      setCitasCanje(null);
+
+      Alert.alert('Venta registrada', `Folio ${noFactura} guardado correctamente.`);
+
+      void printVentaTicket({
+        no_factura: noFactura,
+        fecha: new Date().toISOString(),
+        cliente_nombre: clienteSel?.nombre?.trim() || null,
+        profesional: profNombre,
+        items,
+        subtotal,
+        descuento: descuentoNum,
+        total,
+        metodo_pago: metodoPago,
+        efectivo_recibido: metodoPago === 'efectivo' ? efectivoRecibido : null,
+        cambio: metodoPago === 'efectivo' ? cambio : null,
+        notas: notas.trim() || null,
+      }).catch((printErr) => {
+        Alert.alert(
+          'Ticket',
+          printErr?.message || 'No se pudo abrir el ticket de impresión.',
+        );
+      });
     } catch (e) {
       Alert.alert('Error', e?.message || 'No se pudo registrar la venta.');
     } finally {
+      ventaSubmitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -532,9 +646,67 @@ export function VenderScreen({ onBack }) {
                   {clienteSel.nombre}
                   {clienteSel.telefono ? ` · ${clienteSel.telefono}` : ''}
                 </Text>
-                <TouchableOpacity onPress={() => setClienteSel(null)} hitSlop={10}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setClienteSel(null);
+                    setSalonCanje(null);
+                    setCitasCanje(null);
+                  }}
+                  hitSlop={10}
+                >
                   <Text style={[styles.chipClear, { color: c.primary }]}>Cambiar</Text>
                 </TouchableOpacity>
+              </View>
+            ) : null}
+            {tieneCanjeSalonPendiente ? (
+              <View
+                style={[
+                  styles.canjeBanner,
+                  {
+                    borderColor: c.primary,
+                    backgroundColor: posAccent.sectionBg,
+                  },
+                ]}
+              >
+                <Text style={[styles.canjeBannerTitle, { color: c.primary }]}>
+                  Canje ANDREAS · producto (salón físico)
+                </Text>
+                <Text style={[styles.canjeBannerTxt, { color: c.foregroundMuted }]}>
+                  Cuenta verificada · {salonCanje.unidades ?? 0} / {salonCanje.meta} unidades. Al
+                  facturar con productos se aplica {salonCanje.descuento_pct}% solo en productos.
+                </Text>
+                {lines.length > 0 && !hayProductosEnCarrito ? (
+                  <Text style={[styles.canjeBannerWarn, { color: '#B45309' }]}>
+                    Agregá al menos un producto para usar este canje (no aplica a servicios).
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            {tieneCanjeCitasPendiente ? (
+              <View
+                style={[
+                  styles.canjeBanner,
+                  {
+                    borderColor: c.primary,
+                    backgroundColor: posAccent.sectionBg,
+                    marginTop: tieneCanjeSalonPendiente ? spacing.sm : 0,
+                  },
+                ]}
+              >
+                <Text style={[styles.canjeBannerTitle, { color: c.primary }]}>
+                  Canje ANDREAS · servicio
+                </Text>
+                <Text style={[styles.canjeBannerTxt, { color: c.foregroundMuted }]}>
+                  {citasCanje.requiereApp
+                    ? 'Ficha sin app vinculada: el descuento se aplica en caja; enlazá la cuenta en Clientes para actualizar Premios.'
+                    : `Cuenta en App Clientes · ${citasCanje.citas ?? 0} / ${citasCanje.meta} citas verificadas.`}{' '}
+                  Al facturar con servicios se aplica {citasCanje.descuento_pct}% solo en servicios.
+                </Text>
+                {lines.length > 0 && !hayServiciosEnCarrito ? (
+                  <Text style={[styles.canjeBannerWarn, { color: '#B45309' }]}>
+                    Agregá al menos un servicio para usar este canje (no aplica a productos).
+                  </Text>
+                ) : null}
               </View>
             ) : null}
             {!clienteSel && clienteSearch.trim().length >= 2 && clientesFiltrados.length === 0 ? (
@@ -554,8 +726,13 @@ export function VenderScreen({ onBack }) {
                     key={String(item.id)}
                     style={[styles.pickTouch, { borderBottomColor: c.cardBorder }]}
                     onPress={() => {
-                      setClienteSel(item);
-                      setClienteSearch('');
+                      void (async () => {
+                        const { data: fresh } = await db.clientes.getById(item.id);
+                        const row = fresh || item;
+                        setClienteSel(row);
+                        setClienteSearch('');
+                        await refreshClienteCanjes(row);
+                      })();
                     }}
                   >
                     <Text style={[styles.pickName, { color: c.foreground }]} numberOfLines={1}>
@@ -563,6 +740,7 @@ export function VenderScreen({ onBack }) {
                     </Text>
                     <Text style={[styles.pickMeta, { color: c.foregroundMuted }]} numberOfLines={1}>
                       {item.telefono || item.email || '—'}
+                      {labelCanjeAndreasCliente(item)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -754,33 +932,67 @@ export function VenderScreen({ onBack }) {
                 <Text style={[styles.totalMuted, { color: c.foregroundMuted }]}>Subtotal</Text>
                 <Text style={[styles.totalFig, { color: c.foreground }]}>{formatQ(subtotal)}</Text>
               </View>
-              <Text style={[styles.fieldLbl, { color: c.foreground }]}>Descuento (%)</Text>
-              <View style={styles.discountRow}>
-                <TextInput
-                  style={[
-                    styles.input,
-                    styles.discountInput,
-                    {
-                      borderColor: posAccent.inputBorder,
-                      color: c.foreground,
-                      backgroundColor: c.backgroundAlt ?? c.surfaceMuted,
-                    },
-                  ]}
-                  placeholder="0"
-                  placeholderTextColor={c.foregroundSubtle}
-                  value={descuentoPctStr}
-                  onChangeText={(t) => setDescuentoPctStr(sanitizeDescuentoPct(t))}
-                  keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
-                />
-                <View style={[styles.percentBox, { borderColor: posAccent.inputBorder, backgroundColor: c.card }]}>
-                  <Text style={[styles.percentBoxTxt, { color: c.foregroundMuted }]}>%</Text>
+              {tieneCanjeSalonPendiente ? (
+                <View style={styles.totalRow}>
+                  <Text style={[styles.totalMuted, { color: c.foregroundMuted }]}>
+                    Canje producto (salón físico)
+                  </Text>
+                  <Text style={[styles.totalFig, { color: c.primary }]}>
+                    {usaCanjeSalon
+                      ? `−${formatQ(descuentoSalonNum)} (${salonCanje.descuento_pct}%)`
+                      : hayProductosEnCarrito
+                        ? '—'
+                        : `Pendiente: agregá un producto (${salonCanje.descuento_pct}%)`}
+                  </Text>
                 </View>
-              </View>
-              <Text style={[styles.hint, { color: c.foregroundMuted, marginTop: 0 }]}>
-                {descuentoPct > 0
-                  ? `Descuento: ${formatQ(descuentoNum)} (${descuentoPct}%)`
-                  : 'Escribí el porcentaje sin símbolo; el monto se calcula del subtotal.'}
-              </Text>
+              ) : null}
+              {tieneCanjeCitasPendiente ? (
+                <View style={styles.totalRow}>
+                  <Text style={[styles.totalMuted, { color: c.foregroundMuted }]}>
+                    Canje servicio (citas)
+                  </Text>
+                  <Text style={[styles.totalFig, { color: c.primary }]}>
+                    {usaCanjeCitas
+                      ? `−${formatQ(descuentoCitasNum)} (${citasCanje.descuento_pct}%)`
+                      : hayServiciosEnCarrito
+                        ? '—'
+                        : `Pendiente: agregá un servicio (${citasCanje.descuento_pct}%)`}
+                  </Text>
+                </View>
+              ) : null}
+              {!tieneCanjeAndreasPendiente ? (
+                <>
+                  <Text style={[styles.fieldLbl, { color: c.foreground }]}>Descuento (%)</Text>
+                  <View style={styles.discountRow}>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        styles.discountInput,
+                        {
+                          borderColor: posAccent.inputBorder,
+                          color: c.foreground,
+                          backgroundColor: c.backgroundAlt ?? c.surfaceMuted,
+                        },
+                      ]}
+                      placeholder="0"
+                      placeholderTextColor={c.foregroundSubtle}
+                      value={descuentoPctStr}
+                      onChangeText={(t) => setDescuentoPctStr(sanitizeDescuentoPct(t))}
+                      keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
+                    />
+                    <View
+                      style={[styles.percentBox, { borderColor: posAccent.inputBorder, backgroundColor: c.card }]}
+                    >
+                      <Text style={[styles.percentBoxTxt, { color: c.foregroundMuted }]}>%</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.hint, { color: c.foregroundMuted, marginTop: 0 }]}>
+                    {descuentoPct > 0
+                      ? `Descuento: ${formatQ(descuentoManualNum)} (${descuentoPct}%)`
+                      : 'Escribí el porcentaje sin símbolo; el monto se calcula del subtotal.'}
+                  </Text>
+                </>
+              ) : null}
               <View style={[styles.grandRow, { borderTopColor: c.cardBorder }]}>
                 <Text style={[styles.grandLbl, { color: c.foreground }]}>Total</Text>
                 <Text style={[styles.grandVal, { color: c.primary }]}>{formatQ(total)}</Text>
@@ -1000,6 +1212,27 @@ function createStyles() {
     chipClear: {
       fontFamily: typography.fontSansMedium,
       fontSize: 14,
+    },
+    canjeBanner: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    canjeBannerTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      marginBottom: 4,
+    },
+    canjeBannerTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    canjeBannerWarn: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      marginTop: spacing.xs,
     },
     pickBlock: {
       borderRadius: radii.md,

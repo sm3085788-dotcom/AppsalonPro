@@ -7,6 +7,7 @@ import {
   typography,
 } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 
 /**
  * @param {{ id: string, label: string, icon: import('react').ComponentType<{ size?: number, color?: string, strokeWidth?: number }> }[]} items
@@ -117,7 +118,7 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
                 <View style={styles.iconShell}>
                   <ShoppingCart size={22} color={inactiveColor} strokeWidth={1.6} />
                   {cartCount > 0 ? (
-                    <View style={[styles.cartBadge, { backgroundColor: c.error }]}>
+                    <View style={[styles.cartBadge, { backgroundColor: CLIENT_ALERT_BELL_RED }]}>
                       <Text style={styles.cartBadgeTxt}>{cartCount > 99 ? '99+' : String(cartCount)}</Text>
                     </View>
                   ) : null}

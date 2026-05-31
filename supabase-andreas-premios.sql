@@ -157,18 +157,39 @@ DECLARE
   v_delta integer;
   v_cur integer;
   v_new integer;
+  v_meta integer;
+  v_descuento numeric;
+  v_membresia text;
 BEGIN
   IF p_venta_id IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'sin_venta');
   END IF;
 
-  SELECT v.id, v.cliente_id, v.cliente_nombre, v.items
+  SELECT v.id, v.cliente_id, v.cliente_nombre, v.items, v.notas, v.detalles_pago
   INTO v_venta
   FROM public.ventas v
   WHERE v.id = p_venta_id;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'venta_no_encontrada');
+  END IF;
+
+  -- Canje salón físico ya consumido en Vender (app salón aplica descuento y reinicia en JS).
+  IF COALESCE(v_venta.notas, '') ILIKE '%ANDREAS_CANJE_SALON%' THEN
+    RETURN jsonb_build_object('ok', true, 'delta', 0, 'reason', 'canje_salon_consumido');
+  END IF;
+
+  -- Canje citas/servicio consumido en Vender (marcador ANDREAS_CANJE en notas).
+  IF COALESCE(v_venta.notas, '') ILIKE '%ANDREAS_CANJE:%' THEN
+    RETURN jsonb_build_object('ok', true, 'delta', 0, 'reason', 'canje_citas_consumido');
+  END IF;
+
+  -- Pedido de tienda app cobrado en salón (QR): NO es salón físico ANDREAS.
+  IF COALESCE(v_venta.notas, '') ILIKE '%pedido tienda%'
+     OR COALESCE(v_venta.notas, '') ILIKE '%app clientes%'
+     OR COALESCE(v_venta.detalles_pago, '') ILIKE '%app clientes%'
+     OR COALESCE(v_venta.detalles_pago, '') ILIKE '%pedido app%' THEN
+    RETURN jsonb_build_object('ok', true, 'delta', 0, 'reason', 'venta_pedido_app');
   END IF;
 
   v_delta := public.premios_andreas_contar_productos_items(v_venta.items);
@@ -190,7 +211,7 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'sin_cliente_vinculado');
   END IF;
 
-  SELECT c.id, c.user_id, c.andreas_premios
+  SELECT c.id, c.user_id, c.andreas_premios, c.membresia_nivel
   INTO v_cli
   FROM public.clientes c
   WHERE c.id = v_cliente_id;
@@ -198,6 +219,14 @@ BEGIN
   IF NOT FOUND OR v_cli.user_id IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'cliente_sin_app');
   END IF;
+
+  v_membresia := lower(trim(COALESCE(v_cli.membresia_nivel, '')));
+  v_descuento := CASE v_membresia
+    WHEN 'bronce' THEN 34.99
+    WHEN 'plata' THEN 49.99
+    WHEN 'vip' THEN 74.99
+    ELSE 19.99
+  END;
 
   v_ap := COALESCE(v_cli.andreas_premios, '{}'::jsonb);
   v_ids := COALESCE(v_ap->'salon_fisico_venta_ids', '[]'::jsonb);
@@ -208,6 +237,28 @@ BEGIN
   v_cur := GREATEST(0, COALESCE((v_ap->>'salon_fisico_unidades')::integer, 0));
   v_new := v_cur + v_delta;
   v_ap := jsonb_set(v_ap, '{salon_fisico_unidades}', to_jsonb(v_new), true);
+
+  v_meta := CASE v_membresia
+    WHEN 'bronce' THEN 7
+    WHEN 'plata' THEN 6
+    WHEN 'vip' THEN 5
+    ELSE COALESCE((v_ap->>'salon_fisico_meta')::integer, 8)
+  END;
+
+  -- Meta salón físico alcanzada → canje pendiente con % según membresía.
+  IF v_new >= v_meta AND (v_ap->'salon_fisico_canje_pendiente') IS NULL THEN
+    v_ap := jsonb_set(
+      v_ap,
+      '{salon_fisico_canje_pendiente}',
+      jsonb_build_object(
+        'at', now(),
+        'meta', v_meta,
+        'descuento_pct', v_descuento,
+        'rule_id', 'salon'
+      ),
+      true
+    );
+  END IF;
   v_ap := jsonb_set(
     v_ap,
     '{salon_fisico_venta_ids}',
@@ -249,3 +300,20 @@ CREATE TRIGGER trg_ventas_andreas_salon_fisico
 REVOKE ALL ON FUNCTION public.premios_andreas_procesar_venta_salon(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.premios_andreas_procesar_venta_salon(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.premios_andreas_procesar_venta_salon(uuid) TO service_role;
+
+-- Reparar canjes pendientes antiguos sin descuento_pct (ejecutar una vez si Vender no detectaba el canje).
+-- UPDATE public.clientes c
+-- SET andreas_premios = jsonb_set(
+--   c.andreas_premios,
+--   '{salon_fisico_canje_pendiente}',
+--   COALESCE(c.andreas_premios->'salon_fisico_canje_pendiente', '{}'::jsonb)
+--     || jsonb_build_object(
+--       'descuento_pct',
+--       CASE lower(trim(COALESCE(c.membresia_nivel, '')))
+--         WHEN 'bronce' THEN 34.99 WHEN 'plata' THEN 49.99 WHEN 'vip' THEN 74.99 ELSE 19.99
+--       END
+--     ),
+--   true
+-- )
+-- WHERE c.andreas_premios->'salon_fisico_canje_pendiente' IS NOT NULL
+--   AND (c.andreas_premios->'salon_fisico_canje_pendiente'->>'descuento_pct') IS NULL;

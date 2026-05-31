@@ -2,6 +2,7 @@ import { Alert } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { SALON_TICKET } from '../config/salonTicket';
+import { formatVentaNotasParaDisplay } from '../../../shared/utils/ventaFactura';
 
 function escHtml(s) {
   return String(s ?? '')
@@ -63,9 +64,8 @@ export function buildVentaTicketHtml(venta) {
          <div class="row bold"><span>Cambio</span><span>${formatQ(venta.cambio ?? 0)}</span></div>`
       : '';
 
-  const notas = venta.notas?.trim()
-    ? `<div class="notes">${escHtml(venta.notas)}</div>`
-    : '';
+  const notasTxt = formatVentaNotasParaDisplay(venta.notas);
+  const notas = notasTxt ? `<div class="notes">${escHtml(notasTxt)}</div>` : '';
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"/>

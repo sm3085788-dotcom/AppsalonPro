@@ -26,11 +26,91 @@ import {
   ANDREAS_META,
 } from './andreasPremios.js';
 import {
+  buildPremiosCountsFromReglas,
+  syncReglaOnPedidoDelivered,
+  syncReglaOnCanjeRedeemed,
+  syncReglaCitas,
+  syncReglaCitasOnCanjeRedeemed,
+  getReglasState,
+  findCanjePendienteForCheckout,
+  applyDiscountToSubtotal,
+  parseCanjeFromCheckoutSnapshot,
+  countProductoQtyInOrder,
+  ruleIdForOrder,
+  PREMIO_REGLA,
+  resolvePremioDiscountPct,
+  markSalonFisicoCanjePendiente,
+} from './andreasPremiosCycles.js';
+import {
   tallyAndreasProductoPuntos,
   countCitasPremios,
   parseReferidoInvitadoState,
   REFERIDO_PREMIOS_COPY,
 } from './referidoPremios.js';
+import { parseReferidosPremiosState } from './andreasReferidos.js';
+import {
+  andreasMetaCitasForMembresia,
+  findCanjePendienteForCitas as findCanjeCitasPending,
+  parseCanjeFromNotasServicio,
+} from './andreasPremiosCitasAgenda.js';
+import {
+  andreasMetaSalonForMembresia,
+  resolveSalonCanjeParaCliente,
+  ensureSalonFisicoCanjeEnAp,
+} from './andreasPremiosSalonVenta.js';
+import {
+  ensureCitasCanjeEnAp,
+  resolveCitasCanjeParaCliente,
+} from './andreasPremiosSalonServicio.js';
+import { syncSalonFisicoOnCanjeRedeemed, mergeVentaNotasConCanjeSalon } from './andreasPremiosCycles.js';
+import { mergeNotasServicioConCanje } from './andreasPremiosCitasAgenda.js';
+
+/** Errores de Supabase por objeto SQL ausente o permisos de lectura (no deben tumbar toda la pantalla Premios). */
+function isPremiosSoftDbError(error) {
+  const msg = String(error?.message || error?.hint || '');
+  return (
+    /function|does not exist|schema cache|relation .* does not exist|column .* does not exist/i.test(msg) ||
+    /permission denied for (table|relation)/i.test(msg) ||
+    error?.code === '42501'
+  );
+}
+
+async function countCitasVerificadasCliente(clienteId) {
+  if (!clienteId) return 0;
+  const { data: citas, error } = await supabase
+    .from('citas')
+    .select('estado, visita_qr_token, visita_validada_en, fecha_hora')
+    .eq('cliente_id', clienteId);
+  if (error || !Array.isArray(citas)) return 0;
+  return countCitasPremios(citas).verificadas;
+}
+
+/** Venta o cita que ya consumió canje citas pero el JSON no se reinició (reparación). */
+async function findCitasCanjeConsumidoId(clienteId) {
+  if (!clienteId) return null;
+  const { data: ventas } = await supabase
+    .from('ventas')
+    .select('id, notas')
+    .eq('cliente_id', clienteId)
+    .order('fecha', { ascending: false })
+    .limit(40);
+  for (const v of ventas || []) {
+    const c = parseCanjeFromNotasServicio(v.notas);
+    if (c && (!c.rule_id || c.rule_id === PREMIO_REGLA.CITAS)) return v.id;
+  }
+  const { data: citas } = await supabase
+    .from('citas')
+    .select('id, notas_servicio')
+    .eq('cliente_id', clienteId)
+    .order('fecha_hora', { ascending: false })
+    .limit(40);
+  for (const cita of citas || []) {
+    const c = parseCanjeFromNotasServicio(cita.notas_servicio);
+    if (c && (!c.rule_id || c.rule_id === PREMIO_REGLA.CITAS)) return cita.id;
+  }
+  return null;
+}
+
 import { enrichTendenciasFeedPosts, isTendenciasFeedPost } from './tendenciasPublication.js';
 
 export { isSalonAdminRole, normalizeProfileRole } from './salonRoles.js';
@@ -464,16 +544,20 @@ export const db = {
         .eq('id', clienteRow.id)
         .maybeSingle();
 
+      const freshOk = !eFresh || isPremiosSoftDbError(eFresh);
+      if (eFresh && !freshOk) {
+        return { ...empty, error: eFresh };
+      }
+
       const esReferidoInvitado = Boolean(
-        freshCliente?.referido_por ?? clienteRow.referido_por,
+        (freshOk ? freshCliente?.referido_por : null) ?? clienteRow.referido_por,
       );
       if (esReferidoInvitado) {
         void supabase.rpc('referido_registrar_invitacion', { p_cliente_id: clienteRow.id });
       }
-      if (eFresh && !/column|does not exist/i.test(String(eFresh.message || ''))) {
-        return { ...empty, error: eFresh };
-      }
-      const codigoReferido = String(freshCliente?.codigo_referido || clienteRow.codigo_referido || '').trim() || null;
+      const codigoReferido = String(
+        (freshOk ? freshCliente?.codigo_referido : null) || clienteRow.codigo_referido || '',
+      ).trim() || null;
       let codigoReferidoFinal = codigoReferido;
       if (!codigoReferidoFinal && clientUserId) {
         const code = buildDefaultCodigoReferido(clientUserId);
@@ -488,7 +572,7 @@ export const db = {
         }
       }
       let productosSalonFisico = 0;
-      const ap = freshCliente?.andreas_premios ?? clienteRow.andreas_premios;
+      const ap = (freshOk ? freshCliente?.andreas_premios : null) ?? clienteRow.andreas_premios;
       if (ap && typeof ap === 'object' && ap.salon_fisico_unidades != null) {
         const n = Number(ap.salon_fisico_unidades);
         if (Number.isFinite(n)) productosSalonFisico = Math.max(0, Math.floor(n));
@@ -499,7 +583,7 @@ export const db = {
         .select('id, status, payment_method, fulfillment_type')
         .eq('client_user_id', clientUserId)
         .in('status', ['pending', 'confirmed', 'prepared', 'ready', 'delivered']);
-      if (eOrd) {
+      if (eOrd && !isPremiosSoftDbError(eOrd)) {
         return {
           ...empty,
           codigoReferido: codigoReferidoFinal,
@@ -551,8 +635,7 @@ export const db = {
         p_referidor: clientUserId,
       });
       if (eRpc) {
-        const msg = String(eRpc.message || eRpc.hint || '');
-        if (/function|does not exist|rpc/i.test(msg)) rpcMissing = true;
+        if (isPremiosSoftDbError(eRpc)) rpcMissing = true;
         else
           return {
             ...empty,
@@ -568,12 +651,12 @@ export const db = {
       }
 
       let referidosCiclo = 0;
-      const { parseReferidosPremiosState } = await import('./andreasReferidos.js');
       const st = parseReferidosPremiosState(ap);
       referidosCiclo = st.ciclo;
-      const { data: refResumen } = await supabase.rpc('premios_andreas_referidos_resumen', {
+      const { data: refResumen, error: eResumen } = await supabase.rpc('premios_andreas_referidos_resumen', {
         p_referidor: clientUserId,
       });
+      if (eResumen && isPremiosSoftDbError(eResumen)) rpcMissing = true;
       if (refResumen && typeof refResumen === 'object' && refResumen.en_ciclo != null) {
         referidosPrimeraCompra = Math.max(0, Math.floor(Number(refResumen.en_ciclo) || 0));
         referidosCiclo = Math.max(0, Math.min(2, Math.floor(Number(refResumen.ciclo) || 0)));
@@ -581,7 +664,36 @@ export const db = {
         referidosPrimeraCompra = st.enCiclo;
       }
 
-      return {
+      const membresiaMeta =
+        meta.appEfectivoRetiro ??
+        (clienteRow.membresia_nivel === 'bronce'
+          ? 7
+          : clienteRow.membresia_nivel === 'plata'
+            ? 6
+            : clienteRow.membresia_nivel === 'vip'
+              ? 5
+              : ANDREAS_META.appEfectivoRetiro);
+
+      let apWorking = ap && typeof ap === 'object' ? { ...ap } : {};
+      const citasMeta = andreasMetaCitasForMembresia(clienteRow.membresia_nivel);
+      const citasRuleBefore = getReglasState(apWorking).reglas[PREMIO_REGLA.CITAS];
+      if (citasRuleBefore?.canje_pendiente) {
+        const consumidoId = await findCitasCanjeConsumidoId(clienteRow.id);
+        if (consumidoId) {
+          apWorking = syncReglaCitasOnCanjeRedeemed(
+            apWorking,
+            consumidoId,
+            citasVerificadas,
+            citasMeta,
+            clienteRow.membresia_nivel,
+          );
+        }
+      }
+      apWorking = syncReglaCitas(apWorking, citasVerificadas, citasMeta, clienteRow.membresia_nivel);
+      const salonMeta = andreasMetaSalonForMembresia(clienteRow.membresia_nivel);
+      apWorking = ensureSalonFisicoCanjeEnAp(apWorking, clienteRow.membresia_nivel);
+
+      const counts = buildPremiosCountsFromReglas(apWorking, {
         productosAppEfectivoRetiro,
         productosAppTarjetaDelivery,
         productosAppEfectivoRetiroPendiente,
@@ -589,6 +701,28 @@ export const db = {
         citasVerificadas,
         citasPendientes,
         productosSalonFisico,
+      });
+
+      const apPersistNeeded =
+        JSON.stringify(apWorking.reglas) !== JSON.stringify(ap?.reglas) ||
+        JSON.stringify(apWorking.salon_fisico_canje_pendiente) !==
+          JSON.stringify(ap?.salon_fisico_canje_pendiente);
+      if (apPersistNeeded) {
+        void supabase
+          .from('clientes')
+          .update({ andreas_premios: apWorking })
+          .eq('id', clienteRow.id);
+      }
+
+      return {
+        productosAppEfectivoRetiro: counts.productosAppEfectivoRetiro,
+        productosAppTarjetaDelivery: counts.productosAppTarjetaDelivery,
+        productosAppEfectivoRetiroPendiente: counts.productosAppEfectivoRetiroPendiente,
+        productosAppTarjetaDeliveryPendiente: counts.productosAppTarjetaDeliveryPendiente,
+        citasVerificadas: counts.citasVerificadas,
+        citasPendientes: counts.citasPendientes,
+        productosSalonFisico: counts.productosSalonFisico,
+        canjePendiente: counts.canjePendiente,
         referidosPrimeraCompra,
         referidosCiclo,
         esReferidoInvitado,
@@ -598,6 +732,232 @@ export const db = {
         error: null,
         rpcMissing,
       };
+    },
+
+    getCanjeCheckout: async ({ clienteRow, shipId, payment_method }) => {
+      if (!clienteRow?.id) return { data: null, error: null };
+      const ap = clienteRow.andreas_premios;
+      const pending = findCanjePendienteForCheckout(ap, {
+        payment_method,
+        shipId,
+      });
+      return { data: pending, error: null };
+    },
+
+    getCanjeCitaAgenda: async ({ clienteRow }) => {
+      if (!clienteRow?.id) return { data: null, error: null };
+      let ap = clienteRow.andreas_premios;
+      if (!ap?.reglas) {
+        const { data: fresh } = await supabase
+          .from('clientes')
+          .select('andreas_premios')
+          .eq('id', clienteRow.id)
+          .maybeSingle();
+        ap = fresh?.andreas_premios ?? ap;
+      }
+      const pending = findCanjeCitasPending(ap, clienteRow.membresia_nivel);
+      if (!pending) return { data: null, error: null };
+      return { data: pending, error: null };
+    },
+
+    registrarCanjeCitaAgendada: async ({ clienteId, citaId }) => {
+      if (!clienteId || !citaId) {
+        return { data: null, error: { message: 'Datos incompletos' } };
+      }
+      const { data: row, error: e0 } = await supabase
+        .from('clientes')
+        .select('andreas_premios, membresia_nivel')
+        .eq('id', clienteId)
+        .maybeSingle();
+      if (e0 || !row) return { data: null, error: e0 || { message: 'Sin cliente' } };
+
+      const meta = andreasMetaCitasForMembresia(row.membresia_nivel);
+      const citasVerificadas = await countCitasVerificadasCliente(clienteId);
+      const apNext = syncReglaCitasOnCanjeRedeemed(
+        row.andreas_premios,
+        citaId,
+        citasVerificadas,
+        meta,
+        row.membresia_nivel,
+      );
+      const { data, error } = await supabase
+        .from('clientes')
+        .update({ andreas_premios: apNext })
+        .eq('id', clienteId)
+        .select('andreas_premios')
+        .maybeSingle();
+      return { data, error };
+    },
+
+    syncReglasPedidoEntregado: async ({ clienteId, orderId }) => {
+      if (!clienteId || !orderId) return { data: null, error: { message: 'Datos incompletos' } };
+      const { data: row, error: e0 } = await supabase
+        .from('clientes')
+        .select('id, membresia_nivel, andreas_premios')
+        .eq('id', clienteId)
+        .maybeSingle();
+      if (e0 || !row) return { data: null, error: e0 || { message: 'Sin cliente' } };
+
+      const { data: order, error: eOrd } = await db.orders.getById(orderId);
+      if (eOrd || !order) return { data: null, error: eOrd || { message: 'Sin pedido' } };
+
+      const { data: lines, error: eLin } = await db.ecommerceOrderItems.getByOrder(orderId);
+      if (eLin) return { data: null, error: eLin };
+
+      const meta =
+        row.membresia_nivel === 'bronce'
+          ? 7
+          : row.membresia_nivel === 'plata'
+            ? 6
+            : row.membresia_nivel === 'vip'
+              ? 5
+              : ANDREAS_META.appEfectivoRetiro;
+
+      const qty = countProductoQtyInOrder(lines, orderId);
+      let apNext = row.andreas_premios;
+      const canjeSnap = parseCanjeFromCheckoutSnapshot(order.checkout_snapshot);
+
+      if (canjeSnap?.rule_id) {
+        apNext = syncReglaOnCanjeRedeemed(
+          apNext,
+          canjeSnap.rule_id,
+          orderId,
+          qty,
+          meta,
+          row.membresia_nivel,
+        );
+      } else {
+        apNext = syncReglaOnPedidoDelivered(apNext, order, qty, meta, row.membresia_nivel);
+      }
+
+      const { data, error } = await supabase
+        .from('clientes')
+        .update({ andreas_premios: apNext })
+        .eq('id', clienteId)
+        .select('andreas_premios')
+        .maybeSingle();
+      return { data, error };
+    },
+
+    getSalonCanjeParaVenta: async ({ clienteRow, clienteId }) => {
+      const id = clienteRow?.id || clienteId;
+      if (!id) return { data: null, error: null };
+      const { data: row, error } = await supabase
+        .from('clientes')
+        .select('id, user_id, nombre, andreas_premios, membresia_nivel')
+        .eq('id', id)
+        .maybeSingle();
+      if (error || !row) return { data: null, error: error || null };
+      if (!row.user_id) return { data: null, error: null };
+
+      let ap = row.andreas_premios;
+      const apNorm = ensureSalonFisicoCanjeEnAp(ap, row.membresia_nivel);
+      if (JSON.stringify(apNorm) !== JSON.stringify(ap)) {
+        ap = apNorm;
+        await supabase.from('clientes').update({ andreas_premios: ap }).eq('id', id);
+      }
+      return { data: resolveSalonCanjeParaCliente({ ...row, andreas_premios: ap }), error: null };
+    },
+
+    getCitasCanjeParaVenta: async ({ clienteRow, clienteId }) => {
+      const id = clienteRow?.id || clienteId;
+      if (!id) return { data: null, error: null };
+      const { data: row, error } = await supabase
+        .from('clientes')
+        .select('id, user_id, nombre, andreas_premios, membresia_nivel')
+        .eq('id', id)
+        .maybeSingle();
+      if (error || !row) return { data: null, error: error || null };
+
+      const citasVerificadas = await countCitasVerificadasCliente(id);
+
+      let ap = row.andreas_premios;
+      const apNorm = ensureCitasCanjeEnAp(ap, citasVerificadas, row.membresia_nivel);
+      if (JSON.stringify(apNorm) !== JSON.stringify(ap)) {
+        await supabase.from('clientes').update({ andreas_premios: apNorm }).eq('id', id);
+      }
+
+      const canje = resolveCitasCanjeParaCliente(
+        { ...row, andreas_premios: apNorm },
+        citasVerificadas,
+      );
+      return { data: canje, error: null };
+    },
+
+    registrarCanjeCitasVenta: async ({ clienteId, ventaId }) => {
+      if (!clienteId || !ventaId) {
+        return { data: null, error: { message: 'Datos incompletos' } };
+      }
+      const { data: row, error: e0 } = await supabase
+        .from('clientes')
+        .select('andreas_premios, membresia_nivel')
+        .eq('id', clienteId)
+        .maybeSingle();
+      if (e0 || !row) return { data: null, error: e0 };
+      const meta = andreasMetaCitasForMembresia(row.membresia_nivel);
+      const citasVerificadas = await countCitasVerificadasCliente(clienteId);
+      const apNext = syncReglaCitasOnCanjeRedeemed(
+        row.andreas_premios,
+        ventaId,
+        citasVerificadas,
+        meta,
+        row.membresia_nivel,
+      );
+      const { data, error } = await supabase
+        .from('clientes')
+        .update({ andreas_premios: apNext })
+        .eq('id', clienteId)
+        .select('andreas_premios')
+        .maybeSingle();
+      return { data, error };
+    },
+
+    registrarCanjeSalonFisicoVenta: async ({ clienteId, ventaId, productQty }) => {
+      if (!clienteId || !ventaId) {
+        return { data: null, error: { message: 'Datos incompletos' } };
+      }
+      const qty = Math.max(1, Math.floor(Number(productQty) || 1));
+      const { data: row, error: e0 } = await supabase
+        .from('clientes')
+        .select('andreas_premios, membresia_nivel')
+        .eq('id', clienteId)
+        .maybeSingle();
+      if (e0 || !row) return { data: null, error: e0 };
+      const meta = andreasMetaSalonForMembresia(row.membresia_nivel);
+      const apNext = syncSalonFisicoOnCanjeRedeemed(
+        row.andreas_premios,
+        qty,
+        meta,
+        row.membresia_nivel,
+        ventaId,
+      );
+      const { data, error } = await supabase
+        .from('clientes')
+        .update({ andreas_premios: apNext })
+        .eq('id', clienteId)
+        .select('andreas_premios')
+        .maybeSingle();
+      return { data, error };
+    },
+
+    canjearSalonFisicoEnRecepcion: async (clienteId) => {
+      if (!clienteId) return { data: null, error: { message: 'Cliente no indicado' } };
+      const { data: row, error: e0 } = await supabase
+        .from('clientes')
+        .select('andreas_premios, membresia_nivel')
+        .eq('id', clienteId)
+        .maybeSingle();
+      if (e0 || !row) return { data: null, error: e0 };
+      const meta = andreasMetaSalonForMembresia(row.membresia_nivel);
+      const { syncSalonFisicoOnCanje } = await import('./andreasPremiosCycles.js');
+      const apNext = syncSalonFisicoOnCanje(row.andreas_premios, meta, row.membresia_nivel);
+      const { data, error } = await supabase
+        .from('clientes')
+        .update({ andreas_premios: apNext })
+        .eq('id', clienteId)
+        .select()
+        .maybeSingle();
+      return { data, error };
     },
 
     /** Aviso en app al invitado referido (compras, citas, bienvenida). */
@@ -624,7 +984,8 @@ export const db = {
         .eq('id', clienteId)
         .maybeSingle();
       if (e0) return { data: null, error: e0 };
-      const next = mergeAndreasPremiosSalonFisico(row?.andreas_premios, n);
+      const meta = andreasMetaSalonForMembresia(row?.membresia_nivel);
+      const next = markSalonFisicoCanjePendiente(row?.andreas_premios, n, meta, row?.membresia_nivel);
       const { data, error } = await supabase
         .from('clientes')
         .update({ andreas_premios: next })
@@ -2305,7 +2666,7 @@ export const db = {
       };
       const finishVenta = async (result) => {
         const ventaId = result?.data?.id;
-        if (!result?.error && ventaId) {
+        if (!result?.error && ventaId && !options.skipSalonFisicoPremios) {
           void db.premiosAndreas.procesarVentaSalonFisico(ventaId);
         }
         return result;

@@ -48,6 +48,14 @@ export function parseSalonFisicoUnidades(andreasPremios) {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
 }
 
+export function parseSalonFisicoCanjePendiente(andreasPremios) {
+  if (!andreasPremios || typeof andreasPremios !== 'object' || Array.isArray(andreasPremios)) {
+    return null;
+  }
+  const c = andreasPremios.salon_fisico_canje_pendiente;
+  return c && typeof c === 'object' ? c : null;
+}
+
 export function mergeAndreasPremiosSalonFisico(andreasPremios, unidades) {
   const base =
     andreasPremios && typeof andreasPremios === 'object' && !Array.isArray(andreasPremios)

@@ -209,6 +209,11 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  -- No notificar al cliente por sus propios mensajes (chat desde App Clientes).
+  IF m.created_by IS NOT NULL AND m.created_by = v_uid THEN
+    RETURN NULL;
+  END IF;
+
   IF m.content_type = 'cita_confirmacion' THEN
     v_tipo := 'cita';
     v_titulo := 'Tu cita está confirmada';

@@ -12,6 +12,26 @@ export function isSalonOutboundMessage(row) {
   return SALON_OUTBOUND_TYPES.has(ct);
 }
 
+/** Mensaje saliente del cliente (chat propio u otro con su user_id en created_by). */
+export function isClientOutboundAuraMessage(row, clientUserId) {
+  if (!row) return false;
+  const uid = clientUserId != null ? String(clientUserId) : '';
+  const author = row.created_by != null ? String(row.created_by) : '';
+  if (!uid || !author || author !== uid) return false;
+  const ct = String(row.content_type || '');
+  if (ct === 'chat') return true;
+  return false;
+}
+
+/** Mensaje entrante del salón (no enviado por el cliente en la app). */
+export function isInboundAuraUnread(row, clientUserId) {
+  if (!row || isClientOutboundAuraMessage(row, clientUserId)) return false;
+  if (row.status !== 'pending_sync') return false;
+  const ct = String(row.content_type || '');
+  if (ct === 'chat') return true;
+  return SALON_UNREAD_CONTENT_TYPES.includes(ct) || isSalonOutboundMessage(row);
+}
+
 export function sortAuraMessages(rows) {
   return [...(rows || [])].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
@@ -63,11 +83,9 @@ export async function fetchClientAuraUnreadCount() {
   }
   const { data: rows, error: listErr } = await fetchClientAuraMessages(300);
   if (listErr) return { count: 0, error: listErr };
-  const n = (rows || []).filter((m) => {
-    if (m.status !== 'pending_sync') return false;
-    const ct = String(m.content_type || '');
-    return SALON_UNREAD_CONTENT_TYPES.includes(ct) || isSalonOutboundMessage(m);
-  }).length;
+  const { data: sessionData } = await supabase.auth.getSession();
+  const uid = sessionData?.session?.user?.id;
+  const n = (rows || []).filter((m) => isInboundAuraUnread(m, uid)).length;
   return { count: n, error: null };
 }
 

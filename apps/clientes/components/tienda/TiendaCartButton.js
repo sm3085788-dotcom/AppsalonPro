@@ -4,6 +4,7 @@ import { ShoppingCart } from 'lucide-react-native';
 import { typography } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useTiendaCart } from '../../context/TiendaCartContext';
+import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 
 function formatBadgeCount(n) {
   const x = Number(n);
@@ -43,7 +44,7 @@ export function TiendaCartButton({ onPress }) {
           paddingHorizontal: 4,
           borderWidth: 2,
           borderColor: c.background,
-          backgroundColor: c.error,
+          backgroundColor: CLIENT_ALERT_BELL_RED,
         },
         badgeTxt: {
           fontFamily: typography.fontSansMedium,

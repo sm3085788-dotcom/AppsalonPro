@@ -10,13 +10,14 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Package, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase, confirmarCobroPedidoSalon } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton, modalSheetBottomPad } from '../components/luxury';
+import { db, supabase, confirmarCobroPedidoSalon, parseCanjeFromCheckoutSnapshot } from '@appsalon/shared-config';
+import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -357,6 +358,18 @@ export function PedidosScreen({ onBack }) {
   const detailBody = () => {
     if (!detail?.data) return '';
     const o = detail.data;
+    let snap = o.checkout_snapshot;
+    if (typeof snap === 'string') {
+      try {
+        snap = JSON.parse(snap);
+      } catch {
+        snap = null;
+      }
+    }
+    const canje = parseCanjeFromCheckoutSnapshot(snap);
+    const canjeLine = canje
+      ? `Canje ANDREAS: ${canje.descuento_pct}% (−Q${Number(canje.descuento_monto || 0).toFixed(2)}) · subtotal Q${Number(canje.subtotal_antes || 0).toFixed(2)}`
+      : '';
     return [
       `Cliente: ${o.customer_name}`,
       `Tel: ${o.customer_phone || '—'}`,
@@ -364,7 +377,8 @@ export function PedidosScreen({ onBack }) {
       `Estado: ${statusLabelSalon(o.status)}`,
       o.cancelled_reason ? `Motivo cancelación: ${o.cancelled_reason}` : '',
       `Pago: ${o.payment_method || '—'}`,
-      `Total: Q${Number(o.total_amount || 0).toFixed(2)}`,
+      canjeLine,
+      `Total a cobrar: Q${Number(o.total_amount || 0).toFixed(2)}`,
       `Entrega: ${o.fulfillment_type || '—'}`,
       `Notas: ${o.notes || '—'}`,
       `Creado: ${formatWhen(o.created_at)}`,
@@ -520,48 +534,65 @@ export function PedidosScreen({ onBack }) {
 
       <Modal visible={detail != null} animationType="slide" transparent onRequestClose={() => setDetail(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.filterModalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
+          <View
+            style={[
+              styles.filterModalCard,
+              styles.detailModalCard,
+              { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) },
+            ]}
+          >
             <View style={styles.modalHead}>
               <Text style={[styles.modalTitle, { color: c.foreground }]}>Detalle del pedido</Text>
               <TouchableOpacity onPress={() => setDetail(null)} hitSlop={12}>
                 <X size={22} color={c.foregroundMuted} />
               </TouchableOpacity>
             </View>
-            <Text
-              style={{ color: c.foreground, fontFamily: typography.fontSans, fontSize: 14, lineHeight: 22 }}
-              selectable
+            <ScrollView
+              style={styles.detailModalScroll}
+              contentContainerStyle={[
+                styles.detailModalScrollContent,
+                { paddingBottom: modalScrollBottomPad(insets) },
+              ]}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
             >
-              {detail ? detailBody() : ''}
-            </Text>
-            {detail?.data?.tracking_code ? (
-              <PickupQrDisplay
-                trackingCode={detail.data.tracking_code}
-                hint={
-                  String(detail.data.status) === 'delivered'
-                    ? 'Pedido cobrado y cerrado.'
-                    : 'El cliente muestra este QR en App Clientes. Escanealo al cobrar.'
-                }
-              />
-            ) : null}
-            {detail?.data &&
-            String(detail.data.status) === 'pending' &&
-            isCashOrder(detail.data) ? (
+              <Text
+                style={{ color: c.foreground, fontFamily: typography.fontSans, fontSize: 14, lineHeight: 22 }}
+                selectable
+              >
+                {detail ? detailBody() : ''}
+              </Text>
+              {detail?.data?.tracking_code ? (
+                <PickupQrDisplay
+                  trackingCode={detail.data.tracking_code}
+                  size={180}
+                  hint={
+                    String(detail.data.status) === 'delivered'
+                      ? 'Pedido cobrado y cerrado.'
+                      : 'El cliente muestra este QR en App Clientes. Escanealo al cobrar.'
+                  }
+                />
+              ) : null}
+              {detail?.data &&
+              String(detail.data.status) === 'pending' &&
+              isCashOrder(detail.data) ? (
+                <SalonButton
+                  title={confirmBusy ? 'Confirmando…' : 'Escanear QR y confirmar cobro'}
+                  variant="heroGold"
+                  fullWidth
+                  disabled={confirmBusy}
+                  onPress={confirmarPagoEfectivo}
+                  style={{ marginTop: spacing.md }}
+                />
+              ) : null}
               <SalonButton
-                title={confirmBusy ? 'Confirmando…' : 'Escanear QR y confirmar cobro'}
-                variant="heroGold"
+                title="Cerrar"
+                variant="outlineGray"
                 fullWidth
-                disabled={confirmBusy}
-                onPress={confirmarPagoEfectivo}
+                onPress={() => setDetail(null)}
                 style={{ marginTop: spacing.md }}
               />
-            ) : null}
-            <SalonButton
-              title="Cerrar"
-              variant="outlineGray"
-              fullWidth
-              onPress={() => setDetail(null)}
-              style={{ marginTop: spacing.md }}
-            />
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -709,6 +740,17 @@ function createStyles(c) {
       paddingTop: spacing.lg,
       paddingBottom: spacing.sm,
       maxHeight: '92%',
+    },
+    detailModalCard: {
+      paddingBottom: 0,
+      flexShrink: 1,
+    },
+    detailModalScroll: {
+      flexGrow: 0,
+      flexShrink: 1,
+    },
+    detailModalScrollContent: {
+      flexGrow: 1,
     },
     modalHead: {
       flexDirection: 'row',

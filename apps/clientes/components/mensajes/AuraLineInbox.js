@@ -25,6 +25,8 @@ import {
   markClientAuraDelivered,
   sendClientAuraChat,
   isSalonOutboundMessage,
+  isInboundAuraUnread,
+  isClientOutboundAuraMessage,
   mergeAuraMessage,
   uploadMensajeMediaFromUri,
   broadcastPreviewText,
@@ -255,11 +257,11 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
         if (clienteRow?.id) auraThreadCache = { clienteId: clienteRow.id, rows: next };
         return next;
       });
-      const fromSalon =
-        isSalonOutboundMessage(row) && !isFromClientMessage(row, sessionUser?.id);
-      if (fromSalon && row.status === 'pending_sync') {
+      if (isInboundAuraUnread(row, sessionUser?.id)) {
         onUnreadChangeRef.current?.();
       }
+      const fromSalon =
+        isSalonOutboundMessage(row) && !isClientOutboundAuraMessage(row, sessionUser?.id);
       if (fromSalon) {
         chatStickToBottomRef.current = true;
         scrollToEnd(true, true);
@@ -416,6 +418,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
         });
         chatStickToBottomRef.current = true;
         scrollToEnd(true, true);
+        onUnreadChangeRef.current?.();
       } else {
         await loadMessages({ silent: true });
       }

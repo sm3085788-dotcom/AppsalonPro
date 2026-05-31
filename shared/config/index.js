@@ -63,6 +63,7 @@ export {
   markClientAuraDelivered,
   sendClientAuraChat,
   isSalonOutboundMessage,
+  isInboundAuraUnread,
   mergeAuraMessage,
   sortAuraMessages,
 } from './auraLineClient.js';
@@ -116,10 +117,44 @@ export {
 export {
   ANDREAS_META,
   parseSalonFisicoUnidades,
+  parseSalonFisicoCanjePendiente,
   mergeAndreasPremiosSalonFisico,
   isPedidoAppEfectivoRetiroSalon,
   isPedidoAppTarjetaDelivery,
 } from './andreasPremios.js';
+export {
+  PREMIO_REGLA,
+  applyDiscountToSubtotal,
+  findCanjePendienteForCheckout,
+  findCanjePendienteForCitas,
+  syncReglaCitasOnCanjeRedeemed,
+  parseCanjeFromCheckoutSnapshot,
+} from './andreasPremiosCycles.js';
+export {
+  resolvePrecioServicioConCanjeCitas,
+  mergeNotasServicioConCanje,
+  parseCanjeFromNotasServicio,
+  stripCanjeMarkerFromNotas,
+} from './andreasPremiosCitasAgenda.js';
+export {
+  resolveSalonCanjeParaCliente,
+  calcSalonCanjeDescuentoEnLineas,
+  countProductoQtyEnLineasVenta,
+  andreasMetaSalonForMembresia,
+} from './andreasPremiosSalonVenta.js';
+export {
+  resolveCitasCanjeParaCliente,
+  calcCitasCanjeDescuentoEnLineas,
+  countServicioQtyEnLineasVenta,
+  ensureCitasCanjeEnAp,
+  labelCanjeAndreasCliente,
+} from './andreasPremiosSalonServicio.js';
+export {
+  mergeVentaNotasConCanjeSalon,
+  parseSalonCanjeFromVentaNotas,
+  stripSalonCanjeMarkerFromVentaNotas,
+  SALON_CANJE_VENTA_MARK,
+} from './andreasPremiosCycles.js';
 export {
   ANDREAS_REFERRAL_PRIZES,
   ANDREAS_REFERRAL_META,

@@ -28,6 +28,7 @@ import {
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { normalizeServicioCategoria } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
+import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 import { useServiciosCart } from '../../context/ServiciosCartContext';
 import {
   formatServicioDuracion,
@@ -322,7 +323,7 @@ export function MisCitasTab({
       >
         <View style={styles.titleRow}>
           <View style={styles.titleCopy}>
-            <Text style={styles.pageDisplay}>Agendar</Text>
+            <Text style={styles.pageDisplay}>Servicios</Text>
             <Text style={styles.pageLead}>
               Agregá servicios con + y agendá desde el carrito.
             </Text>
@@ -339,7 +340,7 @@ export function MisCitasTab({
           >
             <ShoppingCart size={23} color={c.foreground} strokeWidth={1.85} />
             {cartLabel ? (
-              <View style={[styles.cartBadge, { backgroundColor: c.error }]}>
+              <View style={[styles.cartBadge, { backgroundColor: CLIENT_ALERT_BELL_RED }]}>
                 <Text style={styles.cartBadgeTxt}>{cartLabel}</Text>
               </View>
             ) : null}

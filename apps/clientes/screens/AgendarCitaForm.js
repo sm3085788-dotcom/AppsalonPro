@@ -13,7 +13,12 @@ import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { useTheme } from '../theme/ThemeProvider';
-import { db, REFERIDO_PREMIOS_COPY } from '@appsalon/shared-config';
+import {
+  db,
+  REFERIDO_PREMIOS_COPY,
+  resolvePrecioServicioConCanjeCitas,
+  mergeNotasServicioConCanje,
+} from '@appsalon/shared-config';
 import { loadServiciosTiendaCatalog, formatServicioPrecio, formatServicioDuracion } from '../services/salonServiciosTienda';
 import { useServiciosCart } from '../context/ServiciosCartContext';
 
@@ -65,6 +70,18 @@ export function AgendarCitaForm({
   const [busqueda, setBusqueda] = useState('');
   const [fechaHora, setFechaHora] = useState(() => defaultNextSlot());
   const [saving, setSaving] = useState(false);
+  const [canjeCitas, setCanjeCitas] = useState(null);
+  const canjeUsadoRef = useRef(false);
+
+  useEffect(() => {
+    if (!clienteRow?.id) {
+      setCanjeCitas(null);
+      return;
+    }
+    void db.premiosAndreas.getCanjeCitaAgenda({ clienteRow }).then(({ data }) => {
+      setCanjeCitas(data || null);
+    });
+  }, [clienteRow?.id, clienteRow?.andreas_premios, clienteRow?.membresia_nivel]);
 
   useEffect(() => {
     let alive = true;
@@ -165,6 +182,21 @@ export function AgendarCitaForm({
           fontSize: 14,
           color: tc.foregroundMuted,
         },
+        canjeBanner: {
+          borderWidth: 1,
+          borderRadius: radii.md,
+          padding: spacing.sm,
+          marginBottom: spacing.md,
+        },
+        canjeBannerTxt: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 13,
+          lineHeight: 19,
+        },
+        precioTachado: {
+          textDecorationLine: 'line-through',
+          color: tc.foregroundSubtle,
+        },
         searchInput: {
           minHeight: 48,
           borderRadius: radii.lg,
@@ -197,12 +229,19 @@ export function AgendarCitaForm({
       return;
     }
     setSaving(true);
-    const precio = Number(servicioSel.precio);
+    const aplicarCanje = canjeCitas && !canjeUsadoRef.current;
+    const { precio, canjeSnap } = resolvePrecioServicioConCanjeCitas(
+      servicioSel.precio,
+      aplicarCanje ? canjeCitas : null,
+    );
     const dur = Number(servicioSel.duracion_minutos);
-    const notasServicio = servicioSel.inventarioId
+    let notasServicio = servicioSel.inventarioId
       ? `Solicitud desde app clientes · inventario_id=${servicioSel.inventarioId}`
       : 'Solicitud desde app clientes';
-    const { error } = await db.citas.create(
+    if (canjeSnap) {
+      notasServicio = mergeNotasServicioConCanje(notasServicio, canjeSnap) || notasServicio;
+    }
+    const { data: citaRow, error } = await db.citas.create(
       {
         cliente_id: clienteRow.id,
         servicio: servicioSel.nombre,
@@ -224,6 +263,14 @@ export function AgendarCitaForm({
         : raw || 'Revisá la conexión e intentá de nuevo.';
       Alert.alert('No se pudo enviar', msg);
       return;
+    }
+    if (canjeSnap && citaRow?.id) {
+      canjeUsadoRef.current = true;
+      setCanjeCitas(null);
+      void db.premiosAndreas.registrarCanjeCitaAgendada({
+        clienteId: clienteRow.id,
+        citaId: citaRow.id,
+      });
     }
     onCitasChanged?.();
     onCitaBooked?.();
@@ -277,6 +324,8 @@ export function AgendarCitaForm({
     );
   }, [
     clienteRow?.id,
+    clienteRow?.user_id,
+    canjeCitas,
     servicioSel,
     fechaHora,
     onCitasChanged,
@@ -312,8 +361,21 @@ export function AgendarCitaForm({
     );
   }
 
+  const precioConCanje =
+    servicioSel && canjeCitas && !canjeUsadoRef.current
+      ? resolvePrecioServicioConCanjeCitas(servicioSel.precio, canjeCitas)
+      : null;
+
   return (
     <>
+      {canjeCitas && !canjeUsadoRef.current ? (
+        <View style={[styles.canjeBanner, { backgroundColor: tc.surfaceMuted, borderColor: tc.primary }]}>
+          <Text style={[styles.canjeBannerTxt, { color: tc.foreground }]}>
+            Canje ANDREAS: {canjeCitas.descuento_pct}% de descuento en este servicio al confirmar la solicitud.
+          </Text>
+        </View>
+      ) : null}
+
       {modoCarrito && servicioSel ? (
         <View style={[subStyles.card, { marginBottom: spacing.md }]}>
           <Text style={subStyles.rowLabel}>
@@ -321,7 +383,15 @@ export function AgendarCitaForm({
           </Text>
           <Text style={[styles.svcName, { marginTop: spacing.xs }]}>{servicioSel.nombre}</Text>
           <Text style={styles.svcMeta}>
-            {formatServicioPrecio(servicioSel)} · {formatServicioDuracion(servicioSel)}
+            {precioConCanje?.calc ? (
+              <>
+                <Text style={styles.precioTachado}>{formatServicioPrecio(servicioSel)}</Text>
+                {` · Q ${precioConCanje.precio.toFixed(2)} con canje · `}
+              </>
+            ) : (
+              `${formatServicioPrecio(servicioSel)} · `
+            )}
+            {formatServicioDuracion(servicioSel)}
           </Text>
         </View>
       ) : soloServicioVinculado ? (
@@ -332,7 +402,15 @@ export function AgendarCitaForm({
             <Text style={styles.sectionTitle}>Servicio de la promoción</Text>
             <Text style={[styles.svcName, { marginTop: spacing.xs }]}>{servicioSel.nombre}</Text>
             <Text style={styles.svcMeta}>
-              {formatServicioPrecio(servicioSel)} · {formatServicioDuracion(servicioSel)}
+              {precioConCanje?.calc ? (
+                <>
+                  <Text style={styles.precioTachado}>{formatServicioPrecio(servicioSel)}</Text>
+                  {` · Q ${precioConCanje.precio.toFixed(2)} con canje · `}
+                </>
+              ) : (
+                `${formatServicioPrecio(servicioSel)} · `
+              )}
+              {formatServicioDuracion(servicioSel)}
             </Text>
           </View>
         ) : (

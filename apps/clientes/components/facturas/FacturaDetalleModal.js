@@ -11,6 +11,7 @@ import {
   parseVentaItems,
   formatFechaVenta,
   formatMetodoPago,
+  formatVentaNotasParaDisplay,
 } from '../../../../shared/utils/ventaFactura';
 import { SalonButton } from '../luxury/SalonButton';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -31,6 +32,7 @@ export function FacturaDetalleModal({ venta, visible, onClose, clienteNombre }) 
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
   const detalleItems = useMemo(() => parseVentaItems(venta?.items), [venta?.items]);
+  const notasDisplay = useMemo(() => formatVentaNotasParaDisplay(venta?.notas), [venta?.notas]);
 
   if (!venta) return null;
 
@@ -134,11 +136,11 @@ export function FacturaDetalleModal({ venta, visible, onClose, clienteNombre }) 
               </View>
             )}
 
-            {venta.notas?.trim() ? (
+            {notasDisplay ? (
               <>
                 <Text style={[styles.detailSectionTitle, { color: c.foreground }]}>Notas</Text>
                 <View style={[styles.detailNotas, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                  <Text style={[styles.detailNotasTxt, { color: c.foregroundMuted }]}>{venta.notas.trim()}</Text>
+                  <Text style={[styles.detailNotasTxt, { color: c.foregroundMuted }]}>{notasDisplay}</Text>
                 </View>
               </>
             ) : null}

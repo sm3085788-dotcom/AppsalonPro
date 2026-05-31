@@ -29,22 +29,22 @@ const TIER_CONFIG = {
 
 const TIER_BENEFITS = {
   bronce: [
-    '5% de descuento en servicios seleccionados',
-    'Puntos Aura estándar ×1 en cada visita pagada',
+    'Premios ANDREAS: canje con 7 puntos · 34,99% de descuento',
+    'Puntos en app (efectivo, tarjeta, citas y salón físico)',
     'Tips de mantenimiento y recordatorios en la app',
   ],
   plata: [
-    '10% en servicios · 5% en productos profesionales',
-    'Puntos Aura acelerados ×1,25 al pagar en salón',
+    'Premios ANDREAS: canje con 6 puntos · 49,99% de descuento',
+    'Más rápido alcanzás metas de productos y citas verificadas',
     'Prioridad en lista de espera de agenda',
     'Detalle de cumpleaños según campaña',
   ],
   vip: [
-    'Hasta 20% en servicios premium · 15% en productos',
-    'Puntos Aura ×2 en visitas confirmadas',
+    'Premios ANDREAS: canje con 5 puntos · 74,99% de descuento',
+    'Máximo beneficio en todas las reglas del programa',
     'Canal preferente con recepción para agendar',
     'Acceso anticipado a promociones y eventos',
-    'Un upgrade de servicio al año disponible',
+    'Coordinación de canjes en recepción Salon Andreas',
   ],
 };
 

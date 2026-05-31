@@ -119,7 +119,7 @@ export function HistorialCitasTab({
     >
       {header}
 
-      <Text style={styles.pageDisplay}>Historial</Text>
+      <Text style={styles.pageDisplay}>Citas</Text>
       <Text style={styles.pageLead}>Tu próxima visita y citas anteriores.</Text>
 
       {citasLoading && hasSupabaseEnv ? (

@@ -3,6 +3,7 @@ import { registrarMontoVentaEnMeta } from './metaGlobal.js';
 import { requireCajaAbierta } from './cajaGuard.js';
 import { enqueueClientNotification } from './clientNotifications.js';
 import { REFERIDO_PREMIOS_COPY } from './referidoPremios.js';
+import { parseCanjeFromCheckoutSnapshot } from './andreasPremiosCycles.js';
 import { formatQ } from '../utils/ventaFactura.js';
 
 function friendlyOrderDbError(err) {
@@ -56,6 +57,7 @@ async function crearPedidoTiendaCliente({
   card_last4,
   notes,
   checkout_snapshot = null,
+  total_amount: totalAmountOverride = null,
 }) {
   const lines = (cartItems || []).filter((i) => i?.id && Number(i.qty) > 0);
   if (!lines.length) {
@@ -77,6 +79,10 @@ async function crearPedidoTiendaCliente({
   }
 
   const subtotal = lines.reduce((s, l) => s + Number(l.priceAmount || 0) * Number(l.qty || 0), 0);
+  const total_amount =
+    totalAmountOverride != null && Number.isFinite(Number(totalAmountOverride))
+      ? Math.max(0, Number(totalAmountOverride))
+      : subtotal;
   const fulfillment = mapFulfillment(shipId, homeAddressType);
   const uid = await resolveClientUserId(clientUserId);
   if (!uid) {
@@ -94,7 +100,7 @@ async function crearPedidoTiendaCliente({
     customer_phone: clienteTelefono?.trim() || '—',
     notes: notes || `Pedido app clientes · ${payment_method}`,
     status: 'pending',
-    total_amount: subtotal,
+    total_amount,
     payment_method,
     card_last4: card_last4 || null,
     client_user_id: uid,
@@ -122,7 +128,7 @@ async function crearPedidoTiendaCliente({
     return { ok: false, error: friendlyOrderDbError(iErr) };
   }
 
-  return { ok: true, order, trackingCode: order.tracking_code, total: subtotal };
+  return { ok: true, order, trackingCode: order.tracking_code, total: total_amount, subtotal };
 }
 
 /**
@@ -138,6 +144,7 @@ export async function crearPedidoEfectivo({
   notes,
   deliveryAddress = null,
   checkout_snapshot = null,
+  total_amount = null,
 }) {
   return crearPedidoTiendaCliente({
     clienteNombre,
@@ -151,6 +158,7 @@ export async function crearPedidoEfectivo({
     card_last4: null,
     notes: notes || 'Pedido app clientes · pago en efectivo',
     checkout_snapshot,
+    total_amount,
   });
 }
 
@@ -168,6 +176,7 @@ export async function crearPedidoTarjetaPendiente({
   deliveryAddress = null,
   cardLast4 = null,
   checkout_snapshot = null,
+  total_amount = null,
 }) {
   return crearPedidoTiendaCliente({
     clienteNombre,
@@ -182,6 +191,7 @@ export async function crearPedidoTarjetaPendiente({
     notes:
       'Pedido app clientes · tarjeta (pendiente de captura). El salón cobra con su pasarela y confirma en Pedidos antes de preparar el envío o retiro.',
     checkout_snapshot,
+    total_amount,
   });
 }
 
@@ -225,7 +235,6 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
     }
   }
 
-  const subtotal = Number(order.total_amount || 0);
   const ventaItems = items.map((l) => ({
     producto_id: l.product_id,
     nombre: l.product_name,
@@ -233,6 +242,7 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
     precio_unitario: Number(l.unit_price || 0),
     subtotal: Number(l.line_total || Number(l.unit_price) * Number(l.qty)),
   }));
+  const lineSubtotal = ventaItems.reduce((s, l) => s + Number(l.subtotal || 0), 0);
 
   const noFactura = order.tracking_code || `PED-${String(orderId).slice(0, 8)}`;
   const payMethod = String(order.payment_method || 'efectivo').toLowerCase();
@@ -253,21 +263,48 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
     }
   }
 
+  let checkoutSnap = order.checkout_snapshot;
+  if (typeof checkoutSnap === 'string') {
+    try {
+      checkoutSnap = JSON.parse(checkoutSnap);
+    } catch {
+      checkoutSnap = null;
+    }
+  }
+  const canjeSnap = parseCanjeFromCheckoutSnapshot(checkoutSnap);
+
+  let descuentoMonto = 0;
+  let totalCobrado = Number(order.total_amount ?? lineSubtotal) || lineSubtotal;
+  if (canjeSnap) {
+    const subtotalBruto =
+      Number(canjeSnap.subtotal_antes) > 0
+        ? Number(canjeSnap.subtotal_antes)
+        : lineSubtotal || totalCobrado;
+    descuentoMonto = Number(canjeSnap.descuento_monto) || 0;
+    const orderTotal = Number(order.total_amount);
+    totalCobrado =
+      Number.isFinite(orderTotal) && orderTotal >= 0
+        ? orderTotal
+        : Math.max(0, Math.round((subtotalBruto - descuentoMonto) * 100) / 100);
+  }
+
   const { data: ventaInsert, error: vErr } = await db.ventas.create(
     {
       cliente_id: clienteId,
       cliente_nombre: order.customer_name,
-      total: subtotal,
-      monto: subtotal,
+      total: totalCobrado,
+      monto: totalCobrado,
       metodo_pago: isTarjeta ? 'tarjeta' : 'efectivo',
       items: ventaItems,
       no_factura: noFactura,
-      descuento: 0,
+      descuento: descuentoMonto,
       caja_id: caja.id,
-      notas: `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
+      notas: canjeSnap
+        ? `Pedido tienda · cobro confirmado · canje ANDREAS ${canjeSnap.descuento_pct}% · ${order.tracking_code || orderId}`
+        : `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
       detalles_pago: isTarjeta ? 'Tarjeta · pedido app clientes' : 'Efectivo (app clientes)',
     },
-    { minimalReturn: true },
+    { minimalReturn: true, skipSalonFisicoPremios: true },
   );
 
   if (vErr) return { ok: false, error: friendlyOrderDbError(vErr) };
@@ -283,7 +320,7 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
     }
   }
 
-  await registrarMontoVentaEnMeta(subtotal);
+  await registrarMontoVentaEnMeta(totalCobrado);
 
   const { error: uErr } = await db.orders.update(orderId, {
     status: 'delivered',
@@ -295,13 +332,17 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
 
   void supabase.rpc('validar_referido_primera_compra', { p_order_id: orderId });
 
+  if (clienteId) {
+    void db.premiosAndreas.syncReglasPedidoEntregado({ clienteId, orderId });
+  }
+
   if (order.client_user_id && clienteId) {
     void enqueueClientNotification({
       clientUserId: order.client_user_id,
       clienteId,
       tipo: 'pedido',
       titulo: 'Tu factura está lista',
-      mensaje: `Folio ${noFactura} · ${formatQ(subtotal)}. Ya está en Mis facturas.`,
+      mensaje: `Folio ${noFactura} · ${formatQ(totalCobrado)}. Ya está en Mis facturas.`,
       targetScreen: 'mis_facturas',
       targetId: ventaId != null ? String(ventaId) : noFactura,
     });
@@ -315,5 +356,5 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
     });
   }
 
-  return { ok: true, noFactura, total: subtotal, ventaId };
+  return { ok: true, noFactura, total: totalCobrado, ventaId };
 }

@@ -12,7 +12,11 @@ import {
 import { X } from 'lucide-react-native';
 import { CitaFechaHoraPicker, openAndroidCitaPicker } from './CitaFechaHoraPicker';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db } from '@appsalon/shared-config';
+import {
+  db,
+  resolvePrecioServicioConCanjeCitas,
+  mergeNotasServicioConCanje,
+} from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
 import { SalonButton } from '../luxury/SalonButton';
 import { useServiciosCart } from '../../context/ServiciosCartContext';
@@ -45,6 +49,17 @@ export function ServiciosCarritoBody({
 
   const [schedules, setSchedules] = useState({});
   const [saving, setSaving] = useState(false);
+  const [canjeCitas, setCanjeCitas] = useState(null);
+
+  useEffect(() => {
+    if (!clienteRow?.id) {
+      setCanjeCitas(null);
+      return;
+    }
+    void db.premiosAndreas.getCanjeCitaAgenda({ clienteRow }).then(({ data }) => {
+      setCanjeCitas(data || null);
+    });
+  }, [clienteRow?.id, clienteRow?.andreas_premios, clienteRow?.membresia_nivel]);
 
   useEffect(() => {
     setSchedules((prev) => {
@@ -70,6 +85,7 @@ export function ServiciosCarritoBody({
 
     setSaving(true);
     const creadas = [];
+    let canjeConsumido = false;
     try {
       for (const s of items) {
         const key = servicioKey(s);
@@ -78,12 +94,20 @@ export function ServiciosCarritoBody({
           Alert.alert('Fecha y hora', `Elegí fecha y hora para ${s.nombre || 'el servicio'}.`);
           return;
         }
-        const precio = Number(s.precio);
+        const precioBase = Number(s.precio);
+        const aplicarCanje = !canjeConsumido && canjeCitas;
+        const { precio, canjeSnap } = resolvePrecioServicioConCanjeCitas(
+          precioBase,
+          aplicarCanje ? canjeCitas : null,
+        );
         const dur = Number(s.duracion_minutos);
-        const notasServicio = s.inventarioId
+        let notasServicio = s.inventarioId
           ? `Solicitud desde app clientes · inventario_id=${s.inventarioId}`
           : 'Solicitud desde app clientes';
-        const { error } = await db.citas.create(
+        if (canjeSnap) {
+          notasServicio = mergeNotasServicioConCanje(notasServicio, canjeSnap) || notasServicio;
+        }
+        const { data: citaRow, error } = await db.citas.create(
           {
             cliente_id: clienteRow.id,
             servicio: s.nombre,
@@ -104,6 +128,14 @@ export function ServiciosCarritoBody({
             : raw || 'Revisá la conexión e intentá de nuevo.';
           Alert.alert(`No se pudo agendar ${s.nombre}`, msg);
           return;
+        }
+        if (canjeSnap && citaRow?.id) {
+          canjeConsumido = true;
+          setCanjeCitas(null);
+          void db.premiosAndreas.registrarCanjeCitaAgendada({
+            clienteId: clienteRow.id,
+            citaId: citaRow.id,
+          });
         }
         creadas.push(s.nombre);
       }
@@ -128,7 +160,7 @@ export function ServiciosCarritoBody({
     } finally {
       setSaving(false);
     }
-  }, [clienteRow?.id, items, schedules, clear, onCitasChanged, onClose, onGoTab]);
+  }, [clienteRow?.id, items, schedules, canjeCitas, clear, onCitasChanged, onClose, onGoTab]);
 
   if (!clienteRow?.id) {
     return (
@@ -147,15 +179,28 @@ export function ServiciosCarritoBody({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
+      {canjeCitas ? (
+        <View style={[styles.canjeBanner, { backgroundColor: c.surfaceMuted, borderColor: c.primary }]}>
+          <Text style={[styles.canjeBannerTxt, { color: c.foreground }]}>
+            Canje ANDREAS activo: {canjeCitas.descuento_pct}% de descuento en el primer servicio de esta
+            solicitud.
+          </Text>
+        </View>
+      ) : null}
+
       {n === 0 ? (
         <Text style={styles.intro}>
-          Agregá servicios con el botón + en Mis citas. Cuando termines, volvé aquí para agendar.
+          Agregá servicios con el botón + en Servicios. Cuando termines, volvé aquí para agendar.
         </Text>
       ) : null}
 
       {items.map((s, index) => {
         const key = servicioKey(s);
         const fechaHora = schedules[key] ?? defaultSlotForIndex(index);
+        const esPrimeroConCanje = index === 0 && canjeCitas;
+        const precioCanje = esPrimeroConCanje
+          ? resolvePrecioServicioConCanjeCitas(s.precio, canjeCitas)
+          : null;
 
         return (
           <View key={key} style={styles.card}>
@@ -163,7 +208,15 @@ export function ServiciosCarritoBody({
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.name}>{s.nombre}</Text>
                 <Text style={styles.meta}>
-                  {formatServicioPrecio(s)} · {formatServicioDuracion(s)}
+                  {esPrimeroConCanje && precioCanje?.calc ? (
+                    <>
+                      <Text style={styles.precioTachado}>{formatServicioPrecio(s)}</Text>
+                      {` · Q ${precioCanje.precio.toFixed(2)} con canje · `}
+                    </>
+                  ) : (
+                    `${formatServicioPrecio(s)} · `
+                  )}
+                  {formatServicioDuracion(s)}
                 </Text>
               </View>
               <TouchableOpacity
@@ -277,6 +330,21 @@ function createStyles(c) {
       marginBottom: spacing.xs,
       textTransform: 'uppercase',
       letterSpacing: 0.6,
+    },
+    canjeBanner: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    canjeBannerTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    precioTachado: {
+      textDecorationLine: 'line-through',
+      color: c.foregroundSubtle,
     },
     dateRow: {
       flexDirection: 'row',

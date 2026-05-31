@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { typography, spacing, radii } from '@appsalon/design-tokens';
+import { getPremiosCelebrationHint } from '../../utils/premiosPointsAlert';
 
 const GOLD       = '#C9A24D';
 const GOLD_LIGHT = '#F5E6A8';
@@ -112,8 +113,9 @@ function Balloon({ screenH, x, delay, emoji }) {
 
 // ─── Modal principal ──────────────────────────────────────────────────────────
 
-export function PremiosCelebrationModal({ visible, onVerPremio, onDismiss }) {
+export function PremiosCelebrationModal({ visible, ruleId, onVerPremio, onDismiss }) {
   const { width: W, height: H } = useWindowDimensions();
+  const hintText = getPremiosCelebrationHint(ruleId);
 
   const cardScale = useRef(new Animated.Value(0)).current;
   const cardOp    = useRef(new Animated.Value(0)).current;
@@ -202,9 +204,7 @@ export function PremiosCelebrationModal({ visible, onVerPremio, onDismiss }) {
               Tenés un premio listo para{'\n'}canjear en Salon Andreas.
             </Text>
 
-            <Text style={styles.hint}>
-              Presentate en recepción y mostrá tu progreso en Premios.
-            </Text>
+            <Text style={styles.hint}>{hintText}</Text>
 
             {/* Botones */}
             <TouchableOpacity style={styles.btnPrimary} onPress={onVerPremio} activeOpacity={0.88}>

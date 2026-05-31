@@ -5,6 +5,7 @@ import {
 } from 'lucide-react-native';
 import { typography, spacing } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 
 const ICON_MAP = {
   MessageCircle, ShoppingBag, Sparkles, Award, Package, Scissors,
@@ -156,7 +157,7 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#DC2626',
+    backgroundColor: CLIENT_ALERT_BELL_RED,
     alignItems: 'center',
     justifyContent: 'center',
   },

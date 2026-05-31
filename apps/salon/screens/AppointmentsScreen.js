@@ -27,7 +27,13 @@ import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
-import { db, supabase, visitaQrImageUrl } from '@appsalon/shared-config';
+import {
+  db,
+  supabase,
+  visitaQrImageUrl,
+  parseCanjeFromNotasServicio,
+  stripCanjeMarkerFromNotas,
+} from '@appsalon/shared-config';
 import { CitaVisitaQrScannerModal } from '../components/CitaVisitaQrScannerModal';
 import {
   notifyClienteCitaConfirmada,
@@ -1103,10 +1109,23 @@ export function AppointmentsScreen({ onBack }) {
                       <Text style={styles.detailValue}>{row.value}</Text>
                     </View>
                   ))}
-                  {detailCita.notas_servicio ? (
+                  {parseCanjeFromNotasServicio(detailCita.notas_servicio) ? (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Canje ANDREAS</Text>
+                      <Text style={styles.detailValueMultiline}>
+                        {(() => {
+                          const c = parseCanjeFromNotasServicio(detailCita.notas_servicio);
+                          return `Descuento ${c.descuento_pct}% (−Q${Number(c.descuento_monto || 0).toFixed(2)}) · precio lista Q${Number(c.precio_antes || 0).toFixed(2)}`;
+                        })()}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {stripCanjeMarkerFromNotas(detailCita.notas_servicio) ? (
                     <View style={styles.detailRow}>
                       <Text style={styles.detailLabel}>Notas</Text>
-                      <Text style={styles.detailValueMultiline}>{detailCita.notas_servicio}</Text>
+                      <Text style={styles.detailValueMultiline}>
+                        {stripCanjeMarkerFromNotas(detailCita.notas_servicio)}
+                      </Text>
                     </View>
                   ) : null}
                 </ScrollView>

@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-nativ
 import { Search, ShoppingCart } from 'lucide-react-native';
 import { typography, spacing, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
+import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 
 /**
  * - Inicio: búsqueda + carrito.
@@ -143,7 +144,7 @@ export function ScreenHeader({
             >
               <ShoppingCart size={23} color={c.foreground} strokeWidth={1.85} />
               {cartLabel ? (
-                <View style={[styles.cartBadge, { backgroundColor: c.error }]}>
+                <View style={[styles.cartBadge, { backgroundColor: CLIENT_ALERT_BELL_RED }]}>
                   <Text style={styles.cartBadgeTxt}>{cartLabel}</Text>
                 </View>
               ) : null}

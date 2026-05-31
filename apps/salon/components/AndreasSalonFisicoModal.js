@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { X, Store, Plus, Minus } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, parseSalonFisicoUnidades, ANDREAS_META } from '@appsalon/shared-config';
+import { db, parseSalonFisicoUnidades, parseSalonFisicoCanjePendiente, ANDREAS_META } from '@appsalon/shared-config';
 import { SalonButton } from './luxury/SalonButton';
 import { modalSheetBottomPad } from './luxury';
 
@@ -196,6 +196,26 @@ export function AndreasSalonFisicoModal({
 
   const cur = parseInt(String(unidades).replace(/\D/g, ''), 10);
   const curSafe = Number.isFinite(cur) && cur >= 0 ? cur : 0;
+  const canjePendiente = picked ? parseSalonFisicoCanjePendiente(picked.andreas_premios) : null;
+
+  const aplicarCanjeRecepcion = useCallback(async () => {
+    if (!picked?.id) {
+      setErr('Elegí un cliente primero.');
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    const { data, error } = await db.premiosAndreas.canjearSalonFisicoEnRecepcion(picked.id);
+    setSaving(false);
+    if (error) {
+      setErr(error.message || 'No se pudo registrar el canje.');
+      return;
+    }
+    const next = parseSalonFisicoUnidades(data?.andreas_premios);
+    setUnidades(String(next));
+    setPicked((prev) => (prev ? { ...prev, andreas_premios: data?.andreas_premios } : prev));
+    onSaved?.(data);
+  }, [picked, onSaved]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -297,6 +317,16 @@ export function AndreasSalonFisicoModal({
                 disabled={saving}
                 onPress={() => void sumar(1)}
               />
+              {canjePendiente ? (
+                <SalonButton
+                  title={saving ? '…' : 'Aplicar canje en recepción'}
+                  variant="heroGold"
+                  fullWidth
+                  disabled={saving}
+                  style={{ marginTop: spacing.sm }}
+                  onPress={() => void aplicarCanjeRecepcion()}
+                />
+              ) : null}
             </>
           )}
 

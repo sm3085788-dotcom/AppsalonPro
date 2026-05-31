@@ -93,6 +93,8 @@ const ROW_ACCENTS = [
 ];
 const BROWN_ACCENT = { border: '#7B4B2A', bg: '#F5EADF', icon: '#7B4B2A' };
 const BROWN_MODULE_IDS = new Set(['incidentes', 'inventory', 'basurero']);
+/** Solo título visible (sin subtítulo); icono centrado arriba. */
+const TITLE_ONLY_MODULE_IDS = new Set(['panel', 'basurero']);
 
 /** Modulos con badge de notificaciones (contador rojo). Sustituir por API cuando exista. */
 const BADGE_MODULE_IDS = ['agenda', 'cajas', 'clients', 'mensajes', 'inventory'];
@@ -575,6 +577,7 @@ function SalonAdminShell({ onSignOut }) {
                   icon={m.Icon}
                   width={tileWidth}
                   accent={accent}
+                  titleOnly={TITLE_ONLY_MODULE_IDS.has(m.id)}
                   badgeCount={BADGE_MODULE_IDS.includes(m.id) ? badgeCounts[m.id] ?? 0 : 0}
                   showAlertBell={
                     (m.id === 'mensajes' && mensajesAlertReady && hasNewMensajes) ||

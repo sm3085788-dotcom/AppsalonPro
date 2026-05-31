@@ -23,7 +23,16 @@ import {
   mergeClienteNotasEnvio,
   normalizeEnvioGuardado,
   REFERIDO_PREMIOS_COPY,
+  applyDiscountToSubtotal,
 } from '@appsalon/shared-config';
+import {
+  buildTiendaCanjeAlertMessage,
+  buildTiendaCanjeBannerText,
+  buildTiendaCanjeSuccessNote,
+  fetchTiendaProductoCanjesPendientes,
+  formatPctCanje,
+  getTiendaCanjeReglaCopy,
+} from '../../utils/tiendaCanjePremios';
 
 const STAR_GOLD = '#FFB800';
 const STAR_EMPTY = '#E3E3E3';
@@ -127,6 +136,9 @@ export function TiendaFlow({
   const [gridCartToast, setGridCartToast] = useState(null);
   const [referidorCheckout, setReferidorCheckout] = useState(null);
   const [referidorCodigoInput, setReferidorCodigoInput] = useState('');
+  const [tiendaCanjeAvisos, setTiendaCanjeAvisos] = useState([]);
+  const [payCanjePreview, setPayCanjePreview] = useState(null);
+  const tiendaCanjeAlertShownKey = useRef(null);
   const deepLinkDone = useRef(false);
 
   useEffect(() => {
@@ -156,17 +168,94 @@ export function TiendaFlow({
   };
 
   const buildCheckoutSnapshot = () => {
-    if (!referidorCheckout?.needs_code) return null;
-    const codigo = String(referidorCodigoInput || referidorCheckout.referidor_codigo || '')
-      .trim()
-      .toUpperCase();
-    if (!codigo) return null;
+    const snap = {};
+    if (referidorCheckout?.needs_code) {
+      const codigo = String(referidorCodigoInput || referidorCheckout.referidor_codigo || '')
+        .trim()
+        .toUpperCase();
+      if (codigo) {
+        snap.referidor_codigo = codigo;
+        snap.referidor_user_id = referidorCheckout.referidor_user_id || null;
+        snap.primera_compra_referido = true;
+      }
+    }
+    return Object.keys(snap).length ? snap : null;
+  };
+
+  const resolveAndreasCanjeForCheckout = async (payment_method) => {
+    if (!clienteId) return { total: cartSubtotal, snapExtra: null, discount: null };
+    const { data: row, error } = await db.clientes.getById(clienteId);
+    if (error || !row) return { total: cartSubtotal, snapExtra: null, discount: null };
+    const { data: pending } = await db.premiosAndreas.getCanjeCheckout({
+      clienteRow: row,
+      shipId,
+      payment_method,
+    });
+    if (!pending?.ruleId) return { total: cartSubtotal, snapExtra: null, discount: null, pending: null };
+    const calc = applyDiscountToSubtotal(cartSubtotal, pending.descuento_pct);
     return {
-      referidor_codigo: codigo,
-      referidor_user_id: referidorCheckout.referidor_user_id || null,
-      primera_compra_referido: true,
+      total: calc.total,
+      discount: calc,
+      pending,
+      snapExtra: {
+        andreas_canje: {
+          rule_id: pending.ruleId,
+          descuento_pct: calc.descuento_pct,
+          descuento_monto: calc.discount,
+          subtotal_antes: calc.subtotal,
+        },
+      },
     };
   };
+
+  const buildAndreasCanjeFromCheckout = (canjeResult) => {
+    if (!canjeResult?.discount || !canjeResult?.pending?.ruleId) return null;
+    return {
+      ruleId: canjeResult.pending.ruleId,
+      descuento_pct: canjeResult.discount.descuento_pct,
+      descuento_monto: canjeResult.discount.discount,
+      subtotal_antes: canjeResult.discount.subtotal,
+    };
+  };
+
+  useEffect(() => {
+    if (phase !== 'catalog' || !clienteId) {
+      if (phase === 'catalog') setTiendaCanjeAvisos([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchTiendaProductoCanjesPendientes(clienteId, db).then((avisos) => {
+      if (!cancelled) setTiendaCanjeAvisos(avisos);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, clienteId, tiendaOpenKey]);
+
+  useEffect(() => {
+    if (phase !== 'catalog' || !tiendaCanjeAvisos.length) return;
+    const key = `${tiendaOpenKey}-${clienteId}`;
+    if (tiendaCanjeAlertShownKey.current === key) return;
+    tiendaCanjeAlertShownKey.current = key;
+    Alert.alert('Premio ANDREAS · Tienda', buildTiendaCanjeAlertMessage(tiendaCanjeAvisos), [
+      { text: 'Entendido', style: 'default' },
+    ]);
+  }, [phase, tiendaCanjeAvisos, tiendaOpenKey, clienteId]);
+
+  useEffect(() => {
+    if (phase !== 'pay' || !clienteId || !cartItems.length) {
+      setPayCanjePreview(null);
+      return;
+    }
+    const pm = payId === 'pay-card' ? 'tarjeta' : 'efectivo';
+    let cancelled = false;
+    void resolveAndreasCanjeForCheckout(pm).then((r) => {
+      if (!cancelled) setPayCanjePreview(r.discount ? r : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, payId, shipId, clienteId, cartSubtotal, cartItems.length]);
   const gridToastTimer = useRef(null);
 
   useEffect(() => {
@@ -387,6 +476,14 @@ export function TiendaFlow({
         <>
           {gridCartToast ? (
             <Text style={styles.cartBanner}>✓ {gridCartToast} · añadido al carrito</Text>
+          ) : null}
+          {tiendaCanjeAvisos.length > 0 ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.primary, backgroundColor: tc.surfaceMuted }]}>
+              <Text style={[styles.canjeBannerTitle, { color: tc.primary }]}>Premio ANDREAS · producto</Text>
+              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                {buildTiendaCanjeBannerText(tiendaCanjeAvisos)}
+              </Text>
+            </View>
           ) : null}
           <TiendaCatalogGrid onProductPress={openProduct} onAddToCart={quickAddToCart} />
         </>
@@ -1033,6 +1130,26 @@ export function TiendaFlow({
             </View>
           ) : null}
 
+          {payCanjePreview?.discount ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.primary, backgroundColor: tc.surfaceMuted }]}>
+              <Text style={[styles.canjeBannerTitle, { color: tc.primary }]}>
+                Canje que se aplicará en este pedido
+              </Text>
+              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                {formatPctCanje(payCanjePreview.discount.descuento_pct)} en productos (
+                {getTiendaCanjeReglaCopy(payCanjePreview.pending?.ruleId)?.metodo || 'según pago y envío'}
+                ). Subtotal {formatQ(cartSubtotal)} → total estimado {formatQ(payCanjePreview.total)}.
+              </Text>
+            </View>
+          ) : payId === 'pay-cash' || payId === 'pay-card' ? (
+            tiendaCanjeAvisos.length > 0 ? (
+              <Text style={[styles.payCanjeHint, { color: tc.foregroundMuted }]}>
+                Tenés canje en Premios, pero no aplica con el envío y pago elegidos. Cambiá a{' '}
+                {tiendaCanjeAvisos.map((a) => getTiendaCanjeReglaCopy(a.ruleId)?.metodo).filter(Boolean).join(' o ')}.
+              </Text>
+            ) : null
+          ) : null}
+
           <SalonButton
             title={checkoutBusy ? 'Procesando…' : 'Enviar pedido al salón'}
             variant="heroGold"
@@ -1059,12 +1176,18 @@ export function TiendaFlow({
                   );
                   return;
                 }
-                const snapCard = buildCheckoutSnapshot();
-                if (referidorCheckout?.needs_code && !snapCard?.referidor_codigo) {
+                const snapBase = buildCheckoutSnapshot() || {};
+                if (referidorCheckout?.needs_code && !snapBase.referidor_codigo) {
                   Alert.alert('Código de referido', 'Ingresá el código de quien te invitó para tu primera compra.');
                   return;
                 }
                 setCheckoutBusy(true);
+                const canjeCard = await resolveAndreasCanjeForCheckout('tarjeta');
+                const snapCard = canjeCard.snapExtra
+                  ? { ...snapBase, ...canjeCard.snapExtra }
+                  : Object.keys(snapBase).length
+                    ? snapBase
+                    : null;
                 const res = await confirmarCompraConTarjeta({
                   clienteNombre,
                   clienteTelefono,
@@ -1075,6 +1198,7 @@ export function TiendaFlow({
                   deliveryAddress: buildDeliveryAddressSnapshot(),
                   cardLast4: cardLast4FromSelection(),
                   checkout_snapshot: snapCard,
+                  total_amount: canjeCard.total,
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {
@@ -1086,7 +1210,9 @@ export function TiendaFlow({
                   code: orderCode,
                   items: cartItems,
                   subtotal: cartSubtotal,
-                  total: cartSubtotal,
+                  total: canjeCard.total,
+                  andreasDiscount: canjeCard.discount,
+                  andreasCanje: buildAndreasCanjeFromCheckout(canjeCard),
                   paymentSummary: `Tarjeta · últimos ${cardLast4FromSelection() || '—'} · pendiente de cobro en salón`,
                   shippingSummary:
                     shipId === 'ship-home'
@@ -1123,12 +1249,18 @@ export function TiendaFlow({
                   );
                   return;
                 }
-                setCheckoutBusy(true);
-                const snap = buildCheckoutSnapshot();
-                if (referidorCheckout?.needs_code && !snap?.referidor_codigo) {
+                const snapBaseCash = buildCheckoutSnapshot() || {};
+                if (referidorCheckout?.needs_code && !snapBaseCash.referidor_codigo) {
                   Alert.alert('Código de referido', 'Ingresá el código de quien te invitó para tu primera compra.');
                   return;
                 }
+                setCheckoutBusy(true);
+                const canjeCash = await resolveAndreasCanjeForCheckout('efectivo');
+                const snapCash = canjeCash.snapExtra
+                  ? { ...snapBaseCash, ...canjeCash.snapExtra }
+                  : Object.keys(snapBaseCash).length
+                    ? snapBaseCash
+                    : null;
                 const res = await crearPedidoEfectivo({
                   clienteNombre: clienteNombre || 'Cliente tienda',
                   clienteTelefono: clienteTelefono || '—',
@@ -1137,7 +1269,8 @@ export function TiendaFlow({
                   shipId,
                   homeAddressType,
                   deliveryAddress: buildDeliveryAddressSnapshot(),
-                  checkout_snapshot: snap,
+                  checkout_snapshot: snapCash,
+                  total_amount: canjeCash.total,
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {
@@ -1148,7 +1281,9 @@ export function TiendaFlow({
                   code: res.trackingCode || res.order?.tracking_code,
                   items: cartItems,
                   subtotal: cartSubtotal,
-                  total: cartSubtotal,
+                  total: canjeCash.total,
+                  andreasDiscount: canjeCash.discount,
+                  andreasCanje: buildAndreasCanjeFromCheckout(canjeCash),
                   paymentSummary: 'Efectivo · pendiente de cobro en salón',
                   shippingSummary:
                     shipId === 'ship-home'
@@ -1203,6 +1338,22 @@ export function TiendaFlow({
               <View style={subStyles.divider} />
               <RowAmt label="Envío" value={lastOrder.shippingSummary} muted />
               <RowAmt label="Pago" value={lastOrder.paymentSummary} muted />
+              {lastOrder.andreasCanje ? (
+                <>
+                  <View style={subStyles.divider} />
+                  <RowAmt
+                    label="Subtotal productos"
+                    value={formatQ(lastOrder.andreasCanje.subtotal_antes ?? lastOrder.subtotal)}
+                  />
+                  <RowAmt
+                    label={`Canje ANDREAS (${formatPctCanje(lastOrder.andreasCanje.descuento_pct)})`}
+                    value={`−${formatQ(lastOrder.andreasCanje.descuento_monto)}`}
+                  />
+                  <Text style={[styles.canjeSuccessNote, { color: tc.foregroundMuted }]}>
+                    {buildTiendaCanjeSuccessNote(lastOrder.andreasCanje)}
+                  </Text>
+                </>
+              ) : null}
               <View style={subStyles.divider} />
               <RowAmt label="Total" value={formatQ(lastOrder.total)} bold />
             </View>
@@ -1487,6 +1638,36 @@ function createTiendaStyles(c) {
     fontFamily: typography.fontSans,
     fontSize: 13,
     color: c.success,
+  },
+  canjeBanner: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  canjeBannerTitle: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 14,
+    marginBottom: spacing.xs,
+  },
+  canjeBannerTxt: {
+    fontFamily: typography.fontSans,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  payCanjeHint: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  canjeSuccessNote: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   stepHead: {
     fontFamily: typography.fontDisplay,

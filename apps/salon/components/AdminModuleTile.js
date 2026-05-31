@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { TouchableOpacity, Text, View, StyleSheet, Animated, Easing } from 'react-native';
+import {
+  TouchableOpacity,
+  Text,
+  View,
+  StyleSheet,
+  Animated,
+  Easing,
+  Platform,
+} from 'react-native';
 import { Bell } from 'lucide-react-native';
 import { typography, spacing, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../theme/ThemeProvider';
@@ -8,7 +16,7 @@ import { useTheme } from '../theme/ThemeProvider';
 const ALERT_BELL_RED = '#E53935';
 
 /**
- * Tarjeta táctil para el grid del panel admin (tablet / teléfono).
+ * Tarjeta táctil cuadrada del grid «Módulos» (panel admin · solo esta pantalla).
  */
 export function AdminModuleTile({
   title,
@@ -19,15 +27,33 @@ export function AdminModuleTile({
   accent,
   badgeCount = 0,
   showAlertBell = false,
+  /** Sin subtítulo: icono centrado y título abajo (Panel de control, Basurero). */
+  titleOnly = false,
 }) {
   const { colors: c, isDark } = useTheme();
   const hasAccent = Boolean(accent);
-  const titleColor = hasAccent && isDark ? '#1F1F1F' : c.foreground;
-  const subtitleColor = hasAccent && isDark ? '#4A4A4A' : c.foregroundMuted;
-  const iconColor = hasAccent ? (accent.icon ?? c.primary) : c.primary;
-  const badgeRing = accent?.bg ?? c.card;
-  const alertBg = ALERT_BELL_RED;
-  const alertFg = '#FFFFFF';
+  const accentColor = accent?.icon ?? accent?.border ?? c.primary;
+  const accentLine = accent?.border ?? accentColor;
+  const titleColor = c.foreground;
+  const subtitleColor = c.foregroundMuted;
+  const cardBg = hasAccent
+    ? isDark
+      ? c.card
+      : accent.bg ?? '#FFFFFF'
+    : isDark
+      ? c.card
+      : '#FFFFFF';
+  const iconInnerBg = isDark ? c.surfaceMuted : '#FFFFFF';
+  const borderColor = hasAccent
+    ? isDark
+      ? `${accentLine}50`
+      : `${accentLine}35`
+    : c.cardBorder;
+  const badgeRing = isDark ? c.card : '#FFFFFF';
+
+  const iconSize = titleOnly ? 26 : 22;
+  const iconRingSize = titleOnly ? 50 : 44;
+
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -38,34 +64,87 @@ export function AdminModuleTile({
         touch: {
           width: '100%',
           aspectRatio: 1,
-          backgroundColor: accent?.bg ?? c.card,
-          borderRadius: radii.md,
+          backgroundColor: cardBg,
+          borderRadius: radii.lg,
           borderWidth: 1,
-          borderColor: accent?.border ?? c.cardBorder,
-          padding: spacing.sm,
-          justifyContent: 'flex-start',
+          borderColor,
+          overflow: 'hidden',
+          ...Platform.select({
+            ios: {
+              shadowColor: '#1A1A1A',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: isDark ? 0.28 : 0.06,
+              shadowRadius: 6,
+            },
+            android: { elevation: 2 },
+            default: {},
+          }),
         },
-        iconRow: {
-          marginBottom: 4,
+        leftStripe: {
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 4,
+          backgroundColor: accentLine,
+          opacity: isDark ? 0.85 : 1,
+        },
+        inner: {
+          flex: 1,
+          paddingLeft: spacing.sm + 4,
+          paddingRight: spacing.sm,
+          paddingTop: spacing.sm,
+          paddingBottom: spacing.sm,
+        },
+        iconZone: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: 0,
+        },
+        iconRing: {
+          width: iconRingSize,
+          height: iconRingSize,
+          borderRadius: iconRingSize / 2,
+          backgroundColor: iconInnerBg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1.5,
+          borderColor: hasAccent ? `${accentLine}${isDark ? '70' : '55'}` : c.cardBorder,
+          ...Platform.select({
+            ios: {
+              shadowColor: accentLine,
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: isDark ? 0.2 : 0.12,
+              shadowRadius: 3,
+            },
+            android: { elevation: 1 },
+            default: {},
+          }),
+        },
+        textBlock: {
+          justifyContent: 'flex-end',
         },
         title: {
           fontFamily: typography.fontSansMedium,
-          fontSize: 13,
+          fontSize: titleOnly ? 12.5 : 13,
           color: titleColor,
-          lineHeight: 17,
+          lineHeight: titleOnly ? 16 : 17,
+          letterSpacing: -0.2,
         },
         sub: {
           marginTop: 2,
           fontFamily: typography.fontSans,
-          fontSize: 10,
+          fontSize: 9.5,
           color: subtitleColor,
-          lineHeight: 14,
+          lineHeight: 12,
+          opacity: 0.92,
         },
         badge: {
           position: 'absolute',
-          top: 6,
-          right: 6,
-          backgroundColor: alertBg,
+          top: 7,
+          right: 7,
+          backgroundColor: ALERT_BELL_RED,
           borderRadius: 10,
           minWidth: 20,
           height: 20,
@@ -74,28 +153,54 @@ export function AdminModuleTile({
           justifyContent: 'center',
           borderWidth: 2,
           borderColor: badgeRing,
+          zIndex: 2,
         },
         badgeTxt: {
           fontFamily: typography.fontSansMedium,
           fontSize: 11,
-          color: alertFg,
+          color: '#FFFFFF',
           lineHeight: 13,
         },
         bellWrap: {
           position: 'absolute',
-          top: 6,
-          right: 6,
-          width: 24,
-          height: 24,
-          borderRadius: 12,
-          backgroundColor: alertBg,
+          top: 7,
+          right: 7,
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          backgroundColor: ALERT_BELL_RED,
           alignItems: 'center',
           justifyContent: 'center',
           borderWidth: 2,
           borderColor: badgeRing,
+          zIndex: 2,
+          ...Platform.select({
+            ios: {
+              shadowColor: ALERT_BELL_RED,
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.35,
+              shadowRadius: 4,
+            },
+            android: { elevation: 4 },
+            default: {},
+          }),
         },
       }),
-    [c, titleColor, subtitleColor, accent, isDark, badgeRing, alertBg, alertFg],
+    [
+      c,
+      width,
+      cardBg,
+      iconInnerBg,
+      borderColor,
+      titleColor,
+      subtitleColor,
+      hasAccent,
+      accentLine,
+      isDark,
+      badgeRing,
+      titleOnly,
+      iconRingSize,
+    ],
   );
 
   const shake = useRef(new Animated.Value(0)).current;
@@ -121,6 +226,26 @@ export function AdminModuleTile({
     return () => anim.stop();
   }, [showAlertBell, shake]);
 
+  const cardBody = (
+    <View style={styles.inner}>
+      <View style={styles.iconZone}>
+        <View style={styles.iconRing}>
+          <Icon size={iconSize} color={accentColor} strokeWidth={2} />
+        </View>
+      </View>
+      <View style={styles.textBlock}>
+        <Text style={styles.title} numberOfLines={2}>
+          {title}
+        </Text>
+        {!titleOnly && subtitle ? (
+          <Text style={styles.sub} numberOfLines={2}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+
   return (
     <View style={styles.wrap}>
       <TouchableOpacity
@@ -132,16 +257,10 @@ export function AdminModuleTile({
           showAlertBell ? `${title}, hay mensajes nuevos` : badgeCount > 0 ? `${title}, ${badgeCount} notificaciones` : title
         }
       >
-        <View style={styles.iconRow}>
-          <Icon size={22} color={iconColor} strokeWidth={1.85} />
-        </View>
-        <Text style={styles.title} numberOfLines={2}>
-          {title}
-        </Text>
-        <Text style={styles.sub} numberOfLines={2}>
-          {subtitle}
-        </Text>
+        {hasAccent ? <View style={styles.leftStripe} pointerEvents="none" /> : null}
+        {cardBody}
       </TouchableOpacity>
+
       {badgeCount > 0 ? (
         <View style={styles.badge} pointerEvents="none">
           <Text style={styles.badgeTxt}>{badgeCount > 99 ? '99+' : String(badgeCount)}</Text>
@@ -155,7 +274,7 @@ export function AdminModuleTile({
           ]}
           pointerEvents="none"
         >
-          <Bell size={12} color={alertFg} strokeWidth={2.4} />
+          <Bell size={13} color="#FFFFFF" strokeWidth={2.4} />
         </Animated.View>
       ) : null}
     </View>

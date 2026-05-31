@@ -47,6 +47,7 @@ import {
   uploadClientePhotoFromUri,
   fetchClientAuraUnreadCount,
   fetchClientAuraMessages,
+  isInboundAuraUnread,
   sendClientAuraChat,
   buildBroadcastActionMessage,
   BROADCAST_PROMO_ACTIONS,
@@ -76,8 +77,14 @@ import { PremiosCelebrationModal } from './components/luxury/PremiosCelebrationM
 import { CLIENT_SUB } from './navigation/clientSubScreens';
 import {
   PREMIOS_PROGRESS_STORAGE_KEY,
+  PREMIOS_CANJE_FLAGS_KEY,
   buildPremiosProgressSnapshot,
+  buildPremiosCanjeFlags,
   premiosProgressIncreased,
+  premiosCanjeNewlyUnlocked,
+  pickPrimaryPremiosCanjeUnlock,
+  anyPremiosCanjeReady,
+  resolvePremiosMeta,
 } from './utils/premiosPointsAlert';
 import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
@@ -117,7 +124,6 @@ import {
 } from './utils/clientPush';
 import {
   markAllClientNotificationsRead,
-  fetchClientInboxUnreadCount,
   markClientNotificationsRead,
   notifyClientFromMdmId,
 } from '@appsalon/shared-config';
@@ -187,8 +193,8 @@ const TABS = {
 
 const TAB_ITEMS = [
   { id: TABS.INICIO, label: 'Inicio', icon: Sparkles },
-  { id: TABS.CITAS, label: 'Agendar', icon: Calendar },
-  { id: TABS.HISTORIAL, label: 'Historial', icon: Clock },
+  { id: TABS.CITAS, label: 'Servicios', icon: Calendar },
+  { id: TABS.HISTORIAL, label: 'Citas', icon: Clock },
   { id: TABS.PERFIL, label: 'Perfil', icon: User },
 ];
 
@@ -281,6 +287,7 @@ function AppMain({ onLogout }) {
   const [premiosBadge, setPremiosBadge] = useState(false);
   const [premiosCanjeReady, setPremiosCanjeReady] = useState(false);
   const [premiosCelebrationVisible, setPremiosCelebrationVisible] = useState(false);
+  const [premiosCelebrationRuleId, setPremiosCelebrationRuleId] = useState(null);
   const premiosSnapshotRef = useRef(null);
   const openedSubRef = useRef(null);
   const { cartCount } = useTiendaCart();
@@ -305,10 +312,17 @@ function AppMain({ onLogout }) {
     if (!next) return;
     premiosSnapshotRef.current = next;
 
+    const meta = resolvePremiosMeta(row?.membresia_nivel);
+    const canjeFlags = buildPremiosCanjeFlags(r, meta);
+    setPremiosCanjeReady(anyPremiosCanjeReady(canjeFlags));
+
     let prev = null;
+    let prevCanje = null;
     try {
       const raw = await AsyncStorage.getItem(PREMIOS_PROGRESS_STORAGE_KEY);
       if (raw) prev = JSON.parse(raw);
+      const rawCanje = await AsyncStorage.getItem(PREMIOS_CANJE_FLAGS_KEY);
+      if (rawCanje) prevCanje = JSON.parse(rawCanje);
     } catch {
       /* ignore */
     }
@@ -319,14 +333,29 @@ function AppMain({ onLogout }) {
       } catch {
         /* ignore */
       }
-      return;
-    }
-
-    if (
+    } else if (
       premiosProgressIncreased(prev, next) &&
       openedSubRef.current !== CLIENT_SUB.PREMIOS
     ) {
       setPremiosBadge(true);
+    }
+
+    if (canjeFlags) {
+      if (!prevCanje) {
+        try {
+          await AsyncStorage.setItem(PREMIOS_CANJE_FLAGS_KEY, JSON.stringify(canjeFlags));
+        } catch {
+          /* ignore */
+        }
+      } else if (premiosCanjeNewlyUnlocked(prevCanje, canjeFlags)) {
+        setPremiosCelebrationRuleId(pickPrimaryPremiosCanjeUnlock(prevCanje, canjeFlags));
+        setPremiosCelebrationVisible(true);
+        try {
+          await AsyncStorage.setItem(PREMIOS_CANJE_FLAGS_KEY, JSON.stringify(canjeFlags));
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }, [session?.user?.id, hasSupabaseEnv]);
 
@@ -336,11 +365,44 @@ function AppMain({ onLogout }) {
   }, [refreshPremiosPointsAlert]);
 
   const handlePrizeReady = useCallback((ready) => {
-    setPremiosCanjeReady(ready);
-    if (ready && openedSubRef.current !== CLIENT_SUB.PREMIOS) {
-      setPremiosCelebrationVisible(true);
-    }
+    setPremiosCanjeReady(Boolean(ready));
   }, []);
+
+  const handlePremiosResumenLoaded = useCallback(
+    async (r) => {
+      const row = clienteRowRef.current;
+      if (!r || !row?.id) return;
+      const meta = resolvePremiosMeta(row?.membresia_nivel);
+      const canjeFlags = buildPremiosCanjeFlags(r, meta);
+      setPremiosCanjeReady(anyPremiosCanjeReady(canjeFlags));
+      if (!canjeFlags) return;
+      let prevCanje = null;
+      try {
+        const rawCanje = await AsyncStorage.getItem(PREMIOS_CANJE_FLAGS_KEY);
+        if (rawCanje) prevCanje = JSON.parse(rawCanje);
+      } catch {
+        /* ignore */
+      }
+      if (!prevCanje) {
+        try {
+          await AsyncStorage.setItem(PREMIOS_CANJE_FLAGS_KEY, JSON.stringify(canjeFlags));
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      if (premiosCanjeNewlyUnlocked(prevCanje, canjeFlags)) {
+        setPremiosCelebrationRuleId(pickPrimaryPremiosCanjeUnlock(prevCanje, canjeFlags));
+        setPremiosCelebrationVisible(true);
+        try {
+          await AsyncStorage.setItem(PREMIOS_CANJE_FLAGS_KEY, JSON.stringify(canjeFlags));
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [],
+  );
 
   const acknowledgePremiosProgress = useCallback(async () => {
     const userId = session?.user?.id;
@@ -356,10 +418,33 @@ function AppMain({ onLogout }) {
             /* ignore */
           }
         }
+        const meta = resolvePremiosMeta(clienteRow?.membresia_nivel);
+        const flags = buildPremiosCanjeFlags(r, meta);
+        if (flags) {
+          try {
+            await AsyncStorage.setItem(PREMIOS_CANJE_FLAGS_KEY, JSON.stringify(flags));
+          } catch {
+            /* ignore */
+          }
+        }
       }
     }
     setPremiosBadge(false);
   }, [session?.user?.id, clienteRow, hasSupabaseEnv]);
+
+  const handlePremiosCanjeNavigate = useCallback(
+    (target) => {
+      setOpenedSub(null);
+      setSubPayload(null);
+      openedSubRef.current = null;
+      if (target === 'tienda') {
+        openSub(CLIENT_SUB.TIENDA);
+      } else if (target === 'citas') {
+        setTab(TABS.CITAS);
+      }
+    },
+    [openSub],
+  );
 
   const openAgendarServicio = useCallback(
     (nombre) => {
@@ -655,6 +740,27 @@ function AppMain({ onLogout }) {
     return refreshClienteFicha(u.id);
   }, [session?.user, refreshClienteFicha]);
 
+  // Al abrir Premios, asegurar ficha cliente antes de que el dashboard cargue contadores.
+  useEffect(() => {
+    if (openedSub !== CLIENT_SUB.PREMIOS) return undefined;
+    const userId = session?.user?.id;
+    if (!hasSupabaseEnv || !userId) return undefined;
+    let cancelled = false;
+    void (async () => {
+      if (!clienteRowRef.current?.id) {
+        await ensureClienteFicha();
+      } else {
+        await refreshClienteFicha(userId, { showPerfilSpinner: false });
+      }
+      if (!cancelled && __DEV__) {
+        console.log('[Premios] ficha lista:', Boolean(clienteRowRef.current?.id));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openedSub, hasSupabaseEnv, session?.user?.id, ensureClienteFicha, refreshClienteFicha]);
+
   const auraAlertsEnabled = notifPrefs.mensajes || notifPrefs.cambiosAgenda;
 
   const refreshAuraUnread = useCallback(async () => {
@@ -662,14 +768,9 @@ function AppMain({ onLogout }) {
       setAuraUnread(0);
       return;
     }
-    // Source of truth for bell: unread rows in client_notifications.
-    // Fallback to Aura pending count to stay compatible while older flows migrate.
-    const [{ count: notifUnread, error: notifErr }, { count: auraUnread }] = await Promise.all([
-      fetchClientInboxUnreadCount(),
-      fetchClientAuraUnreadCount(),
-    ]);
-    const next = notifErr ? Number(auraUnread) || 0 : Math.max(Number(notifUnread) || 0, Number(auraUnread) || 0);
-    setAuraUnread(next);
+    // Campanita Mensajes: solo hilos entrantes del salón (pending_sync), no eco de tus envíos.
+    const { count, error } = await fetchClientAuraUnreadCount();
+    setAuraUnread(error ? 0 : Math.max(0, Number(count) || 0));
   }, [clienteRow?.id]);
 
   const refreshPedidosActivos = useCallback(async () => {
@@ -883,10 +984,8 @@ function AppMain({ onLogout }) {
     if (!clienteRow?.id) return undefined;
     const onAuraInsert = async (row) => {
       if (!row) return;
-      // Mensaje entrante del salón (chat, promo, cita, incidente): encender campanita directo.
-      // NO llamar refreshAuraUnread() aquí porque puede resolverse con 0 por race condition
-      // o fallo del RPC y apagar la campanita que recién apareció.
-      if (row.status === 'pending_sync') {
+      // Solo mensajes entrantes del salón (no los que envía el cliente).
+      if (isInboundAuraUnread(row, session?.user?.id)) {
         setAuraUnread((prev) => Math.max(prev, 1));
       }
       if (row.content_type === 'cita_confirmacion') {
@@ -1151,7 +1250,7 @@ function AppMain({ onLogout }) {
                 { id: 'tendencias', label: 'Tendencias', iconName: 'Sparkles',      sub: 'Looks de temporada',             onPress: () => openSub(CLIENT_SUB.TENDENCIAS) },
                 { id: 'premios',    label: 'Premios',    iconName: 'Award',         sub: 'Puntos, canjes y referidos',     onPress: () => { setPremiosBadge(false); setPremiosCanjeReady(false); void AsyncStorage.setItem(MEMBRESIA_SEEN_KEY, clienteRow?.membresia_nivel ?? ''); openSub(CLIENT_SUB.PREMIOS); void acknowledgePremiosProgress(); }, bellBadge: premiosBadge, prizeBadge: premiosCanjeReady },
                 { id: 'pedidos',    label: 'Pedidos',    iconName: 'Package',       sub: 'Mis compras y estado',           onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
-                { id: 'citas',      label: 'Citas',      iconName: 'Scissors',      sub: 'Agenda y gestión',               onPress: () => setTab(TABS.CITAS) },
+                { id: 'citas',      label: 'Servicios',  iconName: 'Scissors',      sub: 'Elegí servicios y agendá',       onPress: () => setTab(TABS.CITAS) },
               ]}
             />
           </View>
@@ -1377,6 +1476,8 @@ function AppMain({ onLogout }) {
               }}
               onPedidosChanged={handlePedidosChanged}
               onPrizeReady={handlePrizeReady}
+              onPremiosCanjeNavigate={handlePremiosCanjeNavigate}
+              onPremiosResumenLoaded={handlePremiosResumenLoaded}
             />
           </View>
         ) : (
@@ -1430,6 +1531,8 @@ function AppMain({ onLogout }) {
               onAgendarServicio={openAgendarServicio}
               onContinuarAgendarDesdeCarrito={openAgendarDesdeCarrito}
               onPrizeReady={handlePrizeReady}
+              onPremiosCanjeNavigate={handlePremiosCanjeNavigate}
+              onPremiosResumenLoaded={handlePremiosResumenLoaded}
             />
           </SubScreenChrome>
         )
@@ -1451,12 +1554,17 @@ function AppMain({ onLogout }) {
       {/* Modal de celebración de premio */}
       <PremiosCelebrationModal
         visible={premiosCelebrationVisible}
+        ruleId={premiosCelebrationRuleId}
         onVerPremio={() => {
           setPremiosCelebrationVisible(false);
+          setPremiosCelebrationRuleId(null);
           setPremiosCanjeReady(false);
           openSub(CLIENT_SUB.PREMIOS);
         }}
-        onDismiss={() => setPremiosCelebrationVisible(false)}
+        onDismiss={() => {
+          setPremiosCelebrationVisible(false);
+          setPremiosCelebrationRuleId(null);
+        }}
       />
     </View>
   );

@@ -30,6 +30,7 @@ import {
   parseVentaItems,
   formatFechaVenta,
   formatMetodoPago,
+  formatVentaNotasParaDisplay,
 } from '../../../shared/utils/ventaFactura';
 
 export function PapeleriaScreen({ onBack }) {
@@ -119,6 +120,10 @@ export function PapeleriaScreen({ onBack }) {
 
   const detalleItems = useMemo(
     () => (detalleVenta ? parseVentaItems(detalleVenta.items) : []),
+    [detalleVenta],
+  );
+  const detalleNotasDisplay = useMemo(
+    () => (detalleVenta ? formatVentaNotasParaDisplay(detalleVenta.notas) : null),
     [detalleVenta],
   );
 
@@ -442,11 +447,11 @@ export function PapeleriaScreen({ onBack }) {
                     </View>
                   )}
 
-                  {detalleVenta.notas?.trim() ? (
+                  {detalleNotasDisplay ? (
                     <>
                       <Text style={[styles.detailSectionTitle, { color: c.foreground }]}>Notas</Text>
                       <View style={[styles.detailNotas, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                        <Text style={[styles.detailNotasTxt, { color: c.foregroundMuted }]}>{detalleVenta.notas.trim()}</Text>
+                        <Text style={[styles.detailNotasTxt, { color: c.foregroundMuted }]}>{detalleNotasDisplay}</Text>
                       </View>
                     </>
                   ) : null}

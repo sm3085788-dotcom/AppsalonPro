@@ -37,6 +37,11 @@ import { SalonButton } from '../luxury/SalonButton';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { db, supabase, ANDREAS_META, getReferralPrizeByCiclo, ANDREAS_REFERRAL_META } from '@appsalon/shared-config';
+import {
+  buildPremiosCanjeFlags,
+  anyPremiosCanjeReady,
+  resolvePremiosMeta,
+} from '../../utils/premiosPointsAlert';
 
 const BASE_META = ANDREAS_META.appEfectivoRetiro;   // 8 por defecto
 const META_SALON_BASE = ANDREAS_META.salon;          // para el modal de salón físico
@@ -45,9 +50,9 @@ const BASE_DISCOUNT = 19.99;
 
 /** Bonus por nivel de membresía (no aplica a referidos). */
 const MEMBRESIA_BONUS = {
-  bronce: { metaReduction: 1, discountBonus: 5,  label: 'Bronce',  accent: '#B87333' },
-  plata:  { metaReduction: 2, discountBonus: 15, label: 'Plata',   accent: '#9CA3AF' },
-  vip:    { metaReduction: 3, discountBonus: 30, label: 'VIP',     accent: '#C5A368' },
+  bronce: { metaReduction: 1, discountBonus: 15, label: 'Bronce',  accent: '#B87333' },
+  plata:  { metaReduction: 2, discountBonus: 30, label: 'Plata',   accent: '#9CA3AF' },
+  vip:    { metaReduction: 3, discountBonus: 55, label: 'VIP',     accent: '#C5A368' },
 };
 
 function getMembershipTier(nivel) {
@@ -55,7 +60,7 @@ function getMembershipTier(nivel) {
   const bonus = MEMBRESIA_BONUS[id];
   if (!bonus) return null;
   const meta = BASE_META - bonus.metaReduction;          // 7, 6, or 5
-  const discount = (BASE_DISCOUNT + bonus.discountBonus).toFixed(2); // 24.99, 34.99, 49.99
+  const discount = (BASE_DISCOUNT + bonus.discountBonus).toFixed(2); // 34.99, 49.99, 74.99
   return {
     id,
     ...bonus,
@@ -101,7 +106,7 @@ const RULE_POSTER_CONFIG = {
     accent: '#C084FC',
     rewardBg: 'rgba(192,132,252,0.18)',
     emoji: '✂️',
-    rewardLine: '19,99% en servicio + producto',
+    rewardLine: '19,99% en un servicio',
   },
   store: {
     gradient: ['#4C2D0F', '#8A561A', '#BF7B2D'],
@@ -128,7 +133,18 @@ function ReferidoInvitadoBanner({ tc, pendingTotal }) {
   );
 }
 
-function PosterRuleCard({ icon: Icon, iconKey, title, body, current, pending = 0, meta, discount, tc }) {
+function PosterRuleCard({
+  icon: Icon,
+  iconKey,
+  title,
+  body,
+  current,
+  pending = 0,
+  meta,
+  discount,
+  tc,
+  canjePendienteReminder = false,
+}) {
   const cfg = RULE_POSTER_CONFIG[iconKey] || RULE_POSTER_CONFIG.wallet;
   const verified = Math.max(0, Number(current) || 0);
   const enCamino = Math.max(0, Number(pending) || 0);
@@ -188,6 +204,18 @@ function PosterRuleCard({ icon: Icon, iconKey, title, body, current, pending = 0
       {/* Card body */}
       <View style={[posterStyles.posterBody, { backgroundColor: tc.card, borderColor: tc.cardBorder }]}>
         <Text style={[posterStyles.posterTitle, { color: tc.foreground }]}>{title}</Text>
+        {canjePendienteReminder ? (
+          <View
+            style={[
+              posterStyles.pendingCanjeBanner,
+              { backgroundColor: 'rgba(232,163,23,0.12)', borderColor: 'rgba(232,163,23,0.45)' },
+            ]}
+          >
+            <Text style={[posterStyles.pendingCanjeTxt, { color: '#B8860B' }]}>
+              Canje pendiente — aún no lo usaste. Sigue acumulando puntos; el beneficio queda guardado en tu ticket.
+            </Text>
+          </View>
+        ) : null}
         <Text style={[posterStyles.posterBodyTxt, { color: tc.foregroundMuted }]}>{body}</Text>
 
         {/* Progress bar */}
@@ -383,7 +411,17 @@ function metaChipLabel(ruleId, meta) {
   return `${meta} puntos`;
 }
 
-function CanjeTicket({ titulo, detalle, isActive, onPress, tc, meta, ruleId }) {
+function CanjeTicket({
+  titulo,
+  detalle,
+  isReady,
+  isActive,
+  onPress,
+  tc,
+  meta,
+  ruleId,
+  canjePendienteRecordatorio = false,
+}) {
   const discountMatch = titulo.match(/(\d+,\d+%)/);
   const discount = discountMatch ? discountMatch[1] : '19,99%';
   const shortTitle = titulo.replace(/\d+,\d+%\s*·?\s*/, '').trim();
@@ -393,22 +431,22 @@ function CanjeTicket({ titulo, detalle, isActive, onPress, tc, meta, ruleId }) {
     <TouchableOpacity
       style={[
         ticketStyles.wrap,
-        { borderColor: isActive ? '#C9A24D' : tc.cardBorder },
+        { borderColor: isReady || isActive ? '#C9A24D' : tc.cardBorder },
       ]}
       onPress={onPress}
       activeOpacity={0.88}
     >
       {/* Left stub */}
       <LinearGradient
-        colors={isActive ? ['#C9A24D', '#E8D4A8'] : ['#1a1412', '#2a2018']}
+        colors={isReady || isActive ? ['#C9A24D', '#E8D4A8'] : ['#1a1412', '#2a2018']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={ticketStyles.stub}
       >
-        <Text style={[ticketStyles.stubDiscount, { color: isActive ? '#1a0f00' : '#C9A24D' }]}>
+        <Text style={[ticketStyles.stubDiscount, { color: isReady || isActive ? '#1a0f00' : '#C9A24D' }]}>
           {discount}
         </Text>
-        <Text style={[ticketStyles.stubOff, { color: isActive ? '#3a2010' : 'rgba(201,162,77,0.7)' }]}>
+        <Text style={[ticketStyles.stubOff, { color: isReady || isActive ? '#3a2010' : 'rgba(201,162,77,0.7)' }]}>
           OFF
         </Text>
       </LinearGradient>
@@ -431,6 +469,11 @@ function CanjeTicket({ titulo, detalle, isActive, onPress, tc, meta, ruleId }) {
           {detalle}
         </Text>
         <View style={ticketStyles.bodyFooter}>
+          {canjePendienteRecordatorio ? (
+            <Text style={[ticketStyles.readyLbl, { color: '#E8A317' }]}>Canje pendiente</Text>
+          ) : isReady ? (
+            <Text style={[ticketStyles.readyLbl, { color: '#C9A24D' }]}>Listo para canjear</Text>
+          ) : null}
           <View style={[ticketStyles.condChip, { borderColor: tc.cardBorder }]}>
             <Text style={[ticketStyles.condTxt, { color: tc.foregroundSubtle }]}>{metaLabel}</Text>
           </View>
@@ -448,6 +491,8 @@ export function PremiosDashboard({
   clientUserId,
   clienteRow,
   onPrizeReady,
+  onCanjeNavigate,
+  onResumenLoaded,
 }) {
   const [canjeTap, setCanjeTap] = useState(null);
   const [selectedMembresiaId, setSelectedMembresiaId] = useState('estandar');
@@ -463,6 +508,7 @@ export function PremiosDashboard({
   const membresiaNivel = clienteRow?.membresia_nivel;
   const clienteRowRef = useRef(clienteRow);
   const onPrizeReadyRef = useRef(onPrizeReady);
+  const onResumenLoadedRef = useRef(onResumenLoaded);
   const loadSeqRef = useRef(0);
 
   useEffect(() => {
@@ -472,6 +518,10 @@ export function PremiosDashboard({
   useEffect(() => {
     onPrizeReadyRef.current = onPrizeReady;
   }, [onPrizeReady]);
+
+  useEffect(() => {
+    onResumenLoadedRef.current = onResumenLoaded;
+  }, [onResumenLoaded]);
 
   const load = useCallback(
     async (opts = { showSpinner: true, manual: false }) => {
@@ -491,20 +541,18 @@ export function PremiosDashboard({
         const r = await db.premiosAndreas.getResumen({ clientUserId, clienteRow: row });
         if (seq !== loadSeqRef.current) return;
         if (r.error) {
-          setLoadErr(String(r.error.message || 'No se pudo cargar'));
+          const msg = String(r.error.message || 'No se pudo cargar');
+          if (__DEV__) console.warn('[Premios] getResumen:', msg, r.error);
+          setLoadErr(msg);
           setResumen(null);
           return;
         }
         setResumen(r);
         const tier = getMembershipTier(membresiaNivel);
         const meta = tier?.meta ?? BASE_META;
-        const anyReady =
-          (r.productosAppEfectivoRetiro ?? 0) >= meta ||
-          (r.productosAppTarjetaDelivery ?? 0) >= meta ||
-          (r.citasVerificadas ?? 0) >= meta ||
-          (r.productosSalonFisico ?? 0) >= meta ||
-          (r.referidosPrimeraCompra ?? 0) >= META_REFERIDOS;
-        onPrizeReadyRef.current?.(anyReady);
+        const flags = buildPremiosCanjeFlags(r, meta);
+        onPrizeReadyRef.current?.(anyPremiosCanjeReady(flags));
+        void onResumenLoadedRef.current?.(r);
       } catch (e) {
         if (seq !== loadSeqRef.current) return;
         setLoadErr(String(e?.message || 'No se pudo cargar'));
@@ -526,6 +574,12 @@ export function PremiosDashboard({
   useEffect(() => {
     void load({ showSpinner: true });
   }, [load]);
+
+  // Si la ficha llega después de abrir Premios, recargar sin bloquear la UI.
+  useEffect(() => {
+    if (!clienteId || !clientUserId) return;
+    void load({ showSpinner: false });
+  }, [clienteId, clientUserId]);
 
   useEffect(() => {
     const clienteId = clienteRow?.id;
@@ -605,9 +659,66 @@ export function PremiosDashboard({
     }
   };
 
-  const onCanjeInfo = (id, titulo, detalle) => {
+  const canjeFlags = useMemo(() => {
+    if (!resumen) return {};
+    const meta = resolvePremiosMeta(clienteRow?.membresia_nivel);
+    return buildPremiosCanjeFlags(resumen, meta) || {};
+  }, [resumen, clienteRow?.membresia_nivel]);
+
+  const canjePendienteFlags = useMemo(() => {
+    const cp = resumen?.canjePendiente;
+    if (!cp || typeof cp !== 'object') return {};
+    return {
+      p_app_efectivo_retiro: Boolean(cp.p_app_efectivo_retiro),
+      p_app_tarjeta_delivery: Boolean(cp.p_app_tarjeta_delivery),
+      citas: Boolean(cp.citas),
+      salon: Boolean(cp.salon),
+    };
+  }, [resumen?.canjePendiente]);
+
+  const onCanjePress = (id, titulo, detalle) => {
     setCanjeTap(id);
-    Alert.alert(titulo, detalle, [{ text: 'OK', onPress: () => setCanjeTap(null) }]);
+    const ready = Boolean(canjeFlags[id]);
+    const pendiente = Boolean(canjePendienteFlags[id]);
+    if (!ready) {
+      Alert.alert(titulo, detalle, [{ text: 'Entendido', onPress: () => setCanjeTap(null) }]);
+      return;
+    }
+    const acciones = [{ text: 'Cerrar', style: 'cancel', onPress: () => setCanjeTap(null) }];
+    if (id === 'p_app_efectivo_retiro' || id === 'p_app_tarjeta_delivery') {
+      acciones.unshift({
+        text: 'Ir a tienda',
+        onPress: () => {
+          setCanjeTap(null);
+          onCanjeNavigate?.('tienda');
+        },
+      });
+    }
+    if (id === 'citas') {
+      acciones.unshift({
+        text: 'Ver citas',
+        onPress: () => {
+          setCanjeTap(null);
+          onCanjeNavigate?.('citas');
+        },
+      });
+    }
+    if (id === 'referidos') {
+      acciones.unshift({
+        text: 'Ver código',
+        onPress: () => setCanjeTap(null),
+      });
+    }
+    const instruccion =
+      id === 'salon'
+        ? 'Acercate en persona a recepción con la app abierta. El equipo aplica el descuento en tu próxima compra de producto en salón físico (venta en caja).'
+        : id === 'p_app_efectivo_retiro' || id === 'p_app_tarjeta_delivery'
+          ? 'Al confirmar tu pedido en la app (mismo método de pago y envío de esta regla), el descuento se aplica automáticamente en el total.'
+          : id === 'citas'
+            ? 'Al agendar tu próxima cita desde Servicios, el descuento se aplica automáticamente en el precio del primer servicio de la solicitud.'
+            : 'Presentate en recepción con la app abierta.';
+    const tituloAlert = pendiente ? 'Canje pendiente' : 'Canje disponible';
+    Alert.alert(tituloAlert, `${titulo}\n\n${instruccion}\n\n${detalle}`, acciones);
   };
 
   const d = efectiveDiscount;
@@ -625,13 +736,18 @@ export function PremiosDashboard({
     },
     {
       id: 'citas',
-      titulo: `${d}% en servicio + producto`,
-      detalle: `Con ${m} citas en estado completada y verificadas en el salón, obtenés ${d}% de descuento en un servicio al comprar producto en Salon Andreas. Canje en salón.`,
+      titulo: `${d}% en un servicio`,
+      detalle: `Con ${m} citas verificadas en el salón (QR escaneado en recepción), obtenés ${d}% de descuento en un servicio profesional en Salon Andreas. Canje presencial en recepción.`,
     },
     {
       id: 'salon',
       titulo: `${d}% próximo producto (salón físico)`,
       detalle: `Cuando adquirís un producto en el salón, la compra se registra con tu nombre y la vinculación de tu perfil en la app. Con ${m} unidades verificadas: ${d}% en la siguiente compra de producto en salón físico.`,
+    },
+    {
+      id: 'referidos',
+      titulo: referidosPrize.shortTitle,
+      detalle: referidosPrize.detail,
     },
   ];
 
@@ -728,9 +844,10 @@ export function PremiosDashboard({
       {!loading && !loadErr && resumen?.rpcMissing ? (
         <View style={[styles.card, { marginBottom: spacing.md, borderColor: tc.primary }]}>
           <Text style={styles.cardLead}>
-            Para contar referidos (compra o primera cita), ejecutá en Supabase el script{' '}
-            <Text style={styles.leadStrong}>supabase-andreas-premios.sql</Text> (función RPC). El resto de contadores
-            ya debería funcionar.
+            Falta configurar Supabase para referidos: ejecutá en el SQL Editor{' '}
+            <Text style={styles.leadStrong}>supabase-andreas-premios.sql</Text> y{' '}
+            <Text style={styles.leadStrong}>supabase-membresias-referidos-programa.sql</Text>. Los demás contadores
+            (app, citas, salón físico) siguen activos.
           </Text>
         </View>
       ) : null}
@@ -763,6 +880,7 @@ export function PremiosDashboard({
             meta={efectiveMeta}
             discount={efectiveDiscount}
             tc={tc}
+            canjePendienteReminder={canjePendienteFlags.p_app_efectivo_retiro}
           />
           <PosterRuleCard
             icon={Truck}
@@ -774,17 +892,19 @@ export function PremiosDashboard({
             meta={efectiveMeta}
             discount={efectiveDiscount}
             tc={tc}
+            canjePendienteReminder={canjePendienteFlags.p_app_tarjeta_delivery}
           />
           <PosterRuleCard
             icon={Calendar}
             iconKey="calendar"
             title="Citas verificadas"
-            body={`1 punto por cita cuando recepción escanea tu QR en Historial (citas confirmadas). «En camino» = confirmadas sin escanear aún. ${efectiveMeta} citas verificadas: ${efectiveDiscount}% de descuento.`}
+            body={`1 punto por cita cuando recepción escanea tu QR en la pestaña Citas (citas confirmadas). «En camino» = confirmadas sin escanear aún. ${efectiveMeta} citas verificadas: ${efectiveDiscount}% de descuento en un servicio.`}
             current={citasOk}
             pending={citasPendientes}
             meta={efectiveMeta}
             discount={efectiveDiscount}
             tc={tc}
+            canjePendienteReminder={canjePendienteFlags.citas}
           />
           <PosterRuleCard
             icon={Store}
@@ -795,6 +915,7 @@ export function PremiosDashboard({
             meta={efectiveMeta}
             discount={efectiveDiscount}
             tc={tc}
+            canjePendienteReminder={canjePendienteFlags.salon}
           />
 
           {/* Referidos visual */}
@@ -821,10 +942,12 @@ export function PremiosDashboard({
                 key={c.id}
                 titulo={c.titulo}
                 detalle={c.detalle}
+                isReady={Boolean(canjeFlags[c.id])}
                 isActive={canjeTap === c.id}
-                onPress={() => onCanjeInfo(c.id, c.titulo, c.detalle)}
+                canjePendienteRecordatorio={Boolean(canjePendienteFlags[c.id])}
+                onPress={() => onCanjePress(c.id, c.titulo, c.detalle)}
                 tc={tc}
-                meta={efectiveMeta}
+                meta={c.id === 'referidos' ? META_REFERIDOS : efectiveMeta}
                 ruleId={c.id}
               />
             ))}
@@ -869,7 +992,7 @@ export function PremiosDashboard({
             </View>
             <Text style={[styles.cardLead, { marginBottom: spacing.md }]}>
               Al completar {efectiveMeta} unidades, podés canjear{' '}
-              <Text style={styles.leadStrong}>19,99%</Text> de descuento en la compra del siguiente producto en Salon
+              <Text style={styles.leadStrong}>{efectiveDiscount}%</Text> de descuento en la compra del siguiente producto en Salon
               Andreas. La barra se actualiza sola cuando recepción registra tu compra; el botón de abajo es solo por si
               querés refrescar.
             </Text>
@@ -1020,6 +1143,17 @@ const posterStyles = StyleSheet.create({
     fontFamily: typography.fontSansMedium,
     fontSize: 14,
     marginBottom: 4,
+  },
+  pendingCanjeBanner: {
+    borderWidth: 1,
+    borderRadius: radii.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  pendingCanjeTxt: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 12,
+    lineHeight: 17,
   },
   posterBodyTxt: {
     fontFamily: typography.fontSans,
@@ -1425,6 +1559,11 @@ const ticketStyles = StyleSheet.create({
     fontFamily: typography.fontSansMedium,
     fontSize: 10,
     letterSpacing: 0.3,
+  },
+  readyLbl: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 11,
+    flex: 1,
   },
 });
 
