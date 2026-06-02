@@ -18,7 +18,6 @@ import {
   mapInventarioToTiendaProduct,
   getArticuloTipo,
 } from '@appsalon/shared-config';
-import { TIENDA_PRODUCT_SLOTS } from '../../data/tiendaPlaceholders';
 import { ProductCardPlaceholder } from './ProductCardPlaceholder';
 
 const GAP = 10;
@@ -90,16 +89,15 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
     return list;
   }, [catalog, search, sortKey]);
 
-  const slots = useMemo(() => {
-    if (filteredSorted.length) {
-      return filteredSorted.map((product, i) => ({
+  const slots = useMemo(
+    () =>
+      filteredSorted.map((product, i) => ({
         id: `live-${product.id}`,
         index: i + 1,
         product,
-      }));
-    }
-    return TIENDA_PRODUCT_SLOTS;
-  }, [filteredSorted]);
+      })),
+    [filteredSorted],
+  );
 
   const sortLabel =
     sortKey === 'nombre_desc'
@@ -198,6 +196,25 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
           fontSize: 14,
           color: c.foreground,
         },
+        emptyWrap: {
+          paddingVertical: spacing.xl,
+          paddingHorizontal: spacing.md,
+          alignItems: 'center',
+        },
+        emptyTitle: {
+          fontFamily: typography.fontSansMedium,
+          fontSize: 16,
+          color: c.foreground,
+          textAlign: 'center',
+          marginBottom: spacing.sm,
+        },
+        emptyTxt: {
+          fontFamily: typography.fontSans,
+          fontSize: 14,
+          lineHeight: 21,
+          color: c.foregroundMuted,
+          textAlign: 'center',
+        },
       }),
     [c],
   );
@@ -259,24 +276,37 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
 
       {loading ? <ActivityIndicator color={c.primary} style={{ marginVertical: spacing.lg }} /> : null}
 
-      <View style={styles.grid}>
-        {slots.map((slot) => (
-          <ProductCardPlaceholder
-            key={slot.id}
-            slotIndex={slot.index}
-            width={cardW}
-            product={slot.product}
-            onPress={
-              slot.product && onProductPress ? () => onProductPress(slot.product) : undefined
-            }
-            onAddPress={
-              slot.product && onAddToCart && !slot.product.precioVariable
-                ? () => onAddToCart(slot.product)
-                : undefined
-            }
-          />
-        ))}
-      </View>
+      {!loading && slots.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>
+            {search.trim() ? 'Sin resultados' : 'Sin productos en tienda'}
+          </Text>
+          <Text style={styles.emptyTxt}>
+            {search.trim()
+              ? 'Probá otro término de búsqueda.'
+              : 'El salón debe marcar productos como «visible en tienda» en Inventario (App Salón).'}
+          </Text>
+        </View>
+      ) : null}
+
+      {!loading && slots.length > 0 ? (
+        <View style={styles.grid}>
+          {slots.map((slot) => (
+            <ProductCardPlaceholder
+              key={slot.id}
+              slotIndex={slot.index}
+              width={cardW}
+              product={slot.product}
+              onPress={onProductPress ? () => onProductPress(slot.product) : undefined}
+              onAddPress={
+                onAddToCart && !slot.product.precioVariable
+                  ? () => onAddToCart(slot.product)
+                  : undefined
+              }
+            />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

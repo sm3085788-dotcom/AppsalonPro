@@ -40,6 +40,7 @@ import { SalonButton } from '../luxury/SalonButton';
 import { saveChatImageWithAlert } from '../../utils/saveChatImage';
 import { BroadcastPromoCard } from './BroadcastPromoCard';
 import { CitaConfirmacionCard } from './CitaConfirmacionCard';
+import { MarketingInterestCard } from './MarketingInterestCard';
 
 function chatBubbleText(item) {
   const ct = String(item.content_type || '');
@@ -465,6 +466,19 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
             createdAtLabel={whenLabel}
             onAction={handlePromoAction}
             busy={promoBusy}
+          />
+        </View>
+      );
+    }
+
+    if (isInterest && isFromClient) {
+      return (
+        <View style={styles.postWrap}>
+          <MarketingInterestCard
+            item={item}
+            sourceLabel={interestSource}
+            audience="client"
+            createdAtLabel={whenLabel}
           />
         </View>
       );

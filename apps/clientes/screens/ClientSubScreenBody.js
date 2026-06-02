@@ -535,6 +535,7 @@ export function ClientSubScreenBody({
           clientUserId={sessionUser?.id}
           initialProductId={subPayload?.tiendaProductId || null}
           initialPhase={subPayload?.tiendaPhase || null}
+          tiendaAddToCart={!!subPayload?.tiendaAddToCart}
           tiendaOpenKey={subPayload?.tiendaOpenKey ?? 0}
           onPedidosChanged={onPedidosChanged}
           onPurchaseComplete={() => {

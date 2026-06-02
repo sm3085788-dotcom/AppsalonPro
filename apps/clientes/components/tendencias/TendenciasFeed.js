@@ -557,7 +557,7 @@ function TendenciasFeedInner({ onBack }) {
   const [commentSheetLift, setCommentSheetLift] = useState(0);
 
   const loadFeed = useCallback(async () => {
-    const { data, error } = await db.marketingPosts.getPublishedTendenciasFeed(40);
+    const { data, error } = await db.marketingPosts.getPublishedTendenciasFeed(30);
     if (error) {
       if (__DEV__) {
         console.warn('[Tendencias] Feed Supabase:', error.message);

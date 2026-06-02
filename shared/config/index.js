@@ -99,6 +99,13 @@ export {
   buildCarouselOverlayFromInventario,
   parseHomeCarouselOverlay,
   mapHomeCarouselPostToClientSlide,
+  enrichHomeCarouselSlidesWithInventario,
+  isCarouselSlideProducto,
+  normalizeInventarioCarouselId,
+  resolveCarouselButtonTitle,
+  carouselArticuloTipoFromSlide,
+  resolveCarouselArticuloTipo,
+  buildHomeCarouselMarketingPayload,
 } from './homeCarouselOverlay.js';
 export {
   buildIncidentClientMessage,
@@ -181,3 +188,8 @@ export {
   SERVICIO_CATEGORIAS,
   normalizeServicioCategoria,
 } from './servicioCategorias.js';
+export {
+  inventarioRowImageUrls,
+  resolveInventarioCarouselMediaUrl,
+  servicioCarouselFallbackUri,
+} from './servicioCarouselFallback.js';

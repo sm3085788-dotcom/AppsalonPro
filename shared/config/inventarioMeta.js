@@ -182,9 +182,76 @@ export function splitNotas(raw) {
   return { staff, meta };
 }
 
+/** Tipo guardado explícitamente en el bloque JSON de inventario (sin aplicar default). */
+export function explicitArticuloTipoFromNotas(raw) {
+  const s = String(raw || '');
+  const i = s.indexOf(TIENDA_JSON_MARK);
+  if (i === -1) return null;
+  try {
+    const o = JSON.parse(s.slice(i + TIENDA_JSON_MARK.length).trim() || '{}');
+    const t = o?.articuloTipo;
+    return t === 'servicio' || t === 'producto' ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Señales de servicio cuando el JSON no trae `articuloTipo` (filas legacy). */
+function categoriaInventarioEsServicio(raw) {
+  const t = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!t) return false;
+  const known = [
+    'manicure',
+    'pedicure',
+    'corte y peinado',
+    'coloracion',
+    'tratamientos capilares',
+    'keratina / alisado',
+    'facial / spa',
+    'maquillaje',
+    'cejas y pestanas',
+    'barberia',
+  ];
+  if (known.includes(t)) return true;
+  return /manicure|pedicure|keratina|peinado|coloraci|tratamiento|facial|maquillaje|cejas|pestanas|barber|alisado|pies/.test(
+    t,
+  );
+}
+
+export function inventarioRowLooksLikeServicio(row) {
+  if (!row) return false;
+  const { meta } = splitNotas(row.notas);
+  if (meta.volumenTrabajoActivo) return true;
+  if (String(meta.duracion_agenda || '').trim()) return true;
+  if (servicioUsaPreciosPorVolumen(row)) return true;
+  if (categoriaInventarioEsServicio(row.categoria)) return true;
+  const nombre = String(row.nombre || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (nombre && !/\d+\s*%/.test(nombre)) {
+    if (/^pies$|pedicure completo|manicure completo/.test(nombre)) return true;
+    if (/keratina|alisado|coloracion|peinado/.test(nombre) && row.visible_en_tienda === false) {
+      return true;
+    }
+  }
+  const dm = Number(meta.duracion_minutos);
+  if (Number.isFinite(dm) && dm > 0 && dm !== DEFAULT_TIENDA_META.duracion_minutos) {
+    return true;
+  }
+  return false;
+}
+
 export function getArticuloTipo(row) {
-  const { meta } = splitNotas(row?.notas);
-  return meta.articuloTipo === 'servicio' ? 'servicio' : 'producto';
+  const explicit = explicitArticuloTipoFromNotas(row?.notas);
+  if (explicit) return explicit;
+  if (inventarioRowLooksLikeServicio(row)) return 'servicio';
+  return 'producto';
 }
 
 export function mergeNotas(staff, meta) {

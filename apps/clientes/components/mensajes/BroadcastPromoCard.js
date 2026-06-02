@@ -18,6 +18,8 @@ import {
 } from '@appsalon/shared-config';
 import { saveChatImageWithAlert } from '../../utils/saveChatImage';
 
+const SHELL_GRADIENT = ['#1a0f2e', '#2d1b52', '#3b2766'];
+
 function PromoHeroImage({ uri }) {
   const [saving, setSaving] = useState(false);
   const onSave = async () => {
@@ -32,12 +34,17 @@ function PromoHeroImage({ uri }) {
   return (
     <View style={styles.heroWrap}>
       <Image source={{ uri }} style={styles.heroImg} resizeMode="cover" />
-      <LinearGradient colors={['transparent', 'rgba(15,8,28,0.92)']} style={styles.heroShade} />
-      <TouchableOpacity style={styles.saveBtn} onPress={onSave} disabled={saving} accessibilityLabel="Guardar imagen">
+      <TouchableOpacity
+        style={styles.saveBtn}
+        onPress={onSave}
+        disabled={saving}
+        accessibilityRole="button"
+        accessibilityLabel="Guardar imagen"
+      >
         {saving ? (
           <ActivityIndicator size="small" color="#FFFFFF" />
         ) : (
-          <Download size={16} color="#FFFFFF" strokeWidth={2.2} />
+          <Download size={18} color="#FFFFFF" strokeWidth={2.2} />
         )}
       </TouchableOpacity>
     </View>
@@ -58,6 +65,24 @@ function CtaButton({ icon: Icon, label, onPress, variant = 'gold', disabled }) {
         {label}
       </Text>
     </TouchableOpacity>
+  );
+}
+
+function LinkedOfferRow({ linkType, linkName, linkPriceLabel }) {
+  const isService = linkType === BROADCAST_LINK_TYPES.SERVICE;
+  return (
+    <View style={styles.linkBox}>
+      <View style={styles.linkIconWrap}>
+        <Tag size={16} color="#F5E6A8" strokeWidth={2} />
+      </View>
+      <View style={styles.linkMain}>
+        <Text style={styles.linkLbl}>{isService ? 'Servicio vinculado' : 'Producto vinculado'}</Text>
+        <Text style={styles.linkName} numberOfLines={2}>
+          {linkName}
+        </Text>
+      </View>
+      {linkPriceLabel ? <Text style={styles.linkPrice}>{linkPriceLabel}</Text> : null}
+    </View>
   );
 }
 
@@ -86,13 +111,13 @@ export function BroadcastPromoCard({ item, createdAtLabel, onAction, busy, readO
 
   return (
     <View style={styles.post}>
-      <LinearGradient colors={['#1a0f2e', '#2d1b52', '#3b2766']} style={styles.postShell}>
+      <LinearGradient colors={SHELL_GRADIENT} style={styles.postShell}>
         <View style={styles.topBar}>
           <View style={styles.kickerRow}>
             <Sparkles size={14} color="#F5E6A8" />
             <Text style={styles.kicker}>Publicidad · Andreas Pro</Text>
           </View>
-          <Megaphone size={20} color="rgba(245,230,168,0.9)" strokeWidth={2} />
+          <Megaphone size={18} color="rgba(245,230,168,0.9)" strokeWidth={2} />
         </View>
 
         {hasImage ? (
@@ -105,27 +130,21 @@ export function BroadcastPromoCard({ item, createdAtLabel, onAction, busy, readO
 
         <View style={styles.copyBlock}>
           {title ? (
-            <Text style={styles.headline} numberOfLines={3}>
-              {title}
-            </Text>
+            <View style={styles.headlineBlock}>
+              <Text style={styles.headlineLbl}>Promo</Text>
+              <Text style={styles.headline} numberOfLines={4}>
+                {title}
+              </Text>
+            </View>
           ) : null}
-          {body ? (
-            <Text style={[styles.subcopy, { color: 'rgba(255,255,255,0.82)' }]}>{body}</Text>
-          ) : null}
+          {body ? <Text style={styles.subcopy}>{body}</Text> : null}
 
           {linkName ? (
-            <View style={styles.linkChip}>
-              <Tag size={14} color="#F5E6A8" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.linkChipLbl}>
-                  {linkType === BROADCAST_LINK_TYPES.SERVICE ? 'Servicio vinculado' : 'Producto vinculado'}
-                </Text>
-                <Text style={styles.linkChipName} numberOfLines={1}>
-                  {linkName}
-                </Text>
-              </View>
-              {linkPriceLabel ? <Text style={styles.linkChipPrice}>{linkPriceLabel}</Text> : null}
-            </View>
+            <LinkedOfferRow
+              linkType={linkType}
+              linkName={linkName}
+              linkPriceLabel={linkPriceLabel}
+            />
           ) : null}
         </View>
 
@@ -145,7 +164,13 @@ export function BroadcastPromoCard({ item, createdAtLabel, onAction, busy, readO
               onPress={() => fire(BROADCAST_PROMO_ACTIONS.BOOK)}
               disabled={busy}
             />
-            <CtaButton icon={Phone} label="Que me llamen" variant="outline" onPress={() => fire(BROADCAST_PROMO_ACTIONS.CALL)} disabled={busy} />
+            <CtaButton
+              icon={Phone}
+              label="Que me llamen"
+              variant="outline"
+              onPress={() => fire(BROADCAST_PROMO_ACTIONS.CALL)}
+              disabled={busy}
+            />
           </View>
         ) : null}
 
@@ -173,10 +198,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
   },
-  kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   kicker: {
     fontFamily: typography.fontSansMedium,
     fontSize: 10,
@@ -184,11 +210,16 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: '#F5E6A8',
   },
-  heroWrap: { width: '100%', height: 200, position: 'relative' },
+  heroWrap: {
+    width: '100%',
+    height: 240,
+    position: 'relative',
+    backgroundColor: '#0f0a18',
+  },
   heroImg: { width: '100%', height: '100%' },
-  heroShade: { ...StyleSheet.absoluteFillObject },
   heroPlaceholder: {
-    height: 140,
+    width: '100%',
+    height: 200,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -196,57 +227,88 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     bottom: 12,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  copyBlock: { paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  copyBlock: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  headlineBlock: { gap: 2 },
+  headlineLbl: {
+    fontFamily: typography.fontSans,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: 'rgba(245,230,168,0.75)',
+  },
   headline: {
     fontFamily: typography.fontDisplay,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 24,
+    lineHeight: 30,
     color: '#FFFFFF',
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
   subcopy: {
     fontFamily: typography.fontSans,
     fontSize: 15,
     lineHeight: 22,
-    marginTop: spacing.xs,
+    color: 'rgba(255,255,255,0.82)',
   },
-  linkChip: {
+  linkBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.md,
-    padding: spacing.sm,
+    marginTop: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
     borderRadius: radii.md,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     borderWidth: 1,
-    borderColor: 'rgba(212,175,55,0.35)',
+    borderColor: 'rgba(212,175,55,0.32)',
   },
-  linkChipLbl: {
+  linkIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.sm,
+    backgroundColor: 'rgba(212,175,55,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linkMain: { flex: 1, minWidth: 0, gap: 2 },
+  linkLbl: {
     fontFamily: typography.fontSans,
     fontSize: 10,
     color: 'rgba(245,230,168,0.85)',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  linkChipName: {
+  linkName: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 14,
+    fontSize: 15,
     color: '#FFFFFF',
-    marginTop: 2,
+    lineHeight: 20,
   },
-  linkChipPrice: {
+  linkPrice: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 14,
+    fontSize: 16,
     color: '#D4AF37',
+    flexShrink: 0,
   },
-  ctaStack: { paddingHorizontal: spacing.md, paddingBottom: spacing.md, gap: spacing.xs },
+  ctaStack: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
   cta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -270,6 +332,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: 'rgba(255,255,255,0.45)',
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
 });

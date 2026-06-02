@@ -9,16 +9,14 @@ import { useTiendaCart } from '../../context/TiendaCartContext';
 import { TiendaCatalogGrid } from './TiendaCatalogGrid';
 import { ProductImageStrip } from './ProductImageStrip';
 import { PickupQrDisplay } from './PickupQrDisplay';
-import {
-  TIENDA_SAMPLE_SPECS,
-  TIENDA_SAMPLE_LONG_COPY,
-} from '../../data/tiendaPlaceholders';
+import { TiendaCartItemCard } from './TiendaCartItemCard';
 import {
   confirmarCompraConTarjeta,
   crearPedidoEfectivo,
   buildTiendaProductFicha,
   db,
   mapInventarioToTiendaProduct,
+  getArticuloTipo,
   splitClienteNotasEnvio,
   mergeClienteNotasEnvio,
   normalizeEnvioGuardado,
@@ -100,6 +98,8 @@ export function TiendaFlow({
   clientUserId,
   initialProductId = null,
   initialPhase = null,
+  /** Al abrir desde carrusel publicidad: agregar producto al carrito y mostrar fase «cart». */
+  tiendaAddToCart = false,
   /** Cambia al abrir el carrito desde el header para forzar fase «cart» aunque el payload sea igual. */
   tiendaOpenKey = 0,
   onPurchaseComplete,
@@ -140,6 +140,10 @@ export function TiendaFlow({
   const [payCanjePreview, setPayCanjePreview] = useState(null);
   const tiendaCanjeAlertShownKey = useRef(null);
   const deepLinkDone = useRef(false);
+
+  useEffect(() => {
+    deepLinkDone.current = false;
+  }, [initialProductId, tiendaOpenKey, tiendaAddToCart]);
 
   useEffect(() => {
     if (!clientUserId) {
@@ -308,29 +312,8 @@ export function TiendaFlow({
     [],
   );
 
-  useEffect(() => {
-    if (!initialProductId || deepLinkDone.current) return undefined;
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await db.inventario.getById(initialProductId);
-      if (cancelled || error || !data) return;
-      const product = mapInventarioToTiendaProduct(data);
-      if (!product) return;
-      deepLinkDone.current = true;
-      setSelected(product);
-      setQty(1);
-      setPhase('detail');
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [initialProductId]);
-
   const specsAndCopy = useMemo(() => {
-    if (selected?.id === 'sample-keratin-kit') {
-      return { specs: TIENDA_SAMPLE_SPECS, longCopy: TIENDA_SAMPLE_LONG_COPY };
-    }
-    if (selected?.inventarioId || (selected?.id && selected.id !== 'sample-keratin-kit')) {
+    if (selected?.inventarioId || selected?.id) {
       return buildTiendaProductFicha(selected);
     }
     return { specs: [], longCopy: selected?.descripcion || '' };
@@ -395,7 +378,15 @@ export function TiendaFlow({
       const idx = prev.findIndex((i) => i.id === product.id);
       if (idx >= 0) {
         return prev.map((item, i) =>
-          i === idx ? { ...item, qty: Math.min(99, item.qty + quantity) } : item,
+          i === idx
+            ? {
+                ...item,
+                qty: Math.min(99, item.qty + quantity),
+                imageUri: item.imageUri || product.imageUri || null,
+                stockHint: item.stockHint || product.stockHint || null,
+                shippingLabel: item.shippingLabel || product.shippingLabel || null,
+              }
+            : item,
         );
       }
       return [
@@ -405,11 +396,61 @@ export function TiendaFlow({
           title: product.title,
           priceAmount: product.priceAmount ?? 0,
           priceLabel: product.priceLabel ?? 'Q 0.00',
+          imageUri: product.imageUri || null,
+          stockHint: product.stockHint || null,
+          shippingLabel: product.shippingLabel || null,
           qty: quantity,
         },
       ];
     });
   };
+
+  useEffect(() => {
+    const productId = initialProductId != null ? String(initialProductId).trim() : '';
+    if (!productId || deepLinkDone.current) return undefined;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await db.inventario.getById(productId);
+      if (cancelled || error || !data) {
+        if (tiendaAddToCart && !cancelled) {
+          Alert.alert(
+            'Tienda',
+            'No se pudo cargar el producto de la publicidad. Probá desde Tienda en el menú.',
+          );
+        }
+        return;
+      }
+      if (getArticuloTipo(data) === 'servicio') {
+        deepLinkDone.current = true;
+        Alert.alert(
+          'Servicio',
+          'Este ítem se agenda en Mis citas. Abrí la pestaña Servicios desde Inicio.',
+        );
+        return;
+      }
+      const product = mapInventarioToTiendaProduct(data);
+      if (!product) return;
+      deepLinkDone.current = true;
+      if (tiendaAddToCart) {
+        if (product.precioVariable) {
+          Alert.alert(
+            'Servicio',
+            'Este ítem se agenda en Mis citas, no en la tienda.',
+          );
+          return;
+        }
+        addToCart(product, 1);
+        setPhase('cart');
+        return;
+      }
+      setSelected(product);
+      setQty(1);
+      setPhase('detail');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialProductId, tiendaAddToCart, tiendaOpenKey]);
 
   const updateCartQty = (id, delta) => {
     setCartItems((prev) =>
@@ -419,6 +460,10 @@ export function TiendaFlow({
         )
         .filter((item) => item.qty > 0),
     );
+  };
+
+  const removeFromCart = (id) => {
+    setCartItems((prev) => prev.filter((item) => item.id !== id));
   };
 
   const shipOptions = [
@@ -608,7 +653,7 @@ export function TiendaFlow({
           ) : null}
 
           <View style={styles.priceBlock}>
-            {selected.id === 'sample-keratin-kit' && selected.compareAtLabel ? (
+            {selected.compareAtLabel ? (
               <Text style={styles.compareAt}>{selected.compareAtLabel}</Text>
             ) : null}
             <Text
@@ -733,36 +778,28 @@ export function TiendaFlow({
               </Text>
             </View>
           ) : (
-            <View style={subStyles.card}>
-              {cartItems.map((item) => (
-                <View key={item.id} style={styles.cartRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sumTitle} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.sumMeta}>{item.priceLabel}</Text>
-                    <View style={styles.cartQtyRow}>
-                      <TouchableOpacity
-                        style={styles.qtyMiniBtn}
-                        onPress={() => updateCartQty(item.id, -1)}
-                      >
-                        <Text style={styles.qtyMiniTxt}>−</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.qtyMiniVal}>{item.qty}</Text>
-                      <TouchableOpacity
-                        style={styles.qtyMiniBtn}
-                        onPress={() => updateCartQty(item.id, 1)}
-                      >
-                        <Text style={styles.qtyMiniTxt}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Text style={styles.sumPrice}>{formatQ(item.priceAmount * item.qty)}</Text>
-                </View>
-              ))}
-              <View style={subStyles.divider} />
-              <RowAmt label="Subtotal carrito" value={formatQ(cartSubtotal)} bold />
-            </View>
+            <>
+              <View style={styles.cartListCard}>
+                {cartItems.map((item, index) => (
+                  <TiendaCartItemCard
+                    key={item.id}
+                    item={item}
+                    isLast={index === cartItems.length - 1}
+                    onQtyChange={(delta) => updateCartQty(item.id, delta)}
+                    onRemove={() => removeFromCart(item.id)}
+                  />
+                ))}
+              </View>
+              <View style={[subStyles.card, styles.cartSubtotalCard]}>
+                <RowAmt label="Subtotal carrito" value={formatQ(cartSubtotal)} bold />
+                <Text style={styles.cartSubtotalHint}>
+                  {cartItems.length === 1
+                    ? '1 producto'
+                    : `${cartItems.length} productos`}{' '}
+                  · Envío y pago en los siguientes pasos
+                </Text>
+              </View>
+            </>
           )}
 
           <SalonButton
@@ -1703,6 +1740,22 @@ function createTiendaStyles(c) {
     fontSize: 16,
     color: c.foreground,
     marginLeft: spacing.sm,
+  },
+  cartListCard: {
+    borderRadius: radii.lg,
+    backgroundColor: c.card,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  cartSubtotalCard: {
+    marginBottom: spacing.xs,
+  },
+  cartSubtotalHint: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: c.foregroundMuted,
+    marginTop: spacing.xs,
   },
   cartRow: {
     flexDirection: 'row',

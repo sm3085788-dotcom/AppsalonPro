@@ -15,6 +15,24 @@ import { X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { modalSheetBottomPad, modalScrollBottomPad } from './luxury';
 
+function getEditableFields(fields) {
+  return fields.filter((f) => f.type !== 'switch');
+}
+
+function getNextFieldKey(fields, currentKey) {
+  const editable = getEditableFields(fields);
+  const i = editable.findIndex((f) => f.key === currentKey);
+  if (i < 0 || i >= editable.length - 1) return null;
+  return editable[i + 1].key;
+}
+
+function draftForField(field, record) {
+  const raw = field.getValue(record);
+  if (field.getEditDraft != null) return field.getEditDraft(record);
+  if (field.formatDisplay != null) return field.formatDisplay(raw);
+  return raw != null && raw !== '' ? String(raw) : '';
+}
+
 /**
  * Ficha tipo «cliente»: foto arriba, etiquetas en mayúsculas y valor editable al tocar.
  *
@@ -35,6 +53,7 @@ import { modalSheetBottomPad, modalScrollBottomPad } from './luxury';
  * @param {boolean} [props.isNew] - ficha sin id en base de datos
  * @param {string} [props.initialEditKey] - abre ese campo al abrir (ej. nombre)
  * @param {string} [props.newHint] - texto bajo el título para altas nuevas
+ * @param {boolean} [props.advanceOnEnter] - Enter / «siguiente» pasa al siguiente campo (clientes, empleados)
  */
 export function SalonFichaSheet({
   visible,
@@ -53,89 +72,153 @@ export function SalonFichaSheet({
   isNew = false,
   initialEditKey = null,
   newHint = null,
+  advanceOnEnter = false,
 }) {
   const styles = useMemo(() => createFichaStyles(c), [c]);
   const [editingKey, setEditingKey] = useState(null);
   const [draft, setDraft] = useState('');
   const committingRef = useRef(false);
+  const skipBlurRef = useRef(false);
 
-  useEffect(() => {
-    if (!visible) {
+  const editingKeyRef = useRef(editingKey);
+  const draftRef = useRef(draft);
+  const recordRef = useRef(record);
+  const fieldsRef = useRef(fields);
+  editingKeyRef.current = editingKey;
+  draftRef.current = draft;
+  recordRef.current = record;
+  fieldsRef.current = fields;
+
+  const parseDraft = (field, text) => {
+    if (field.parse) return field.parse(text);
+    if (field.multiline) {
+      const t = String(text ?? '');
+      return t.trim().length ? t.trim() : null;
+    }
+    const t = String(text ?? '').trim();
+    return t.length ? t : null;
+  };
+
+  const valueUnchanged = (field, parsed, rec = record) => {
+    const raw = field.getValue(rec);
+    if (field.type === 'switch') {
+      const on = raw === true || raw === 'true' || raw === 1;
+      return parsed === on;
+    }
+    const norm = (v) => (v == null || String(v).trim() === '' ? null : String(v).trim());
+    return norm(parsed) === norm(raw);
+  };
+
+  const commitEdit = async (field, draftOverride) => {
+    if (committingRef.current || editingKey !== field.key) return { skipped: true };
+    committingRef.current = true;
+    const text = draftOverride != null ? draftOverride : draft;
+    const parsed = parseDraft(field, text);
+    if (valueUnchanged(field, parsed)) {
       setEditingKey(null);
       setDraft('');
-      return;
+      committingRef.current = false;
+      return { ok: true, unchanged: true };
     }
-    if (isNew && initialEditKey && record) {
-      const field = fields.find((f) => f.key === initialEditKey);
-      if (field) {
-        const raw = field.getValue(record);
-        const display =
-          field.getEditDraft != null
-            ? field.getEditDraft(record)
-            : field.formatDisplay != null
-              ? field.formatDisplay(raw)
-              : raw != null && raw !== ''
-                ? String(raw)
-                : '';
-        setEditingKey(initialEditKey);
-        setDraft(display);
+    const savedDraft = text;
+    setEditingKey(null);
+    setDraft('');
+    try {
+      const res = await onSaveField(field.key, parsed, field);
+      if (res?.ok === false) {
+        setEditingKey(field.key);
+        setDraft(savedDraft);
+        return { ok: false };
       }
+      return { ok: true };
+    } finally {
+      committingRef.current = false;
     }
-  }, [visible, isNew, initialEditKey, record, fields]);
+  };
 
-  if (!record) return null;
+  const focusField = (field, rec = record) => {
+    setEditingKey(field.key);
+    setDraft(draftForField(field, rec));
+  };
 
   const beginEdit = (field) => {
     if (field.type === 'switch') {
       const raw = field.getValue(record);
       const next = !(raw === true || raw === 'true' || raw === 1);
       void (async () => {
-        const res = await onSaveField(field.key, next, field);
-        if (!res?.ok && res?.error) {
-          /* el padre muestra Alert */
-        }
+        await onSaveField(field.key, next, field);
       })();
       return;
     }
-    const raw = field.getValue(record);
-    const display =
-      field.getEditDraft != null
-        ? field.getEditDraft(record)
-        : field.formatDisplay != null
-          ? field.formatDisplay(raw)
-          : raw != null && raw !== ''
-            ? String(raw)
-            : '';
-    setEditingKey(field.key);
-    setDraft(display);
+    if (editingKey && editingKey !== field.key) {
+      const prev = fields.find((f) => f.key === editingKey);
+      if (prev) void commitEdit(prev);
+    }
+    focusField(field);
   };
 
-  const cancelEdit = () => {
-    setEditingKey(null);
-    setDraft('');
-  };
-
-  const commitEdit = async (field) => {
-    if (committingRef.current) return;
-    committingRef.current = true;
-    try {
-      let parsed = draft;
-      if (field.parse) {
-        parsed = field.parse(draft);
-      } else if (field.multiline) {
-        const t = String(draft ?? '');
-        parsed = t.trim().length ? t.trim() : null;
-      } else {
-        const t = String(draft ?? '').trim();
-        parsed = t.length ? t : null;
+  const submitFieldAndAdvance = async (field) => {
+    if (field.type === 'switch') return;
+    if (!advanceOnEnter || field.multiline) {
+      await commitEdit(field);
+      return;
+    }
+    const nextKey = getNextFieldKey(fields, field.key);
+    skipBlurRef.current = true;
+    const res = await commitEdit(field);
+    skipBlurRef.current = false;
+    if (!res || res.ok === false) return;
+    if (nextKey) {
+      const next = fields.find((f) => f.key === nextKey);
+      if (next && next.type !== 'switch') {
+        focusField(next, recordRef.current ?? record);
       }
-      setEditingKey(null);
-      setDraft('');
-      await onSaveField(field.key, parsed, field);
-    } finally {
-      committingRef.current = false;
     }
   };
+
+  const prevVisibleRef = useRef(false);
+  useEffect(() => {
+    if (!visible) {
+      prevVisibleRef.current = false;
+      return;
+    }
+    const opening = !prevVisibleRef.current;
+    prevVisibleRef.current = true;
+    if (!opening) return;
+    if (isNew && initialEditKey && record) {
+      const field = fields.find((f) => f.key === initialEditKey);
+      if (field) focusField(field, record);
+      return;
+    }
+    setEditingKey(null);
+    setDraft('');
+  }, [visible, isNew, initialEditKey, record, fields]);
+
+  useEffect(() => {
+    if (visible) return undefined;
+    const key = editingKeyRef.current;
+    if (!key) return undefined;
+    const rec = recordRef.current;
+    const field = fieldsRef.current.find((f) => f.key === key);
+    if (!field || field.type === 'switch' || !rec) return undefined;
+    void (async () => {
+      if (committingRef.current) return;
+      committingRef.current = true;
+      try {
+        const parsed = parseDraft(field, draftRef.current);
+        if (!valueUnchanged(field, parsed, rec)) {
+          await onSaveField(field.key, parsed, field);
+        }
+      } finally {
+        committingRef.current = false;
+        setEditingKey(null);
+        setDraft('');
+      }
+    })();
+    return undefined;
+  }, [visible, onSaveField]);
+
+  if (!record) return null;
 
   const letter =
     photo?.letter ??
@@ -196,6 +279,10 @@ export function SalonFichaSheet({
 
               const isEditing = editingKey === field.key;
               const isSaving = savingKey === field.key;
+              const nextFieldKey =
+                advanceOnEnter && !field.multiline ? getNextFieldKey(fields, field.key) : null;
+              const enterReturnKey =
+                advanceOnEnter && !field.multiline ? (nextFieldKey ? 'next' : 'done') : field.multiline ? 'default' : 'done';
               const displayVal =
                 field.type === 'switch'
                   ? raw === true || raw === 'true' || raw === 1
@@ -252,17 +339,18 @@ export function SalonFichaSheet({
                         keyboardType={field.keyboardType || 'default'}
                         autoCapitalize={field.autoCapitalize ?? 'sentences'}
                         autoCorrect={field.autoCorrect ?? true}
-                        onSubmitEditing={field.multiline ? undefined : () => void commitEdit(field)}
-                        returnKeyType={field.multiline ? 'default' : 'done'}
+                        onBlur={() => {
+                          if (skipBlurRef.current) return;
+                          void commitEdit(field);
+                        }}
+                        onSubmitEditing={() =>
+                          void (advanceOnEnter && !field.multiline
+                            ? submitFieldAndAdvance(field)
+                            : commitEdit(field))
+                        }
+                        returnKeyType={enterReturnKey}
+                        enablesReturnKeyAutomatically={!!nextFieldKey}
                       />
-                      <TouchableOpacity
-                        style={[styles.saveFieldBtn, { borderColor: c.primary }]}
-                        onPress={() => void commitEdit(field)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Guardar ${field.label}`}
-                      >
-                        <Text style={[styles.saveFieldBtnTxt, { color: c.primary }]}>Guardar</Text>
-                      </TouchableOpacity>
                     </>
                   ) : (
                     <TouchableOpacity
@@ -280,7 +368,11 @@ export function SalonFichaSheet({
                           <ActivityIndicator color={c.primary} size="small" style={{ marginLeft: 8 }} />
                         ) : null}
                       </View>
-                      <Text style={[styles.tapHint, { color: c.foregroundSubtle }]}>Tocá para editar</Text>
+                      <Text style={[styles.tapHint, { color: c.foregroundSubtle }]}>
+                        {advanceOnEnter
+                          ? 'Tocá para editar · Enter siguiente (dirección: nueva línea)'
+                          : 'Tocá para editar · se guarda al salir del campo'}
+                      </Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -400,18 +492,7 @@ function createFichaStyles(c) {
       fontFamily: typography.fontSans,
       fontSize: 10,
       marginTop: 2,
-    },
-    saveFieldBtn: {
-      alignSelf: 'flex-start',
-      borderWidth: 1,
-      borderRadius: radii.pill,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.xs,
-      marginTop: spacing.xs,
-    },
-    saveFieldBtnTxt: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 13,
+      lineHeight: 13,
     },
   });
 }

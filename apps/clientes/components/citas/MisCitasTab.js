@@ -287,8 +287,10 @@ export function MisCitasTab({
 
   useEffect(() => {
     if (!highlightInventarioId || loadingServicios) return;
-    const target = Number(highlightInventarioId);
-    const idx = filtrados.findIndex((s) => Number(s.inventarioId) === target);
+    const target = String(highlightInventarioId).trim();
+    const idx = filtrados.findIndex(
+      (s) => String(s.inventarioId || '').trim() === target,
+    );
     if (idx < 0) {
       onHighlightConsumed?.();
       return;
@@ -398,7 +400,7 @@ export function MisCitasTab({
             {filtrados.map((s, index) => {
               const isHighlight =
                 highlightInventarioId != null &&
-                Number(s.inventarioId) === Number(highlightInventarioId);
+                String(s.inventarioId || '').trim() === String(highlightInventarioId).trim();
               return (
                 <View
                   key={String(s.id)}

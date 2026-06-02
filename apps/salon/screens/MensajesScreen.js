@@ -55,6 +55,7 @@ import {
 } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 import { BroadcastPromoCard } from '../../clientes/components/mensajes/BroadcastPromoCard';
+import { MarketingInterestCard } from '../../clientes/components/mensajes/MarketingInterestCard';
 import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
@@ -1076,6 +1077,26 @@ export function MensajesScreen({ onBack }) {
       return (
         <View style={styles.postWrap}>
           <BroadcastPromoCard item={item} createdAtLabel={when} readOnly />
+        </View>
+      );
+    }
+
+    if (isInbound && isInterest) {
+      const when = `${new Date(item.created_at).toLocaleString('es-GT', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })} · ${item.created_by_name || item.client_name || 'Cliente'}`;
+      return (
+        <View style={styles.postWrap}>
+          <MarketingInterestCard
+            item={item}
+            sourceLabel={interestSource}
+            audience="salon"
+            createdAtLabel={when}
+            colors={c}
+          />
         </View>
       );
     }

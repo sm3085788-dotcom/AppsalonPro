@@ -79,14 +79,29 @@ export function LuxuryImageCarousel({
   const listRef = useRef(null);
   const [active, setActive] = useState(0);
 
-  const onMomentumScrollEnd = useCallback(
-    (e) => {
-      const x = e.nativeEvent.contentOffset.x;
+  const syncActiveFromOffset = useCallback(
+    (x) => {
       const i = Math.round(x / slideW);
       if (i >= 0 && i < slides.length) setActive(i);
     },
     [slideW, slides.length],
   );
+
+  const onMomentumScrollEnd = useCallback(
+    (e) => {
+      syncActiveFromOffset(e.nativeEvent.contentOffset.x);
+    },
+    [syncActiveFromOffset],
+  );
+
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+    const first = viewableItems?.[0];
+    if (first?.index != null && first.index >= 0) {
+      setActive(first.index);
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 55 }).current;
 
   useEffect(() => {
     if (!autoAdvance || slides.length <= 1) return undefined;
@@ -177,6 +192,10 @@ export function LuxuryImageCarousel({
           keyExtractor={(item) => item.id}
           getItemLayout={getItemLayout}
           onMomentumScrollEnd={onMomentumScrollEnd}
+          onScroll={(e) => syncActiveFromOffset(e.nativeEvent.contentOffset.x)}
+          scrollEventThrottle={32}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
           onScrollToIndexFailed={onScrollToIndexFailed}
           renderItem={({ item }) => (
             <View style={{ width: slideW, height }}>

@@ -3,6 +3,7 @@ import {
   DEFAULT_TIENDA_META,
   servicioUsaPreciosPorVolumen,
   resolvePrecioRegularTienda,
+  getArticuloTipo,
 } from './inventarioMeta.js';
 import { crearPedidoTarjetaPendiente } from './pedidoSalon.js';
 
@@ -33,7 +34,7 @@ export function mapInventarioToTiendaProduct(row) {
   const allImgs = [...new Set([mainImg, ...imgs].filter(Boolean))];
   const precioVariable = servicioUsaPreciosPorVolumen(row);
   const venta = precioVariable ? null : Number(row.precio_venta || 0);
-  const tipo = meta.articuloTipo === 'servicio' ? 'servicio' : 'producto';
+  const tipo = getArticuloTipo(row);
   const stock = Number(row.stock_actual ?? 0);
   const precioRegular =
     !precioVariable && Number.isFinite(venta) && venta > 0 ? resolvePrecioRegularTienda(row, venta) : null;

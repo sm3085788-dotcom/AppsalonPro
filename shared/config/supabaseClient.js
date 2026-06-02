@@ -3978,7 +3978,7 @@ export const db = {
     },
 
     /** Posts publicados con multimedia para el feed Tendencias (App Clientes). */
-    getPublishedTendenciasFeed: async (limit = 40) => {
+    getPublishedTendenciasFeed: async (limit = 30) => {
       const filterMedia = (r) => {
         const url = r.media_url;
         if (!url || typeof url !== 'string') return false;

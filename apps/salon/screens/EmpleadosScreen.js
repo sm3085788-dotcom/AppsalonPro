@@ -271,7 +271,7 @@ export function EmpleadosScreen({ onBack }) {
   const pickFoto = useCallback(async () => {
     const cur = detailEmpleado;
     if (!cur?.id) {
-      Alert.alert('Foto', 'Primero guardá el nombre para crear la ficha; después podés agregar la foto.');
+      Alert.alert('Foto', 'Primero completá el nombre; después podés agregar la foto al crear el empleado.');
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -586,7 +586,8 @@ export function EmpleadosScreen({ onBack }) {
         savingKey={fotoUploading ? 'foto' : savingKey}
         isNew={!!detailEmpleado && !detailEmpleado.id}
         initialEditKey="nombre"
-        newHint="Completá los datos (se guardan en esta pantalla) y tocá «Crear empleado» para registrar en Supabase."
+        advanceOnEnter
+        newHint="Completá los datos (Enter pasa al siguiente campo; en dirección Enter es nueva línea). Luego «Crear empleado»."
         photo={{
           uri: detailEmpleado?.foto_url || undefined,
           onPress: detailEmpleado?.id ? pickFoto : undefined,

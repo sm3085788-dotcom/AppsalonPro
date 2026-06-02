@@ -10,7 +10,6 @@ import {
   Platform,
   Modal,
   Pressable,
-  Switch,
   FlatList,
   RefreshControl,
   ActivityIndicator,
@@ -18,7 +17,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Calendar, ChevronLeft, Clock, Minus, Plus, Stethoscope, UserPlus, X, Check } from 'lucide-react-native';
+import { Calendar, ChevronLeft, Clock, Minus, Plus, UserPlus, X, Check } from 'lucide-react-native';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -42,22 +41,6 @@ import {
   citaPermiteMensajeCliente,
 } from '../utils/citaConfirmacionCliente';
 import { applyNativeChromeTheme } from '../theme/applyNativeChromeTheme';
-
-const MEDICAL_ITEMS = [
-  { key: 'allergy', label: 'Alergias conocidas' },
-  { key: 'pregnancy', label: 'Embarazo / lactancia' },
-  { key: 'hypertension', label: 'Hipertensión' },
-  { key: 'diabetes', label: 'Diabetes' },
-  { key: 'sensitiveSkin', label: 'Piel sensible' },
-];
-const REFERRAL_ITEMS = [
-  { key: 'social', label: 'Redes sociales' },
-  { key: 'recomendacion', label: 'Recomendación de un conocido' },
-  { key: 'local', label: 'Pasé por el local / vitrina' },
-  { key: 'google', label: 'Google u otro buscador' },
-  { key: 'evento', label: 'Evento o promoción' },
-  { key: 'cliente', label: 'Ya era cliente' },
-];
 
 function normalizeEstadoCita(est) {
   return String(est || 'pendiente').toLowerCase();
@@ -134,21 +117,6 @@ export function AppointmentsScreen({ onBack }) {
   const [staffSearch, setStaffSearch] = useState('');
   const [discount, setDiscount] = useState('');
   const [note, setNote] = useState('');
-  const [medicalFlags, setMedicalFlags] = useState({
-    allergy: false,
-    pregnancy: false,
-    hypertension: false,
-    diabetes: false,
-    sensitiveSkin: false,
-  });
-  const [referralFlags, setReferralFlags] = useState({
-    social: false,
-    recomendacion: false,
-    local: false,
-    google: false,
-    evento: false,
-    cliente: false,
-  });
 
   const [catalogClientes, setCatalogClientes] = useState([]);
   const [catalogServicios, setCatalogServicios] = useState([]);
@@ -428,21 +396,6 @@ export function AppointmentsScreen({ onBack }) {
     setStaffSearch('');
     setDiscount('');
     setNote('');
-    setMedicalFlags({
-      allergy: false,
-      pregnancy: false,
-      hypertension: false,
-      diabetes: false,
-      sensitiveSkin: false,
-    });
-    setReferralFlags({
-      social: false,
-      recomendacion: false,
-      local: false,
-      google: false,
-      evento: false,
-      cliente: false,
-    });
     const now = new Date();
     setAppointmentDate(now);
     setAppointmentTime(now);
@@ -458,14 +411,6 @@ export function AppointmentsScreen({ onBack }) {
   const clearSelectedClient = () => {
     setSelectedClient(null);
     setClientQuery('');
-  };
-
-  const toggleMedical = (key) => {
-    setMedicalFlags((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const toggleReferral = (key) => {
-    setReferralFlags((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const basePrice = useMemo(
@@ -646,20 +591,15 @@ export function AppointmentsScreen({ onBack }) {
     dt.setHours(appointmentTime.getHours(), appointmentTime.getMinutes(), appointmentTime.getSeconds(), appointmentTime.getMilliseconds());
     const fecha_hora = dt.toISOString();
 
-    const notasParts = [];
-    if (note.trim()) notasParts.push(note.trim());
-    const med = MEDICAL_ITEMS.filter((i) => medicalFlags[i.key]).map((i) => i.label);
-    if (med.length) notasParts.push(`Salud: ${med.join(', ')}`);
-    const ref = REFERRAL_ITEMS.filter((i) => referralFlags[i.key]).map((i) => i.label);
-    if (ref.length) notasParts.push(`Origen: ${ref.join(', ')}`);
-    const notas_servicio = notasParts.length ? notasParts.join(' · ') : null;
-
     const itemsDesc = selectedLines
       .map((l) => `${l.nombre}${l.qty > 1 ? ` x${l.qty}` : ''}`)
       .join(' · ');
+    const notasParts = [];
+    if (note.trim()) notasParts.push(note.trim());
     if (selectedLines.length > 1 || selectedLines.some((l) => l.qty > 1)) {
       notasParts.push(`Ítems: ${itemsDesc}`);
     }
+    const notas_servicio = notasParts.length ? notasParts.join(' · ') : null;
 
     const { error } = await db.citas.create({
       cliente_id: selectedClient?.id ?? null,
@@ -1422,28 +1362,6 @@ export function AppointmentsScreen({ onBack }) {
                 </View>
               ) : null}
 
-              <View style={[styles.medicalHead, { marginTop: spacing.lg }]}>
-                <Stethoscope size={18} color={c.primary} strokeWidth={1.9} />
-                <Text style={styles.formTitle}>Historial médico</Text>
-              </View>
-              <Text style={subStyles.muted}>Usa el interruptor de cada fila para marcar antecedentes.</Text>
-              {MEDICAL_ITEMS.map((item) => {
-                const on = Boolean(medicalFlags[item.key]);
-                return (
-                  <View key={item.key} style={styles.medicalRow}>
-                    <Text style={styles.medicalTxt}>{item.label}</Text>
-                    <Switch
-                      value={on}
-                      onValueChange={() => toggleMedical(item.key)}
-                      trackColor={{ false: c.cardBorder, true: c.primary }}
-                      thumbColor={Platform.OS === 'android' ? (on ? c.heroCtaText : '#f4f3f4') : undefined}
-                      ios_backgroundColor={c.cardBorder}
-                      accessibilityLabel={item.label}
-                    />
-                  </View>
-                );
-              })}
-
               <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Fecha de cita</Text>
               <TouchableOpacity style={styles.selectRow} onPress={() => setShowDatePicker(true)}>
                 <Text style={styles.selectTxt}>{appointmentDate.toLocaleDateString('es-GT')}</Text>
@@ -1564,30 +1482,10 @@ export function AppointmentsScreen({ onBack }) {
               <Text style={subStyles.muted}>
                 Precio lista: Q{basePrice} · Descuento: {discountPct}% · Precio final: Q{finalPrice}
               </Text>
-              <Text style={[styles.formLabel, { marginTop: spacing.md }]}>¿Cómo supo de nosotros?</Text>
-              <Text style={subStyles.muted}>
-                Redes sociales, recomendación, búsqueda en internet, etc. Marcá lo que corresponda.
-              </Text>
-              {REFERRAL_ITEMS.map((item) => {
-                const on = Boolean(referralFlags[item.key]);
-                return (
-                  <View key={item.key} style={styles.medicalRow}>
-                    <Text style={styles.medicalTxt}>{item.label}</Text>
-                    <Switch
-                      value={on}
-                      onValueChange={() => toggleReferral(item.key)}
-                      trackColor={{ false: c.cardBorder, true: c.primary }}
-                      thumbColor={Platform.OS === 'android' ? (on ? c.heroCtaText : '#f4f3f4') : undefined}
-                      ios_backgroundColor={c.cardBorder}
-                      accessibilityLabel={item.label}
-                    />
-                  </View>
-                );
-              })}
               <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Nota u observaciones</Text>
               <TextInput
                 style={[styles.input, styles.noteInput]}
-                placeholder="Ej. preferencia de horario, productos sensibles, detalle del canal si marcás «Otro»…"
+                placeholder="Ej. preferencia de horario, productos sensibles…"
                 placeholderTextColor={c.foregroundSubtle}
                 multiline
                 value={note}
@@ -2068,30 +1966,6 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       color: c.foregroundMuted,
       fontSize: 16,
-    },
-    medicalHead: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.xs,
-      marginBottom: spacing.xs,
-    },
-    medicalRow: {
-      marginTop: spacing.sm,
-      borderRadius: radii.sm,
-      borderWidth: 1,
-      borderColor: c.cardBorder,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.sm,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-    },
-    medicalTxt: {
-      flex: 1,
-      fontFamily: typography.fontSans,
-      color: c.foreground,
-      fontSize: 13,
-      paddingRight: spacing.sm,
     },
     selectRow: {
       minHeight: 46,

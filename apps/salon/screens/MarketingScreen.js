@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  Pressable,
   Modal,
   TextInput,
   Platform,
@@ -34,13 +33,11 @@ import {
   db,
   supabase,
   uploadTendenciaMediaFromUri,
-  getArticuloTipo,
-  normalizeServicioCategoria,
   fetchMarketingEngagementSince,
   fetchMarketingEngagementFeed,
-  buildCarouselOverlayFromInventario,
   buildTendenciasPublicationMap,
 } from '@appsalon/shared-config';
+import { ImportCarouselModal } from '../components/marketing/ImportCarouselModal';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useListSelection } from '../hooks/useListSelection';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
@@ -50,6 +47,9 @@ import { useTheme } from '../theme/ThemeProvider';
 
 /** Máximo de diapositivas activas en el carrusel de inicio (App Clientes). */
 const MAX_CAROUSEL_SLIDES = 15;
+
+/** Máximo de publicaciones activas en el feed Tendencias (App Clientes). */
+const MAX_TENDENCIAS_POSTS = 30;
 
 const SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY = '@appsalon/salon/marketing_engagement_last_seen_at';
 
@@ -263,10 +263,7 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
   const [carCta, setCarCta] = useState('Ver servicio');
 
   const [importServOpen, setImportServOpen] = useState(false);
-  const [importServQuery, setImportServQuery] = useState('');
-  const [importServCta, setImportServCta] = useState('Ver servicio');
-  const [importServRows, setImportServRows] = useState([]);
-  const [importServLoading, setImportServLoading] = useState(false);
+  const [importServCta, setImportServCta] = useState('');
 
   const [engagementAlerts, setEngagementAlerts] = useState([]);
   const [engagementFeed, setEngagementFeed] = useState([]);
@@ -435,7 +432,19 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
     await refreshEngagementAlerts();
   });
 
+  const tendenciasPublishedCount = useCallback(
+    () => posts.filter((p) => String(p.status || '') === 'published').length,
+    [posts],
+  );
+
   const openPicker = async (kind) => {
+    if (tendenciasPublishedCount() >= MAX_TENDENCIAS_POSTS) {
+      Alert.alert(
+        'Límite de Tendencias',
+        `Ya hay ${MAX_TENDENCIAS_POSTS} publicaciones en el feed. Eliminá una para subir otra.`,
+      );
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permisos', 'Necesitamos acceso a la galería para subir fotos o videos.');
@@ -591,91 +600,21 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
     }
   };
 
-  const openImportServicioCarousel = async () => {
-    const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
-    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
+  const carouselPublishedCount = useMemo(
+    () => carouselPosts.filter((p) => String(p.status || '') === 'published').length,
+    [carouselPosts],
+  );
+
+  const openImportServicioCarousel = () => {
+    if (carouselPublishedCount >= MAX_CAROUSEL_SLIDES) {
       Alert.alert(
         'Límite del carrusel',
         `Ya hay ${MAX_CAROUSEL_SLIDES} diapositivas publicadas. Eliminá una para importar otra.`,
       );
       return;
     }
-    setImportServOpen(true);
-    setImportServQuery('');
     setImportServCta('');
-    setImportServLoading(true);
-    try {
-      const { data, error } = await db.inventario.getAll();
-      if (error) throw error;
-      const rows = (data || []).filter((r) => {
-        const tipo = getArticuloTipo(r);
-        if (tipo !== 'servicio' && tipo !== 'producto') return false;
-        const imgs = [r.imagen_url, ...(Array.isArray(r.imagenes_urls) ? r.imagenes_urls : [])].filter(
-          Boolean,
-        );
-        return imgs.length > 0;
-      });
-      setImportServRows(rows);
-    } catch (e) {
-      Alert.alert('Inventario', e?.message || 'No se pudo cargar inventario.');
-      setImportServRows([]);
-    } finally {
-      setImportServLoading(false);
-    }
-  };
-
-  const confirmImportServicioCarousel = async (row) => {
-    if (!row?.id) return;
-    const publishedCount = carouselPosts.filter((p) => String(p.status || '') === 'published').length;
-    if (publishedCount >= MAX_CAROUSEL_SLIDES) {
-      Alert.alert('Límite del carrusel', `Máximo ${MAX_CAROUSEL_SLIDES} diapositivas en publicidad.`);
-      return;
-    }
-    const imgs = [row.imagen_url, ...(Array.isArray(row.imagenes_urls) ? row.imagenes_urls : [])].filter(
-      Boolean,
-    );
-    const mainImg = imgs[0];
-    if (!mainImg) {
-      Alert.alert('Sin imagen', 'El artículo necesita al menos una foto (portada) en inventario.');
-      return;
-    }
-    const isProducto = getArticuloTipo(row) === 'producto';
-    const defaultCta = isProducto ? 'Ver en tienda' : 'Ver servicio';
-    const overlay = buildCarouselOverlayFromInventario(row, importServCta.trim() || defaultCta);
-    const headline = overlay.headline;
-    setSaving(true);
-    try {
-      const payload = {
-        title: headline.slice(0, 200),
-        body: JSON.stringify(overlay),
-        media_url: mainImg,
-        content_type: 'image',
-        status: 'published',
-        visibility: 'public',
-        audience: 'home_carousel',
-        published_at: new Date().toISOString(),
-      };
-      const { data: created, error: crErr } = await db.marketingPosts.create(payload);
-      if (crErr) {
-        Alert.alert('Base de datos', crErr.message || 'No se pudo importar.');
-        return;
-      }
-      if (created?.id && created.status !== 'published') {
-        await db.marketingPosts.publish(created.id);
-      }
-      Alert.alert(
-        'Listo',
-        isProducto
-          ? 'Producto en el carrusel. En App Clientes el botón abre Tienda en esa ficha.'
-          : 'Servicio en el carrusel. En App Clientes el botón abre Mis citas para agendar.',
-      );
-      setImportServOpen(false);
-      await loadPosts();
-    } catch (e) {
-      Alert.alert('Error', e?.message || 'No se pudo importar.');
-    } finally {
-      setSaving(false);
-    }
+    setImportServOpen(true);
   };
 
   const openCarouselPicker = async () => {
@@ -771,6 +710,13 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
 
   const confirmPublish = async () => {
     if (!pendingAsset?.uri || !pendingKind) return;
+    if (tendenciasPublishedCount() >= MAX_TENDENCIAS_POSTS) {
+      Alert.alert(
+        'Límite de Tendencias',
+        `Máximo ${MAX_TENDENCIAS_POSTS} publicaciones en el feed Tendencias.`,
+      );
+      return;
+    }
     const t = title.trim() || (pendingKind === 'video' ? 'Video Tendencias' : 'Foto Tendencias');
     const bodyText = caption.trim() || ' ';
     setSaving(true);
@@ -1114,7 +1060,7 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
             </Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12 }]}>
               Importá productos o servicios del inventario (con portada). Producto → Tienda · Servicio → Mis
-              citas. También podés subir una imagen manual.
+              citas.
             </Text>
             <Text style={[subStyles.muted, { marginBottom: spacing.sm, fontSize: 12, fontFamily: typography.fontSansMedium }]}>
               {carouselPosts.length}/{MAX_CAROUSEL_SLIDES} diapositivas publicadas
@@ -1125,14 +1071,6 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
               fullWidth
               disabled={saving || carouselPosts.length >= MAX_CAROUSEL_SLIDES}
               onPress={openImportServicioCarousel}
-              style={{ marginBottom: spacing.sm }}
-            />
-            <SalonButton
-              title="Subir imagen manual al carrusel"
-              variant="outlineGray"
-              fullWidth
-              disabled={saving || carouselPosts.length >= MAX_CAROUSEL_SLIDES}
-              onPress={openCarouselPicker}
               style={{ marginBottom: spacing.md }}
             />
             {loading ? null : carouselPosts.length === 0 ? (
@@ -1147,6 +1085,10 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
 
             <Text style={[styles.sectionTitle, { color: c.foreground, marginTop: spacing.sm }]}>
               Feed Tendencias
+            </Text>
+            <Text style={[subStyles.muted, { marginBottom: spacing.sm }]}>
+              {posts.filter((p) => String(p.status || '') === 'published').length}/{MAX_TENDENCIAS_POSTS}{' '}
+              publicaciones en el feed (máx. {MAX_TENDENCIAS_POSTS}).
             </Text>
 
             {loading ? (
@@ -1334,126 +1276,14 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
         </View>
       </Modal>
 
-      <Modal
+      <ImportCarouselModal
         visible={importServOpen}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        statusBarTranslucent
-        onRequestClose={() => setImportServOpen(false)}
-      >
-        <View style={[styles.importServShell, { backgroundColor: c.background }]}>
-          <StatusBar style={isDark ? 'light' : 'dark'} />
-          <View
-            style={[
-              styles.importServHead,
-              {
-                paddingTop: insets.top + spacing.sm,
-                borderBottomColor: c.cardBorder,
-              },
-            ]}
-          >
-            <Text style={[styles.modalTitle, { color: c.foreground, flex: 1 }]}>
-              Importar al carrusel
-            </Text>
-            <TouchableOpacity onPress={() => setImportServOpen(false)} hitSlop={12}>
-              <X size={24} color={c.foreground} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            style={styles.importServScroll}
-            contentContainerStyle={[
-              styles.modalScrollContent,
-              { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.lg },
-            ]}
-            showsVerticalScrollIndicator={false}
-          >
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    borderColor: c.cardBorder,
-                    color: c.foreground,
-                    backgroundColor: c.card,
-                    marginBottom: spacing.sm,
-                  },
-                ]}
-                placeholder="Buscar producto o servicio…"
-                placeholderTextColor={c.foregroundSubtle}
-                value={importServQuery}
-                onChangeText={setImportServQuery}
-              />
-              <Text style={styles.fieldLbl}>Texto del botón en App Clientes</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    borderColor: c.cardBorder,
-                    color: c.foreground,
-                    backgroundColor: c.card,
-                    marginBottom: spacing.sm,
-                  },
-                ]}
-                placeholder="Ej. Ver en tienda / Ver servicio"
-                placeholderTextColor={c.foregroundSubtle}
-                value={importServCta}
-                onChangeText={setImportServCta}
-                maxLength={28}
-              />
-
-              {importServLoading ? (
-                <ActivityIndicator color={c.primary} style={{ marginVertical: spacing.lg }} />
-              ) : (
-                <>
-                  {importServRows
-                    .filter((r) => {
-                      const q = importServQuery.trim().toLowerCase();
-                      if (!q) return true;
-                      return `${r.nombre || ''} ${r.categoria || ''}`.toLowerCase().includes(q);
-                    })
-                    .map((row) => {
-                      const img = row.imagen_url;
-                      const isProducto = getArticuloTipo(row) === 'producto';
-                      const tipoLabel = isProducto ? 'Producto · Tienda' : 'Servicio · Mis citas';
-                      const catLabel = isProducto
-                        ? String(row.categoria || 'Producto')
-                        : normalizeServicioCategoria(row.categoria);
-                      return (
-                        <TouchableOpacity
-                          key={String(row.id)}
-                          style={[styles.importServRow, { borderBottomColor: c.cardBorder }]}
-                          onPress={() => void confirmImportServicioCarousel(row)}
-                          disabled={saving}
-                        >
-                          {img ? (
-                            <Image source={{ uri: img }} style={styles.importServThumb} />
-                          ) : (
-                            <View style={[styles.importServThumb, { backgroundColor: c.surfaceMuted }]} />
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={{ color: c.foreground, fontFamily: typography.fontSansMedium }}
-                              numberOfLines={1}
-                            >
-                              {row.nombre}
-                            </Text>
-                            <Text style={{ color: c.primary, fontSize: 11, fontFamily: typography.fontSansMedium }}>
-                              {tipoLabel}
-                              {!row.visible_en_tienda && isProducto ? ' · No visible en tienda' : ''}
-                            </Text>
-                            <Text style={{ color: c.foregroundMuted, fontSize: 12 }} numberOfLines={1}>
-                              {catLabel}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                </>
-              )}
-          </ScrollView>
-        </View>
-      </Modal>
+        onClose={() => setImportServOpen(false)}
+        carouselPublishedCount={carouselPublishedCount}
+        onImported={loadPosts}
+        customCta={importServCta}
+        onCustomCtaChange={setImportServCta}
+      />
 
       <Modal
         visible={engagementOpen}
@@ -1776,6 +1606,11 @@ function createStyles(c) {
       paddingBottom: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
     },
+    importServBody: {
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
     importServScroll: { flex: 1 },
     modalBackdrop: {
       flex: 1,
@@ -1846,6 +1681,18 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
       marginTop: spacing.sm,
+    },
+    importTipoRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+      marginBottom: spacing.sm,
+    },
+    importTipoChip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radii.pill,
+      borderWidth: 1,
     },
     importServRow: {
       flexDirection: 'row',

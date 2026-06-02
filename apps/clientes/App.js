@@ -54,6 +54,10 @@ import {
   BROADCAST_LINK_TYPES,
   parseBroadcastContent,
   mapHomeCarouselPostToClientSlide,
+  enrichHomeCarouselSlidesWithInventario,
+  getArticuloTipo,
+  normalizeInventarioCarouselId,
+  resolveCarouselArticuloTipo,
 } from '@appsalon/shared-config';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
 import {
@@ -626,7 +630,7 @@ function AppMain({ onLogout }) {
     if (!hasSupabaseEnv) return;
     let alive = true;
     (async () => {
-      const { data, error } = await db.marketingPosts.getPublishedHomeCarousel(15);
+      const { data, error } = await db.marketingPosts.getPublishedHomeCarousel(30);
       if (!alive) return;
       if (error) {
         if (__DEV__) {
@@ -635,7 +639,13 @@ function AppMain({ onLogout }) {
         return;
       }
       if (Array.isArray(data) && data.length > 0) {
-        setInicioPubSlides(data.map(mapHomeCarouselPostToClientSlide));
+        const mapped = data.map(mapHomeCarouselPostToClientSlide);
+        const enriched = await enrichHomeCarouselSlidesWithInventario(
+          mapped,
+          (id) => db.inventario.getById(id),
+          getArticuloTipo,
+        );
+        if (alive) setInicioPubSlides(enriched);
       }
     })();
     return () => {
@@ -1097,20 +1107,35 @@ function AppMain({ onLogout }) {
   }, [session?.user, hasSupabaseEnv, clienteRow?.id, ensureClienteFicha, openMensajesSub]);
 
   const handleCarouselSlidePress = useCallback(
-    (slide) => {
+    async (slide) => {
       if (!slide) return;
-      if (slide.articuloTipo === 'producto' && slide.inventarioId) {
-        openSub(CLIENT_SUB.TIENDA, { tiendaProductId: slide.inventarioId });
+      const invId = normalizeInventarioCarouselId(slide.inventarioId);
+      let inventarioRow = null;
+
+      if (invId && hasSupabaseEnv) {
+        const { data } = await db.inventario.getById(invId);
+        if (data) inventarioRow = data;
+      }
+
+      const tipo = resolveCarouselArticuloTipo(inventarioRow, slide.articuloTipo);
+
+      if (tipo === 'producto') {
+        openSub(CLIENT_SUB.TIENDA, {
+          tiendaProductId: invId,
+          tiendaPhase: invId ? 'cart' : 'catalog',
+          tiendaAddToCart: !!invId,
+          tiendaOpenKey: Date.now(),
+        });
         return;
       }
-      if (slide.inventarioId) {
-        setHighlightInventarioId(slide.inventarioId);
-        setTab(TABS.CITAS);
-        return;
-      }
+
       setTab(TABS.CITAS);
+      if (invId) {
+        setHighlightInventarioId(null);
+        setTimeout(() => setHighlightInventarioId(invId), 0);
+      }
     },
-    [openSub],
+    [openSub, hasSupabaseEnv],
   );
 
   useEffect(() => {

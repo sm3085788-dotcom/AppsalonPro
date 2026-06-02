@@ -558,7 +558,7 @@ export function ProveedoresScreen({ onBack }) {
         savingKey={logoUploading ? 'logo' : savingKey}
         isNew={!!detailProveedor && !detailProveedor.id}
         initialEditKey="nombre_compania"
-        newHint="Completá los datos (se guardan en esta pantalla) y tocá «Crear compañía» para registrar en Supabase."
+        newHint="Completá los datos (se guardan al salir de cada campo) y tocá «Crear compañía» para registrar en Supabase."
         photo={{
           uri: detailProveedor?.logo_url || undefined,
           letter: (detailProveedor?.nombre_compania || '?').trim().charAt(0).toUpperCase(),
