@@ -13,14 +13,14 @@ const ICON_MAP = {
 
 const GOLD = '#C5A368';
 
-export function QuickPosterGrid({ items }) {
+export function QuickPosterGrid({ items, fillHeight = false }) {
   const { colors: c, isDark } = useTheme();
 
   const palette = isDark
     ? {
         container: c.background,
         row:       c.card,
-        divider:   c.cardBorder,
+        divider:   'rgba(197,163,104,0.30)',
         label:     c.foreground,
         sub:       GOLD,
         iconBg:    'rgba(197,163,104,0.12)',
@@ -37,20 +37,27 @@ export function QuickPosterGrid({ items }) {
       };
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.container }]}>
+    <View
+      style={[
+        styles.container,
+        fillHeight && styles.containerFill,
+        { backgroundColor: palette.container },
+      ]}
+    >
       {items.map((item, index) => (
         <MenuItem
           key={item.id}
           item={item}
           isLast={index === items.length - 1}
           palette={palette}
+          fillHeight={fillHeight}
         />
       ))}
     </View>
   );
 }
 
-function MenuItem({ item, isLast, palette }) {
+function MenuItem({ item, isLast, palette, fillHeight = false }) {
   const hasBadge = item.badge && item.badgeCount > 0;
   const Icon = ICON_MAP[item.iconName] ?? MessageCircle;
 
@@ -58,6 +65,7 @@ function MenuItem({ item, isLast, palette }) {
     <TouchableOpacity
       style={[
         styles.row,
+        fillHeight && styles.rowFill,
         { backgroundColor: palette.row },
         !isLast && { borderBottomWidth: 1, borderBottomColor: palette.divider },
       ]}
@@ -106,12 +114,20 @@ const styles = StyleSheet.create({
       android: { elevation: 2 },
     }),
   },
+  containerFill: {
+    flex: 1,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 76,
     paddingHorizontal: spacing.lg,
     gap: 14,
+  },
+  rowFill: {
+    flex: 1,
+    minHeight: 64,
+    height: undefined,
   },
   iconCircle: {
     width: 44,

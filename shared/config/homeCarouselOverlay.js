@@ -163,6 +163,19 @@ export async function enrichHomeCarouselSlidesWithInventario(slides, getById, ge
  * Mismo flujo para producto y servicio al importar desde Marketing (App Salón).
  * El JSON del overlay fija `articuloTipo` + `inventarioId` para que Clientes abra Tienda o Mis citas.
  */
+/** Importar portada de inventario al carrusel hero «Reserva tu cita». */
+export function buildHomeHeroMarketingPayload(row, { customCta } = {}) {
+  const built = buildHomeCarouselMarketingPayload(row, { customCta });
+  return {
+    ...built,
+    payload: {
+      ...built.payload,
+      title: String(built.overlay.headline || row?.nombre || 'Reserva tu cita').slice(0, 200),
+      audience: 'home_hero',
+    },
+  };
+}
+
 export function buildHomeCarouselMarketingPayload(row, { customCta } = {}) {
   const invId = normalizeInventarioCarouselId(row?.id);
   const tipo = getArticuloTipo(row);
@@ -191,6 +204,30 @@ export function buildHomeCarouselMarketingPayload(row, { customCta } = {}) {
       audience: 'home_carousel',
       published_at: new Date().toISOString(),
     },
+  };
+}
+
+export function mapHomeHeroPostToClientSlide(row) {
+  const id = String(row.id);
+  const uri = row.media_url;
+  const parsed = parseHomeCarouselOverlay(row.body, row.title);
+  const kicker =
+    parsed.kicker && parsed.kicker !== 'Publicidad'
+      ? parsed.kicker
+      : 'Tu próxima experiencia';
+  return {
+    id,
+    uri,
+    caption: parsed.headline || row.title || 'Reserva tu cita',
+    kicker,
+    headline: parsed.headline || row.title || 'Reserva tu cita',
+    body:
+      parsed.body?.trim() ||
+      'Descubre el arte de la belleza con nuestros estilistas expertos.',
+    buttonTitle: parsed.buttonTitle || 'Agendar ahora',
+    priceLabel: parsed.priceLabel,
+    inventarioId: parsed.inventarioId,
+    articuloTipo: parsed.articuloTipo,
   };
 }
 

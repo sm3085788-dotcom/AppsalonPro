@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import { CitaFechaHoraPicker, openAndroidCitaPicker } from './CitaFechaHoraPicker';
+import { AgendarServicioResumenCard } from './AgendarServicioResumenCard';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   db,
@@ -20,10 +21,6 @@ import {
 import { useTheme } from '../../theme/ThemeProvider';
 import { SalonButton } from '../luxury/SalonButton';
 import { useServiciosCart } from '../../context/ServiciosCartContext';
-import {
-  formatServicioDuracion,
-  formatServicioPrecio,
-} from '../../services/salonServiciosTienda';
 
 function servicioKey(s) {
   return String(s?.id ?? s?.nombre ?? '');
@@ -204,46 +201,40 @@ export function ServiciosCarritoBody({
 
         return (
           <View key={key} style={styles.card}>
-            <View style={styles.cardHead}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.name}>{s.nombre}</Text>
-                <Text style={styles.meta}>
-                  {esPrimeroConCanje && precioCanje?.calc ? (
-                    <>
-                      <Text style={styles.precioTachado}>{formatServicioPrecio(s)}</Text>
-                      {` · Q ${precioCanje.precio.toFixed(2)} con canje · `}
-                    </>
-                  ) : (
-                    `${formatServicioPrecio(s)} · `
-                  )}
-                  {formatServicioDuracion(s)}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => removeItem(s)}
-                hitSlop={10}
-                accessibilityLabel="Quitar de la lista"
-              >
-                <X size={20} color={c.foregroundSubtle} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.removeBtn}
+              onPress={() => removeItem(s)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Quitar de la lista"
+            >
+              <X size={20} color={c.foregroundSubtle} />
+            </TouchableOpacity>
 
-            <Text style={styles.whenLbl}>Fecha y hora</Text>
-            <CitaFechaHoraPicker
-              value={fechaHora}
-              onChange={(next) => setScheduleFor(key, next)}
-              onRequestAndroidPicker={
-                Platform.OS === 'android'
-                  ? (mode) => {
-                      openAndroidCitaPicker({
-                        mode,
-                        value: fechaHora,
-                        onCommit: (next) => setScheduleFor(key, next),
-                      });
-                    }
-                  : undefined
-              }
+            <AgendarServicioResumenCard
+              kicker={n > 1 ? `Servicio ${index + 1} de ${n}` : 'Servicio seleccionado'}
+              servicio={s}
+              precioConCanje={esPrimeroConCanje && precioCanje?.calc ? precioCanje : null}
             />
+
+            <View style={styles.whenBlock}>
+              <Text style={styles.whenLbl}>Fecha y hora</Text>
+              <CitaFechaHoraPicker
+                value={fechaHora}
+                onChange={(next) => setScheduleFor(key, next)}
+                onRequestAndroidPicker={
+                  Platform.OS === 'android'
+                    ? (mode) => {
+                        openAndroidCitaPicker({
+                          mode,
+                          value: fechaHora,
+                          onCommit: (next) => setScheduleFor(key, next),
+                        });
+                      }
+                    : undefined
+                }
+              />
+            </View>
           </View>
         );
       })}
@@ -300,28 +291,26 @@ function createStyles(c) {
     },
     card: {
       borderRadius: radii.lg,
-      borderWidth: 1,
-      borderColor: c.cardBorder,
       backgroundColor: c.card,
       padding: spacing.md,
-      marginBottom: spacing.sm,
+      paddingTop: spacing.sm + 4,
+      paddingRight: spacing.xl,
+      marginBottom: spacing.md,
+      overflow: 'hidden',
+      position: 'relative',
     },
-    cardHead: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.sm,
-      marginBottom: spacing.sm,
+    removeBtn: {
+      position: 'absolute',
+      top: spacing.sm,
+      right: spacing.sm,
+      zIndex: 2,
+      padding: 4,
     },
-    name: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 16,
-      color: c.foreground,
-    },
-    meta: {
-      marginTop: 2,
-      fontFamily: typography.fontSans,
-      fontSize: 13,
-      color: c.foregroundMuted,
+    whenBlock: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.cardBorder,
+      paddingTop: spacing.md,
+      marginTop: spacing.md,
     },
     whenLbl: {
       fontFamily: typography.fontSansMedium,
@@ -341,28 +330,6 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
       lineHeight: 19,
-    },
-    precioTachado: {
-      textDecorationLine: 'line-through',
-      color: c.foregroundSubtle,
-    },
-    dateRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      minHeight: 44,
-      borderRadius: radii.md,
-      borderWidth: 1,
-      borderColor: c.cardBorder,
-      backgroundColor: c.surfaceMuted,
-      paddingHorizontal: spacing.sm,
-      marginBottom: spacing.xs,
-    },
-    dateTxt: {
-      fontFamily: typography.fontSans,
-      fontSize: 14,
-      color: c.foreground,
-      flex: 1,
     },
   });
 }

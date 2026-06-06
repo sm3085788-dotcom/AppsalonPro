@@ -106,6 +106,8 @@ export {
   carouselArticuloTipoFromSlide,
   resolveCarouselArticuloTipo,
   buildHomeCarouselMarketingPayload,
+  buildHomeHeroMarketingPayload,
+  mapHomeHeroPostToClientSlide,
 } from './homeCarouselOverlay.js';
 export {
   buildIncidentClientMessage,

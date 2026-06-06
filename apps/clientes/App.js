@@ -53,7 +53,7 @@ import {
   BROADCAST_PROMO_ACTIONS,
   BROADCAST_LINK_TYPES,
   parseBroadcastContent,
-  mapHomeCarouselPostToClientSlide,
+  mapHomeHeroPostToClientSlide,
   enrichHomeCarouselSlidesWithInventario,
   getArticuloTipo,
   normalizeInventarioCarouselId,
@@ -73,7 +73,6 @@ import {
   QuickAccessRow,
   SubScreenChrome,
   HeroImageCarousel,
-  LuxuryImageCarousel,
 } from './components/luxury';
 import { QuickPosterGrid } from './components/luxury/QuickPosterGrid';
 import { MembresiaBadge } from './components/MembresiaBadge';
@@ -140,10 +139,6 @@ import {
   DEFAULT_GREETING_NAME,
   QUICK_ACCESS,
 } from './data/luxuryUiMocks';
-import {
-  PUBLICIDAD_SLIDES,
-} from './data/remoteHeroImages';
-
 const PRIVACY_URL =
   process.env.EXPO_PUBLIC_PRIVACY_URL ??
   'https://appsalon-pro-web-catalogo.vercel.app/privacidad';
@@ -152,41 +147,6 @@ const hasSupabaseEnv = Boolean(
   process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim(),
 );
-
-/** `marketing_posts` con `audience === 'home_hero'`: carrusel «Reserva tu cita». */
-function mapHomeHeroPostToSlide(row) {
-  const id = String(row.id);
-  const uri = row.media_url;
-  let kicker = 'Tu próxima experiencia';
-  let headline = row.title || 'Reserva tu cita';
-  let bodyText = 'Descubre el arte de la belleza con nuestros estilistas expertos.';
-  let buttonTitle = 'Agendar ahora';
-  const raw = String(row.body || '').trim();
-  if (raw.startsWith('{')) {
-    try {
-      const o = JSON.parse(raw);
-      if (o && typeof o === 'object') {
-        if (o.kicker) kicker = String(o.kicker);
-        if (o.headline) headline = String(o.headline);
-        if (o.body != null) bodyText = String(o.body);
-        if (o.buttonTitle) buttonTitle = String(o.buttonTitle);
-      }
-    } catch {
-      bodyText = raw;
-    }
-  } else if (raw) {
-    bodyText = raw;
-  }
-  return {
-    id,
-    uri,
-    caption: headline,
-    kicker,
-    headline,
-    body: bodyText,
-    buttonTitle,
-  };
-}
 
 const TABS = {
   INICIO: 'inicio',
@@ -202,8 +162,15 @@ const TAB_ITEMS = [
   { id: TABS.PERFIL, label: 'Perfil', icon: User },
 ];
 
+/** Altura real del tab bar (sincronizado con BottomTabs.js). */
+function tabBarOverlayHeight(insets) {
+  const bottomPad = Math.max(insets.bottom, 8);
+  const barCore = 8 + 4 + 40 + 4 + 14;
+  return barCore + bottomPad;
+}
+
 function paddingForTabBar(insets) {
-  return tabBarLayout.height + Math.max(insets.bottom, 10) + spacing.md;
+  return tabBarOverlayHeight(insets) + spacing.md;
 }
 
 function ProfileMenuRow({ icon: Icon, label, onPress }) {
@@ -260,14 +227,15 @@ function labelEstadoCita(estado) {
 
 function AppMain({ onLogout }) {
   const insets = useSafeAreaInsets();
-  const { height: windowH } = useWindowDimensions();
+  const { height: windowH, width: windowW } = useWindowDimensions();
   const scrollBottom = paddingForTabBar(insets);
-  // Alturas proporcionales para que ambos carruseles quepan en pantalla
-  const TAB_BAR_H = 60;
-  const HEADER_H = insets.top + 56;
-  const AVAIL_H = windowH - TAB_BAR_H - HEADER_H;
-  const heroH = Math.round(AVAIL_H * 0.30);
-  const promoH = Math.round(AVAIL_H * 0.28);
+  const inicioTabBarPad = tabBarOverlayHeight(insets);
+  const inicioHeroHeight =
+    insets.top +
+    Math.min(
+      Math.round(windowW / (626 / 500)),
+      Math.round((windowH - inicioTabBarPad) * 0.6),
+    );
   const [tab, setTab] = useState(TABS.INICIO);
   const [highlightInventarioId, setHighlightInventarioId] = useState(null);
   const [session, setSession] = useState(null);
@@ -283,7 +251,6 @@ function AppMain({ onLogout }) {
 
   const [headerSearch, setHeaderSearch] = useState('');
   const [avatarUri, setAvatarUri] = useState(null);
-  const [inicioPubSlides, setInicioPubSlides] = useState(PUBLICIDAD_SLIDES);
   const [inicioHeroSlides, setInicioHeroSlides] = useState(null);
   const [notifPrefs, setNotifPrefs] = useState(DEFAULT_CLIENT_NOTIF_PREFS);
   const [auraUnread, setAuraUnread] = useState(0);
@@ -630,43 +597,33 @@ function AppMain({ onLogout }) {
     if (!hasSupabaseEnv) return;
     let alive = true;
     (async () => {
-      const { data, error } = await db.marketingPosts.getPublishedHomeCarousel(30);
+      const [heroRes, legacyCarouselRes] = await Promise.all([
+        db.marketingPosts.getPublishedHomeHero(15),
+        db.marketingPosts.getPublishedHomeCarousel(15),
+      ]);
       if (!alive) return;
-      if (error) {
+      if (heroRes.error && legacyCarouselRes.error) {
         if (__DEV__) {
-          console.warn('[Inicio] Carrusel Supabase:', error.message);
+          console.warn(
+            '[Inicio] Hero Supabase:',
+            heroRes.error?.message || legacyCarouselRes.error?.message,
+          );
         }
         return;
       }
-      if (Array.isArray(data) && data.length > 0) {
-        const mapped = data.map(mapHomeCarouselPostToClientSlide);
+      const merged = [...(heroRes.data || []), ...(legacyCarouselRes.data || [])].sort(
+        (a, b) =>
+          new Date(b.published_at || b.created_at).getTime() -
+          new Date(a.published_at || b.created_at).getTime(),
+      );
+      if (merged.length > 0) {
+        const mapped = merged.map(mapHomeHeroPostToClientSlide);
         const enriched = await enrichHomeCarouselSlidesWithInventario(
           mapped,
           (id) => db.inventario.getById(id),
           getArticuloTipo,
         );
-        if (alive) setInicioPubSlides(enriched);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!hasSupabaseEnv) return;
-    let alive = true;
-    (async () => {
-      const { data, error } = await db.marketingPosts.getPublishedHomeHero(15);
-      if (!alive) return;
-      if (error) {
-        if (__DEV__) {
-          console.warn('[Inicio] Hero Supabase:', error.message);
-        }
-        return;
-      }
-      if (Array.isArray(data) && data.length > 0) {
-        setInicioHeroSlides(data.map(mapHomeHeroPostToSlide));
+        if (alive) setInicioHeroSlides(enriched);
       }
     })();
     return () => {
@@ -1106,7 +1063,7 @@ function AppMain({ onLogout }) {
     }
   }, [session?.user, hasSupabaseEnv, clienteRow?.id, ensureClienteFicha, openMensajesSub]);
 
-  const handleCarouselSlidePress = useCallback(
+  const handleHeroSlidePress = useCallback(
     async (slide) => {
       if (!slide) return;
       const invId = normalizeInventarioCarouselId(slide.inventarioId);
@@ -1129,11 +1086,14 @@ function AppMain({ onLogout }) {
         return;
       }
 
-      setTab(TABS.CITAS);
-      if (invId) {
+      if (tipo === 'servicio' && invId) {
+        setTab(TABS.CITAS);
         setHighlightInventarioId(null);
         setTimeout(() => setHighlightInventarioId(invId), 0);
+        return;
       }
+
+      setTab(TABS.CITAS);
     },
     [openSub, hasSupabaseEnv],
   );
@@ -1250,26 +1210,18 @@ function AppMain({ onLogout }) {
 
   const renderInicio = () => (
     <View style={styles.inicioShell}>
-      {/* Sin search bar — el carrusel ocupa desde arriba incluyendo el safe area */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollInner,
-          { paddingBottom: scrollBottom },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={[styles.inicioLayout, { paddingBottom: inicioTabBarPad }]}>
         <HeroImageCarousel
           slides={inicioHeroSlides}
+          onSlideAction={handleHeroSlidePress}
           onAgendar={() => setTab(TABS.CITAS)}
-          height={heroH + insets.top + 56}
+          height={inicioHeroHeight}
         />
 
         <View style={styles.inicioBelowHero}>
-          <View style={styles.sectionBlock}>
-            <QuickPosterGrid
-              columns={1}
-              items={[
+          <QuickPosterGrid
+            fillHeight
+            items={[
                 { id: 'mensajes',   label: 'Mensajes',   iconName: 'MessageCircle', sub: 'Andreas Pro · en vivo',         onPress: openAuraLine,                   bellBadge: auraUnread > 0 },
                 { id: 'tienda',     label: 'Tienda',     iconName: 'ShoppingBag',   sub: 'Productos y kits profesionales', onPress: () => openSub(CLIENT_SUB.TIENDA) },
                 { id: 'tendencias', label: 'Tendencias', iconName: 'Sparkles',      sub: 'Looks de temporada',             onPress: () => openSub(CLIENT_SUB.TENDENCIAS) },
@@ -1277,29 +1229,9 @@ function AppMain({ onLogout }) {
                 { id: 'pedidos',    label: 'Pedidos',    iconName: 'Package',       sub: 'Mis compras y estado',           onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
                 { id: 'citas',      label: 'Servicios',  iconName: 'Scissors',      sub: 'Elegí servicios y agendá',       onPress: () => setTab(TABS.CITAS) },
               ]}
-            />
-          </View>
-        </View>
-
-        <View style={styles.featuredWrap}>
-          <LuxuryImageCarousel
-            slides={inicioPubSlides}
-            perSlideOverlay
-            overlayKicker="Publicidad"
-            headline="Promociones"
-            body=""
-            buttonTitle="Ver más"
-            buttonVariant="heroGold"
-            onButtonPress={handleCarouselSlidePress}
-            showAdvanceArrow={inicioPubSlides.length > 1}
-            edgeToEdge
-            squareCorners
-            autoAdvance={false}
-            height={promoH}
-            containerStyle={{ marginTop: 0 }}
           />
         </View>
-      </ScrollView>
+      </View>
     </View>
   );
 
@@ -1843,6 +1775,9 @@ function buildAppStyles(c) {
     flex: 1,
     backgroundColor: c.background,
   },
+  inicioLayout: {
+    flex: 1,
+  },
   inicioHeaderSticky: {
     paddingHorizontal: spacing.lg,
     backgroundColor: c.background,
@@ -1853,7 +1788,10 @@ function buildAppStyles(c) {
     marginBottom: 0,
   },
 
-  inicioBelowHero: {},
+  inicioBelowHero: {
+    flex: 1,
+    minHeight: 0,
+  },
 
   sectionBlock: {
     marginTop: 0,
@@ -1894,9 +1832,6 @@ function buildAppStyles(c) {
     justifyContent: 'center',
   },
 
-  featuredWrap: {
-    marginTop: 0,
-  },
   featureCard: {
     backgroundColor: c.card,
     borderRadius: radii.xl,

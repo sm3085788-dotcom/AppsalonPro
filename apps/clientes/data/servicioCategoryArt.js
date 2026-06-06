@@ -33,6 +33,10 @@ const RULES = [
     uri: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=1200&q=85&auto=format&fit=crop',
   },
   {
+    keys: ['pie', 'pedic', 'podolog'],
+    uri: 'https://images.unsplash.com/photo-1519415387223-4f34d96324e1?w=1200&q=85&auto=format&fit=crop',
+  },
+  {
     keys: ['ceja', 'pestaña', 'lash', 'brow'],
     uri: 'https://images.unsplash.com/photo-1595476108010-b4d582f2c484?w=1200&q=85&auto=format&fit=crop',
   },

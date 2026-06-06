@@ -9,7 +9,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SalonButton } from './SalonButton';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -17,11 +16,11 @@ import { useTheme } from '../../theme/ThemeProvider';
 const AUTO_MS = 4500;
 
 /**
- * Carrusel automático con gradiente y CTA — base compartida por Hero (Inicio) y servicios destacados.
+ * Carrusel automático con CTA — base compartida por Hero (Inicio) y servicios destacados.
  *
  * @param {Array<{ id: string, uri: string, caption?: string }>} slides
  * @param {string} [priceLabel] — opcional, esquina superior derecha sobre la imagen
- * @param {'heroGold'|'solidGold'|'outlineGray'|'outlineGold'|'mutedFill'} [buttonVariant]
+ * @param {'heroGold'|'heroGlass'|'solidGold'|'outlineGray'|'outlineGold'|'mutedFill'} [buttonVariant]
  * @param {boolean} [fullWidthButton]
  * @param {boolean} [edgeToEdge] — ancho pantalla (sin márgenes laterales); Inicio hero.
  * @param {boolean} [dockTop] — junto al header: sin margen superior y sin redondeo arriba.
@@ -29,6 +28,7 @@ const AUTO_MS = 4500;
  * @param {boolean} [showAdvanceArrow] — flecha derecha centrada para pasar a la siguiente diapositiva (varias publicidades).
  * @param {boolean} [perSlideOverlay] — si es true, kicker/título/texto/precio/botón salen de cada slide (p. ej. publicidad).
  * @param {boolean} [autoAdvance] — rotación automática (por defecto true); false solo cambio manual / swipe.
+ * @param {boolean} [buttonOnly] — solo CTA, sin kicker/título/texto sobre la imagen.
  */
 export function LuxuryImageCarousel({
   slides,
@@ -48,6 +48,7 @@ export function LuxuryImageCarousel({
   showAdvanceArrow = false,
   perSlideOverlay = false,
   autoAdvance = true,
+  buttonOnly = false,
 }) {
   const { width: winW } = useWindowDimensions();
   const { colors: c } = useTheme();
@@ -77,42 +78,75 @@ export function LuxuryImageCarousel({
       : { borderRadius: radii.xl };
 
   const listRef = useRef(null);
-  const [active, setActive] = useState(0);
+  const settledRef = useRef(0);
+  const scrollIdleTimer = useRef(null);
+  const lastOffsetRef = useRef(0);
+  const [settledIndex, setSettledIndex] = useState(0);
+  const slideBoundCta = buttonOnly && perSlideOverlay;
 
-  const syncActiveFromOffset = useCallback(
-    (x) => {
-      const i = Math.round(x / slideW);
-      if (i >= 0 && i < slides.length) setActive(i);
+  const commitSettledIndex = useCallback(
+    (rawIndex) => {
+      const i = Math.round(rawIndex);
+      if (i < 0 || i >= slides.length || i === settledRef.current) return;
+      settledRef.current = i;
+      setSettledIndex(i);
     },
-    [slideW, slides.length],
+    [slides.length],
+  );
+
+  const commitSettledFromOffset = useCallback(
+    (x) => {
+      if (slideW <= 0) return;
+      commitSettledIndex(x / slideW);
+    },
+    [slideW, commitSettledIndex],
   );
 
   const onMomentumScrollEnd = useCallback(
     (e) => {
-      syncActiveFromOffset(e.nativeEvent.contentOffset.x);
+      commitSettledFromOffset(e.nativeEvent.contentOffset.x);
     },
-    [syncActiveFromOffset],
+    [commitSettledFromOffset],
   );
 
-  const onViewableItemsChanged = useRef(({ viewableItems }) => {
-    const first = viewableItems?.[0];
-    if (first?.index != null && first.index >= 0) {
-      setActive(first.index);
-    }
-  }).current;
+  useEffect(() => {
+    settledRef.current = 0;
+    setSettledIndex(0);
+  }, [slides]);
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 55 }).current;
+  useEffect(
+    () => () => {
+      if (scrollIdleTimer.current) clearTimeout(scrollIdleTimer.current);
+    },
+    [],
+  );
+
+  const scheduleSettledCommit = useCallback(
+    (x) => {
+      lastOffsetRef.current = x;
+      if (scrollIdleTimer.current) clearTimeout(scrollIdleTimer.current);
+      scrollIdleTimer.current = setTimeout(() => {
+        commitSettledFromOffset(lastOffsetRef.current);
+      }, 90);
+    },
+    [commitSettledFromOffset],
+  );
+
+  useEffect(() => {
+    slides.forEach((slide) => {
+      const uri = String(slide?.uri || '').trim();
+      if (uri) Image.prefetch(uri).catch(() => {});
+    });
+  }, [slides]);
 
   useEffect(() => {
     if (!autoAdvance || slides.length <= 1) return undefined;
-    let tick = 0;
     const id = setInterval(() => {
-      tick = (tick + 1) % slides.length;
+      const next = (settledRef.current + 1) % slides.length;
       listRef.current?.scrollToIndex({
-        index: tick,
+        index: next,
         animated: true,
       });
-      setActive(tick);
     }, AUTO_MS);
     return () => clearInterval(id);
   }, [slides.length, autoAdvance]);
@@ -137,20 +171,50 @@ export function LuxuryImageCarousel({
   }, []);
 
   const advanceSlide = useCallback(() => {
-    setActive((prev) => {
-      const next = (prev + 1) % slides.length;
-      listRef.current?.scrollToIndex({
-        index: next,
-        animated: true,
-      });
-      return next;
+    const next = (settledRef.current + 1) % slides.length;
+    listRef.current?.scrollToIndex({
+      index: next,
+      animated: true,
     });
   }, [slides.length]);
 
   const showArrow =
     showAdvanceArrow && slides.length > 1;
 
-  const current = slides[active] ?? {};
+  const current = slides[settledIndex] ?? {};
+
+  const renderSlideCta = useCallback(
+    (item, index) => {
+      const title = perSlideOverlay
+        ? (item.buttonTitle ?? buttonTitle)
+        : buttonTitle;
+      return (
+        <View
+          style={[
+            styles.overlayContent,
+            styles.overlayContentButtonOnly,
+            showArrow && styles.overlayContentWithArrow,
+          ]}
+          pointerEvents="box-none"
+        >
+          <SalonButton
+            title={title}
+            variant={buttonVariant}
+            onPress={() => onButtonPress?.(item, index)}
+            style={styles.buttonCompact}
+            textStyle={styles.buttonCompactText}
+          />
+        </View>
+      );
+    },
+    [
+      perSlideOverlay,
+      buttonTitle,
+      showArrow,
+      buttonVariant,
+      onButtonPress,
+    ],
+  );
   const displayKicker = perSlideOverlay
     ? (current.kicker ?? overlayKicker)
     : overlayKicker;
@@ -192,13 +256,12 @@ export function LuxuryImageCarousel({
           keyExtractor={(item) => item.id}
           getItemLayout={getItemLayout}
           onMomentumScrollEnd={onMomentumScrollEnd}
-          onScroll={(e) => syncActiveFromOffset(e.nativeEvent.contentOffset.x)}
-          scrollEventThrottle={32}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
+          onScrollEndDrag={onMomentumScrollEnd}
+          onScroll={(e) => scheduleSettledCommit(e.nativeEvent.contentOffset.x)}
+          scrollEventThrottle={16}
           onScrollToIndexFailed={onScrollToIndexFailed}
-          renderItem={({ item }) => (
-            <View style={{ width: slideW, height }}>
+          renderItem={({ item, index }) => (
+            <View style={{ width: slideW, height, position: 'relative' }}>
               <Image
                 source={{ uri: item.uri }}
                 style={[
@@ -213,18 +276,12 @@ export function LuxuryImageCarousel({
                 resizeMode="cover"
                 accessibilityLabel={item.caption ?? item.headline ?? headline}
               />
+              {slideBoundCta ? renderSlideCta(item, index) : null}
             </View>
           )}
         />
 
-        <LinearGradient
-          colors={['transparent', 'rgba(15,15,15,0.55)', 'rgba(15,15,15,0.92)']}
-          locations={[0, 0.45, 1]}
-          style={[styles.gradient, cardRadii]}
-          pointerEvents="none"
-        />
-
-        {displayPrice ? (
+        {!buttonOnly && displayPrice ? (
           <View style={styles.priceCorner} pointerEvents="none">
             <Text style={styles.priceCornerTxt}>{displayPrice}</Text>
           </View>
@@ -248,23 +305,32 @@ export function LuxuryImageCarousel({
           </View>
         ) : null}
 
-        <View
-          style={[
-            styles.overlayContent,
-            showArrow && styles.overlayContentWithArrow,
-          ]}
-          pointerEvents="box-none"
-        >
-          <Text style={[styles.kicker, kickerColor]}>{displayKicker}</Text>
-          <Text style={styles.headline}>{displayHeadline}</Text>
-          <Text style={styles.body}>{displayBody}</Text>
-          <SalonButton
-            title={displayButtonTitle}
-            variant={buttonVariant}
-            onPress={() => onButtonPress?.(current, active)}
-            fullWidth={fullWidthButton}
-          />
-        </View>
+        {!slideBoundCta ? (
+          <View
+            style={[
+              styles.overlayContent,
+              buttonOnly && styles.overlayContentButtonOnly,
+              showArrow && styles.overlayContentWithArrow,
+            ]}
+            pointerEvents="box-none"
+          >
+            {!buttonOnly ? (
+              <>
+                <Text style={[styles.kicker, kickerColor]}>{displayKicker}</Text>
+                <Text style={styles.headline}>{displayHeadline}</Text>
+                <Text style={styles.body}>{displayBody}</Text>
+              </>
+            ) : null}
+            <SalonButton
+              title={displayButtonTitle}
+              variant={buttonVariant}
+              onPress={() => onButtonPress?.(current, settledIndex)}
+              fullWidth={fullWidthButton}
+              style={buttonOnly ? styles.buttonCompact : undefined}
+              textStyle={buttonOnly ? styles.buttonCompactText : undefined}
+            />
+          </View>
+        ) : null}
 
         {/* dots ocultos — lógica de índice activo preservada */}
       </View>
@@ -287,9 +353,6 @@ const styles = StyleSheet.create({
   },
   img: {
     backgroundColor: '#222',
-  },
-  gradient: {
-    ...StyleSheet.absoluteFillObject,
   },
   priceCorner: {
     position: 'absolute',
@@ -334,6 +397,23 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     paddingTop: spacing.md,
     zIndex: 1,
+  },
+  overlayContentButtonOnly: {
+    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  buttonCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: radii.sm,
+    alignSelf: 'center',
+    minWidth: 156,
+  },
+  buttonCompactText: {
+    fontFamily: typography.fontDisplay,
+    fontSize: 13,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
   },
   overlayContentWithArrow: {
     paddingRight: spacing.xl + 44,

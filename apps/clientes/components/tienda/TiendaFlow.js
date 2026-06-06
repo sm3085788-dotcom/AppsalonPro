@@ -1463,12 +1463,10 @@ function createTiendaStyles(c) {
     color: c.foreground,
   },
   heroCard: {
-    borderRadius: radii.lg,
-    overflow: 'hidden',
+    marginHorizontal: -spacing.lg,
     marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: c.cardBorder,
-    backgroundColor: c.card,
+    overflow: 'hidden',
+    backgroundColor: c.surfaceMuted,
   },
   brandLine: {
     fontFamily: typography.fontSans,

@@ -21,7 +21,7 @@ import {
   db,
   getArticuloTipo,
   normalizeServicioCategoria,
-  buildHomeCarouselMarketingPayload,
+  buildHomeHeroMarketingPayload,
   inventarioRowImageUrls,
   resolveInventarioCarouselMediaUrl,
 } from '@appsalon/shared-config';
@@ -124,13 +124,13 @@ export function ImportCarouselModal({
     if (busyId) return;
 
     if (carouselPublishedCount >= MAX_CAROUSEL_SLIDES) {
-      Alert.alert('Límite del carrusel', `Máximo ${MAX_CAROUSEL_SLIDES} diapositivas publicadas.`);
+      Alert.alert('Límite del carrusel hero', `Máximo ${MAX_CAROUSEL_SLIDES} diapositivas publicadas.`);
       return;
     }
 
     let built;
     try {
-      built = buildHomeCarouselMarketingPayload(row, { customCta });
+      built = buildHomeHeroMarketingPayload(row, { customCta });
     } catch (e) {
       Alert.alert('Error', e?.message || 'No se pudo preparar la diapositiva.');
       return;
@@ -167,8 +167,8 @@ export function ImportCarouselModal({
       Alert.alert(
         'Listo',
         built.isProducto
-          ? 'Producto en el carrusel → App Clientes abre Tienda (carrito).'
-          : 'Servicio en el carrusel → App Clientes abre Mis citas.',
+          ? 'Producto en el hero → App Clientes abre Tienda (carrito).'
+          : 'Servicio en el hero → App Clientes abre Mis citas.',
       );
       onClose();
       await onImported?.();
@@ -202,7 +202,7 @@ export function ImportCarouselModal({
             { paddingTop: insets.top + spacing.sm, borderBottomColor: c.cardBorder },
           ]}
         >
-          <Text style={[styles.title, { color: c.foreground }]}>Importar al carrusel</Text>
+          <Text style={[styles.title, { color: c.foreground }]}>Importar al carrusel hero</Text>
           <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityLabel="Cerrar">
             <X size={24} color={c.foreground} />
           </TouchableOpacity>
@@ -220,6 +220,8 @@ export function ImportCarouselModal({
           showsVerticalScrollIndicator={false}
         >
           <Text style={[subStyles.muted, styles.summary]}>
+            Portada recomendada 626 × 417 px. Se usa la imagen del inventario tal cual.
+            {'\n'}
             {summary.productos} producto(s) · {summary.servicios} servicio(s)
             {summary.serviciosSinFoto > 0
               ? ` · ${summary.serviciosSinFoto} servicio(s) usan imagen de categoría`

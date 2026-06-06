@@ -56,7 +56,7 @@ export function buildDeletionMeta(source, row) {
     case 'marketing_posts': {
       const aud = String(snap.audience || '');
       const kind =
-        aud === 'home_hero' ? 'Carrusel hero' : aud === 'home_carousel' ? 'Carrusel publicidad' : 'Tendencias';
+        aud === 'home_hero' || aud === 'home_carousel' ? 'Carrusel Inicio' : 'Tendencias';
       return {
         source: 'marketing_posts',
         title: snap.title || kind,

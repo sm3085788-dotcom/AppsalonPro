@@ -19,6 +19,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Heart, MessageCircle, Share2, CircleHelp, ChevronLeft, Send } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
@@ -33,6 +34,27 @@ import {
 } from '@appsalon/shared-config';
 import { uploadTendenciasInterestThumbnail } from '../../utils/tendenciasInterestMedia';
 import { keyboardComposerLift } from '../../../../shared/utils/chatKeyboard';
+
+/** Degradado solo en la zona inferior — el video queda limpio y brillante arriba. */
+const TREND_MEDIA_BOTTOM_GRADIENT = {
+  colors: ['transparent', 'transparent', 'rgba(0,0,0,0.22)', 'rgba(0,0,0,0.52)'],
+  locations: [0, 0.55, 0.8, 1],
+};
+
+function TrendMediaOverlay({ children, brightenVideo = false }) {
+  return (
+    <View style={styles.overlay} pointerEvents="box-none">
+      {brightenVideo ? <View style={styles.videoBrightLift} pointerEvents="none" /> : null}
+      <LinearGradient
+        colors={TREND_MEDIA_BOTTOM_GRADIENT.colors}
+        locations={TREND_MEDIA_BOTTOM_GRADIENT.locations}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {children}
+    </View>
+  );
+}
 
 function initialsFromDisplayName(name) {
   const parts = name
@@ -1059,7 +1081,7 @@ function TrendImageCard({
       {uri ? (
         <Image source={{ uri }} style={[styles.video, { width, height }]} resizeMode="cover" />
       ) : null}
-      <View style={styles.overlay}>
+      <TrendMediaOverlay>
         <TrendSlideCopy item={item} />
         <TrendCardActions
           item={item}
@@ -1075,7 +1097,7 @@ function TrendImageCard({
           onInterest={onInterest}
           tc={tc}
         />
-      </View>
+      </TrendMediaOverlay>
     </View>
   );
 }
@@ -1099,7 +1121,7 @@ function TrendVideoCardIdle({
   return (
     <View style={[styles.videoCard, { width, height }]} collapsable={false}>
       <View style={[styles.video, styles.videoIdle, { width, height }]} />
-      <View style={styles.overlay}>
+      <TrendMediaOverlay brightenVideo>
         <TrendSlideCopy item={item} />
         <TrendCardActions
           item={item}
@@ -1115,7 +1137,7 @@ function TrendVideoCardIdle({
           onInterest={onInterest}
           tc={tc}
         />
-      </View>
+      </TrendMediaOverlay>
     </View>
   );
 }
@@ -1186,13 +1208,13 @@ function TrendVideoCardActive({
   return (
     <View style={[styles.videoCard, { width, height }]} collapsable={false}>
       <VideoView
-        style={[styles.video, { width, height }]}
+        style={[styles.video, styles.videoBright, { width, height }]}
         player={player}
         contentFit="cover"
         nativeControls={false}
         surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
       />
-      <View style={styles.overlay}>
+      <TrendMediaOverlay brightenVideo>
         <TrendSlideCopy item={item} />
         <TrendCardActions
           item={item}
@@ -1208,7 +1230,7 @@ function TrendVideoCardActive({
           onInterest={onInterest}
           tc={tc}
         />
-      </View>
+      </TrendMediaOverlay>
     </View>
   );
 }
@@ -1306,13 +1328,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
-    backgroundColor: '#000',
+    backgroundColor: '#0a0a0a',
+    zIndex: 0,
+  },
+  videoBright: {
+    opacity: 1,
+  },
+  videoBrightLift: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.09)',
     zIndex: 0,
   },
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     padding: spacing.md,
-    backgroundColor: 'rgba(0,0,0,0.28)',
     zIndex: 1,
   },
   bottomCopy: {

@@ -3,7 +3,7 @@ import { radii, typography } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 
 /**
- * @param {'heroGold'|'solidGold'|'outlineGray'|'outlineGold'|'mutedFill'} variant
+ * @param {'heroGold'|'heroGlass'|'solidGold'|'outlineGray'|'outlineGold'|'mutedFill'} variant
  * @param {boolean} [fullWidth]
  */
 export function SalonButton({
@@ -39,6 +39,12 @@ export function SalonButton({
       bg = colors.primary;
       labelColor = colors.heroCtaText;
       borderW = 0;
+      break;
+    case 'heroGlass':
+      bg = 'rgba(18, 16, 14, 0.58)';
+      labelColor = '#F5F2ED';
+      borderW = 1.5;
+      borderC = colors.primary;
       break;
     case 'solidGold':
       bg = colors.primary;
@@ -82,11 +88,13 @@ export function SalonButton({
   const spinColor =
     variant === 'outlineGray' || variant === 'mutedFill'
       ? colors.foregroundMuted
-      : variant === 'heroGold'
-        ? colors.heroCtaText
-        : variant === 'solidGold'
-          ? colors.primaryForegroundOnGold
-          : colors.primary;
+      : variant === 'heroGlass'
+        ? '#F5F2ED'
+        : variant === 'heroGold'
+          ? colors.heroCtaText
+          : variant === 'solidGold'
+            ? colors.primaryForegroundOnGold
+            : colors.primary;
 
   return (
     <TouchableOpacity

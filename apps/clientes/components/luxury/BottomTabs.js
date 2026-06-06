@@ -2,10 +2,7 @@ import { useMemo } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { ShoppingCart } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  tabBarLayout,
-  typography,
-} from '@appsalon/design-tokens';
+import { typography } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 
@@ -15,10 +12,14 @@ import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
  */
 const CHARCOAL = '#1A1510';
 const GOLD = '#C5A368';
+/** paddingTop + ítem (icono + etiqueta); debe coincidir con tabBarOverlayHeight en App.js */
+const TAB_BAR_CORE_HEIGHT = 8 + 4 + 40 + 4 + 14;
 
 export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPress }) {
   const { colors: c, isDark } = useTheme();
-  const inactiveColor = isDark ? c.foregroundSubtle : CHARCOAL;
+  const inactiveLabelColor = isDark ? c.foreground : CHARCOAL;
+  const inactiveIconColor = isDark ? c.foregroundMuted : CHARCOAL;
+  const menuDivider = isDark ? 'rgba(197,163,104,0.30)' : '#F0EAE0';
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -30,7 +31,7 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
           // Match root screen background to avoid a visible "band" near system nav area.
           backgroundColor: c.background,
           borderTopWidth: 1,
-          borderTopColor: c.tabBarBorder,
+          borderTopColor: menuDivider,
         },
         item: {
           flex: 1,
@@ -69,18 +70,17 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
     position: 'relative',
   },
     label: {
-    fontFamily: typography.fontSans,
-    fontSize: 10,
-    letterSpacing: 0.15,
-    textAlign: 'center',
-    maxWidth: 78,
-  },
+          fontFamily: typography.fontDisplay,
+          fontSize: 11,
+          letterSpacing: 0.1,
+          textAlign: 'center',
+          maxWidth: 78,
+        },
         labelActive: {
-          color: c.primary,
-          fontFamily: typography.fontSansMedium,
+          color: GOLD,
         },
       }),
-    [c],
+    [c, menuDivider],
   );
 
   const insets = useSafeAreaInsets();
@@ -92,7 +92,7 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
         styles.bar,
         {
           paddingBottom: bottomPad,
-          minHeight: tabBarLayout.height + bottomPad,
+          minHeight: TAB_BAR_CORE_HEIGHT + bottomPad,
         },
       ]}
     >
@@ -100,7 +100,7 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
       {items.map((item, index) => {
         const active = item.id === activeId;
         const Icon = item.icon;
-        const iconColor = active ? GOLD : inactiveColor;
+        const iconColor = active ? GOLD : inactiveIconColor;
         const isLast = index === items.length - 1;
 
         return (
@@ -116,14 +116,14 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
                 accessibilityLabel={cartCount > 0 ? `Carrito, ${cartCount} productos` : 'Carrito'}
               >
                 <View style={styles.iconShell}>
-                  <ShoppingCart size={22} color={inactiveColor} strokeWidth={1.6} />
+                  <ShoppingCart size={22} color={inactiveIconColor} strokeWidth={1.6} />
                   {cartCount > 0 ? (
                     <View style={[styles.cartBadge, { backgroundColor: CLIENT_ALERT_BELL_RED }]}>
                       <Text style={styles.cartBadgeTxt}>{cartCount > 99 ? '99+' : String(cartCount)}</Text>
                     </View>
                   ) : null}
                 </View>
-                <Text style={[styles.label, { color: inactiveColor }]}>Carrito</Text>
+                <Text style={[styles.label, { color: inactiveLabelColor }]}>Carrito</Text>
               </TouchableOpacity>
             ) : null}
 
@@ -138,7 +138,13 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
               <View style={styles.iconShell}>
                 <Icon size={22} color={iconColor} strokeWidth={active ? 2.1 : 1.6} />
               </View>
-              <Text style={[styles.label, { color: active ? GOLD : inactiveColor }, active && styles.labelActive]}>
+              <Text
+                style={[
+                  styles.label,
+                  { color: active ? GOLD : inactiveLabelColor },
+                  active && styles.labelActive,
+                ]}
+              >
                 {item.label}
               </Text>
             </TouchableOpacity>

@@ -7,8 +7,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { CitaFechaHoraPicker } from '../components/citas/CitaFechaHoraPicker';
+import { AgendarServicioResumenCard } from '../components/citas/AgendarServicioResumenCard';
+import { resolveServicioImageUri } from '../data/servicioCategoryArt';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { SalonButton } from '../components/luxury/SalonButton';
@@ -19,7 +22,7 @@ import {
   resolvePrecioServicioConCanjeCitas,
   mergeNotasServicioConCanje,
 } from '@appsalon/shared-config';
-import { loadServiciosTiendaCatalog, formatServicioPrecio, formatServicioDuracion } from '../services/salonServiciosTienda';
+import { loadServiciosTiendaCatalog } from '../services/salonServiciosTienda';
 import { useServiciosCart } from '../context/ServiciosCartContext';
 
 function defaultNextSlot() {
@@ -159,14 +162,24 @@ export function AgendarCitaForm({
           marginBottom: spacing.md,
         },
         svcRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
           borderRadius: radii.lg,
           borderWidth: 1,
           borderColor: tc.cardBorder,
           backgroundColor: tc.card,
-          paddingVertical: spacing.md,
-          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm,
+          paddingHorizontal: spacing.sm,
           marginBottom: spacing.md,
         },
+        svcRowThumb: {
+          width: 56,
+          height: 56,
+          borderRadius: radii.sm,
+          backgroundColor: tc.iconCircleBg,
+        },
+        svcRowBody: { flex: 1, minWidth: 0 },
         svcRowOn: {
           borderColor: tc.primary,
           backgroundColor: tc.surfaceMuted,
@@ -378,40 +391,22 @@ export function AgendarCitaForm({
 
       {modoCarrito && servicioSel ? (
         <View style={[subStyles.card, { marginBottom: spacing.md }]}>
-          <Text style={subStyles.rowLabel}>
-            Servicio {cartPaso} de {cartTotalFijo}
-          </Text>
-          <Text style={[styles.svcName, { marginTop: spacing.xs }]}>{servicioSel.nombre}</Text>
-          <Text style={styles.svcMeta}>
-            {precioConCanje?.calc ? (
-              <>
-                <Text style={styles.precioTachado}>{formatServicioPrecio(servicioSel)}</Text>
-                {` · Q ${precioConCanje.precio.toFixed(2)} con canje · `}
-              </>
-            ) : (
-              `${formatServicioPrecio(servicioSel)} · `
-            )}
-            {formatServicioDuracion(servicioSel)}
-          </Text>
+          <AgendarServicioResumenCard
+            kicker={`Servicio ${cartPaso} de ${cartTotalFijo}`}
+            servicio={servicioSel}
+            precioConCanje={precioConCanje}
+          />
         </View>
       ) : soloServicioVinculado ? (
         loadingCat ? (
           <ActivityIndicator style={{ marginVertical: spacing.lg }} color={tc.primary} />
         ) : servicioSel ? (
           <View style={[subStyles.card, { marginBottom: spacing.md }]}>
-            <Text style={styles.sectionTitle}>Servicio de la promoción</Text>
-            <Text style={[styles.svcName, { marginTop: spacing.xs }]}>{servicioSel.nombre}</Text>
-            <Text style={styles.svcMeta}>
-              {precioConCanje?.calc ? (
-                <>
-                  <Text style={styles.precioTachado}>{formatServicioPrecio(servicioSel)}</Text>
-                  {` · Q ${precioConCanje.precio.toFixed(2)} con canje · `}
-                </>
-              ) : (
-                `${formatServicioPrecio(servicioSel)} · `
-              )}
-              {formatServicioDuracion(servicioSel)}
-            </Text>
+            <AgendarServicioResumenCard
+              kicker="Servicio de la promoción"
+              servicio={servicioSel}
+              precioConCanje={precioConCanje}
+            />
           </View>
         ) : (
           <Text style={[styles.hint, { marginBottom: spacing.md }]}>
@@ -443,18 +438,34 @@ export function AgendarCitaForm({
                     onPress={() => setServicioSel(s)}
                     activeOpacity={0.85}
                   >
-                    <Text style={styles.svcName}>{s.nombre}</Text>
-                    <Text style={styles.svcMeta}>
-                      {s.precioVariable || !(Number(s.precio) > 0)
-                        ? 'Precio variable · según volumen'
-                        : `Q${Number(s.precio).toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}{' '}
-                      · {s.duracion_agenda?.trim() || `${Number(s.duracion_minutos) || 30} min`}
-                    </Text>
+                    <Image
+                      source={{ uri: resolveServicioImageUri(s) }}
+                      style={styles.svcRowThumb}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.svcRowBody}>
+                      <Text style={styles.svcName}>{s.nombre}</Text>
+                      <Text style={styles.svcMeta}>
+                        {s.precioVariable || !(Number(s.precio) > 0)
+                          ? 'Precio variable · según volumen'
+                          : `Q${Number(s.precio).toLocaleString('es-GT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}{' '}
+                        · {s.duracion_agenda?.trim() || `${Number(s.duracion_minutos) || 30} min`}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 );
               })}
             </View>
           )}
+          {servicioSel ? (
+            <View style={[subStyles.card, { marginTop: spacing.md }]}>
+              <AgendarServicioResumenCard
+                kicker="Servicio seleccionado"
+                servicio={servicioSel}
+                precioConCanje={precioConCanje}
+              />
+            </View>
+          ) : null}
         </View>
       )}
 
