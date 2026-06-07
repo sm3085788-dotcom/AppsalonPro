@@ -54,6 +54,30 @@ import {
   sendSalonAuraMessage,
 } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
+
+function inventarioEntryCoverUri(entry) {
+  const mapped = entry?.mapped;
+  const row = entry?.row;
+  if (mapped?.imageUri) return mapped.imageUri;
+  if (row?.imagen_url) return row.imagen_url;
+  const imgs = Array.isArray(row?.imagenes_urls) ? row.imagenes_urls.filter(Boolean) : [];
+  return imgs[0] || null;
+}
+
+function resolvePromoLinkToggle(currentLink, entry) {
+  const on =
+    currentLink?.type === entry.tipo && String(currentLink.id) === String(entry.row.id);
+  if (on) return { link: null, cover: null };
+  return {
+    link: {
+      type: entry.tipo,
+      id: entry.row.id,
+      name: entry.mapped?.title || entry.row.nombre,
+      priceLabel: entry.mapped?.priceLabel || null,
+    },
+    cover: inventarioEntryCoverUri(entry),
+  };
+}
 import { BroadcastPromoCard } from '../../clientes/components/mensajes/BroadcastPromoCard';
 import { MarketingInterestCard } from '../../clientes/components/mensajes/MarketingInterestCard';
 import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
@@ -311,7 +335,7 @@ export function MensajesScreen({ onBack }) {
   const [clientDataOpen, setClientDataOpen] = useState(false);
   const [promoTitle, setPromoTitle] = useState('');
   const [promoBody, setPromoBody] = useState('');
-  const [promoImage, setPromoImage] = useState(null);
+  const [promoCoverUrl, setPromoCoverUrl] = useState(null);
   const [promoLink, setPromoLink] = useState(null);
   const [promoCatalog, setPromoCatalog] = useState([]);
   const [promoCatalogLoading, setPromoCatalogLoading] = useState(false);
@@ -356,19 +380,23 @@ export function MensajesScreen({ onBack }) {
     let cancelled = false;
     setPromoCatalogLoading(true);
     (async () => {
-      const { data, error } = await db.inventario.getVisiblesEnTienda();
+      const { data, error } = await db.inventario.getCatalogoAppClientes();
       if (cancelled) return;
       if (!error && Array.isArray(data)) {
         setPromoCatalog(
-          data.map((row) => {
-            const mapped = mapInventarioToTiendaProduct(row);
-            const tipo = getArticuloTipo(row);
-            return {
-              row,
-              tipo: tipo === 'servicio' ? BROADCAST_LINK_TYPES.SERVICE : BROADCAST_LINK_TYPES.PRODUCT,
-              mapped,
-            };
-          }),
+          data
+            .map((row) => {
+              const articuloTipo = getArticuloTipo(row);
+              const isServicio = articuloTipo === 'servicio';
+              if (!isServicio && !row.visible_en_tienda) return null;
+              const mapped = mapInventarioToTiendaProduct(row);
+              return {
+                row,
+                tipo: isServicio ? BROADCAST_LINK_TYPES.SERVICE : BROADCAST_LINK_TYPES.PRODUCT,
+                mapped,
+              };
+            })
+            .filter(Boolean),
         );
       } else {
         setPromoCatalog([]);
@@ -791,16 +819,6 @@ export function MensajesScreen({ onBack }) {
     if (!res.canceled && res.assets?.[0]) setPendingImage(res.assets[0]);
   };
 
-  const pickPromoImage = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-    });
-    if (!res.canceled && res.assets?.[0]) setPromoImage(res.assets[0]);
-  };
-
   const runBroadcast = async () => {
     const title = promoTitle.trim();
     const body = promoBody.trim();
@@ -821,22 +839,28 @@ export function MensajesScreen({ onBack }) {
       const sender = await getSenderMeta();
       let mediaUrl = null;
       let mediaKind = null;
-      if (promoImage?.uri) {
-        const ext = guessExt(promoImage.uri, promoImage.mimeType);
-        const { publicUrl, error: upErr } = await uploadMensajeMediaFromUri(promoImage.uri, {
-          extension: ext,
-          contentType: promoImage.mimeType || 'image/jpeg',
-        });
-        if (upErr) {
-          Alert.alert(
-            'Adjunto',
-            `${upErr.message || 'No se pudo subir la imagen de la campaña.'}\n\nEjecutá supabase-mensajes-storage.sql en Supabase.`,
-          );
-          setBroadcasting(false);
-          return;
+      const cover = String(promoCoverUrl || '').trim();
+      if (cover) {
+        if (/^https?:\/\//i.test(cover)) {
+          mediaUrl = cover;
+          mediaKind = 'image';
+        } else if (cover.startsWith('file://')) {
+          const ext = guessExt(cover, 'image/jpeg');
+          const { publicUrl, error: upErr } = await uploadMensajeMediaFromUri(cover, {
+            extension: ext,
+            contentType: 'image/jpeg',
+          });
+          if (upErr) {
+            Alert.alert(
+              'Adjunto',
+              `${upErr.message || 'No se pudo subir la portada de la campaña.'}\n\nEjecutá supabase-mensajes-storage.sql en Supabase.`,
+            );
+            setBroadcasting(false);
+            return;
+          }
+          mediaUrl = publicUrl;
+          mediaKind = 'image';
         }
-        mediaUrl = publicUrl;
-        mediaKind = 'image';
       }
       const targets = broadcastOnlyIds?.size
         ? verifiedClients.filter((cl) => broadcastOnlyIds.has(String(cl.id)))
@@ -900,7 +924,7 @@ export function MensajesScreen({ onBack }) {
       setBroadcastOnlyIds(null);
       setPromoTitle('');
       setPromoBody('');
-      setPromoImage(null);
+      setPromoCoverUrl(null);
       setPromoLink(null);
       loadInbox();
     } catch (e) {
@@ -1045,12 +1069,12 @@ export function MensajesScreen({ onBack }) {
     return {
       content,
       content_type: 'broadcast_promo',
-      media_url: promoImage?.uri || null,
-      media_kind: promoImage ? 'image' : null,
+      media_url: promoCoverUrl || null,
+      media_kind: promoCoverUrl ? 'image' : null,
       created_at: new Date().toISOString(),
       created_by_name: 'Vista previa',
     };
-  }, [promoTitle, promoBody, promoLink, promoImage]);
+  }, [promoTitle, promoBody, promoLink, promoCoverUrl]);
 
   const promoProducts = useMemo(
     () => promoCatalog.filter((e) => e.tipo === BROADCAST_LINK_TYPES.PRODUCT),
@@ -1182,22 +1206,12 @@ export function MensajesScreen({ onBack }) {
               placeholderTextColor={c.foregroundSubtle}
               multiline
             />
-            <TouchableOpacity style={[styles.promoImgBtn, { borderColor: c.primary }]} onPress={pickPromoImage}>
-              <ImageIcon size={18} color={c.primary} />
-              <Text style={[styles.promoImgTxt, { color: c.primary }]}>
-                {promoImage ? 'Cambiar imagen' : 'Agregar imagen'}
-              </Text>
-            </TouchableOpacity>
-            {promoImage ? (
-              <Image source={{ uri: promoImage.uri }} style={styles.promoPreview} resizeMode="cover" />
-            ) : null}
-
             <Text style={[styles.fieldLbl, { color: c.foreground, marginTop: spacing.xs }]}>
-              Vincular producto o servicio (inventario · visible en tienda)
+              Vincular producto o servicio (inventario)
             </Text>
             <Text style={[styles.promoLinkHint, { color: c.foregroundMuted }]}>
-              Creá el artículo en Inventario y marcá «visible en tienda». El botón Comprar o Agendar llevará al cliente
-              directo a ese artículo.
+              Elegí un artículo: su portada se importa sola a la vista previa. Productos deben estar visibles en tienda;
+              los servicios salen del catálogo de agenda. Comprar o Agendar lleva al cliente directo al artículo.
             </Text>
             {promoCatalogLoading ? (
               <ActivityIndicator style={{ marginVertical: spacing.md }} color={c.primary} />
@@ -1219,18 +1233,11 @@ export function MensajesScreen({ onBack }) {
                               { borderColor: c.cardBorder, backgroundColor: c.card },
                               on && { borderColor: c.primary, backgroundColor: c.surfaceMuted },
                             ]}
-                            onPress={() =>
-                              setPromoLink(
-                                on
-                                  ? null
-                                  : {
-                                      type: BROADCAST_LINK_TYPES.PRODUCT,
-                                      id: entry.row.id,
-                                      name: entry.mapped?.title || entry.row.nombre,
-                                      priceLabel: entry.mapped?.priceLabel || null,
-                                    },
-                              )
-                            }
+                            onPress={() => {
+                              const next = resolvePromoLinkToggle(promoLink, entry);
+                              setPromoLink(next.link);
+                              setPromoCoverUrl(next.cover);
+                            }}
                           >
                             <Text style={[styles.promoLinkChipTxt, { color: c.foreground }]} numberOfLines={2}>
                               {entry.mapped?.title || entry.row.nombre}
@@ -1262,22 +1269,20 @@ export function MensajesScreen({ onBack }) {
                               { borderColor: c.cardBorder, backgroundColor: c.card },
                               on && { borderColor: c.primary, backgroundColor: c.surfaceMuted },
                             ]}
-                            onPress={() =>
-                              setPromoLink(
-                                on
-                                  ? null
-                                  : {
-                                      type: BROADCAST_LINK_TYPES.SERVICE,
-                                      id: entry.row.id,
-                                      name: entry.mapped?.title || entry.row.nombre,
-                                      priceLabel: entry.mapped?.priceLabel || null,
-                                    },
-                              )
-                            }
+                            onPress={() => {
+                              const next = resolvePromoLinkToggle(promoLink, entry);
+                              setPromoLink(next.link);
+                              setPromoCoverUrl(next.cover);
+                            }}
                           >
                             <Text style={[styles.promoLinkChipTxt, { color: c.foreground }]} numberOfLines={2}>
                               {entry.mapped?.title || entry.row.nombre}
                             </Text>
+                            {entry.mapped?.priceLabel ? (
+                              <Text style={[styles.promoLinkChipSub, { color: c.foregroundMuted }]}>
+                                {entry.mapped.priceLabel}
+                              </Text>
+                            ) : null}
                           </TouchableOpacity>
                         );
                       })}
@@ -1292,7 +1297,7 @@ export function MensajesScreen({ onBack }) {
               </>
             )}
 
-            {(promoTitle.trim() || promoBody.trim() || promoImage || promoLink) ? (
+            {(promoTitle.trim() || promoBody.trim() || promoCoverUrl || promoLink) ? (
               <View style={{ marginTop: spacing.md, marginBottom: spacing.md }}>
                 <Text style={[styles.promoLiveLbl, { color: c.foregroundMuted }]}>Vista previa · post publicitario</Text>
                 <BroadcastPromoCard item={promoDraftItem} readOnly />

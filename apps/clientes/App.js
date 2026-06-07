@@ -93,6 +93,7 @@ import { getSubScreenTitles } from './navigation/clientSubScreensMeta';
 import { ClientSubScreenBody } from './screens/ClientSubScreenBody';
 import { MisCitasTab } from './components/citas/MisCitasTab';
 import { HistorialCitasTab } from './components/citas/HistorialCitasTab';
+import { warmClientAuraThreadCache } from './components/mensajes/AuraLineInbox';
 import {
   loadClientNotifPrefs,
   saveClientNotifPrefs,
@@ -471,21 +472,30 @@ function AppMain({ onLogout }) {
       }
 
       if (action === BROADCAST_PROMO_ACTIONS.BUY) {
+        const productId =
+          parsed.linkType === BROADCAST_LINK_TYPES.PRODUCT && parsed.linkId != null
+            ? String(parsed.linkId).trim()
+            : '';
         openSub(CLIENT_SUB.TIENDA, {
           ...payload,
-          tiendaProductId: parsed.linkType === 'product' ? parsed.linkId : null,
+          tiendaProductId: productId || null,
+          tiendaPhase: productId ? 'detail' : 'catalog',
+          tiendaAddToCart: false,
+          tiendaOpenKey: productId ? Date.now() : 0,
         });
         return;
       }
 
       if (action === BROADCAST_PROMO_ACTIONS.BOOK) {
-        const esServicio = parsed.linkType === BROADCAST_LINK_TYPES.SERVICE;
-        openSub(CLIENT_SUB.AGENDAR_FLUJO, {
-          ...payload,
-          agendarServicioNombre: esServicio ? parsed.linkName : null,
-          agendarServicioId: esServicio ? parsed.linkId : null,
-          soloServicioVinculado: esServicio && Boolean(parsed.linkName || parsed.linkId),
-        });
+        openedSubRef.current = null;
+        setOpenedSub(null);
+        setSubPayload(null);
+        setTab(TABS.CITAS);
+        const linkId = parsed.linkId != null ? String(parsed.linkId).trim() : '';
+        if (parsed.linkType === BROADCAST_LINK_TYPES.SERVICE && linkId) {
+          setHighlightInventarioId(null);
+          setTimeout(() => setHighlightInventarioId(linkId), 0);
+        }
       }
     },
     [notifyPromoFollowUp, openSub],
@@ -775,15 +785,18 @@ function AppMain({ onLogout }) {
   }, [session?.user?.id]);
 
   const openMensajesSub = useCallback(() => {
+    openSub(CLIENT_SUB.MENSAJES);
     void (async () => {
       if (hasSupabaseEnv && session?.user?.id && !clienteRow?.id) {
         await ensureClienteFicha();
+      }
+      if (clienteRow?.id) {
+        void warmClientAuraThreadCache(clienteRow.id);
       }
       await markAllClientNotificationsRead();
       setAuraUnread(0);
       void refreshAuraUnread();
     })();
-    openSub(CLIENT_SUB.MENSAJES);
   }, [openSub, refreshAuraUnread, hasSupabaseEnv, session?.user?.id, clienteRow?.id, ensureClienteFicha]);
 
   const openMisPedidosSub = useCallback(() => {
@@ -947,6 +960,12 @@ function AppMain({ onLogout }) {
   }, [session?.user?.id, clienteRow?.id, handleCitaConfirmacionMessage]);
 
   useEffect(() => {
+    if (session?.user?.id && clienteRow?.id) {
+      void warmClientAuraThreadCache(clienteRow.id);
+    }
+  }, [session?.user?.id, clienteRow?.id]);
+
+  useEffect(() => {
     refreshAuraUnread();
     if (!clienteRow?.id) return undefined;
     const onAuraInsert = async (row) => {
@@ -1058,10 +1077,7 @@ function AppMain({ onLogout }) {
       return;
     }
     openMensajesSub();
-    if (hasSupabaseEnv && !clienteRow?.id) {
-      void ensureClienteFicha();
-    }
-  }, [session?.user, hasSupabaseEnv, clienteRow?.id, ensureClienteFicha, openMensajesSub]);
+  }, [session?.user, openMensajesSub]);
 
   const handleHeroSlidePress = useCallback(
     async (slide) => {
@@ -1079,8 +1095,8 @@ function AppMain({ onLogout }) {
       if (tipo === 'producto') {
         openSub(CLIENT_SUB.TIENDA, {
           tiendaProductId: invId,
-          tiendaPhase: invId ? 'cart' : 'catalog',
-          tiendaAddToCart: !!invId,
+          tiendaPhase: invId ? 'detail' : 'catalog',
+          tiendaAddToCart: false,
           tiendaOpenKey: Date.now(),
         });
         return;

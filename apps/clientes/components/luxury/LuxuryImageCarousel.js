@@ -190,11 +190,7 @@ export function LuxuryImageCarousel({
         : buttonTitle;
       return (
         <View
-          style={[
-            styles.overlayContent,
-            styles.overlayContentButtonOnly,
-            showArrow && styles.overlayContentWithArrow,
-          ]}
+          style={[styles.overlayContent, styles.overlayContentButtonOnly]}
           pointerEvents="box-none"
         >
           <SalonButton
@@ -310,7 +306,7 @@ export function LuxuryImageCarousel({
             style={[
               styles.overlayContent,
               buttonOnly && styles.overlayContentButtonOnly,
-              showArrow && styles.overlayContentWithArrow,
+              !buttonOnly && showArrow && styles.overlayContentWithArrow,
             ]}
             pointerEvents="box-none"
           >
@@ -407,6 +403,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: radii.sm,
     alignSelf: 'center',
+    marginLeft: '-5%',
     minWidth: 156,
   },
   buttonCompactText: {

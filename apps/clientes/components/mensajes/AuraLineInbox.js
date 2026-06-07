@@ -113,8 +113,32 @@ const SYNC_POLL_MS = 60000;
 /** 30 mensajes recientes al abrir: renderizado instantáneo sin scroll visible. */
 const MSG_FETCH_LIMIT = 30;
 
-/** Caché del hilo para no vaciar la lista al reentrar a Mensajes. */
+/** Caché del hilo en memoria (misma idea que Andreas Pro en app salón). */
 let auraThreadCache = { clienteId: null, rows: [] };
+
+function readAuraThreadCache(clienteId) {
+  const id = clienteId != null ? String(clienteId).trim() : '';
+  if (!id || auraThreadCache.clienteId !== id || !auraThreadCache.rows.length) {
+    return null;
+  }
+  return auraThreadCache.rows;
+}
+
+function writeAuraThreadCache(clienteId, rows) {
+  const id = clienteId != null ? String(clienteId).trim() : '';
+  if (!id) return;
+  auraThreadCache = { clienteId: id, rows: rows || [] };
+}
+
+/** Precalienta el hilo en segundo plano para entrada instantánea al abrir Mensajes. */
+export async function warmClientAuraThreadCache(clienteId) {
+  const id = clienteId != null ? String(clienteId).trim() : '';
+  if (!id) return;
+  if (readAuraThreadCache(id)) return;
+  const { data, error } = await fetchClientAuraMessages(MSG_FETCH_LIMIT);
+  if (error || !data?.length) return;
+  writeAuraThreadCache(id, data);
+}
 
 function isMarketingInterestMessage(item) {
   const ct = String(item?.content_type || '');
@@ -140,9 +164,16 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   const ignoreScrollStickRef = useRef(false);
   const onUnreadChangeRef = useRef(onUnreadChange);
   onUnreadChangeRef.current = onUnreadChange;
+  const clienteIdRef = useRef(clienteRow?.id ?? null);
 
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialClienteId = clienteRow?.id ?? null;
+  const initialCache = readAuraThreadCache(initialClienteId);
+
+  const [messages, setMessages] = useState(() => initialCache || []);
+  const [loading, setLoading] = useState(() => {
+    if (!initialClienteId) return false;
+    return !initialCache?.length;
+  });
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [draft, setDraft] = useState('');
@@ -233,11 +264,15 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
         }
         return;
       }
+      if (String(clienteIdRef.current) !== String(clienteRow?.id)) return;
+
       const marked = await markSalonMessagesDelivered(data || [], {
-        onlyIfViewing: true,
+        onlyIfViewing: markDeliveredOnOpenRef.current,
       });
+      if (String(clienteIdRef.current) !== String(clienteRow?.id)) return;
+
       if (clienteRow?.id) {
-        auraThreadCache = { clienteId: clienteRow.id, rows: marked };
+        writeAuraThreadCache(clienteRow.id, marked);
       }
       setMessages(marked);
       setLoadError(null);
@@ -255,7 +290,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
       if (!row?.id) return;
       setMessages((prev) => {
         const next = mergeAuraMessage(prev, row);
-        if (clienteRow?.id) auraThreadCache = { clienteId: clienteRow.id, rows: next };
+        if (clienteRow?.id) writeAuraThreadCache(clienteRow.id, next);
         return next;
       });
       if (isInboundAuraUnread(row, sessionUser?.id)) {
@@ -272,24 +307,24 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   );
 
   useEffect(() => {
+    clienteIdRef.current = clienteRow?.id ?? null;
+  }, [clienteRow?.id]);
+
+  useEffect(() => {
     if (!clienteRow?.id) {
       setMessages([]);
       setLoading(false);
       return undefined;
     }
     chatStickToBottomRef.current = true;
-    markDeliveredOnOpenRef.current = false;
-    const hasCache = auraThreadCache.clienteId === clienteRow.id && auraThreadCache.rows.length > 0;
-    if (hasCache) {
-      setMessages(auraThreadCache.rows);
+    markDeliveredOnOpenRef.current = true;
+    const cached = readAuraThreadCache(clienteRow.id);
+    if (cached?.length) {
+      setMessages(cached);
       setLoading(false);
     }
-    void loadMessages({ silent: hasCache });
-    const openTimer = setTimeout(() => {
-      markDeliveredOnOpenRef.current = true;
-      void loadMessages({ silent: true });
-    }, 700);
-    return () => clearTimeout(openTimer);
+    void loadMessages({ silent: Boolean(cached?.length) });
+    return undefined;
   }, [clienteRow?.id, loadMessages]);
 
   useEffect(() => {
@@ -414,7 +449,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
       if (data) {
         setMessages((prev) => {
           const next = mergeAuraMessage(prev, data);
-          if (clienteRow?.id) auraThreadCache = { clienteId: clienteRow.id, rows: next };
+          if (clienteRow?.id) writeAuraThreadCache(clienteRow.id, next);
           return next;
         });
         chatStickToBottomRef.current = true;
