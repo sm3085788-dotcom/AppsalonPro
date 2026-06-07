@@ -26,7 +26,10 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.CONTACTO:
       return { title: 'Contacto', subtitle: 'Canales directos del salón.' };
     case CLIENT_SUB.NOTIFICACIONES:
-      return { title: 'Notificaciones', subtitle: 'Preferencias de avisos.' };
+      return {
+        title: 'Eventos Profesionales',
+        subtitle: 'Paquetes para bodas, fiestas y sesiones fotográficas.',
+      };
     case CLIENT_SUB.METODOS_PAGO:
       return { title: 'Métodos de pago', subtitle: 'Formas de pago guardadas.' };
     case CLIENT_SUB.CONFIGURACION:

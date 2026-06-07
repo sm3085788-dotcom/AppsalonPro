@@ -1330,7 +1330,7 @@ function AppMain({ onLogout }) {
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={Bell}
-          label="Notificaciones"
+          label="Eventos Profesionales"
           onPress={() => openSub(CLIENT_SUB.NOTIFICACIONES)}
         />
         <View style={styles.menuHairline} />

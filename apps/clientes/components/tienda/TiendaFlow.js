@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { ChevronLeft, Star, Truck, Package, CreditCard, Wallet, QrCode } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
@@ -112,8 +112,7 @@ export function TiendaFlow({
   const { cartItems, setCartItems } = useTiendaCart();
   const [phase, setPhase] = useState(initialPhase || 'catalog');
   const [selected, setSelected] = useState(null);
-  const [qty, setQty] = useState(1);
-  const [cartHint, setCartHint] = useState(false);
+  const [qty, setQty] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewType, setReviewType] = useState('compra_verificada');
@@ -326,8 +325,7 @@ export function TiendaFlow({
   const goCatalog = () => {
     setPhase('catalog');
     setSelected(null);
-    setQty(1);
-    setCartHint(false);
+    setQty(0);
   };
 
   const showGridCartToast = (title) => {
@@ -350,9 +348,9 @@ export function TiendaFlow({
       );
       return;
     }
+    const inCart = cartItems.find((i) => i.id === product.id);
     setSelected(product);
-    setQty(1);
-    setCartHint(false);
+    setQty(inCart ? Math.min(9, inCart.qty) : 0);
     setReviewOpen(false);
     setReviewPublished(false);
     setReviewRating(5);
@@ -362,8 +360,51 @@ export function TiendaFlow({
   };
 
   const bumpQty = (delta) => {
-    setQty((q) => Math.min(9, Math.max(1, q + delta)));
+    setQty((q) => Math.min(9, Math.max(0, q + delta)));
   };
+
+  const setCartProductQty = useCallback((product, quantity) => {
+    if (!product || product.precioVariable) return;
+    if (quantity < 1) {
+      setCartItems((prev) => prev.filter((i) => i.id !== product.id));
+      return;
+    }
+    setCartItems((prev) => {
+      const idx = prev.findIndex((i) => i.id === product.id);
+      const capped = Math.min(99, quantity);
+      if (idx >= 0) {
+        return prev.map((item, i) =>
+          i === idx
+            ? {
+                ...item,
+                qty: capped,
+                imageUri: item.imageUri || product.imageUri || null,
+                stockHint: item.stockHint || product.stockHint || null,
+                shippingLabel: item.shippingLabel || product.shippingLabel || null,
+              }
+            : item,
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: product.id,
+          title: product.title,
+          priceAmount: product.priceAmount ?? 0,
+          priceLabel: product.priceLabel ?? 'Q 0.00',
+          imageUri: product.imageUri || null,
+          stockHint: product.stockHint || null,
+          shippingLabel: product.shippingLabel || null,
+          qty: capped,
+        },
+      ];
+    });
+  }, [setCartItems]);
+
+  useEffect(() => {
+    if (phase !== 'detail' || !selected?.id || selected.precioVariable) return;
+    setCartProductQty(selected, qty);
+  }, [phase, selected, qty, setCartProductQty]);
 
   const addToCart = (product, quantity = 1) => {
     if (!product || quantity < 1) return;
@@ -444,7 +485,7 @@ export function TiendaFlow({
         return;
       }
       setSelected(product);
-      setQty(1);
+      setQty(0);
       setPhase('detail');
     })();
     return () => {
@@ -734,27 +775,14 @@ export function TiendaFlow({
                 </TouchableOpacity>
               </View>
 
-              {cartHint ? (
-                <Text style={styles.cartBanner}>✓ Añadido al carrito</Text>
-              ) : null}
-
-              <SalonButton
-                title="Añadir al carrito"
-                variant="outlineGray"
-                fullWidth
-                style={{ marginTop: spacing.md }}
-                onPress={() => {
-                  addToCart(selected, qty);
-                  setCartHint(true);
-                }}
-              />
               <SalonButton
                 title="Comprar ahora"
                 variant="heroGold"
                 fullWidth
-                style={{ marginTop: spacing.sm }}
+                style={{ marginTop: spacing.md }}
+                disabled={qty < 1}
                 onPress={() => {
-                  addToCart(selected, qty);
+                  if (qty < 1) return;
                   setPhase('cart');
                 }}
               />

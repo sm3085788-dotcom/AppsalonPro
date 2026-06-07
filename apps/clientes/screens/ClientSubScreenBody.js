@@ -15,6 +15,7 @@ import { MembresiasBody } from '../components/membresias/MembresiasBody';
 import { MisFacturasBody } from './MisFacturasBody';
 import { MisPedidosBody } from '../components/pedidos/MisPedidosBody';
 import { AuraLineInbox } from '../components/mensajes/AuraLineInbox';
+import { EventosProfesionalesBody } from '../components/eventos/EventosProfesionalesBody';
 import { BROADCAST_PROMO_ACTIONS } from '@appsalon/shared-config';
 import { labelEstadoCita, estadoCitaTone } from '../utils/citasLabels';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
@@ -42,65 +43,6 @@ function useAccentChipStyle() {
       color: tc.primary,
     }),
     [tc],
-  );
-}
-
-function NotificationsBody({ prefs, onPrefChange }) {
-  const subStyles = useSubStyles();
-  const chipText = useAccentChipStyle();
-  const { colors: tc } = useTheme();
-  const p = prefs || {
-    recordatorios: true,
-    promociones: false,
-    cambiosAgenda: true,
-    mensajes: true,
-    pedidos: true,
-  };
-
-  const Row = ({ k, label, sub }) => (
-    <View style={subStyles.rowTouch}>
-      <View style={{ flex: 1, paddingRight: spacing.sm }}>
-        <Text style={subStyles.rowLabel}>{label}</Text>
-        <Text style={subStyles.rowSub}>{sub}</Text>
-      </View>
-      <Switch
-        value={Boolean(p[k])}
-        onValueChange={(v) => onPrefChange?.(k, v)}
-        trackColor={{ false: tc.foregroundSubtle, true: tc.primary }}
-        thumbColor={Boolean(p[k]) ? tc.heroCtaText : tc.card}
-      />
-    </View>
-  );
-
-  return (
-    <View style={[subStyles.card, padTop]}>
-      <Row k="recordatorios" label="Recordatorios" sub="Tu próxima cita por correo." />
-      <View style={subStyles.divider} />
-      <Row k="promociones" label="Promociones" sub="Descuentos y novedades del salón." />
-      <View style={subStyles.divider} />
-      <Row k="cambiosAgenda" label="Cambios en tu agenda" sub="Reposiciones y cancelaciones." />
-      <View style={subStyles.divider} />
-      <Row
-        k="mensajes"
-        label="Mensajes"
-        sub="Ícono Andreas Pro, alertas y push cuando el salón te escribe."
-      />
-      <View style={subStyles.divider} />
-      <Row
-        k="pedidos"
-        label="Pedidos de tienda"
-        sub="Estado de tu compra y entrega (push fuera de la app)."
-      />
-      <Text style={[subStyles.muted, { marginTop: spacing.sm, fontSize: 12 }]}>
-        Estado mensajes:{' '}
-        <Text style={chipText}>{p.mensajes ? 'Activo' : 'Inactivo'}</Text>
-      </Text>
-      {p.mensajes ? (
-        <Text style={[subStyles.muted, { marginTop: spacing.xs, fontSize: 12 }]}>
-          En Inicio verás el ícono de mensajes junto a Acceso rápido.
-        </Text>
-      ) : null}
-    </View>
   );
 }
 
@@ -499,7 +441,7 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.CONTACTO:
       return <ContactoBody />;
     case CLIENT_SUB.NOTIFICACIONES:
-      return <NotificationsBody prefs={notifPrefs} onPrefChange={onNotifPrefChange} />;
+      return <EventosProfesionalesBody />;
 
     case CLIENT_SUB.MENSAJES:
       return (

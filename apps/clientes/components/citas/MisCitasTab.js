@@ -228,7 +228,6 @@ export function MisCitasTab({
   const [categoriaPickerOpen, setCategoriaPickerOpen] = useState(false);
   const scrollRef = useRef(null);
   const rowOffsetsRef = useRef({});
-  const listTopRef = useRef(0);
 
   const loadServicios = useCallback(async () => {
     if (!hasSupabaseEnv) {
@@ -305,31 +304,14 @@ export function MisCitasTab({
 
   return (
     <View style={styles.root}>
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollInner,
-          { paddingBottom: scrollBottom, paddingTop: contentPaddingTop },
+      <View
+        style={[
+          styles.headerStatic,
+          { paddingTop: contentPaddingTop, paddingHorizontal: spacing.lg },
         ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => void onRefresh()}
-            tintColor={c.primary}
-            colors={[c.primary]}
-          />
-        }
       >
         <View style={styles.titleRow}>
-          <View style={styles.titleCopy}>
-            <Text style={styles.pageDisplay}>Servicios</Text>
-            <Text style={styles.pageLead}>
-              Agregá servicios con + y agendá desde el carrito.
-            </Text>
-          </View>
+          <Text style={styles.pageDisplay}>Servicios</Text>
           <TouchableOpacity
             style={styles.cartBtn}
             onPress={onOpenServiciosCart}
@@ -378,7 +360,26 @@ export function MisCitasTab({
             Filtro: {categoriaSel}
           </Text>
         ) : null}
+      </View>
 
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollInner,
+          { paddingBottom: scrollBottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={c.primary}
+            colors={[c.primary]}
+          />
+        }
+      >
         {loadingServicios ? (
           <ActivityIndicator color={c.primary} style={{ marginVertical: spacing.xl }} />
         ) : filtrados.length === 0 ? (
@@ -391,12 +392,7 @@ export function MisCitasTab({
             </Text>
           </View>
         ) : (
-          <View
-            style={[styles.stackList, { marginHorizontal: -bleed, width: cardWidth }]}
-            onLayout={(e) => {
-              listTopRef.current = e.nativeEvent.layout.y;
-            }}
-          >
+          <View style={[styles.stackList, { marginHorizontal: -bleed, width: cardWidth }]}>
             {filtrados.map((s, index) => {
               const isHighlight =
                 highlightInventarioId != null &&
@@ -405,8 +401,7 @@ export function MisCitasTab({
                 <View
                   key={String(s.id)}
                   onLayout={(e) => {
-                    rowOffsetsRef.current[index] =
-                      listTopRef.current + e.nativeEvent.layout.y;
+                    rowOffsetsRef.current[index] = e.nativeEvent.layout.y;
                   }}
                 >
                   <ServicioStackRow
@@ -503,27 +498,25 @@ export function MisCitasTab({
 function createStyles(c) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: c.background },
+    headerStatic: {
+      backgroundColor: c.background,
+      zIndex: 2,
+    },
     scroll: { flex: 1 },
     scrollInner: { flexGrow: 1, paddingHorizontal: spacing.lg },
     titleRow: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       justifyContent: 'space-between',
       gap: spacing.sm,
       marginBottom: spacing.md,
     },
-    titleCopy: { flex: 1, minWidth: 0 },
     pageDisplay: {
+      flex: 1,
+      minWidth: 0,
       fontFamily: typography.fontDisplay,
       fontSize: 27,
       color: c.foreground,
-      marginBottom: spacing.xs,
-    },
-    pageLead: {
-      fontFamily: typography.fontSans,
-      fontSize: 14,
-      color: c.foregroundMuted,
-      lineHeight: 21,
     },
     cartBtn: {
       width: 44,
@@ -535,7 +528,6 @@ function createStyles(c) {
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
-      marginTop: 4,
     },
     cartBadge: {
       position: 'absolute',
