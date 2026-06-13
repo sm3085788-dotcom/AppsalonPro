@@ -68,7 +68,14 @@ SET search_path = public
 AS $$
   SELECT o.*
   FROM public.ecommerce_orders o
-  WHERE public.is_staff_or_admin()
+  WHERE
+    public.is_admin_global()
+    OR (public.is_staff_or_admin() AND NOT public.is_admin_sucursal())
+    OR (
+      public.is_admin_sucursal()
+      AND public.current_sucursal_id() IS NOT NULL
+      AND o.sucursal_id = public.current_sucursal_id()
+    )
   ORDER BY o.created_at DESC
   LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 500), 1000));
 $$;

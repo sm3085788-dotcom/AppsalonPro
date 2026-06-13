@@ -19,7 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Plus, Star, Truck, X, Image as ImageIcon, Check, ChevronRight } from 'lucide-react-native';
+import { Plus, Star, Truck, X, Image as ImageIcon, Check, ChevronRight, Minus } from 'lucide-react-native';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
@@ -28,6 +28,7 @@ import {
   db,
   uploadInventarioMediaFromUri,
   DEFAULT_TIENDA_META,
+  getSalonSucursalScope,
   VOLUMEN_TRABAJO_OPCIONES,
   emptyPreciosPorVolumen,
   normalizePreciosPorVolumen,
@@ -40,12 +41,22 @@ import {
   parseMontoInput,
   formatMontoInputLive,
   montoInputFromNumber,
+  INVENTARIO_PROMO_DIAS_DEFAULT,
+  isPromocionVigente,
+  maybeRevertInventarioPromoExpired,
+  computePromocionHastaISO,
+  toInventarioISODate,
+  formatPromocionHastaLabel,
   SERVICIO_CATEGORIAS,
   normalizeServicioCategoria,
+  buildStockTransferPayload,
+  stockTransferSucursalMatches,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar, useSubStyles, modalSheetBottomPad } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
+import { StockTransferQrScannerModal } from '../components/StockTransferQrScannerModal';
+import { StockTransferQrDisplayModal } from '../components/StockTransferQrDisplayModal';
 
 const GAP = 6;
 const GRID_H_PAD = spacing.sm;
@@ -106,9 +117,11 @@ function preciosPorVolumenToForm(precios) {
 }
 
 function rowToTiendaCard(row) {
-  const { meta } = splitNotas(row.notas);
-  const venta = Number(row.precio_venta || 0);
+  const fresh = maybeRevertInventarioPromoExpired(row);
+  const { meta } = splitNotas(fresh.notas);
+  const venta = Number(fresh.precio_venta || 0);
   const esServicio = meta.articuloTipo === 'servicio';
+  const promoVigente = isPromocionVigente(meta);
   let priceLabel = esServicio ? formatQ(venta) : String(venta);
   if (meta.volumenTrabajoActivo && meta.preciosPorVolumen) {
     const vals = VOLUMEN_TRABAJO_OPCIONES.map((o) => meta.preciosPorVolumen[o.id]).filter((n) => n != null && n > 0);
@@ -124,13 +137,13 @@ function rowToTiendaCard(row) {
     priceLabel = venta.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   const precioRegular =
-    !meta.volumenTrabajoActivo && !esServicio && venta > 0 ? resolvePrecioRegularTienda(row, venta) : null;
+    !meta.volumenTrabajoActivo && !esServicio && venta > 0 ? resolvePrecioRegularTienda(fresh, venta) : null;
   const compareAtLabel =
     precioRegular != null
       ? precioRegular.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : null;
-  const brandLine = String(row.categoria || (meta.articuloTipo === 'servicio' ? 'Servicio' : 'Producto')).toUpperCase();
-  const stock = Number(row.stock_actual ?? 0);
+  const brandLine = String(fresh.categoria || (meta.articuloTipo === 'servicio' ? 'Servicio' : 'Producto')).toUpperCase();
+  const stock = Number(fresh.stock_actual ?? 0);
   const stockHint =
     meta.articuloTipo === 'servicio'
       ? meta.volumenTrabajoActivo
@@ -139,21 +152,21 @@ function rowToTiendaCard(row) {
       : stock > 0
         ? `En stock · ${stock} u.`
         : 'Sin stock';
-  const imageUris = [...new Set([row.imagen_url, ...(Array.isArray(row.imagenes_urls) ? row.imagenes_urls : [])].filter(Boolean))];
+  const imageUris = [...new Set([fresh.imagen_url, ...(Array.isArray(fresh.imagenes_urls) ? fresh.imagenes_urls : [])].filter(Boolean))];
   return {
-    id: row.id,
+    id: fresh.id,
     brandLine,
-    title: row.nombre,
+    title: fresh.nombre,
     priceLabel,
     compareAtLabel,
-    badge: meta.badge?.trim() || null,
+    badge: promoVigente ? meta.badge?.trim() || 'Promo' : meta.badge?.trim() || null,
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
     shippingLabel: meta.shippingLabel || 'Envío y retiro · coordinar en recepción',
     stockHint,
     imageUris,
-    visibleTienda: !!row.visible_en_tienda,
-    row,
+    visibleTienda: !!fresh.visible_en_tienda,
+    row: fresh,
   };
 }
 
@@ -497,6 +510,11 @@ const emptyForm = () => ({
   preciosPorVolumen: emptyPreciosPorVolumen(),
   /** Precio “antes” en tienda (JSON meta.precioRegular); vacío = reglas automáticas. */
   precio_regular_tienda: '',
+  promocionActiva: false,
+  promocion_desde: '',
+  promocion_hasta: '',
+  promocion_precio_original: null,
+  promocion_precios_original: null,
   localMain: null,
   localGallery: [],
   remoteMain: '',
@@ -515,25 +533,32 @@ export function InventarioScreen({ onBack }) {
   const [query, setQuery] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [promoSaving, setPromoSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [modalFiltros, setModalFiltros] = useState(false);
   const [modalStockFiltros, setModalStockFiltros] = useState(false);
   const [sortInv, setSortInv] = useState('nombre_asc');
   const [filterInv, setFilterInv] = useState('todos');
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [stockPhase, setStockPhase] = useState('pick');
   const [stockQuery, setStockQuery] = useState('');
   const [stockFilter, setStockFilter] = useState('todos');
-  const [stockPickProduct, setStockPickProduct] = useState(null);
-  const [loteForm, setLoteForm] = useState(() => ({
+  const [stockSelected, setStockSelected] = useState({});
+  const [stockBatchMeta, setStockBatchMeta] = useState(() => ({
     numero_lote: '',
-    cantidad: '',
     fecha_ingreso: new Date(),
   }));
+  const [stockTargetSucursalId, setStockTargetSucursalId] = useState(null);
+  const [stockSucursales, setStockSucursales] = useState([]);
+  const [showStockQrModal, setShowStockQrModal] = useState(false);
+  const [stockQrPayload, setStockQrPayload] = useState(null);
+  const [showStockScanModal, setShowStockScanModal] = useState(false);
+  const [showSucursalPicker, setShowSucursalPicker] = useState(false);
   const [showLoteDatePicker, setShowLoteDatePicker] = useState(false);
   const [stockSaving, setStockSaving] = useState(false);
   const [categoriaPickerOpen, setCategoriaPickerOpen] = useState(false);
   const sel = useListSelection();
+  const sucursalScope = getSalonSucursalScope();
+  const stockOnlyMode = !sucursalScope.isGlobal;
 
   const esFormServicio = form.articuloTipo === 'servicio';
 
@@ -548,18 +573,54 @@ export function InventarioScreen({ onBack }) {
     try {
       const { data, error } = await db.inventario.getAll();
       if (error) throw error;
-      setItems(data || []);
+      let rows = data || [];
+      if (!stockOnlyMode) {
+        const persistExpired = [];
+        rows = rows.map((row) => {
+          const reverted = maybeRevertInventarioPromoExpired(row);
+          if (
+            reverted.id &&
+            (reverted.precio_venta !== row.precio_venta || reverted.notas !== row.notas)
+          ) {
+            persistExpired.push(reverted);
+          }
+          return reverted;
+        });
+        for (const r of persistExpired) {
+          await db.inventario.update(r.id, { precio_venta: r.precio_venta, notas: r.notas });
+        }
+      }
+      if (stockOnlyMode && sucursalScope.sucursalId) {
+        const { data: stocks, error: stErr } = await db.inventarioStockSucursal.getForSucursal(
+          sucursalScope.sucursalId,
+        );
+        if (stErr) throw stErr;
+        rows = db.inventarioStockSucursal.mergeCatalogo(rows, stocks);
+      }
+      setItems(rows);
     } catch (e) {
       Alert.alert('Inventario', e?.message || 'No se pudo cargar.');
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [stockOnlyMode, sucursalScope.sucursalId]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!modalOpen || !isNuevoStock || stockOnlyMode) return;
+    let cancelled = false;
+    void db.sucursales.listActivas().then(({ data, error }) => {
+      if (cancelled || error) return;
+      setStockSucursales(data || []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, isNuevoStock, stockOnlyMode]);
 
   const { refreshControl } = useSalonPullRefresh(load);
 
@@ -627,11 +688,15 @@ export function InventarioScreen({ onBack }) {
   }, [filtered, gridCols]);
 
   const resetStockFlow = () => {
-    setStockPhase('pick');
     setStockQuery('');
     setStockFilter('todos');
-    setStockPickProduct(null);
-    setLoteForm({ numero_lote: '', cantidad: '', fecha_ingreso: new Date() });
+    setStockSelected({});
+    setStockBatchMeta({ numero_lote: '', fecha_ingreso: new Date() });
+    setStockTargetSucursalId(null);
+    setShowStockQrModal(false);
+    setStockQrPayload(null);
+    setShowStockScanModal(false);
+    setShowSucursalPicker(false);
     setShowLoteDatePicker(false);
   };
 
@@ -641,6 +706,13 @@ export function InventarioScreen({ onBack }) {
   };
 
   const openNew = () => {
+    if (stockOnlyMode) {
+      setForm({ ...emptyForm(), articuloTipo: 'nuevo_stock' });
+      resetStockFlow();
+      setModalOpen(true);
+      setShowStockScanModal(true);
+      return;
+    }
     setForm(emptyForm());
     resetStockFlow();
     setModalOpen(true);
@@ -673,45 +745,116 @@ export function InventarioScreen({ onBack }) {
     return f;
   }, [stockFilter]);
 
-  const confirmStockLote = async () => {
-    if (!stockPickProduct?.id) {
-      Alert.alert('Nuevo stock', 'Elegí un producto de la lista.');
-      return;
+  const stockSelectedCount = useMemo(() => Object.keys(stockSelected).length, [stockSelected]);
+
+  const stockTargetSucursal = useMemo(
+    () => stockSucursales.find((s) => String(s.id) === String(stockTargetSucursalId)) || null,
+    [stockSucursales, stockTargetSucursalId],
+  );
+
+  const stockProductLabels = useMemo(() => {
+    const map = {};
+    for (const row of items) {
+      if (row?.id) map[String(row.id)] = row.nombre || 'Producto';
     }
-    const numero = loteForm.numero_lote.trim();
-    const cant = Math.max(0, Math.floor(parseNum(loteForm.cantidad)));
+    return map;
+  }, [items]);
+
+  const toggleStockProduct = (productId) => {
+    const id = String(productId);
+    setStockSelected((prev) => {
+      if (prev[id] != null) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: 1 };
+    });
+  };
+
+  const adjustStockQty = (productId, delta) => {
+    const id = String(productId);
+    setStockSelected((prev) => {
+      const cur = Math.max(1, Math.floor(Number(prev[id] || 1)));
+      const nextQty = Math.max(1, cur + delta);
+      return { ...prev, [id]: nextQty };
+    });
+  };
+
+  const setStockQtyText = (productId, text) => {
+    const id = String(productId);
+    const n = Math.max(1, Math.floor(Number(String(text || '').replace(/[^0-9]/g, '')) || 1));
+    setStockSelected((prev) => ({ ...prev, [id]: n }));
+  };
+
+  const handleGenerateStockQr = () => {
+    const numero = stockBatchMeta.numero_lote.trim();
     if (!numero) {
       Alert.alert('Nuevo stock', 'Ingresá el número de lote.');
       return;
     }
-    if (cant < 1) {
-      Alert.alert('Nuevo stock', 'La cantidad debe ser al menos 1.');
+    if (!stockTargetSucursalId) {
+      Alert.alert('Nuevo stock', 'Seleccioná la sucursal destino.');
       return;
     }
+    const itemsPayload = Object.entries(stockSelected).map(([inventario_id, cantidad]) => ({
+      inventario_id,
+      cantidad,
+    }));
+    const payload = buildStockTransferPayload({
+      sucursalId: stockTargetSucursalId,
+      numeroLote: numero,
+      fechaIngreso: stockBatchMeta.fecha_ingreso.toISOString(),
+      items: itemsPayload,
+    });
+    if (!payload) {
+      Alert.alert('Nuevo stock', 'Seleccioná al menos un producto con cantidad válida.');
+      return;
+    }
+    setStockQrPayload(payload);
+    setShowStockQrModal(true);
+  };
+
+  const handleImportStockQr = async (payload) => {
+    if (!stockTransferSucursalMatches(payload, sucursalScope.sucursalId)) {
+      Alert.alert(
+        'QR incorrecto',
+        'Este código es para otra sucursal. Pedí a matriz que genere el QR con tu sucursal seleccionada.',
+      );
+      return;
+    }
+    setShowStockScanModal(false);
     setStockSaving(true);
     try {
-      const { data, error } = await db.inventarioLotes.registrarIngreso({
-        inventario_id: stockPickProduct.id,
-        numero_lote: numero,
-        fecha_ingreso: loteForm.fecha_ingreso.toISOString(),
-        cantidad: cant,
+      const { data, error } = await db.inventarioLotes.registrarIngresoBatch({
+        sucursal_id: payload.sid,
+        numero_lote: payload.l,
+        fecha_ingreso: payload.f,
+        items: payload.i,
       });
       if (error) throw error;
       await load();
+      const imported = data?.imported ?? payload.i.length;
       Alert.alert(
-        'Stock actualizado',
-        `«${stockPickProduct.nombre}»\nLote ${numero}: +${cant} u.\nStock: ${data?.stockAntes ?? '—'} → ${data?.stockDespues ?? '—'}`,
+        'Stock importado',
+        `Se registraron ${imported} producto(s) del lote ${payload.l}.\n\nTu inventario local ya fue actualizado.`,
       );
       closeArticleModal();
     } catch (e) {
-      const msg = e?.message || 'No se pudo registrar el lote.';
-      if (String(msg).toLowerCase().includes('inventario_lotes') || String(msg).includes('does not exist')) {
+      const msg = e?.message || 'No se pudo importar el stock.';
+      const low = String(msg).toLowerCase();
+      if (low.includes('inventario_lotes') || low.includes('does not exist')) {
         Alert.alert(
           'Tabla de lotes',
-          'Ejecutá en Supabase el script supabase-inventario-lotes-setup.sql y volvé a intentar.',
+          'Ejecutá en Supabase:\n1) supabase-inventario-lotes-setup.sql\n2) supabase-sucursales-stock-lotes.sql\n\nLuego volvé a escanear el QR.',
+        );
+      } else if (low.includes('row-level security') || low.includes('permission denied')) {
+        Alert.alert(
+          'Importar stock',
+          `${msg}\n\nEjecutá supabase-sucursales-stock-lotes.sql en Supabase SQL Editor.`,
         );
       } else {
-        Alert.alert('Nuevo stock', msg);
+        Alert.alert('Importar stock', msg);
       }
     } finally {
       setStockSaving(false);
@@ -719,23 +862,28 @@ export function InventarioScreen({ onBack }) {
   };
 
   const openEdit = (row) => {
-    const { staff, meta } = splitNotas(row.notas);
-    const imgs = [row.imagen_url, ...(Array.isArray(row.imagenes_urls) ? row.imagenes_urls : [])].filter(Boolean);
+    if (stockOnlyMode) {
+      Alert.alert('Inventario', 'Tu sucursal solo puede ingresar stock. El catálogo lo administra la matriz.');
+      return;
+    }
+    const rowFresh = maybeRevertInventarioPromoExpired(row);
+    const { staff, meta } = splitNotas(rowFresh.notas);
+    const imgs = [rowFresh.imagen_url, ...(Array.isArray(rowFresh.imagenes_urls) ? rowFresh.imagenes_urls : [])].filter(Boolean);
     const main = imgs[0] || '';
     const rest = imgs.slice(1, 1 + MAX_GALERIA);
     setForm({
-      id: row.id,
-      nombre: row.nombre || '',
-      categoria: row.categoria || '',
-      barcode: row.barcode || '',
-      precio_venta: montoInputFromNumber(row.precio_venta),
-      stock_actual: String(row.stock_actual ?? 0),
-      stock_minimo: String(row.stock_minimo ?? 5),
-      es_consumible: !!row.es_consumible,
-      fecha_vencimiento: row.fecha_vencimiento || '',
-      ubicacion: row.ubicacion || '',
-      descripcion_tienda: row.descripcion_tienda || '',
-      visible_en_tienda: !!row.visible_en_tienda,
+      id: rowFresh.id,
+      nombre: rowFresh.nombre || '',
+      categoria: rowFresh.categoria || '',
+      barcode: rowFresh.barcode || '',
+      precio_venta: montoInputFromNumber(rowFresh.precio_venta),
+      stock_actual: String(rowFresh.stock_actual ?? 0),
+      stock_minimo: String(rowFresh.stock_minimo ?? 5),
+      es_consumible: !!rowFresh.es_consumible,
+      fecha_vencimiento: rowFresh.fecha_vencimiento || '',
+      ubicacion: rowFresh.ubicacion || '',
+      descripcion_tienda: rowFresh.descripcion_tienda || '',
+      visible_en_tienda: !!rowFresh.visible_en_tienda,
       notasStaff: staff,
       badge: meta.badge || '',
       hintTarjeta: meta.hintTarjeta || '',
@@ -751,7 +899,14 @@ export function InventarioScreen({ onBack }) {
       precio_regular_tienda:
         meta.precioRegular != null && Number(meta.precioRegular) > 0
           ? montoInputFromNumber(meta.precioRegular)
-          : '',
+          : meta.promocionPrecioOriginal != null && Number(meta.promocionPrecioOriginal) > 0
+            ? montoInputFromNumber(meta.promocionPrecioOriginal)
+            : '',
+      promocionActiva: isPromocionVigente(meta),
+      promocion_desde: meta.promocionDesde || '',
+      promocion_hasta: meta.promocionHasta || '',
+      promocion_precio_original: meta.promocionPrecioOriginal ?? null,
+      promocion_precios_original: meta.promocionPreciosPorVolumenOriginal || null,
       localMain: null,
       localGallery: [],
       remoteMain: main,
@@ -806,6 +961,197 @@ export function InventarioScreen({ onBack }) {
     return Number.isFinite(n) ? n : 0;
   };
 
+  const computePromoFormState = (f, enabled) => {
+    if (!enabled) {
+      const next = {
+        ...f,
+        promocionActiva: false,
+        promocion_desde: '',
+        promocion_hasta: '',
+        promocion_precio_original: null,
+        promocion_precios_original: null,
+      };
+      if (f.promocion_precio_original != null && Number(f.promocion_precio_original) > 0) {
+        next.precio_venta = montoInputFromNumber(f.promocion_precio_original);
+      }
+      if (f.promocion_precios_original) {
+        next.preciosPorVolumen = preciosPorVolumenToForm(f.promocion_precios_original);
+      }
+      return next;
+    }
+    const desde = toInventarioISODate(new Date());
+    const hasta = computePromocionHastaISO(new Date(), INVENTARIO_PROMO_DIAS_DEFAULT);
+    const precioActual = parsePrecioInput(f.precio_venta);
+    const precioOrigGuardado =
+      f.promocion_precio_original != null && Number(f.promocion_precio_original) > 0
+        ? Number(f.promocion_precio_original)
+        : null;
+    const precioOrig = f.volumenTrabajoActivo
+      ? null
+      : precioOrigGuardado != null
+        ? precioOrigGuardado
+        : precioActual;
+    const preciosOrig = f.volumenTrabajoActivo
+      ? normalizePreciosPorVolumen(
+          f.promocion_precios_original || {
+            corto: parsePrecioInput(f.preciosPorVolumen.corto),
+            medio: parsePrecioInput(f.preciosPorVolumen.medio),
+            largo: parsePrecioInput(f.preciosPorVolumen.largo),
+            muy_largo: parsePrecioInput(f.preciosPorVolumen.muy_largo),
+          },
+        )
+      : null;
+    return {
+      ...f,
+      promocionActiva: true,
+      promocion_desde: desde,
+      promocion_hasta: hasta,
+      promocion_precio_original: precioOrig,
+      promocion_precios_original: preciosOrig,
+      precio_regular_tienda:
+        f.precio_regular_tienda ||
+        (precioOrig && precioOrig > 0 ? montoInputFromNumber(precioOrig) : f.precio_regular_tienda),
+      badge: f.badge?.trim() ? f.badge : 'Promo',
+    };
+  };
+
+  const buildInventarioTiendaMeta = (formSnap, { preciosVol, ventaCmp, precioTachadoInput }) => {
+    const esServicio = formSnap.articuloTipo === 'servicio';
+    return {
+      badge: formSnap.badge.trim(),
+      hintTarjeta: esServicio ? String(formSnap.hintTarjeta || '').trim() : '',
+      shippingLabel: esServicio
+        ? ''
+        : formSnap.shippingLabel.trim() || DEFAULT_TIENDA_META.shippingLabel,
+      rating: parseNum(formSnap.rating) || 4.5,
+      reviewCount: Math.max(0, Math.floor(parseNum(formSnap.reviewCount))),
+      articuloTipo: esServicio ? 'servicio' : 'producto',
+      duracion_agenda: esServicio ? String(formSnap.duracion_agenda || '').trim() : '',
+      duracion_minutos: esServicio
+        ? parseDuracionMinutosFromMeta({ duracion_agenda: formSnap.duracion_agenda })
+        : DEFAULT_TIENDA_META.duracion_minutos,
+      volumenTrabajoActivo: esServicio ? !!formSnap.volumenTrabajoActivo : false,
+      volumenTrabajo: null,
+      preciosPorVolumen: esServicio && formSnap.volumenTrabajoActivo ? preciosVol : null,
+      precioRegular:
+        esServicio && formSnap.volumenTrabajoActivo
+          ? null
+          : formSnap.promocionActiva &&
+              formSnap.promocion_precio_original != null &&
+              Number(formSnap.promocion_precio_original) > ventaCmp
+            ? Math.round(Number(formSnap.promocion_precio_original) * 100) / 100
+            : precioTachadoInput > ventaCmp && ventaCmp > 0
+              ? Math.round(precioTachadoInput * 100) / 100
+              : null,
+      promocionActiva: !!formSnap.promocionActiva,
+      promocionDesde: formSnap.promocionActiva ? formSnap.promocion_desde || toInventarioISODate(new Date()) : null,
+      promocionHasta: formSnap.promocionActiva
+        ? formSnap.promocion_hasta || computePromocionHastaISO(new Date(), INVENTARIO_PROMO_DIAS_DEFAULT)
+        : null,
+      promocionPrecioOriginal:
+        formSnap.promocionActiva && formSnap.promocion_precio_original != null
+          ? Math.round(Number(formSnap.promocion_precio_original) * 100) / 100
+          : null,
+      promocionPreciosPorVolumenOriginal:
+        formSnap.promocionActiva && formSnap.volumenTrabajoActivo && formSnap.promocion_precios_original
+          ? normalizePreciosPorVolumen(formSnap.promocion_precios_original)
+          : null,
+    };
+  };
+
+  const preciosVolFromForm = (formSnap) =>
+    normalizePreciosPorVolumen(
+      formSnap.articuloTipo === 'servicio' && formSnap.volumenTrabajoActivo
+        ? {
+            corto: parsePrecioInput(formSnap.preciosPorVolumen.corto),
+            medio: parsePrecioInput(formSnap.preciosPorVolumen.medio),
+            largo: parsePrecioInput(formSnap.preciosPorVolumen.largo),
+            muy_largo: parsePrecioInput(formSnap.preciosPorVolumen.muy_largo),
+          }
+        : null,
+    );
+
+  const assertPromoFormPrices = (formSnap, preciosVol) => {
+    if (formSnap.articuloTipo === 'servicio' && formSnap.volumenTrabajoActivo) {
+      const faltan = VOLUMEN_TRABAJO_OPCIONES.filter((o) => !(preciosVol[o.id] > 0)).map((o) => o.label);
+      if (faltan.length) {
+        throw new Error(`Completá un precio mayor a 0 para: ${faltan.join(', ')}.`);
+      }
+      return;
+    }
+    if (!(parsePrecioInput(formSnap.precio_venta) > 0)) {
+      throw new Error('Indicá el precio de venta antes de activar la promoción.');
+    }
+  };
+
+  const persistPromocionToggle = async (formSnap) => {
+    if (!formSnap.id || stockOnlyMode || formSnap.articuloTipo === 'nuevo_stock') return;
+
+    const preciosVol = preciosVolFromForm(formSnap);
+    if (formSnap.promocionActiva) {
+      assertPromoFormPrices(formSnap, preciosVol);
+    }
+
+    const ventaCmp =
+      formSnap.articuloTipo === 'servicio' && formSnap.volumenTrabajoActivo
+        ? 0
+        : parsePrecioInput(formSnap.precio_venta);
+    const precioTachadoInput = parsePrecioInput(formSnap.precio_regular_tienda);
+    const meta = buildInventarioTiendaMeta(formSnap, { preciosVol, ventaCmp, precioTachadoInput });
+    const notas = mergeNotas(formSnap.notasStaff, meta);
+    const precioVentaCol =
+      formSnap.articuloTipo === 'servicio' && formSnap.volumenTrabajoActivo
+        ? formSnap.visible_en_tienda
+          ? null
+          : precioVentaReferencia(meta, preciosVol.medio)
+        : parsePrecioInput(formSnap.precio_venta) || null;
+
+    setPromoSaving(true);
+    try {
+      const { error } = await db.inventario.update(formSnap.id, { notas, precio_venta: precioVentaCol });
+      if (error) throw error;
+
+      if (meta.articuloTipo === 'servicio') {
+        const { error: syncErr, skipped } = await db.servicios.syncFromInventario({
+          nombre: formSnap.nombre.trim(),
+          precio_venta: precioVentaCol,
+          notas,
+        });
+        if (syncErr && !skipped) {
+          throw new Error(syncErr.message || String(syncErr));
+        }
+      }
+
+      await load();
+      Alert.alert(
+        'Promoción',
+        formSnap.promocionActiva
+          ? `Promo activa ${INVENTARIO_PROMO_DIAS_DEFAULT} días · vence ${formatPromocionHastaLabel(formSnap.promocion_hasta)}.`
+          : 'Promoción desactivada. Precio restaurado.',
+      );
+    } finally {
+      setPromoSaving(false);
+    }
+  };
+
+  const onPromocionToggle = (enabled) => {
+    setForm((f) => {
+      const prev = f;
+      const next = computePromoFormState(f, enabled);
+      if (f.id && !stockOnlyMode) {
+        void (async () => {
+          try {
+            await persistPromocionToggle(next);
+          } catch (e) {
+            setForm(prev);
+            Alert.alert('Promoción', e?.message || 'No se pudo guardar la promoción.');
+          }
+        })();
+      }
+      return next;
+    });
+  };
+
   const save = async () => {
     if (form.articuloTipo === 'nuevo_stock') return;
     if (!form.nombre.trim()) {
@@ -820,16 +1166,7 @@ export function InventarioScreen({ onBack }) {
       );
       return;
     }
-    const preciosVol = normalizePreciosPorVolumen(
-      form.articuloTipo === 'servicio' && form.volumenTrabajoActivo
-        ? {
-            corto: parsePrecioInput(form.preciosPorVolumen.corto),
-            medio: parsePrecioInput(form.preciosPorVolumen.medio),
-            largo: parsePrecioInput(form.preciosPorVolumen.largo),
-            muy_largo: parsePrecioInput(form.preciosPorVolumen.muy_largo),
-          }
-        : null,
-    );
+    const preciosVol = preciosVolFromForm(form);
     if (form.articuloTipo === 'servicio' && form.volumenTrabajoActivo) {
       const faltan = VOLUMEN_TRABAJO_OPCIONES.filter((o) => !(preciosVol[o.id] > 0)).map((o) => o.label);
       if (faltan.length) {
@@ -874,33 +1211,7 @@ export function InventarioScreen({ onBack }) {
         }
       };
 
-      const meta = {
-        badge: form.badge.trim(),
-        hintTarjeta: esFormServicio ? String(form.hintTarjeta || '').trim() : '',
-        shippingLabel: esFormServicio
-          ? ''
-          : form.shippingLabel.trim() || DEFAULT_TIENDA_META.shippingLabel,
-        rating: parseNum(form.rating) || 4.5,
-        reviewCount: Math.max(0, Math.floor(parseNum(form.reviewCount))),
-        articuloTipo: form.articuloTipo === 'servicio' ? 'servicio' : 'producto',
-        duracion_agenda:
-          form.articuloTipo === 'servicio' ? String(form.duracion_agenda || '').trim() : '',
-        duracion_minutos:
-          form.articuloTipo === 'servicio'
-            ? parseDuracionMinutosFromMeta({ duracion_agenda: form.duracion_agenda })
-            : DEFAULT_TIENDA_META.duracion_minutos,
-        volumenTrabajoActivo:
-          form.articuloTipo === 'servicio' ? !!form.volumenTrabajoActivo : false,
-        volumenTrabajo: null,
-        preciosPorVolumen:
-          form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? preciosVol : null,
-        precioRegular:
-          form.articuloTipo === 'servicio' && form.volumenTrabajoActivo
-            ? null
-            : precioTachadoInput > ventaCmp && ventaCmp > 0
-              ? Math.round(precioTachadoInput * 100) / 100
-              : null,
-      };
+      const meta = buildInventarioTiendaMeta(form, { preciosVol, ventaCmp, precioTachadoInput });
       const notas = mergeNotas(form.notasStaff, meta);
       const precioVentaCol =
         form.articuloTipo === 'servicio' && form.volumenTrabajoActivo
@@ -1054,7 +1365,7 @@ export function InventarioScreen({ onBack }) {
       onPress={openNew}
       style={[styles.addPersonCircle, { backgroundColor: c.card, borderColor: c.cardBorder }]}
       hitSlop={12}
-      accessibilityLabel="Nuevo artículo"
+      accessibilityLabel={stockOnlyMode ? 'Nuevo stock' : 'Nuevo artículo'}
       activeOpacity={0.85}
     >
       <Plus size={22} color={addPersonIconColor} strokeWidth={2.2} />
@@ -1066,7 +1377,11 @@ export function InventarioScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Inventario"
-        subtitle="Perfil tipo tienda (App Clientes): precio, galería, envío, valoraciones y publicación."
+        subtitle={
+          stockOnlyMode
+            ? 'Catálogo de matriz (solo lectura). Podés ingresar stock local con «Nuevo stock».'
+            : 'Perfil tipo tienda (App Clientes): precio, galería, envío, valoraciones y publicación.'
+        }
         onBack={onBack}
         bottomPadding={0}
         disableBodyScroll
@@ -1087,8 +1402,12 @@ export function InventarioScreen({ onBack }) {
               {filtered.length} artículo{filtered.length === 1 ? '' : 's'}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
-              <Text style={{ color: c.foregroundSubtle, fontSize: 13 }}> · </Text>
+              {!stockOnlyMode ? (
+                <>
+                  <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+                  <Text style={{ color: c.foregroundSubtle, fontSize: 13 }}> · </Text>
+                </>
+              ) : null}
               <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
                 <Text style={[styles.invToolbarLink, { color: c.primary }]}>Filtros</Text>
               </TouchableOpacity>
@@ -1180,30 +1499,14 @@ export function InventarioScreen({ onBack }) {
         <View style={[styles.modalShell, { backgroundColor: c.background }]}>
         <View style={[styles.modalHead, { borderBottomColor: c.cardBorder, paddingTop: insets.top + spacing.sm }]}>
           <Text style={[styles.modalTitle, { color: c.foreground }]}>
-            {form.id
-              ? 'Editar artículo'
-              : isNuevoStock
-                ? stockPhase === 'lote'
-                  ? 'Ingresar lote'
-                  : 'Nuevo stock'
-                : 'Nuevo artículo'}
+            {form.id ? 'Editar artículo' : isNuevoStock ? 'Nuevo stock' : 'Nuevo artículo'}
           </Text>
-          <TouchableOpacity
-            onPress={() => {
-              if (isNuevoStock && stockPhase === 'lote') {
-                setStockPhase('pick');
-                setStockPickProduct(null);
-                return;
-              }
-              closeArticleModal();
-            }}
-            hitSlop={12}
-          >
+          <TouchableOpacity onPress={closeArticleModal} hitSlop={12}>
             <X size={24} color={c.foreground} />
           </TouchableOpacity>
         </View>
 
-        {!form.id ? (
+        {!form.id && !stockOnlyMode ? (
           <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
             <Text style={[subStyles.rowLabel, { marginBottom: spacing.sm }]}>Tipo</Text>
             <View style={styles.chipRow}>
@@ -1251,7 +1554,22 @@ export function InventarioScreen({ onBack }) {
 
         {isNuevoStock ? (
           <View style={{ flex: 1, paddingHorizontal: spacing.lg }}>
-            {stockPhase === 'pick' ? (
+            {stockOnlyMode ? (
+              <View style={{ flex: 1, justifyContent: 'center', paddingBottom: padBottom }}>
+                <Text style={[subStyles.muted, { textAlign: 'center', marginBottom: spacing.lg }]}>
+                  Escaneá el código QR que generó matriz con los productos, cantidades, lote y fecha. El stock se sumará
+                  automáticamente a esta sucursal.
+                </Text>
+                <SalonButton
+                  title={stockSaving ? 'Importando…' : 'Escanear código QR'}
+                  variant="heroGold"
+                  fullWidth
+                  loading={stockSaving}
+                  onPress={() => setShowStockScanModal(true)}
+                  style={{ marginBottom: spacing.md }}
+                />
+              </View>
+            ) : (
               <>
                 <SalonSearchBar
                   value={stockQuery}
@@ -1262,14 +1580,69 @@ export function InventarioScreen({ onBack }) {
                 <View style={styles.stockToolbar}>
                   <Text style={[styles.stockToolbarMeta, { color: c.foregroundMuted }]}>
                     {stockProducts.length} producto{stockProducts.length === 1 ? '' : 's'}
+                    {stockSelectedCount > 0 ? ` · ${stockSelectedCount} seleccionado${stockSelectedCount === 1 ? '' : 's'}` : ''}
                   </Text>
-                  <TouchableOpacity hitSlop={12} onPress={() => setModalStockFiltros(true)}>
-                    <Text style={[styles.invToolbarLink, { color: c.primary }]}>Filtros</Text>
-                  </TouchableOpacity>
+                  <View style={styles.stockToolbarActions}>
+                    {stockSelectedCount > 0 ? (
+                      <>
+                        <TouchableOpacity hitSlop={12} onPress={() => setShowSucursalPicker(true)}>
+                          <Text style={[styles.invToolbarLink, { color: c.primary }]} numberOfLines={1}>
+                            {stockTargetSucursal ? stockTargetSucursal.nombre : 'Sucursal'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity hitSlop={12} onPress={handleGenerateStockQr}>
+                          <Text style={[styles.invToolbarLink, { color: c.primary }]}>Generar QR</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <TouchableOpacity hitSlop={12} onPress={() => setModalStockFiltros(true)}>
+                        <Text style={[styles.invToolbarLink, { color: c.primary }]}>Filtros</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
                 <Text style={[styles.stockFiltroResumen, { color: c.foregroundSubtle }]} numberOfLines={1}>
                   {stockFiltroResumen}
                 </Text>
+                {stockSelectedCount > 0 ? (
+                  <View style={[styles.stockBatchMeta, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                    <Field label="Número de lote *" c={c}>
+                      <TextInput
+                        style={[styles.inp, styles.inpCompact, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.background }]}
+                        value={stockBatchMeta.numero_lote}
+                        onChangeText={(t) => setStockBatchMeta((f) => ({ ...f, numero_lote: t }))}
+                        placeholder="Ej. L-2026-0042"
+                        placeholderTextColor={c.foregroundSubtle}
+                        autoCapitalize="characters"
+                      />
+                    </Field>
+                    <Field label="Fecha de ingreso *" c={c}>
+                      <TouchableOpacity
+                        style={[styles.inp, styles.inpCompact, styles.dateTouch, { borderColor: c.cardBorder, backgroundColor: c.background }]}
+                        onPress={() => setShowLoteDatePicker(true)}
+                      >
+                        <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>
+                          {stockBatchMeta.fecha_ingreso.toLocaleDateString('es-GT', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </Text>
+                      </TouchableOpacity>
+                      {showLoteDatePicker ? (
+                        <DateTimePicker
+                          value={stockBatchMeta.fecha_ingreso}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                          onChange={(_, d) => {
+                            setShowLoteDatePicker(Platform.OS === 'ios');
+                            if (d) setStockBatchMeta((f) => ({ ...f, fecha_ingreso: d }));
+                          }}
+                        />
+                      ) : null}
+                    </Field>
+                  </View>
+                ) : null}
                 <View style={[styles.stockListShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
                   <FlatList
                     data={stockProducts}
@@ -1280,6 +1653,9 @@ export function InventarioScreen({ onBack }) {
                       flexGrow: stockProducts.length === 0 ? 1 : 0,
                     }}
                     renderItem={({ item }) => {
+                      const id = String(item.id);
+                      const selected = stockSelected[id] != null;
+                      const qty = selected ? Math.max(1, Math.floor(Number(stockSelected[id] || 1))) : 1;
                       const st = Number(item.stock_actual ?? 0);
                       const min = Number(item.stock_minimo ?? 0);
                       const sub = [
@@ -1290,25 +1666,64 @@ export function InventarioScreen({ onBack }) {
                         .filter(Boolean)
                         .join(' · ');
                       return (
-                        <TouchableOpacity
-                          activeOpacity={0.7}
-                          style={[styles.stockRow, { borderBottomColor: c.cardBorder }]}
-                          onPress={() => {
-                            setStockPickProduct(item);
-                            setStockPhase('lote');
-                            setLoteForm({ numero_lote: '', cantidad: '', fecha_ingreso: new Date() });
-                          }}
+                        <View
+                          style={[
+                            styles.stockRow,
+                            { borderBottomColor: c.cardBorder },
+                            selected ? { backgroundColor: c.surfaceMuted } : null,
+                          ]}
                         >
-                          <View style={styles.stockRowBody}>
-                            <Text style={[styles.stockRowName, { color: c.foreground }]} numberOfLines={1}>
-                              {item.nombre || 'Sin nombre'}
-                            </Text>
-                            <Text style={[styles.stockRowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
-                              {sub || '—'}
-                            </Text>
-                          </View>
-                          <ChevronRight size={16} color={c.foregroundSubtle} />
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            style={styles.stockRowMain}
+                            onPress={() => toggleStockProduct(item.id)}
+                          >
+                            <View
+                              style={[
+                                styles.stockCheck,
+                                {
+                                  borderColor: selected ? c.primary : c.cardBorder,
+                                  backgroundColor: selected ? c.primary : 'transparent',
+                                },
+                              ]}
+                            >
+                              {selected ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
+                            </View>
+                            <View style={styles.stockRowBody}>
+                              <Text style={[styles.stockRowName, { color: c.foreground }]} numberOfLines={1}>
+                                {item.nombre || 'Sin nombre'}
+                              </Text>
+                              <Text style={[styles.stockRowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
+                                {sub || '—'}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                          {selected ? (
+                            <View style={styles.stockQtyRow}>
+                              <TouchableOpacity
+                                style={[styles.stockQtyBtn, { borderColor: c.cardBorder }]}
+                                onPress={() => adjustStockQty(item.id, -1)}
+                                hitSlop={8}
+                              >
+                                <Minus size={14} color={c.foreground} />
+                              </TouchableOpacity>
+                              <TextInput
+                                style={[styles.stockQtyIn, { borderColor: c.cardBorder, color: c.foreground }]}
+                                value={String(qty)}
+                                onChangeText={(t) => setStockQtyText(item.id, t)}
+                                keyboardType="number-pad"
+                                maxLength={5}
+                              />
+                              <TouchableOpacity
+                                style={[styles.stockQtyBtn, { borderColor: c.cardBorder }]}
+                                onPress={() => adjustStockQty(item.id, 1)}
+                                hitSlop={8}
+                              >
+                                <Plus size={14} color={c.foreground} />
+                              </TouchableOpacity>
+                            </View>
+                          ) : null}
+                        </View>
                       );
                     }}
                     ListEmptyComponent={
@@ -1318,75 +1733,16 @@ export function InventarioScreen({ onBack }) {
                     }
                   />
                 </View>
+                {stockSelectedCount > 0 ? (
+                  <SalonButton
+                    title="Generar código QR"
+                    variant="heroGold"
+                    fullWidth
+                    onPress={handleGenerateStockQr}
+                    style={{ marginTop: spacing.md, marginBottom: spacing.sm }}
+                  />
+                ) : null}
               </>
-            ) : (
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: padBottom + 80, paddingTop: spacing.md }}
-              >
-                <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>
-                  Producto:{' '}
-                  <Text style={{ color: c.foreground, fontFamily: typography.fontSansMedium }}>
-                    {stockPickProduct?.nombre || '—'}
-                  </Text>
-                  {' · Stock actual: '}
-                  {Number(stockPickProduct?.stock_actual ?? 0)}
-                </Text>
-                <Text style={[subStyles.rowLabel, { marginBottom: spacing.lg }]}>Ingresar nuevo lote</Text>
-                <Field label="Número de lote *" c={c}>
-                  <TextInput
-                    style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                    value={loteForm.numero_lote}
-                    onChangeText={(t) => setLoteForm((f) => ({ ...f, numero_lote: t }))}
-                    placeholder="Ej. L-2026-0042"
-                    placeholderTextColor={c.foregroundSubtle}
-                    autoCapitalize="characters"
-                  />
-                </Field>
-                <Field label="Fecha de ingreso *" c={c}>
-                  <TouchableOpacity
-                    style={[styles.inp, styles.dateTouch, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-                    onPress={() => setShowLoteDatePicker(true)}
-                  >
-                    <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>
-                      {loteForm.fecha_ingreso.toLocaleDateString('es-GT', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </Text>
-                  </TouchableOpacity>
-                  {showLoteDatePicker ? (
-                    <DateTimePicker
-                      value={loteForm.fecha_ingreso}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={(_, d) => {
-                        setShowLoteDatePicker(Platform.OS === 'ios');
-                        if (d) setLoteForm((f) => ({ ...f, fecha_ingreso: d }));
-                      }}
-                    />
-                  ) : null}
-                </Field>
-                <Field label="Cantidad *" c={c}>
-                  <TextInput
-                    style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                    value={loteForm.cantidad}
-                    onChangeText={(t) => setLoteForm((f) => ({ ...f, cantidad: t.replace(/[^0-9]/g, '') }))}
-                    keyboardType="number-pad"
-                    placeholder="Unidades a sumar al stock"
-                    placeholderTextColor={c.foregroundSubtle}
-                  />
-                </Field>
-                <SalonButton
-                  title={stockSaving ? 'Guardando…' : 'Confirmar ingreso'}
-                  variant="heroGold"
-                  fullWidth
-                  loading={stockSaving}
-                  onPress={confirmStockLote}
-                  style={{ marginTop: spacing.lg }}
-                />
-              </ScrollView>
             )}
           </View>
         ) : (
@@ -1512,6 +1868,32 @@ export function InventarioScreen({ onBack }) {
             <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.md }]}>
               Si es mayor al precio de venta, se muestra tachado en App Clientes. Vacío: costo o referencia automática.
             </Text>
+          ) : null}
+
+          {!stockOnlyMode ? (
+            <View style={[styles.switchRow, { marginBottom: spacing.md }]}>
+              <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                <Text style={{ color: c.foreground, fontFamily: typography.fontSansMedium, fontSize: 14 }}>
+                  Promoción
+                </Text>
+                <Text style={{ color: c.foregroundMuted, fontFamily: typography.fontSans, fontSize: 12, marginTop: 4 }}>
+                  {form.promocionActiva
+                    ? `Precio promo ${INVENTARIO_PROMO_DIAS_DEFAULT} días · vence ${formatPromocionHastaLabel(form.promocion_hasta)}. Al vencer vuelve al precio original.${
+                        form.id ? ' Guardado automáticamente.' : ''
+                      }`
+                    : `Activala para publicar precio promo ${INVENTARIO_PROMO_DIAS_DEFAULT} días.${
+                        form.id ? ' Se guarda al activar (no hace falta Guardar).' : ' Guardá el artículo para aplicar la promo.'
+                      }`}
+                </Text>
+              </View>
+              <Switch
+                value={!!form.promocionActiva}
+                onValueChange={onPromocionToggle}
+                disabled={promoSaving || saving}
+                trackColor={{ false: c.cardBorder, true: `${c.primary}88` }}
+                thumbColor={form.promocionActiva ? c.primary : c.foregroundSubtle}
+              />
+            </View>
           ) : null}
 
           {form.articuloTipo === 'servicio' ? (
@@ -1964,6 +2346,63 @@ export function InventarioScreen({ onBack }) {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showSucursalPicker} animationType="slide" transparent onRequestClose={() => setShowSucursalPicker(false)}>
+        <View style={styles.filterBackdrop}>
+          <View style={[styles.filterSheet, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
+            <View style={styles.filterHead}>
+              <Text style={[styles.filterTitle, { color: c.foreground }]}>Sucursal destino</Text>
+              <TouchableOpacity onPress={() => setShowSucursalPicker(false)} hitSlop={12}>
+                <X size={22} color={c.foregroundMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 320 }}>
+              {stockSucursales.length === 0 ? (
+                <Text style={[subStyles.muted, { marginBottom: spacing.md }]}>
+                  No hay sucursales activas. Creá una en el módulo Sucursales.
+                </Text>
+              ) : (
+                stockSucursales.map((s) => {
+                  const on = String(stockTargetSucursalId) === String(s.id);
+                  return (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[styles.stockRow, { borderBottomColor: c.cardBorder }]}
+                      onPress={() => {
+                        setStockTargetSucursalId(s.id);
+                        setShowSucursalPicker(false);
+                      }}
+                    >
+                      <View style={styles.stockRowBody}>
+                        <Text style={[styles.stockRowName, { color: c.foreground }]}>{s.nombre || s.codigo}</Text>
+                        <Text style={[styles.stockRowSub, { color: c.foregroundMuted }]}>{s.codigo}</Text>
+                      </View>
+                      {on ? <Check size={18} color={c.primary} strokeWidth={2.5} /> : null}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <StockTransferQrDisplayModal
+        visible={showStockQrModal}
+        payload={stockQrPayload}
+        sucursalNombre={stockTargetSucursal?.nombre || stockTargetSucursal?.codigo}
+        productLabels={stockProductLabels}
+        onClose={() => {
+          setShowStockQrModal(false);
+          closeArticleModal();
+        }}
+      />
+
+      <StockTransferQrScannerModal
+        visible={showStockScanModal}
+        onClose={() => setShowStockScanModal(false)}
+        onPayload={handleImportStockQr}
+      />
     </View>
   );
 }
@@ -2134,8 +2573,15 @@ function createStyles(c) {
       marginTop: spacing.sm,
       marginBottom: 4,
     },
-    stockToolbarMeta: { fontFamily: typography.fontSans, fontSize: 13 },
+    stockToolbarMeta: { fontFamily: typography.fontSans, fontSize: 13, flex: 1, minWidth: 0 },
+    stockToolbarActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flexShrink: 0 },
     stockFiltroResumen: { fontFamily: typography.fontSans, fontSize: 11, marginBottom: spacing.sm },
+    stockBatchMeta: {
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      padding: spacing.sm,
+      marginBottom: spacing.sm,
+    },
     stockListShell: {
       flex: 1,
       borderWidth: 1,
@@ -2151,6 +2597,36 @@ function createStyles(c) {
       borderBottomWidth: StyleSheet.hairlineWidth,
       gap: spacing.sm,
     },
+    stockRowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
+    stockCheck: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    stockQtyRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
+    stockQtyBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    stockQtyIn: {
+      width: 44,
+      height: 28,
+      borderWidth: 1,
+      borderRadius: radii.sm,
+      textAlign: 'center',
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      paddingVertical: 0,
+      paddingHorizontal: 4,
+    },
+    inpCompact: { paddingVertical: Platform.OS === 'ios' ? 10 : 8, fontSize: 14 },
     stockRowBody: { flex: 1, minWidth: 0 },
     stockRowName: { fontFamily: typography.fontSansMedium, fontSize: 14 },
     stockRowSub: { fontFamily: typography.fontSans, fontSize: 11, lineHeight: 15, marginTop: 2 },

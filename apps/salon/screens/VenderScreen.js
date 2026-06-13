@@ -31,6 +31,7 @@ import {
   mergeVentaNotasConCanjeSalon,
   mergeNotasServicioConCanje,
   labelCanjeAndreasCliente,
+  getSalonSucursalScope,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
@@ -151,6 +152,7 @@ export function VenderScreen({ onBack }) {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      const scope = getSalonSucursalScope();
       const [rCli, rEmp, rInv] = await Promise.all([
         db.clientes.getAll(),
         db.empleados.getActivos(),
@@ -159,9 +161,17 @@ export function VenderScreen({ onBack }) {
       if (rCli.error) throw rCli.error;
       if (rEmp.error) throw rEmp.error;
       if (rInv.error) throw rInv.error;
+      let invRows = Array.isArray(rInv.data) ? rInv.data : [];
+      if (!scope.isGlobal && scope.sucursalId) {
+        const { data: stocks, error: stErr } = await db.inventarioStockSucursal.getForSucursal(
+          scope.sucursalId,
+        );
+        if (stErr) throw stErr;
+        invRows = db.inventarioStockSucursal.mergeCatalogo(invRows, stocks);
+      }
       setClientes(Array.isArray(rCli.data) ? rCli.data : []);
       setEmpleados(Array.isArray(rEmp.data) ? rEmp.data : []);
-      setInventario(Array.isArray(rInv.data) ? rInv.data : []);
+      setInventario(invRows);
     } catch (e) {
       Alert.alert('Vender', e?.message || 'No se pudieron cargar clientes o inventario.');
       setClientes([]);
@@ -583,7 +593,15 @@ export function VenderScreen({ onBack }) {
         );
       });
     } catch (e) {
-      Alert.alert('Error', e?.message || 'No se pudo registrar la venta.');
+      const msg = String(e?.message || '');
+      if (/row-level security|permission denied|policy/i.test(msg)) {
+        Alert.alert(
+          'Error',
+          `${msg}\n\nEjecutá en Supabase el archivo supabase-sucursales-caja-fix.sql (incluye permisos de ventas) y volvé a intentar.`,
+        );
+      } else {
+        Alert.alert('Error', msg || 'No se pudo registrar la venta.');
+      }
     } finally {
       ventaSubmitLockRef.current = false;
       setSubmitting(false);

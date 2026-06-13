@@ -7,6 +7,7 @@ import { createSubStyles } from '../luxury/SubScreenChrome';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useTiendaCart } from '../../context/TiendaCartContext';
 import { TiendaCatalogGrid } from './TiendaCatalogGrid';
+import { ClientSucursalPicker } from '../sucursal/ClientSucursalPicker';
 import { ProductImageStrip } from './ProductImageStrip';
 import { PickupQrDisplay } from './PickupQrDisplay';
 import { TiendaCartItemCard } from './TiendaCartItemCard';
@@ -133,6 +134,8 @@ export function TiendaFlow({
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [gridCartToast, setGridCartToast] = useState(null);
+  const [sucursalId, setSucursalId] = useState(null);
+  const [catalogReloadKey, setCatalogReloadKey] = useState(0);
   const [referidorCheckout, setReferidorCheckout] = useState(null);
   const [referidorCodigoInput, setReferidorCodigoInput] = useState('');
   const [tiendaCanjeAvisos, setTiendaCanjeAvisos] = useState([]);
@@ -571,7 +574,19 @@ export function TiendaFlow({
               </Text>
             </View>
           ) : null}
-          <TiendaCatalogGrid onProductPress={openProduct} onAddToCart={quickAddToCart} />
+          <ClientSucursalPicker
+            compact
+            onChange={(id) => {
+              setSucursalId(id);
+              setCatalogReloadKey((k) => k + 1);
+            }}
+          />
+          <TiendaCatalogGrid
+            key={`${sucursalId || 'none'}-${catalogReloadKey}`}
+            sucursalId={sucursalId}
+            onProductPress={openProduct}
+            onAddToCart={quickAddToCart}
+          />
         </>
       )}
 

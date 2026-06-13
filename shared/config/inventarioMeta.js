@@ -7,6 +7,9 @@ export const VOLUMEN_TRABAJO_OPCIONES = [
   { id: 'muy_largo', label: 'Muy largo' },
 ];
 
+/** Duración por defecto de promociones en inventario matriz (días). */
+export const INVENTARIO_PROMO_DIAS_DEFAULT = 10;
+
 export const DEFAULT_TIENDA_META = {
   badge: '',
   /** Línea bajo precio/estrellas en tarjeta Mis citas (App Clientes). */
@@ -16,6 +19,12 @@ export const DEFAULT_TIENDA_META = {
   reviewCount: 0,
   /** Precio “antes” en tienda (opcional). Si no hay, se simula o se usa costo mayor al de venta. */
   precioRegular: null,
+  /** Promoción temporal (matriz): precio promo en columna / volumen; al vencer vuelve al original. */
+  promocionActiva: false,
+  promocionDesde: null,
+  promocionHasta: null,
+  promocionPrecioOriginal: null,
+  promocionPreciosPorVolumenOriginal: null,
   articuloTipo: 'producto',
   /** Texto libre en inventario (ej. «1 hora», «media mañana»). */
   duracion_agenda: '',
@@ -74,14 +83,106 @@ function formatQInventario(n) {
   return `Q ${x.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+export function toInventarioISODate(d = new Date()) {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function computePromocionHastaISO(desde = new Date(), dias = INVENTARIO_PROMO_DIAS_DEFAULT) {
+  const d = new Date(desde);
+  d.setDate(d.getDate() + Math.max(1, Math.floor(Number(dias) || INVENTARIO_PROMO_DIAS_DEFAULT)));
+  return toInventarioISODate(d);
+}
+
+export function isPromocionVigente(meta, at = new Date()) {
+  if (!meta?.promocionActiva || !meta?.promocionHasta) return false;
+  const hasta = new Date(`${meta.promocionHasta}T23:59:59`);
+  if (Number.isNaN(hasta.getTime())) return false;
+  return at <= hasta;
+}
+
+function clearPromocionMetaFields(meta) {
+  return {
+    ...meta,
+    promocionActiva: false,
+    promocionDesde: null,
+    promocionHasta: null,
+    promocionPrecioOriginal: null,
+    promocionPreciosPorVolumenOriginal: null,
+  };
+}
+
+/** Revierte precios si la promo ya venció; devuelve fila inventario actualizada. */
+export function maybeRevertInventarioPromoExpired(row) {
+  if (!row) return row;
+  const { staff, meta } = splitNotas(row.notas);
+  if (!meta.promocionActiva || isPromocionVigente(meta)) return row;
+
+  let nextMeta = clearPromocionMetaFields(meta);
+  let precio_venta = row.precio_venta;
+
+  if (meta.promocionPreciosPorVolumenOriginal && meta.volumenTrabajoActivo) {
+    nextMeta.preciosPorVolumen = normalizePreciosPorVolumen(meta.promocionPreciosPorVolumenOriginal);
+    precio_venta = precioVentaReferencia(nextMeta, nextMeta.preciosPorVolumen.medio) || row.precio_venta;
+  } else if (meta.promocionPrecioOriginal != null && Number(meta.promocionPrecioOriginal) > 0) {
+    precio_venta = meta.promocionPrecioOriginal;
+  }
+
+  if (nextMeta.precioRegular != null) {
+    const pr = Number(nextMeta.precioRegular);
+    const pv = Number(precio_venta);
+    if (Number.isFinite(pr) && Number.isFinite(pv) && pr <= pv) nextMeta.precioRegular = null;
+  }
+
+  return {
+    ...row,
+    precio_venta,
+    notas: mergeNotas(staff, nextMeta),
+  };
+}
+
+export function formatPromocionHastaLabel(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(`${iso}T12:00:00`).toLocaleDateString('es-GT', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return String(iso);
+  }
+}
+
 /**
  * Precio regular para estrategia “antes / ahora” en tarjetas de tienda.
- * Prioridad: meta.precioRegular → precio_costo (si mayor) → simulado (+20 % redondeado).
+ * Prioridad: promo vigente (original guardado) → meta.precioRegular → precio_costo → simulado (+20 %).
  */
 export function resolvePrecioRegularTienda(row, precioVenta) {
   const venta = Number(precioVenta);
   if (!Number.isFinite(venta) || venta <= 0) return null;
   const { meta } = splitNotas(row?.notas);
+  if (isPromocionVigente(meta)) {
+    const origCol = Number(meta.promocionPrecioOriginal);
+    if (Number.isFinite(origCol) && origCol > venta) return origCol;
+    if (meta.promocionPreciosPorVolumenOriginal && meta.volumenTrabajoActivo) {
+      const origs = Object.values(normalizePreciosPorVolumen(meta.promocionPreciosPorVolumenOriginal)).filter(
+        (n) => n != null && n > 0,
+      );
+      const promos = Object.values(normalizePreciosPorVolumen(meta.preciosPorVolumen)).filter(
+        (n) => n != null && n > 0,
+      );
+      if (origs.length && promos.length) {
+        const minOrig = Math.min(...origs);
+        const minPromo = Math.min(...promos);
+        if (minOrig > minPromo) return minOrig;
+      }
+    }
+  }
   const manual = Number(meta.precioRegular);
   if (Number.isFinite(manual) && manual > venta) return manual;
   const costo = Number(row?.precio_costo ?? row?.costo ?? 0);

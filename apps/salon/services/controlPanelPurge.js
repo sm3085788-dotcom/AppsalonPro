@@ -217,15 +217,6 @@ export async function purgeIncidentes(opts) {
   return deleteWhereDateBetween('incidentes', 'fecha', r.fromISO, r.toISO);
 }
 
-export async function purgeAuditLogs(opts) {
-  const r = normalizeDateRangeOpts(opts);
-  if (!r) {
-    await wipeTable('admin_audit_logs');
-    return 0;
-  }
-  return deleteWhereDateBetween('admin_audit_logs', 'created_at', r.fromISO, r.toISO);
-}
-
 export async function purgeBasureroLocal(opts) {
   const r = normalizeDateRangeOpts(opts);
   if (!r) {
@@ -260,7 +251,6 @@ const PURGE_ALL_ORDER = [
   'proveedores',
   'clientes',
   'empleados',
-  'audit',
   'basurero_local',
 ];
 
@@ -280,7 +270,6 @@ export async function purgeAllModules(opts = {}) {
     proveedores: purgeProveedores,
     clientes: purgeClientes,
     empleados: purgeEmpleados,
-    audit: purgeAuditLogs,
     basurero_local: purgeBasureroLocal,
   };
 

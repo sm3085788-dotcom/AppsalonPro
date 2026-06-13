@@ -7,7 +7,23 @@ export function normalizeProfileRole(role) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-/** Cuentas que pueden operar la app salón (debe coincidir con check_rol_types: admin). */
+/** Admin global (matriz): ve todas las sucursales y catálogo completo. */
+export function isSalonGlobalAdmin(role) {
+  const r = normalizeProfileRole(role);
+  return r === 'admin' || r === 'admin_global';
+}
+
+/** Admin de una sucursal: operación local limitada. */
+export function isSalonSucursalAdmin(role) {
+  return normalizeProfileRole(role) === 'admin_sucursal';
+}
+
+/** Cuentas que pueden entrar a App Salón. */
+export function canAccessSalonApp(role) {
+  return isSalonGlobalAdmin(role) || isSalonSucursalAdmin(role);
+}
+
+/** @deprecated usar isSalonGlobalAdmin — compat con código existente */
 export function isSalonAdminRole(role) {
-  return normalizeProfileRole(role) === 'admin';
+  return canAccessSalonApp(role);
 }

@@ -4,6 +4,9 @@ import {
   servicioUsaPreciosPorVolumen,
   resolvePrecioRegularTienda,
   getArticuloTipo,
+  maybeRevertInventarioPromoExpired,
+  isPromocionVigente,
+  formatPromocionHastaLabel,
 } from './inventarioMeta.js';
 import { crearPedidoTarjetaPendiente } from './pedidoSalon.js';
 
@@ -28,23 +31,28 @@ export async function confirmarCompraConTarjeta(params) {
 
 export function mapInventarioToTiendaProduct(row) {
   if (!row) return null;
-  const { meta } = splitNotas(row.notas);
-  const imgs = Array.isArray(row.imagenes_urls) ? row.imagenes_urls.filter(Boolean) : [];
-  const mainImg = row.imagen_url || imgs[0] || null;
+  const fresh = maybeRevertInventarioPromoExpired(row);
+  const { meta } = splitNotas(fresh.notas);
+  const imgs = Array.isArray(fresh.imagenes_urls) ? fresh.imagenes_urls.filter(Boolean) : [];
+  const mainImg = fresh.imagen_url || imgs[0] || null;
   const allImgs = [...new Set([mainImg, ...imgs].filter(Boolean))];
-  const precioVariable = servicioUsaPreciosPorVolumen(row);
-  const venta = precioVariable ? null : Number(row.precio_venta || 0);
-  const tipo = getArticuloTipo(row);
-  const stock = Number(row.stock_actual ?? 0);
+  const precioVariable = servicioUsaPreciosPorVolumen(fresh);
+  const venta = precioVariable ? null : Number(fresh.precio_venta || 0);
+  const tipo = getArticuloTipo(fresh);
+  const stock = Number(fresh.stock_actual ?? 0);
   const precioRegular =
-    !precioVariable && Number.isFinite(venta) && venta > 0 ? resolvePrecioRegularTienda(row, venta) : null;
+    !precioVariable && Number.isFinite(venta) && venta > 0 ? resolvePrecioRegularTienda(fresh, venta) : null;
+  const promoVigente = isPromocionVigente(meta);
+  const promoBadge = promoVigente
+    ? meta.badge?.trim() || `Promo · hasta ${formatPromocionHastaLabel(meta.promocionHasta)}`
+    : null;
 
   return {
-    id: row.id,
-    inventarioId: row.id,
-    brandLine: row.categoria || (tipo === 'servicio' ? 'Servicio' : 'Salón'),
-    title: row.nombre,
-    sku: row.barcode || null,
+    id: fresh.id,
+    inventarioId: fresh.id,
+    brandLine: fresh.categoria || (tipo === 'servicio' ? 'Servicio' : 'Salón'),
+    title: fresh.nombre,
+    sku: fresh.barcode || null,
     imageUri: mainImg,
     imageUris: allImgs,
     precioVariable,
@@ -66,9 +74,11 @@ export function mapInventarioToTiendaProduct(row) {
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
     shippingLabel: meta.shippingLabel || DEFAULT_TIENDA_META.shippingLabel,
-    badge: meta.badge?.trim() || null,
-    descripcion: row.descripcion_tienda || '',
+    badge: promoBadge || meta.badge?.trim() || null,
+    descripcion: fresh.descripcion_tienda || '',
     articuloTipo: tipo,
+    promocionVigente: promoVigente,
+    promocionHasta: promoVigente ? meta.promocionHasta : null,
     duracionAgenda:
       tipo === 'servicio'
         ? String(meta.duracion_agenda || '').trim() ||

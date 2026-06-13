@@ -27,6 +27,7 @@ import {
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { normalizeServicioCategoria } from '@appsalon/shared-config';
+import { ClientSucursalPicker } from '../sucursal/ClientSucursalPicker';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 import { useServiciosCart } from '../../context/ServiciosCartContext';
@@ -330,6 +331,13 @@ export function MisCitasTab({
             ) : null}
           </TouchableOpacity>
         </View>
+
+        <ClientSucursalPicker
+          compact
+          onChange={() => {
+            void onRefreshCitas?.();
+          }}
+        />
 
         <View style={styles.toolbar}>
           {hasSupabaseEnv ? (

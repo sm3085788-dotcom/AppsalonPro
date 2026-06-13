@@ -1,5 +1,10 @@
 /** Contenido estructurado de difusiones (Pulso masivo) en marketing_direct_messages. */
 
+import {
+  PROMO_INVENTARIO_CONTENT_TYPE,
+  resolveInventarioPromoActionTarget,
+} from './promoInventarioChat.js';
+
 export const BROADCAST_PROMO_ACTIONS = {
   BUY: 'buy',
   BOOK: 'book',
@@ -73,8 +78,14 @@ export function broadcastPreviewText(content) {
 }
 
 export function buildBroadcastActionMessage(action, promo = {}, extra = '') {
-  const parsed = parseBroadcastContent(promo.content);
-  const label = parsed.title || 'esta promoción';
+  const ct = String(promo?.content_type || '');
+  let parsed;
+  if (ct === PROMO_INVENTARIO_CONTENT_TYPE) {
+    parsed = resolveInventarioPromoActionTarget(promo) || {};
+  } else {
+    parsed = parseBroadcastContent(promo.content);
+  }
+  const label = parsed.title || parsed.linkName || 'esta promoción';
   const target = parsed.linkName || '';
   const suffix = extra ? ` · ${extra}` : '';
   switch (action) {

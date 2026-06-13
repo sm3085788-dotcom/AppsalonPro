@@ -18,6 +18,7 @@ import {
   Animated,
   Easing,
   Pressable,
+  Switch,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,6 +37,7 @@ import {
   FileText,
   Check,
   Download,
+  CircleHelp,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
@@ -52,6 +54,12 @@ import {
   BROADCAST_LINK_TYPES,
   notifyClientFromMdmId,
   sendSalonAuraMessage,
+  CHAT_QUICK_INTENTS,
+  matchChatQuickIntent,
+  getSalonSessionProfile,
+  isSalonGlobalAdmin,
+  getChatAutomationSettings,
+  setChatAutomationEnabled,
 } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 
@@ -344,6 +352,47 @@ export function MensajesScreen({ onBack }) {
   const [seenByClient, setSeenByClient] = useState({});
   const [inboxHydrated, setInboxHydrated] = useState(false);
   const [unreadClientIds, setUnreadClientIds] = useState(() => new Set());
+  const [showSalonQuickReplies, setShowSalonQuickReplies] = useState(false);
+  const [chatAutomationEnabled, setChatAutomationEnabled] = useState(false);
+  const [chatAutomationLoading, setChatAutomationLoading] = useState(false);
+  const [chatAutomationSaving, setChatAutomationSaving] = useState(false);
+
+  const isMatriz = useMemo(() => isSalonGlobalAdmin(getSalonSessionProfile()?.role), []);
+
+  useEffect(() => {
+    if (!isMatriz) return undefined;
+    let cancelled = false;
+    setChatAutomationLoading(true);
+    (async () => {
+      const { data, error } = await getChatAutomationSettings();
+      if (cancelled) return;
+      if (!error && data) setChatAutomationEnabled(Boolean(data.enabled));
+      setChatAutomationLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMatriz]);
+
+  const onToggleChatAutomation = useCallback(async (next) => {
+    if (!isMatriz || chatAutomationSaving) return;
+    setChatAutomationSaving(true);
+    const prev = chatAutomationEnabled;
+    setChatAutomationEnabled(next);
+    try {
+      const { data, error } = await setChatAutomationEnabled(next);
+      if (error) throw error;
+      if (data) setChatAutomationEnabled(Boolean(data.enabled));
+    } catch (e) {
+      setChatAutomationEnabled(prev);
+      Alert.alert(
+        'Respuestas automáticas',
+        e?.message || 'No se pudo actualizar. Ejecutá supabase-n8n-chat-automation.sql en Supabase.',
+      );
+    } finally {
+      setChatAutomationSaving(false);
+    }
+  }, [chatAutomationEnabled, chatAutomationSaving, isMatriz]);
 
   const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
   const padBottom = padList;
@@ -671,6 +720,7 @@ export function MensajesScreen({ onBack }) {
 
   useEffect(() => {
     selectedClientIdRef.current = selectedClient?.id ? String(selectedClient.id) : null;
+    setShowSalonQuickReplies(false);
     if (!selectedClient?.id) {
       setMessages([]);
       setLoadingChat(false);
@@ -735,6 +785,32 @@ export function MensajesScreen({ onBack }) {
       user?.email?.split('@')[0] ||
       'Equipo salón';
     return { id: user?.id || null, name };
+  }, []);
+
+  const lastInboundChatMessage = useMemo(() => {
+    if (!staffUserId || !messages?.length) return null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      const ct = String(m.content_type || 'chat');
+      if (ct !== 'chat') continue;
+      const fromClient =
+        (m.created_by && m.created_by !== staffUserId) ||
+        (!m.created_by && m.client_id === selectedClient?.id);
+      if (fromClient) return m;
+    }
+    return null;
+  }, [messages, staffUserId, selectedClient?.id]);
+
+  const matchedQuickIntent = useMemo(() => {
+    if (!lastInboundChatMessage) return null;
+    const text = chatBubbleText(lastInboundChatMessage) || lastInboundChatMessage.content;
+    return matchChatQuickIntent(text);
+  }, [lastInboundChatMessage]);
+
+  const applySalonSuggestedReply = useCallback((intent) => {
+    if (!intent?.salonReply) return;
+    setDraft(intent.salonReply);
+    setShowSalonQuickReplies(false);
   }, []);
 
   const sendChatMessage = async () => {
@@ -1428,6 +1504,58 @@ export function MensajesScreen({ onBack }) {
             </View>
           ) : null}
 
+          {isMatriz && matchedQuickIntent && !showSalonQuickReplies ? (
+            <TouchableOpacity
+              style={[styles.suggestedIntentBar, { borderColor: c.primary, backgroundColor: `${c.primary}12` }]}
+              onPress={() => setShowSalonQuickReplies(true)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Respuesta sugerida para ${matchedQuickIntent.label}`}
+            >
+              <Sparkles size={16} color={c.primary} />
+              <Text style={[styles.suggestedIntentTxt, { color: c.foreground }]} numberOfLines={2}>
+                Cliente consultó: {matchedQuickIntent.label}. Tocá para ver respuesta sugerida.
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {isMatriz && showSalonQuickReplies ? (
+            <View style={[styles.quickActionsPanel, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <Text style={[styles.quickActionsTitle, { color: c.foreground }]}>
+                Respuestas sugeridas · Andreas Pro
+              </Text>
+              <Text style={[styles.quickActionsHint, { color: c.foregroundMuted }]}>
+                {matchedQuickIntent
+                  ? `Detectamos consulta de «${matchedQuickIntent.label}». Tocá para cargar el borrador (editable).`
+                  : 'Tocá una opción para cargar la respuesta en el borrador. Sincronizable con n8n.'}
+              </Text>
+              <View style={styles.quickActionsGrid}>
+                {CHAT_QUICK_INTENTS.map((intent) => {
+                  const highlighted = matchedQuickIntent?.id === intent.id;
+                  return (
+                    <TouchableOpacity
+                      key={intent.id}
+                      style={[
+                        styles.quickActionChip,
+                        {
+                          borderColor: highlighted ? c.primary : c.cardBorder,
+                          backgroundColor: highlighted ? `${c.primary}18` : c.surfaceMuted,
+                        },
+                      ]}
+                      onPress={() => applySalonSuggestedReply(intent)}
+                      disabled={sending}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Respuesta ${intent.label}`}
+                    >
+                      <Text style={[styles.quickActionChipTxt, { color: c.foreground }]}>{intent.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
           <View
             style={[
               styles.composer,
@@ -1441,6 +1569,23 @@ export function MensajesScreen({ onBack }) {
             <TouchableOpacity style={[styles.composerIcon, { borderColor: c.cardBorder }]} onPress={pickChatImage}>
               <ImageIcon size={22} color={c.primary} />
             </TouchableOpacity>
+            {isMatriz ? (
+              <TouchableOpacity
+                style={[
+                  styles.composerIcon,
+                  {
+                    borderColor: showSalonQuickReplies ? c.primary : c.cardBorder,
+                    backgroundColor: showSalonQuickReplies ? `${c.primary}18` : 'transparent',
+                  },
+                ]}
+                onPress={() => setShowSalonQuickReplies((v) => !v)}
+                disabled={sending}
+                accessibilityRole="button"
+                accessibilityLabel="Respuestas sugeridas"
+              >
+                <CircleHelp size={22} color={c.primary} strokeWidth={2.2} />
+              </TouchableOpacity>
+            ) : null}
             <TextInput
               style={[styles.composerInput, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
               placeholder="Mensaje…"
@@ -1563,6 +1708,38 @@ export function MensajesScreen({ onBack }) {
             autoCorrect={false}
             accessibilityLabel="Buscar clientes"
           />
+
+          {isMatriz ? (
+            <View
+              style={[
+                styles.automationRow,
+                { borderColor: c.cardBorder, backgroundColor: c.card },
+              ]}
+            >
+              <View style={styles.automationCopy}>
+                <Text style={[styles.automationTitle, { color: c.foreground }]}>
+                  Respuestas automáticas (n8n)
+                </Text>
+                <Text style={[styles.automationSub, { color: c.foregroundMuted }]} numberOfLines={2}>
+                  {chatAutomationEnabled
+                    ? 'Activo: el bot puede responder consultas frecuentes. Matriz sigue pudiendo escribir manual.'
+                    : 'Inactivo: solo respuestas manuales desde Andreas Pro.'}
+                </Text>
+              </View>
+              {chatAutomationLoading ? (
+                <ActivityIndicator size="small" color={c.primary} />
+              ) : (
+                <Switch
+                  value={chatAutomationEnabled}
+                  onValueChange={(v) => void onToggleChatAutomation(v)}
+                  disabled={chatAutomationSaving}
+                  trackColor={{ false: c.surfaceMuted, true: `${c.primary}88` }}
+                  thumbColor={chatAutomationEnabled ? c.primary : c.foregroundSubtle}
+                  accessibilityLabel="Activar respuestas automáticas n8n"
+                />
+              )}
+            </View>
+          ) : null}
 
           <View style={styles.toolbar}>
             <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
@@ -1754,6 +1931,30 @@ function createStyles(c) {
       borderWidth: 1,
       paddingHorizontal: spacing.sm,
       marginBottom: spacing.xs,
+    },
+    automationRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      borderWidth: 1,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    automationCopy: {
+      flex: 1,
+      minWidth: 0,
+    },
+    automationTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+    },
+    automationSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 2,
     },
     emptyTxt: {
       fontFamily: typography.fontSans,
@@ -2043,6 +2244,54 @@ function createStyles(c) {
       borderTopWidth: 1,
     },
     previewThumb: { width: 48, height: 48, borderRadius: radii.sm },
+    suggestedIntentBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginHorizontal: spacing.md,
+      marginTop: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
+    },
+    suggestedIntentTxt: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      lineHeight: 17,
+    },
+    quickActionsPanel: {
+      borderTopWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    quickActionsTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      marginBottom: 2,
+    },
+    quickActionsHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
+    },
+    quickActionsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    quickActionChip: {
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    quickActionChipTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+    },
     composer: {
       flexDirection: 'row',
       alignItems: 'flex-end',

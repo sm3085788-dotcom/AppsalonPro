@@ -1,8 +1,10 @@
 import { db, supabase } from './supabaseClient.js';
+import { PROMO_INVENTARIO_CONTENT_TYPE } from './promoInventarioChat.js';
 
 const SALON_OUTBOUND_TYPES = new Set([
   'chat',
   'broadcast_promo',
+  'promo_inventario',
   'incident_report',
   'cita_confirmacion',
 ]);
@@ -55,25 +57,78 @@ export function mergeAuraMessage(prev, row) {
 const SALON_UNREAD_CONTENT_TYPES = [
   'chat',
   'broadcast_promo',
+  'promo_inventario',
   'incident_report',
   'cita_confirmacion',
 ];
 
-/** Mensajes Andreas Pro del cliente autenticado (RPC con fallback). */
-export async function fetchClientAuraMessages(limit = 200) {
+/** Mensajes Andreas Pro del cliente autenticado (RPC con fallback directo por client_id). */
+export async function fetchClientAuraMessages(limit = 30) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 30, 500));
+
   const { data: rpcData, error: rpcError } = await supabase.rpc('client_aura_messages', {
-    p_limit: limit,
+    p_limit: safeLimit,
   });
-  if (!rpcError && Array.isArray(rpcData)) {
-    return { data: sortAuraMessages(rpcData), error: null };
-  }
+
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData?.session?.user?.id;
-  if (!uid) return { data: [], error: rpcError || { message: 'Sin sesión' } };
-  const { data: cliente } = await db.clientes.getByUserId(uid);
-  if (!cliente?.id) return { data: [], error: { message: 'Sin ficha de cliente' } };
-  const { data, error } = await db.marketingDirectMessages.getByClient(cliente.id);
-  return { data: sortAuraMessages(data), error: rpcError || error };
+
+  if (!rpcError && Array.isArray(rpcData)) {
+    let merged = sortAuraMessages(rpcData);
+    if (uid) {
+      const { data: cliente } = await db.clientes.getByUserId(uid);
+      if (cliente?.id) {
+        const hasPromoCards = merged.some(
+          (m) => String(m.content_type || '') === PROMO_INVENTARIO_CONTENT_TYPE,
+        );
+        const hasPromoIntro = merged.some(
+          (m) =>
+            String(m.content_type || '') === 'chat' &&
+            /promociones vigentes/i.test(String(m.content || '')),
+        );
+        if (hasPromoIntro && !hasPromoCards) {
+          const { data: directRows } = await db.marketingDirectMessages.getByClient(cliente.id, {
+            limit: safeLimit,
+            forClientApp: true,
+          });
+          for (const row of directRows || []) {
+            if (String(row.content_type || '') === PROMO_INVENTARIO_CONTENT_TYPE) {
+              merged = mergeAuraMessage(merged, row);
+            }
+          }
+          merged = sortAuraMessages(merged).slice(-safeLimit);
+        }
+      }
+    }
+    return { data: merged, error: null };
+  }
+
+  if (!uid) {
+    return { data: [], error: rpcError || { message: 'Sin sesión' } };
+  }
+
+  const { data: cliente, error: clienteErr } = await db.clientes.getByUserId(uid);
+  if (!cliente?.id) {
+    return {
+      data: [],
+      error: clienteErr || rpcError || { message: 'Sin ficha de cliente' },
+    };
+  }
+
+  const { data, error } = await db.marketingDirectMessages.getByClient(cliente.id, {
+    limit: safeLimit,
+    forClientApp: true,
+  });
+  const sorted = sortAuraMessages(data);
+  if (sorted.length > 0) {
+    return { data: sorted, error: null };
+  }
+
+  if (!rpcError && Array.isArray(rpcData)) {
+    return { data: [], error: null };
+  }
+
+  return { data: sorted, error: rpcError || error };
 }
 
 export async function fetchClientAuraUnreadCount() {

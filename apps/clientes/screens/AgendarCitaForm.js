@@ -10,6 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { CitaFechaHoraPicker } from '../components/citas/CitaFechaHoraPicker';
+import { ClientSucursalPicker } from '../components/sucursal/ClientSucursalPicker';
 import { AgendarServicioResumenCard } from '../components/citas/AgendarServicioResumenCard';
 import { resolveServicioImageUri } from '../data/servicioCategoryArt';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
@@ -21,6 +22,7 @@ import {
   REFERIDO_PREMIOS_COPY,
   resolvePrecioServicioConCanjeCitas,
   mergeNotasServicioConCanje,
+  ensureClientSucursalId,
 } from '@appsalon/shared-config';
 import { loadServiciosTiendaCatalog } from '../services/salonServiciosTienda';
 import { useServiciosCart } from '../context/ServiciosCartContext';
@@ -72,6 +74,7 @@ export function AgendarCitaForm({
   const [servicioSel, setServicioSel] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [fechaHora, setFechaHora] = useState(() => defaultNextSlot());
+  const [sucursalId, setSucursalId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [canjeCitas, setCanjeCitas] = useState(null);
   const canjeUsadoRef = useRef(false);
@@ -241,6 +244,11 @@ export function AgendarCitaForm({
       Alert.alert('Servicio', 'Elegí un servicio de la lista.');
       return;
     }
+    const sid = sucursalId || (await ensureClientSucursalId());
+    if (!sid) {
+      Alert.alert('Sucursal', 'Elegí la sucursal donde querés atenderte.');
+      return;
+    }
     setSaving(true);
     const aplicarCanje = canjeCitas && !canjeUsadoRef.current;
     const { precio, canjeSnap } = resolvePrecioServicioConCanjeCitas(
@@ -264,6 +272,7 @@ export function AgendarCitaForm({
         estado: 'pendiente',
         notas_servicio: notasServicio,
         empleado_id: null,
+        sucursal_id: sid,
       },
       { forClientApp: true },
     );
@@ -341,6 +350,7 @@ export function AgendarCitaForm({
     canjeCitas,
     servicioSel,
     fechaHora,
+    sucursalId,
     onCitasChanged,
     onCitaBooked,
     onClose,
@@ -468,6 +478,14 @@ export function AgendarCitaForm({
           ) : null}
         </View>
       )}
+
+      <View style={[subStyles.card, { marginTop: spacing.md }]}>
+        <Text style={subStyles.rowLabel}>Sucursal</Text>
+        <Text style={[styles.hint, { marginBottom: spacing.sm }]}>
+          La cita quedará en la agenda de esta sucursal.
+        </Text>
+        <ClientSucursalPicker onChange={setSucursalId} compact />
+      </View>
 
       <View style={[subStyles.card, { marginTop: spacing.md }]}>
         <Text style={subStyles.rowLabel}>Fecha y hora</Text>

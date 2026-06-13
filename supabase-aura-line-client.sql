@@ -30,12 +30,16 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT m.*
-  FROM marketing_direct_messages m
-  INNER JOIN clientes c ON c.id = m.client_id
-  WHERE c.user_id = auth.uid()
-  ORDER BY m.created_at ASC
-  LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 200), 500));
+  SELECT x.*
+  FROM (
+    SELECT m.*
+    FROM marketing_direct_messages m
+    INNER JOIN clientes c ON c.id = m.client_id
+    WHERE c.user_id = auth.uid()
+    ORDER BY m.created_at DESC
+    LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 200), 500))
+  ) x
+  ORDER BY x.created_at ASC;
 $$;
 
 CREATE OR REPLACE FUNCTION public.client_aura_unread_count()

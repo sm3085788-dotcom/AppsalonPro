@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Calendar, Clock, Sparkles, User, MapPin } from 'lucide-react-native';
+import { Calendar, Clock, Sparkles, User, MapPin, ChevronRight } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   resolveCitaConfirmacionNoteSegments,
@@ -25,7 +25,7 @@ function FactRow({ icon: Icon, label, value }) {
   );
 }
 
-export function CitaConfirmacionCard({ data, metaLabel }) {
+export function CitaConfirmacionCard({ data, metaLabel, onUbicacionPress }) {
   const confirmada = data?.confirmada !== false;
   const noteSegments = resolveCitaConfirmacionNoteSegments(data);
   const ubicacion = resolveCitaConfirmacionUbicacion(data);
@@ -83,12 +83,28 @@ export function CitaConfirmacionCard({ data, metaLabel }) {
         ) : null}
 
         {ubicacion ? (
-          <View style={styles.ubicacionBox}>
-            <View style={styles.ubicacionIconWrap}>
-              <MapPin size={15} color={GOLD} strokeWidth={2} />
+          onUbicacionPress ? (
+            <TouchableOpacity
+              style={styles.ubicacionBox}
+              onPress={onUbicacionPress}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="Tocá para ver la ubicación en mapas"
+            >
+              <View style={styles.ubicacionIconWrap}>
+                <MapPin size={15} color={GOLD} strokeWidth={2} />
+              </View>
+              <Text style={styles.ubicacionTxt}>{ubicacion}</Text>
+              <ChevronRight size={18} color={GOLD} strokeWidth={2} style={styles.ubicacionChevron} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.ubicacionBox}>
+              <View style={styles.ubicacionIconWrap}>
+                <MapPin size={15} color={GOLD} strokeWidth={2} />
+              </View>
+              <Text style={styles.ubicacionTxt}>{ubicacion}</Text>
             </View>
-            <Text style={styles.ubicacionTxt}>{ubicacion}</Text>
-          </View>
+          )
         ) : null}
 
         {metaLabel ? <Text style={styles.meta}>{metaLabel}</Text> : null}
@@ -271,6 +287,10 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     color: 'rgba(255,255,255,0.9)',
     paddingTop: 6,
+  },
+  ubicacionChevron: {
+    marginTop: 6,
+    opacity: 0.85,
   },
   meta: {
     fontFamily: typography.fontSans,

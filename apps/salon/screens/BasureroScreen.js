@@ -26,7 +26,7 @@ import {
 import { BASURERO_KNOWN_SOURCES, basureroSourceLabel } from '../services/salonBasureroSources';
 import { restoreBasureroEntries } from '../services/salonBasureroRestore';
 
-export function BasureroScreen({ onBack }) {
+export function BasureroScreen({ onBack, embedded = false }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
@@ -287,6 +287,174 @@ export function BasureroScreen({ onBack }) {
     { id: 'otros', label: 'Otros' },
   ];
 
+  const mainContent = (
+    <>
+      <View style={styles.body}>
+        {!sel.active ? (
+          <SalonButton
+            title="Vaciar todo el basurero"
+            variant="outlineGray"
+            fullWidth
+            onPress={limpiarTodo}
+            style={{ marginBottom: spacing.sm }}
+          />
+        ) : null}
+
+        <TextInput
+          style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
+          placeholder="Buscar por título, resumen u origen…"
+          placeholderTextColor={c.foregroundSubtle}
+          value={query}
+          onChangeText={setQuery}
+          autoCorrect={false}
+          accessibilityLabel="Buscar en basurero"
+        />
+
+        <View style={styles.toolbar}>
+          <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
+            {filtered.length} copia{filtered.length === 1 ? '' : 's'}
+            {!loading && entries.length ? ` de ${entries.length}` : ''}
+          </Text>
+          <View style={styles.toolbarRight}>
+            <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+            <Text style={[styles.toolbarDot, { color: c.foregroundSubtle }]}> · </Text>
+            <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
+              <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
+          {sel.active ? 'Tocá las tarjetas para marcarlas.' : filtroResumen}
+        </Text>
+
+        <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+          <FlatList
+            data={filtered}
+            keyExtractor={(it) => it.id}
+            renderItem={renderItem}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={c.primary}
+                colors={[c.primary]}
+                progressBackgroundColor={c.card}
+              />
+            }
+            contentContainerStyle={{ paddingBottom: sel.count ? 120 : padBottom, flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>{emptyText}</Text>
+            }
+          />
+        </View>
+      </View>
+
+      {sel.active && sel.count > 0 ? (
+        <View
+          style={[
+            styles.selectBar,
+            {
+              backgroundColor: c.card,
+              borderTopColor: c.cardBorder,
+              paddingBottom: Math.max(insets.bottom, spacing.sm),
+            },
+          ]}
+        >
+          <Text style={[styles.selectMeta, { color: c.foregroundMuted }]}>
+            {sel.count} seleccionado{sel.count === 1 ? '' : 's'}
+          </Text>
+          <SalonButton
+            title={busy ? 'Restaurando…' : 'Restaurar en Supabase'}
+            variant="heroGold"
+            fullWidth
+            onPress={confirmRestaurar}
+            disabled={busy}
+          />
+          <SalonButton
+            title={busy ? 'Borrando…' : 'Borrar solo copias'}
+            variant="outlineGray"
+            fullWidth
+            onPress={confirmBorrarCopias}
+            disabled={busy}
+            style={{ marginTop: spacing.xs, borderColor: c.error }}
+            textStyle={{ color: c.error }}
+          />
+          <SalonButton title="Cancelar" variant="outlineGray" fullWidth onPress={sel.exitSelectMode} style={{ marginTop: spacing.xs }} />
+        </View>
+      ) : null}
+    </>
+  );
+
+  const filtersModal = (
+    <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
+          <View style={styles.modalHead}>
+            <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
+            <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
+              <X size={22} color={c.foregroundMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.fieldLbl, { color: c.foreground }]}>Orden</Text>
+          <View style={styles.typeGrid}>
+            {[
+              { id: 'fecha_desc', label: 'Más recientes' },
+              { id: 'fecha_asc', label: 'Más antiguos' },
+              { id: 'nombre_asc', label: 'Título A → Z' },
+              { id: 'nombre_desc', label: 'Título Z → A' },
+            ].map((opt) => {
+              const on = sortMode === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.typeChip,
+                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                  ]}
+                  onPress={() => setSortMode(opt.id)}
+                >
+                  <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.fieldLbl, { color: c.foreground }]}>Origen</Text>
+          <View style={styles.typeGrid}>
+            {filterOptions.map((opt) => {
+              const on = filterSource === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.typeChip,
+                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                  ]}
+                  onPress={() => setFilterSource(opt.id)}
+                >
+                  <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalFiltros(false)} />
+        </View>
+      </View>
+    </Modal>
+  );
+
+  if (embedded) {
+    return (
+      <View style={[styles.shell, { flex: 1, backgroundColor: c.background }]}>
+        {mainContent}
+        {filtersModal}
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.shell, { backgroundColor: c.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -298,159 +466,9 @@ export function BasureroScreen({ onBack }) {
         bottomPadding={0}
         edgeToEdge
       >
-        <View style={styles.body}>
-          {!sel.active ? (
-            <SalonButton
-              title="Vaciar todo el basurero"
-              variant="outlineGray"
-              fullWidth
-              onPress={limpiarTodo}
-              style={{ marginBottom: spacing.sm }}
-            />
-          ) : null}
-
-          <TextInput
-            style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
-            placeholder="Buscar por título, resumen u origen…"
-            placeholderTextColor={c.foregroundSubtle}
-            value={query}
-            onChangeText={setQuery}
-            autoCorrect={false}
-            accessibilityLabel="Buscar en basurero"
-          />
-
-          <View style={styles.toolbar}>
-            <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
-              {filtered.length} copia{filtered.length === 1 ? '' : 's'}
-              {!loading && entries.length ? ` de ${entries.length}` : ''}
-            </Text>
-            <View style={styles.toolbarRight}>
-              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
-              <Text style={[styles.toolbarDot, { color: c.foregroundSubtle }]}> · </Text>
-              <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
-                <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <Text style={[styles.filtroResumen, { color: c.foregroundMuted }]} numberOfLines={2}>
-            {sel.active ? 'Tocá las tarjetas para marcarlas.' : filtroResumen}
-          </Text>
-
-          <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-            <FlatList
-              data={filtered}
-              keyExtractor={(it) => it.id}
-              renderItem={renderItem}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  tintColor={c.primary}
-                  colors={[c.primary]}
-                  progressBackgroundColor={c.card}
-                />
-              }
-              contentContainerStyle={{ paddingBottom: sel.count ? 120 : padBottom, flexGrow: 1 }}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
-                <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>{emptyText}</Text>
-              }
-            />
-          </View>
-        </View>
-
-        {sel.active && sel.count > 0 ? (
-          <View
-            style={[
-              styles.selectBar,
-              {
-                backgroundColor: c.card,
-                borderTopColor: c.cardBorder,
-                paddingBottom: Math.max(insets.bottom, spacing.sm),
-              },
-            ]}
-          >
-            <Text style={[styles.selectMeta, { color: c.foregroundMuted }]}>
-              {sel.count} seleccionado{sel.count === 1 ? '' : 's'}
-            </Text>
-            <SalonButton
-              title={busy ? 'Restaurando…' : 'Restaurar en Supabase'}
-              variant="heroGold"
-              fullWidth
-              onPress={confirmRestaurar}
-              disabled={busy}
-            />
-            <SalonButton
-              title={busy ? 'Borrando…' : 'Borrar solo copias'}
-              variant="outlineGray"
-              fullWidth
-              onPress={confirmBorrarCopias}
-              disabled={busy}
-              style={{ marginTop: spacing.xs, borderColor: c.error }}
-              textStyle={{ color: c.error }}
-            />
-            <SalonButton title="Cancelar" variant="outlineGray" fullWidth onPress={sel.exitSelectMode} style={{ marginTop: spacing.xs }} />
-          </View>
-        ) : null}
+        {mainContent}
       </SubScreenChrome>
-
-      <Modal visible={modalFiltros} animationType="slide" transparent onRequestClose={() => setModalFiltros(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: c.background, paddingBottom: modalSheetBottomPad(insets) }]}>
-            <View style={styles.modalHead}>
-              <Text style={[styles.modalTitle, { color: c.foreground }]}>Ordenar y filtrar</Text>
-              <TouchableOpacity onPress={() => setModalFiltros(false)} hitSlop={12}>
-                <X size={22} color={c.foregroundMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.fieldLbl, { color: c.foreground }]}>Orden</Text>
-            <View style={styles.typeGrid}>
-              {[
-                { id: 'fecha_desc', label: 'Más recientes' },
-                { id: 'fecha_asc', label: 'Más antiguos' },
-                { id: 'nombre_asc', label: 'Título A → Z' },
-                { id: 'nombre_desc', label: 'Título Z → A' },
-              ].map((opt) => {
-                const on = sortMode === opt.id;
-                return (
-                  <TouchableOpacity
-                    key={opt.id}
-                    style={[
-                      styles.typeChip,
-                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
-                    ]}
-                    onPress={() => setSortMode(opt.id)}
-                  >
-                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={[styles.fieldLbl, { color: c.foreground }]}>Origen</Text>
-            <View style={styles.typeGrid}>
-              {filterOptions.map((opt) => {
-                const on = filterSource === opt.id;
-                return (
-                  <TouchableOpacity
-                    key={opt.id}
-                    style={[
-                      styles.typeChip,
-                      { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
-                    ]}
-                    onPress={() => setFilterSource(opt.id)}
-                  >
-                    <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalFiltros(false)} />
-          </View>
-        </View>
-      </Modal>
+      {filtersModal}
     </View>
   );
 }

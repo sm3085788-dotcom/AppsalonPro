@@ -7,7 +7,7 @@ import { SalonButton } from '../components/luxury/SalonButton';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { FEATURED_SERVICE } from '../data/luxuryUiMocks';
-import { db } from '@appsalon/shared-config';
+import { db, getSalonGoogleMapsUrl } from '@appsalon/shared-config';
 import { TiendaFlow } from '../components/tienda/TiendaFlow';
 import { TendenciasFeed } from '../components/tendencias/TendenciasFeed';
 import { PremiosDashboard } from '../components/premios/PremiosDashboard';
@@ -82,9 +82,7 @@ function ContactoBody() {
 
         <TouchableOpacity
           style={subStyles.rowTouch}
-          onPress={() =>
-            openUrl('https://www.google.com/maps/search/?api=1&query=Aura+Salon+Guatemala')
-          }
+          onPress={() => openUrl(getSalonGoogleMapsUrl())}
         >
           <View style={{ flex: 1 }}>
             <Text style={subStyles.rowLabel}>Ubicación GPS</Text>

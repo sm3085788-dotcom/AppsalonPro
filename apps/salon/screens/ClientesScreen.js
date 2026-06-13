@@ -22,7 +22,11 @@ import {
   MEMBRESIA_TIERS,
   membresiaLabel,
   isClienteAppVerificado,
+  isClienteManual,
   computeMembresiaStatusFromRow,
+  getSalonSessionProfile,
+  isSalonSucursalAdmin,
+  getSalonBranchDisplayName,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { SalonFichaSheet } from '../components/SalonFichaSheet';
@@ -31,7 +35,6 @@ import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { MembresiaBadge } from '../components/MembresiaBadge';
 import { useTheme } from '../theme/ThemeProvider';
-import { shareClienteFicha } from '../utils/shareClienteFicha';
 
 const MINT = { border: '#2E7D32', bg: '#E8F5E9', chip: '#C8E6C9' };
 
@@ -92,6 +95,19 @@ export function ClientesScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
+  const sessionProfile = getSalonSessionProfile();
+  const isSucursalAdmin = isSalonSucursalAdmin(sessionProfile?.role);
+  const sucursalId = sessionProfile?.sucursal_id || null;
+  const sucursalNombre = getSalonBranchDisplayName(sessionProfile);
+
+  const canManageCliente = useCallback(
+    (row) => {
+      if (!row?.id) return true;
+      if (!isSucursalAdmin) return true;
+      return String(row.creado_en_sucursal_id || '') === String(sucursalId || '');
+    },
+    [isSucursalAdmin, sucursalId],
+  );
 
   const [clientes, setClientes] = useState([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -105,8 +121,11 @@ export function ClientesScreen({ onBack }) {
   const [sortMode, setSortMode] = useState('nombre_asc');
   const [filterTipo, setFilterTipo] = useState('todos');
   const [detailCliente, setDetailCliente] = useState(null);
+  const fichaReadOnly = useMemo(
+    () => (detailCliente?.id ? !canManageCliente(detailCliente) : false),
+    [detailCliente, canManageCliente],
+  );
   const creatingRef = useRef(false);
-  const [exportingId, setExportingId] = useState(null);
   const [codigosPendientes, setCodigosPendientes] = useState([]);
   const [nivelCodigo, setNivelCodigo] = useState('bronce');
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
@@ -197,12 +216,12 @@ export function ClientesScreen({ onBack }) {
     if (detailCliente.membresia_nivel) {
       setNivelCodigo(String(detailCliente.membresia_nivel).toLowerCase());
     }
-    if (isClienteAppVerificado(detailCliente)) {
+    if (isClienteAppVerificado(detailCliente) && !isClienteManual(detailCliente) && !isSucursalAdmin) {
       void loadCodigosPendientes(detailCliente.id);
     } else {
       setCodigosPendientes([]);
     }
-  }, [detailCliente, loadCodigosPendientes]);
+  }, [detailCliente, loadCodigosPendientes, isSucursalAdmin]);
 
   useEffect(() => {
     const id = detailCliente?.id;
@@ -225,6 +244,7 @@ export function ClientesScreen({ onBack }) {
 
   const asignarMembresiaManual = async () => {
     if (!detailCliente?.id) return;
+    if (isSucursalAdmin && isClienteManual(detailCliente)) return;
     setAsignandoMembresia(true);
     const { data, error } = await db.membresias.asignarDirecta({
       clienteId: detailCliente.id,
@@ -342,7 +362,12 @@ export function ClientesScreen({ onBack }) {
         puntos_fidelidad: Number(cur.puntos_fidelidad) || 0,
       });
       if (error) {
-        Alert.alert('No se guardó', error.message || 'Revisá permisos en Supabase.');
+        const msg = String(error.message || '');
+        const rlsHint =
+          msg.includes('row-level security') || msg.includes('violates')
+            ? '\n\nEjecutá supabase-sucursales-clientes-insert.sql en Supabase SQL Editor.'
+            : '';
+        Alert.alert('No se guardó', (msg || 'Revisá permisos en Supabase.') + rlsHint);
         return;
       }
       setDetailCliente(data);
@@ -359,10 +384,17 @@ export function ClientesScreen({ onBack }) {
 
   const generarCodigoMembresia = async () => {
     if (!detailCliente?.id) return;
-    if (!isClienteAppVerificado(detailCliente)) {
+    if (isSucursalAdmin) {
+      Alert.alert(
+        'Sucursal',
+        'Desde sucursal asigná la membresía directo en la ficha. Los códigos de activación los genera matriz para clientes con App.',
+      );
+      return;
+    }
+    if (isClienteManual(detailCliente) || !isClienteAppVerificado(detailCliente)) {
       Alert.alert(
         'Cliente manual',
-        'Este cliente no tiene App Clientes vinculada. Usá «Asignar membresía» para fijar el nivel en la ficha.',
+        'Los clientes dados de alta manualmente no usan código. Usá «Asignar membresía» para fijar el nivel en la ficha.',
       );
       return;
     }
@@ -397,18 +429,6 @@ export function ClientesScreen({ onBack }) {
     setNivelCodigo('bronce');
     setCodigosPendientes([]);
   }, []);
-
-  const exportarCliente = async (item) => {
-    if (!item) return;
-    setExportingId(item.id);
-    try {
-      await shareClienteFicha(item);
-    } catch (e) {
-      Alert.alert('Exportar', e?.message || 'No se pudo compartir la ficha.');
-    } finally {
-      setExportingId(null);
-    }
-  };
 
   const padList = Math.max(insets.bottom + spacing.md, spacing.lg);
 
@@ -464,6 +484,7 @@ export function ClientesScreen({ onBack }) {
             else setDetailCliente(item);
           }}
           onLongPress={() => {
+            if (isSucursalAdmin) return;
             if (!sel.active) sel.setActive(true);
             sel.toggleId(item.id);
           }}
@@ -537,6 +558,11 @@ export function ClientesScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Clientes"
+        subtitle={
+          isSucursalAdmin
+            ? `${sucursalNombre || 'Tu sucursal'} · catálogo completo (solo lectura). Podés agregar clientes nuevos de tu local.`
+            : undefined
+        }
         onBack={onBack}
         disableBodyScroll
         rightAction={rightAction}
@@ -559,8 +585,12 @@ export function ClientesScreen({ onBack }) {
               {loading ? '…' : `${filtered.length} cliente${filtered.length === 1 ? '' : 's'}`}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
-              <Text style={{ color: c.foregroundSubtle }}> · </Text>
+              {!isSucursalAdmin ? (
+                <>
+                  <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+                  <Text style={{ color: c.foregroundSubtle }}> · </Text>
+                </>
+              ) : null}
               <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
                 <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
               </TouchableOpacity>
@@ -613,7 +643,7 @@ export function ClientesScreen({ onBack }) {
             </View>
           )}
         </View>
-        {sel.active && sel.count > 0 ? (
+        {sel.active && sel.count > 0 && !isSucursalAdmin ? (
           <ListSelectionActionBar
             count={sel.count}
             onCancel={sel.exitSelectMode}
@@ -637,6 +667,7 @@ export function ClientesScreen({ onBack }) {
         fields={CLIENTE_FICHA_FIELDS}
         onSaveField={saveClienteField}
         savingKey={savingClienteKey}
+        readOnly={fichaReadOnly}
         isNew={!!detailCliente && !detailCliente.id}
         initialEditKey="nombre"
         advanceOnEnter
@@ -646,7 +677,7 @@ export function ClientesScreen({ onBack }) {
           letter: (detailCliente?.nombre || '?').trim().charAt(0).toUpperCase(),
         }}
         extraContent={
-          detailCliente?.id ? (
+          detailCliente?.id && !fichaReadOnly ? (
             <>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLbl}>Membresía</Text>
@@ -674,16 +705,31 @@ export function ClientesScreen({ onBack }) {
                 );
               })()}
               {(() => {
-                const conApp = isClienteAppVerificado(detailCliente);
+                const esManual = isClienteManual(detailCliente);
+                if (isSucursalAdmin && esManual) {
+                  return (
+                    <Text style={[styles.membresiaBlockHint, { color: c.foregroundMuted, marginTop: spacing.xs }]}>
+                      Cliente manual de sucursal: la membresía la gestiona matriz.
+                    </Text>
+                  );
+                }
+                const conApp = isClienteAppVerificado(detailCliente) && !esManual;
+                const puedeGenerarCodigo = conApp && !isSucursalAdmin;
                 return (
                   <View style={[styles.membresiaBlock, { borderColor: c.cardBorder }]}>
                     <Text style={[styles.membresiaBlockTitle, { color: c.foreground }]}>
-                      {conApp ? 'Membresía · App Clientes' : 'Membresía · ficha manual'}
+                      {puedeGenerarCodigo
+                        ? 'Membresía · App Clientes'
+                        : esManual || isSucursalAdmin
+                          ? 'Membresía · ficha manual'
+                          : 'Membresía'}
                     </Text>
                     <Text style={[styles.membresiaBlockHint, { color: c.foregroundMuted }]}>
-                      {conApp
+                      {puedeGenerarCodigo
                         ? 'Generá un código para que el cliente lo active en App Clientes → Membresías.'
-                        : 'Cliente sin cuenta en la app: asigná el nivel directo en la ficha (no usa código).'}
+                        : isSucursalAdmin
+                          ? 'Asigná el nivel directo en la ficha. En sucursal no se generan códigos de activación.'
+                          : 'Asigná el nivel directo en la ficha. Los clientes manuales no usan código de activación.'}
                     </Text>
                     <View style={styles.chipRow}>
                       {MEMBRESIA_TIERS.map((t) => {
@@ -707,7 +753,7 @@ export function ClientesScreen({ onBack }) {
                         );
                       })}
                     </View>
-                    {conApp ? (
+                    {puedeGenerarCodigo ? (
                       <>
                         <SalonButton
                           title={
@@ -770,16 +816,7 @@ export function ClientesScreen({ onBack }) {
                   onPress={() => void crearCliente()}
                   style={{ marginTop: spacing.md }}
                 />
-              ) : (
-                <SalonButton
-                  title={exportingId === detailCliente.id ? 'Generando PDF…' : 'Exportar PDF (ficha y foto)'}
-                  variant="outlineGold"
-                  fullWidth
-                  disabled={exportingId === detailCliente.id}
-                  onPress={() => void exportarCliente(detailCliente)}
-                  style={{ marginTop: spacing.md }}
-                />
-              )}
+              ) : null}
               <SalonButton
                 title="Cerrar"
                 variant="outlineGray"

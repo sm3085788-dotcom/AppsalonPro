@@ -111,7 +111,7 @@ export async function notifyClienteCitaConfirmada(params) {
       Alert.alert(
         'Mensaje en la app',
         rls
-          ? `${error.message || 'No se pudo enviar.'}\n\nVerificá que tu usuario salón sea admin y que existan las políticas de marketing_direct_messages en Supabase.`
+          ? `${error.message || 'No se pudo enviar.'}\n\nSi entraste como sucursal, ejecutá supabase-sucursales-mensajes.sql en Supabase SQL Editor.`
           : error.message || 'No se pudo enviar la confirmación.',
       );
       if (!tieneTel) return false;

@@ -3,21 +3,19 @@ import {
   View,
   Text,
   FlatList,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView,
-  Keyboard,
   Platform,
   Alert,
   RefreshControl,
   AppState,
+  TextInput,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
-import { Send, FileText, Image as ImageIcon, X, Download, Sparkles } from 'lucide-react-native';
+import { Send, FileText, CircleHelp, Download, Sparkles } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   supabase,
@@ -28,19 +26,28 @@ import {
   isInboundAuraUnread,
   isClientOutboundAuraMessage,
   mergeAuraMessage,
-  uploadMensajeMediaFromUri,
   broadcastPreviewText,
   parseCitaConfirmacionContent,
   citaConfirmacionPreviewText,
   MARKETING_INTEREST_TYPES,
+  PROMO_INVENTARIO_CONTENT_TYPE,
+  promoInventarioPreviewText,
+  isPromoInventarioMessage,
+  fetchClientPromosVigentesForChat,
+  expandAuraMessagesWithLivePromos,
+  collapsePromoChatRowsForDisplay,
+  isPromoIntroSalonChat,
 } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
-import { keyboardComposerLift } from '../../../../shared/utils/chatKeyboard';
 import { SalonButton } from '../luxury/SalonButton';
 import { saveChatImageWithAlert } from '../../utils/saveChatImage';
 import { BroadcastPromoCard } from './BroadcastPromoCard';
 import { CitaConfirmacionCard } from './CitaConfirmacionCard';
 import { MarketingInterestCard } from './MarketingInterestCard';
+import { InventarioPromoChatList } from './InventarioPromoChatCard';
+import { CLIENT_CHAT_QUICK_ACTIONS } from '@appsalon/shared-config';
+import { keyboardComposerLift } from '../../../../shared/utils/chatKeyboard';
+import { openSalonUbicacionEnMapas } from '../../utils/openSalonMap';
 
 function chatBubbleText(item) {
   const ct = String(item.content_type || '');
@@ -51,12 +58,16 @@ function chatBubbleText(item) {
     const preview = broadcastPreviewText(item.content);
     if (preview) return preview;
   }
+  if (ct === PROMO_INVENTARIO_CONTENT_TYPE) {
+    const preview = promoInventarioPreviewText(item.content);
+    if (preview) return preview;
+  }
   const t = String(item.content || '').trim();
   if (item.media_url && item.media_kind === 'image' && /^imagen$/i.test(t)) return '';
   return t;
 }
 
-function ChatImageWithSave({ uri, imageStyle, btnStyle }) {
+function ChatImageWithSave({ uri, imageStyle, btnStyle, free = false }) {
   const [saving, setSaving] = useState(false);
   const onSave = async () => {
     if (saving) return;
@@ -68,7 +79,7 @@ function ChatImageWithSave({ uri, imageStyle, btnStyle }) {
     }
   };
   return (
-    <View style={{ position: 'relative', marginTop: spacing.xs }}>
+    <View style={free ? { position: 'relative' } : { position: 'relative', marginTop: spacing.xs }}>
       <Image source={{ uri }} style={imageStyle} resizeMode="cover" />
       <TouchableOpacity
         style={btnStyle}
@@ -107,10 +118,8 @@ function isFromClientMessage(item, sessionUserId) {
   return Boolean(uid && author && author === uid);
 }
 
-/** Altura aprox. del encabezado SubScreenChrome (Volver + título + subtítulo). */
-const CHROME_HEADER_EST = 118;
 const SYNC_POLL_MS = 60000;
-/** 30 mensajes recientes al abrir: renderizado instantáneo sin scroll visible. */
+/** 30 mensajes más recientes al abrir el chat. */
 const MSG_FETCH_LIMIT = 30;
 
 /** Caché del hilo en memoria (misma idea que Andreas Pro en app salón). */
@@ -157,7 +166,6 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   const { colors: c, isDark } = useTheme();
   const clientBubble = isDark ? CLIENT_BUBBLE.dark : CLIENT_BUBBLE.light;
   const insets = useSafeAreaInsets();
-  const keyboardVerticalOffset = insets.top + CHROME_HEADER_EST;
   const styles = useMemo(() => createStyles(c), [c]);
   const listRef = useRef(null);
   const chatStickToBottomRef = useRef(true);
@@ -179,12 +187,28 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [promoBusy, setPromoBusy] = useState(false);
-  const [pendingImage, setPendingImage] = useState(null);
+  const [livePromoPayloads, setLivePromoPayloads] = useState([]);
+  const [showQuickActions, setShowQuickActions] = useState(false);
   const [composerLift, setComposerLift] = useState(0);
   const markDeliveredOnOpenRef = useRef(false);
+
+  const refreshLivePromos = useCallback(async () => {
+    const { data } = await fetchClientPromosVigentesForChat();
+    setLivePromoPayloads(Array.isArray(data) ? data : []);
+  }, []);
+
+  const displayMessages = useMemo(
+    () => expandAuraMessagesWithLivePromos(messages, livePromoPayloads, sessionUser?.id),
+    [messages, livePromoPayloads, sessionUser?.id],
+  );
+
+  const listData = useMemo(
+    () => collapsePromoChatRowsForDisplay(displayMessages, sessionUser?.id),
+    [displayMessages, sessionUser?.id],
+  );
+
   const composerPadBottom =
-    composerLift > 0 ? spacing.md : Math.max(insets.bottom, Platform.OS === 'android' ? 6 : 4);
-  const composerMarginBottom = Platform.OS === 'android' ? composerLift : 0;
+    composerLift > 0 ? spacing.sm : Math.max(insets.bottom, Platform.OS === 'android' ? 6 : 4);
 
   const scrollToEnd = useCallback((animated = true, force = false) => {
     if (!force && !chatStickToBottomRef.current) return;
@@ -217,13 +241,19 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
     chatStickToBottomRef.current = distFromBottom < 72;
   }, []);
 
-  const clientMeta = useMemo(
-    () => ({
-      clientName: clienteRow?.nombre || sessionUser?.user_metadata?.full_name || 'Cliente',
-      clientPhone: clienteRow?.telefono || null,
-    }),
-    [clienteRow, sessionUser],
-  );
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = Keyboard.addListener(showEvt, (e) => {
+      setComposerLift(keyboardComposerLift(e, insets.bottom));
+      if (chatStickToBottomRef.current) scrollToEnd(true, true);
+    });
+    const onHide = Keyboard.addListener(hideEvt, () => setComposerLift(0));
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [insets.bottom, scrollToEnd]);
 
   const markSalonMessagesDelivered = useCallback(async (rows, { onlyIfViewing = false } = {}) => {
     if (onlyIfViewing && !markDeliveredOnOpenRef.current) return rows || [];
@@ -266,7 +296,12 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
       }
       if (String(clienteIdRef.current) !== String(clienteRow?.id)) return;
 
-      const marked = await markSalonMessagesDelivered(data || [], {
+      const rows = data || [];
+      if (!rows.length && !silent) {
+        setLoadError(null);
+      }
+
+      const marked = await markSalonMessagesDelivered(rows, {
         onlyIfViewing: markDeliveredOnOpenRef.current,
       });
       if (String(clienteIdRef.current) !== String(clienteRow?.id)) return;
@@ -285,6 +320,9 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
     [clienteRow?.id, markSalonMessagesDelivered, scrollToEnd],
   );
 
+  const loadMessagesRef = useRef(loadMessages);
+  loadMessagesRef.current = loadMessages;
+
   const applyIncomingRow = useCallback(
     async (row) => {
       if (!row?.id) return;
@@ -302,8 +340,14 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
         chatStickToBottomRef.current = true;
         scrollToEnd(true, true);
       }
+      if (isPromoIntroSalonChat(row, sessionUser?.id)) {
+        void refreshLivePromos();
+        setTimeout(() => {
+          void loadMessagesRef.current({ silent: true });
+        }, 1500);
+      }
     },
-    [scrollToEnd, sessionUser?.id, clienteRow?.id],
+    [scrollToEnd, sessionUser?.id, clienteRow?.id, refreshLivePromos],
   );
 
   useEffect(() => {
@@ -318,14 +362,18 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
     }
     chatStickToBottomRef.current = true;
     markDeliveredOnOpenRef.current = true;
+    setLoadError(null);
     const cached = readAuraThreadCache(clienteRow.id);
     if (cached?.length) {
       setMessages(cached);
       setLoading(false);
+    } else {
+      setLoading(true);
     }
     void loadMessages({ silent: Boolean(cached?.length) });
+    void refreshLivePromos();
     return undefined;
-  }, [clienteRow?.id, loadMessages]);
+  }, [clienteRow?.id, loadMessages, refreshLivePromos]);
 
   useEffect(() => {
     if (!clienteRow?.id) return undefined;
@@ -371,97 +419,73 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
     };
   }, [clienteRow?.id, applyIncomingRow, loadMessages]);
 
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const onShow = Keyboard.addListener(showEvt, (e) => {
-      setComposerLift(keyboardComposerLift(e, insets.bottom));
-      if (chatStickToBottomRef.current) scrollToEnd(true, true);
-    });
-    const onHide = Keyboard.addListener(hideEvt, () => setComposerLift(0));
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, [insets.bottom, scrollToEnd]);
+  const clientMeta = useMemo(
+    () => ({
+      clientName: clienteRow?.nombre || sessionUser?.user_metadata?.full_name || 'Cliente',
+      clientPhone: clienteRow?.telefono || null,
+    }),
+    [clienteRow, sessionUser],
+  );
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadMessages({ silent: true });
+      await Promise.all([loadMessages({ silent: true }), refreshLivePromos()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadMessages]);
+  }, [loadMessages, refreshLivePromos]);
 
-  const pickImage = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permisos', 'Necesitamos acceso a tu galería para adjuntar fotos.');
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.85,
-    });
-    if (!res.canceled && res.assets?.[0]) setPendingImage(res.assets[0]);
-  };
+  const dispatchOutgoingMessage = useCallback(
+    async (text) => {
+      const trimmed = String(text || '').trim();
+      if (!trimmed || sending) return false;
+      setSending(true);
+      try {
+        const { data, error } = await sendClientAuraChat(trimmed, clientMeta, {});
+        if (error) {
+          const hint = /row-level security|permiso denegado/i.test(String(error.message || ''))
+            ? '\n\nEjecutá supabase-aura-line-client-chat-media.sql en Supabase.'
+            : '';
+          Alert.alert('Andreas Pro', (error.message || 'No se pudo enviar.') + hint);
+          return false;
+        }
+        if (data) {
+          setMessages((prev) => {
+            const next = mergeAuraMessage(prev, data);
+            if (clienteRow?.id) writeAuraThreadCache(clienteRow.id, next);
+            return next;
+          });
+          chatStickToBottomRef.current = true;
+          scrollToEnd(true, true);
+          onUnreadChangeRef.current?.();
+        } else {
+          await loadMessages({ silent: true });
+        }
+        return true;
+      } finally {
+        setSending(false);
+      }
+    },
+    [sending, clientMeta, clienteRow?.id, loadMessages, scrollToEnd],
+  );
 
   const send = async () => {
     const text = draft.trim();
-    if ((!text && !pendingImage?.uri) || sending) return;
-    setSending(true);
-    try {
-      let mediaUrl = null;
-      let mediaKind = null;
-      if (pendingImage?.uri) {
-        const ext = String(pendingImage?.mimeType || '').includes('png') ? 'png' : 'jpg';
-        const { publicUrl, error: upErr } = await uploadMensajeMediaFromUri(pendingImage.uri, {
-          extension: ext,
-          contentType: pendingImage.mimeType || 'image/jpeg',
-        });
-        if (upErr) {
-          Alert.alert(
-            'Adjunto',
-            `${upErr.message || 'No se pudo subir la imagen.'}\n\nEjecutá supabase-mensajes-storage.sql en Supabase (bucket "mensajes").`,
-          );
-          return;
-        }
-        mediaUrl = publicUrl;
-        mediaKind = 'image';
-      }
-
-      const { data, error } = await sendClientAuraChat(text, clientMeta, {
-        mediaUrl,
-        mediaKind,
-      });
-      if (error) {
-        const hint = /row-level security|permiso denegado/i.test(String(error.message || ''))
-          ? '\n\nEjecutá supabase-aura-line-client-chat-media.sql en Supabase.'
-          : '';
-        Alert.alert('Andreas Pro', (error.message || 'No se pudo enviar.') + hint);
-        return;
-      }
+    if (!text || sending) return;
+    const ok = await dispatchOutgoingMessage(text);
+    if (ok) {
       setDraft('');
-      setPendingImage(null);
-      if (data) {
-        setMessages((prev) => {
-          const next = mergeAuraMessage(prev, data);
-          if (clienteRow?.id) writeAuraThreadCache(clienteRow.id, next);
-          return next;
-        });
-        chatStickToBottomRef.current = true;
-        scrollToEnd(true, true);
-        onUnreadChangeRef.current?.();
-      } else {
-        await loadMessages({ silent: true });
-      }
-    } finally {
-      setSending(false);
+      setShowQuickActions(false);
     }
   };
+
+  const pickQuickAction = (message) => {
+    setDraft(String(message || '').trim());
+    setShowQuickActions(false);
+  };
+
+  const hasDraft = Boolean(draft.trim());
 
   const handlePromoAction = async (action, promoItem) => {
     if (promoBusy) return;
@@ -485,20 +509,48 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
     const citaCard = isCitaConfirm ? parseCitaConfirmacionContent(item.content) : null;
     const whenLabel = `${formatWhen(item.created_at)} · ${item.created_by_name || (fromSalon ? 'Aura Salón' : 'Vos')}`;
 
-    if (isCitaConfirm && fromSalon && citaCard) {
+    if (isCitaConfirm && !isFromClient && citaCard) {
       return (
         <View style={styles.postWrap}>
-          <CitaConfirmacionCard data={citaCard} metaLabel={whenLabel} />
+          <CitaConfirmacionCard
+            data={citaCard}
+            metaLabel={whenLabel}
+            onUbicacionPress={() => void openSalonUbicacionEnMapas()}
+          />
         </View>
       );
     }
 
-    if (isBroadcast && fromSalon) {
+    if (isBroadcast && !isFromClient) {
       return (
         <View style={styles.postWrap}>
           <BroadcastPromoCard
             item={item}
             createdAtLabel={whenLabel}
+            onAction={handlePromoAction}
+            busy={promoBusy}
+          />
+        </View>
+      );
+    }
+
+    if (item.__promoList && !isFromClient) {
+      return (
+        <View style={styles.promoPostWrap}>
+          <InventarioPromoChatList
+            items={item.promos}
+            onAction={handlePromoAction}
+            busy={promoBusy}
+          />
+        </View>
+      );
+    }
+
+    if (isPromoInventarioMessage(item) && !isFromClient) {
+      return (
+        <View style={styles.promoPostWrap}>
+          <InventarioPromoChatList
+            items={[item]}
             onAction={handlePromoAction}
             busy={promoBusy}
           />
@@ -515,6 +567,41 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
             audience="client"
             createdAtLabel={whenLabel}
           />
+        </View>
+      );
+    }
+
+    const bubbleText = chatBubbleText(item);
+    const hasImage = Boolean(item.media_url && item.media_kind === 'image');
+    const salonFreeImage = fromSalon && hasImage && !isInterest && !isIncident;
+    const metaLabel = `${formatWhen(item.created_at)} · ${item.created_by_name || 'Aura Salón'}`;
+
+    if (salonFreeImage) {
+      return (
+        <View style={[styles.bubbleWrap, styles.bubbleIn]}>
+          {bubbleText ? (
+            <View
+              style={[
+                styles.bubble,
+                { backgroundColor: c.card, borderColor: c.cardBorder, marginBottom: spacing.xs },
+              ]}
+            >
+              {isIncident ? (
+                <View style={styles.badgeRow}>
+                  <FileText size={12} color={c.primary} />
+                  <Text style={[styles.badgeTxt, { color: c.primary }]}>Reporte del salón</Text>
+                </View>
+              ) : null}
+              <Text style={[styles.bubbleTxt, { color: c.foreground }]}>{bubbleText}</Text>
+            </View>
+          ) : null}
+          <ChatImageWithSave
+            uri={item.media_url}
+            imageStyle={styles.bubbleImgFree}
+            btnStyle={styles.saveImgBtn}
+            free
+          />
+          <Text style={[styles.bubbleMetaFree, { color: c.foregroundMuted }]}>{metaLabel}</Text>
         </View>
       );
     }
@@ -546,10 +633,10 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
               <Text style={[styles.badgeTxt, { color: c.primary }]}>Reporte del salón</Text>
             </View>
           ) : null}
-          {chatBubbleText(item) ? (
-            <Text style={[styles.bubbleTxt, { color: c.foreground }]}>{chatBubbleText(item)}</Text>
+          {bubbleText ? (
+            <Text style={[styles.bubbleTxt, { color: c.foreground }]}>{bubbleText}</Text>
           ) : null}
-          {item.media_url && item.media_kind === 'image' ? (
+          {hasImage ? (
             <ChatImageWithSave uri={item.media_url} imageStyle={styles.bubbleImg} btnStyle={styles.saveImgBtn} />
           ) : null}
           <Text
@@ -586,17 +673,13 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.shell}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={keyboardVerticalOffset}
-    >
+    <View style={styles.shell}>
       {loading && messages.length === 0 ? (
         <ActivityIndicator style={{ marginTop: spacing.lg }} color={c.primary} />
       ) : (
         <FlatList
           ref={listRef}
-          data={messages}
+          data={listData}
           keyExtractor={(m) => String(m.id)}
           renderItem={renderItem}
           style={[styles.list, styles.listFlex]}
@@ -636,40 +719,72 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
           }
         />
       )}
-      <View style={{ marginBottom: composerMarginBottom }}>
-      {pendingImage ? (
-        <View style={[styles.previewBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-          <Image source={{ uri: pendingImage.uri }} style={styles.previewThumb} />
-          <TouchableOpacity onPress={() => setPendingImage(null)} hitSlop={10}>
-            <X size={20} color={c.foregroundMuted} />
-          </TouchableOpacity>
-        </View>
-      ) : null}
-      <View
-        style={[
-          styles.composer,
-          {
-            borderTopColor: c.cardBorder,
-            backgroundColor: c.background,
-            paddingBottom: composerPadBottom,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.attachBtn, { borderColor: c.cardBorder }]}
-          onPress={pickImage}
-          disabled={sending}
+      <View style={{ paddingBottom: composerPadBottom, marginBottom: composerLift }}>
+        {showQuickActions ? (
+          <View style={[styles.quickActionsPanel, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+            <Text style={[styles.quickActionsTitle, { color: c.foreground }]}>
+              ¿En qué te podemos ayudar?
+            </Text>
+            <Text style={[styles.quickActionsHint, { color: c.foregroundMuted }]}>
+              Elegí una opción o escribí tu mensaje abajo.
+            </Text>
+            <View style={styles.quickActionsGrid}>
+              {CLIENT_CHAT_QUICK_ACTIONS.map((action) => {
+                const picked = draft.trim() === action.message.trim();
+                return (
+                  <TouchableOpacity
+                    key={action.id}
+                    style={[
+                      styles.quickActionChip,
+                      {
+                        borderColor: picked ? c.primary : c.cardBorder,
+                        backgroundColor: picked ? `${c.primary}18` : c.surfaceMuted,
+                      },
+                    ]}
+                    onPress={() => pickQuickAction(action.message)}
+                    disabled={sending}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel={action.label}
+                  >
+                    <Text style={[styles.quickActionChipTxt, { color: c.foreground }]}>{action.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+        <View
+          style={[
+            styles.composer,
+            {
+              borderTopColor: c.cardBorder,
+              backgroundColor: c.background,
+            },
+          ]}
         >
-          <ImageIcon size={22} color={c.primary} />
-        </TouchableOpacity>
-        <View style={styles.composerInputWrap}>
+          <TouchableOpacity
+            style={[
+              styles.composerIconBtn,
+              {
+                borderColor: showQuickActions ? c.primary : c.cardBorder,
+                backgroundColor: showQuickActions ? `${c.primary}18` : 'transparent',
+              },
+            ]}
+            onPress={() => setShowQuickActions((v) => !v)}
+            disabled={sending}
+            accessibilityRole="button"
+            accessibilityLabel="Sugerencias de mensaje"
+          >
+            <CircleHelp size={22} color={c.primary} strokeWidth={2.2} />
+          </TouchableOpacity>
           <TextInput
             style={[
               styles.composerInput,
               { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
             ]}
-            placeholder="Escribí al salón…"
-            placeholderTextColor={c.foregroundSubtle}
+            placeholder="Mensaje…"
+            placeholderTextColor={c.foregroundMuted}
             value={draft}
             onChangeText={setDraft}
             onFocus={() => {
@@ -677,19 +792,27 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
             }}
             multiline
             maxLength={2000}
-            textAlignVertical="center"
+            editable={!sending}
           />
+          <TouchableOpacity
+            style={[
+              styles.composerIconBtn,
+              styles.sendBtn,
+              {
+                backgroundColor: c.primary,
+                opacity: sending || !hasDraft ? 0.45 : 1,
+              },
+            ]}
+            onPress={() => void send()}
+            disabled={sending || !hasDraft}
+            accessibilityRole="button"
+            accessibilityLabel="Enviar mensaje"
+          >
+            <Send size={20} color={c.heroCtaText} strokeWidth={2.2} />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[styles.sendBtn, { backgroundColor: c.primary, opacity: sending ? 0.6 : 1 }]}
-          onPress={() => void send()}
-          disabled={sending}
-        >
-          <Send size={20} color={c.heroCtaText} strokeWidth={2.2} />
-        </TouchableOpacity>
       </View>
-      </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -711,6 +834,12 @@ function createStyles(c) {
       alignSelf: 'stretch',
       marginVertical: spacing.md,
     },
+    promoPostWrap: {
+      width: '100%',
+      alignSelf: 'stretch',
+      marginTop: spacing.xs,
+      marginBottom: spacing.sm,
+    },
     bubbleIn: { alignSelf: 'flex-start' },
     bubbleOut: { alignSelf: 'flex-end' },
     bubble: {
@@ -723,6 +852,7 @@ function createStyles(c) {
     badgeTxt: { fontFamily: typography.fontSansMedium, fontSize: 10, textTransform: 'uppercase' },
     bubbleTxt: { fontFamily: typography.fontSans, fontSize: 15, lineHeight: 22 },
     bubbleImg: { width: '100%', height: 140, borderRadius: radii.md },
+    bubbleImgFree: { width: '100%', height: 200, borderRadius: radii.lg },
     saveImgBtn: {
       position: 'absolute',
       right: 8,
@@ -735,65 +865,70 @@ function createStyles(c) {
       justifyContent: 'center',
     },
     bubbleMeta: { fontFamily: typography.fontSans, fontSize: 10, marginTop: 6 },
-    previewBar: {
+    bubbleMetaFree: { fontFamily: typography.fontSans, fontSize: 10, marginTop: 4 },
+    quickActionsPanel: {
       borderTopWidth: 1,
-      borderBottomWidth: 1,
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.xs,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
+      paddingVertical: spacing.sm,
     },
-    previewThumb: {
-      width: 56,
-      height: 56,
-      borderRadius: radii.sm,
+    quickActionsTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      marginBottom: 2,
+    },
+    quickActionsHint: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
+    },
+    quickActionsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    quickActionChip: {
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    quickActionChipTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
     },
     composer: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-end',
+      gap: spacing.sm,
       alignSelf: 'stretch',
       width: '100%',
-      gap: 8,
-      paddingHorizontal: 10,
-      paddingTop: 10,
-      paddingBottom: 8,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
       borderTopWidth: 1,
     },
-    attachBtn: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      borderWidth: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0,
-    },
-    composerInputWrap: {
-      flex: 1,
-      minWidth: 0,
-      alignSelf: 'stretch',
-    },
     composerInput: {
-      width: '100%',
-      minHeight: 44,
-      maxHeight: 132,
+      flex: 1,
       borderWidth: 1,
       borderRadius: radii.lg,
       paddingHorizontal: spacing.md,
-      paddingTop: Platform.OS === 'ios' ? 11 : 10,
-      paddingBottom: Platform.OS === 'ios' ? 11 : 10,
+      paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+      maxHeight: 120,
       fontFamily: typography.fontSans,
-      fontSize: 16,
-      lineHeight: 22,
+      fontSize: 15,
+      marginBottom: 2,
     },
-    sendBtn: {
+    composerIconBtn: {
       width: 44,
       height: 44,
       borderRadius: 22,
+      borderWidth: 1,
       alignItems: 'center',
       justifyContent: 'center',
       flexShrink: 0,
+    },
+    sendBtn: {
+      borderWidth: 0,
     },
   });
 }

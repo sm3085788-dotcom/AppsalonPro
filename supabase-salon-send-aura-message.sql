@@ -1,5 +1,41 @@
 -- Solo lo que falta en tu proyecto: envío desde App Salón (Mensajes, citas, difusiones).
 -- Ejecutar en Supabase → SQL Editor → Run.
+-- Sucursales: ver también supabase-sucursales-mensajes.sql
+
+CREATE OR REPLACE FUNCTION public.salon_branch_can_message_cliente(p_client_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    public.is_admin_global()
+    OR (COALESCE(public.is_staff_or_admin(), false) AND NOT public.is_admin_sucursal())
+    OR (
+      public.is_admin_sucursal()
+      AND public.current_sucursal_id() IS NOT NULL
+      AND (
+        EXISTS (
+          SELECT 1 FROM public.clientes cl
+          WHERE cl.id = p_client_id
+            AND cl.creado_en_sucursal_id = public.current_sucursal_id()
+        )
+        OR EXISTS (
+          SELECT 1 FROM public.citas c
+          WHERE c.cliente_id = p_client_id
+            AND c.sucursal_id = public.current_sucursal_id()
+        )
+        OR EXISTS (
+          SELECT 1 FROM public.clientes cl
+          WHERE cl.id = p_client_id
+            AND cl.sucursal_preferida_id = public.current_sucursal_id()
+        )
+      )
+    );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.salon_branch_can_message_cliente(uuid) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.salon_send_aura_message(
   p_client_id uuid,
@@ -24,8 +60,8 @@ BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'Sin sesión';
   END IF;
-  IF NOT COALESCE(public.is_staff_or_admin(), false) THEN
-    RAISE EXCEPTION 'Sin permiso de salón (requiere rol admin)';
+  IF NOT public.salon_branch_can_message_cliente(p_client_id) THEN
+    RAISE EXCEPTION 'Sin permiso para enviar mensajes a este cliente desde tu sucursal';
   END IF;
   IF p_client_id IS NULL THEN
     RAISE EXCEPTION 'Cliente no válido';

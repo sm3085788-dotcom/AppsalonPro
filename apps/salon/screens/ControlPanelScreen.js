@@ -30,13 +30,18 @@ import {
   purgeMetas,
   purgeNotificaciones,
   purgeIncidentes,
-  purgeAuditLogs,
   purgeBasureroLocal,
   purgeReportesLocales,
   purgeAllModules,
   normalizeDateRangeOpts,
 } from '../services/controlPanelPurge';
 import { searchModuleItems, deleteModuleItem, moduleSupportsSearch, listModuleItems, moduleListsOnExpand } from '../services/controlPanelItemOps';
+import { BasureroScreen } from './BasureroScreen';
+
+const PANEL_TABS = [
+  { id: 'purge', label: 'Borrado masivo' },
+  { id: 'basurero', label: 'Basurero' },
+];
 
 const PURGE_ACTIONS = [
   {
@@ -119,13 +124,6 @@ const PURGE_ACTIONS = [
     run: purgeEmpleados,
   },
   {
-    id: 'audit',
-    title: 'Logs de auditoría admin',
-    detail: 'Por created_at si usás rango; sin rango vacía la tabla.',
-    outcome: 'bulk',
-    run: purgeAuditLogs,
-  },
-  {
     id: 'basurero_local',
     title: 'Basurero local (teléfono)',
     detail: 'Copias en este dispositivo. Con fechas: solo entradas por fecha de borrado local.',
@@ -152,6 +150,7 @@ function formatShortDate(d) {
 
 export function ControlPanelScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
+  const [panelTab, setPanelTab] = useState('purge');
   const [purgingId, setPurgingId] = useState(null);
   const [purgeAllBusy, setPurgeAllBusy] = useState(false);
   const [includeReportes, setIncludeReportes] = useState(false);
@@ -329,7 +328,7 @@ export function ControlPanelScreen({ onBack }) {
       : '\n• Reportes guardados en este teléfono: NO se borrarán (activá la casilla si los querés incluir).';
     Alert.alert(
       'Borrar todos los módulos',
-      `Se ejecutará el borrado masivo de ventas, caja, pedidos, citas, marketing, notificaciones, metas, incidentes, inventario, proveedores, clientes, empleados, auditoría y basurero local.${reportesNote}${rangeNote}\n\nEsta acción no se puede deshacer.`,
+      `Se ejecutará el borrado masivo de ventas, caja, pedidos, citas, marketing, notificaciones, metas, incidentes, inventario, proveedores, clientes, empleados y basurero local.${reportesNote}${rangeNote}\n\nEsta acción no se puede deshacer.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -409,16 +408,57 @@ export function ControlPanelScreen({ onBack }) {
     if (pickerTarget === 'to') setDateTo(selectedDate);
   };
 
+  const panelSubtitle =
+    panelTab === 'basurero'
+      ? 'Copias locales eliminadas — restaurar o borrar.'
+      : 'Borrado masivo y basurero local.';
+
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Panel de control"
-        subtitle="Borrado masivo de datos. Irreversible."
+        subtitle={panelSubtitle}
         onBack={onBack}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
+        disableBodyScroll={panelTab !== 'purge'}
+        edgeToEdge={panelTab !== 'purge'}
+        bottomPadding={panelTab !== 'purge' ? 0 : undefined}
+        refreshing={panelTab === 'purge' ? refreshing : false}
+        onRefresh={panelTab === 'purge' ? onRefresh : undefined}
       >
+        <View style={styles.tabRow}>
+          {PANEL_TABS.map((tab) => {
+            const active = panelTab === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                style={[
+                  styles.tabChip,
+                  {
+                    borderColor: active ? c.primary : c.cardBorder,
+                    backgroundColor: active ? c.surfaceMuted : c.card,
+                  },
+                ]}
+                onPress={() => {
+                  setPanelTab(tab.id);
+                  if (tab.id !== 'purge') {
+                    setExpandedId(null);
+                    setModuleSearch('');
+                    setSearchResults([]);
+                  }
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.tabChipTxt, { color: active ? c.primary : c.foreground }]}>{tab.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {panelTab === 'basurero' ? (
+          <BasureroScreen embedded />
+        ) : (
+          <>
         <View style={[styles.filterCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
           <Text style={[styles.filterHead, { color: c.foreground }]}>Ordenar y filtrar</Text>
           <Text style={[styles.filterSub, { color: c.foregroundMuted }]}>
@@ -528,7 +568,7 @@ export function ControlPanelScreen({ onBack }) {
           <Text style={[styles.purgeAllTitle, { color: c.foreground }]}>Borrar todos los módulos</Text>
           <Text style={[styles.purgeAllSub, { color: c.foregroundMuted }]}>
             Ventas, caja, pedidos, citas, marketing, notificaciones, metas, incidentes, inventario, proveedores, clientes,
-            empleados, auditoría y basurero local. Los reportes son opcionales.
+            empleados y basurero local. Los reportes son opcionales.
           </Text>
           <TouchableOpacity
             style={styles.checkRow}
@@ -681,6 +721,8 @@ export function ControlPanelScreen({ onBack }) {
         })}
 
         {Platform.OS === 'ios' ? <View style={{ height: spacing.lg }} /> : null}
+          </>
+        )}
       </SubScreenChrome>
     </>
   );
@@ -688,6 +730,27 @@ export function ControlPanelScreen({ onBack }) {
 
 function createStyles() {
   return StyleSheet.create({
+    tabRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+      marginBottom: spacing.md,
+    },
+    tabChip: {
+      flexGrow: 1,
+      flexBasis: '30%',
+      minWidth: 96,
+      borderWidth: 1,
+      borderRadius: radii.lg,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      alignItems: 'center',
+    },
+    tabChipTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 13,
+      textAlign: 'center',
+    },
     filterCard: {
       borderRadius: radii.lg,
       borderWidth: 1,

@@ -21,7 +21,7 @@ import { Calendar, FileText, Printer, Search, X, ChevronRight } from 'lucide-rea
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase } from '@appsalon/shared-config';
+import { db, supabase, getSalonSessionProfile, isSalonGlobalAdmin } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
@@ -64,6 +64,30 @@ function filterByRange(rows, startIso, endIso) {
     return t >= new Date(startIso).getTime() && t <= new Date(endIso).getTime();
   });
 }
+
+function rowSucursalId(row) {
+  return row?.sucursal_id ?? row?.creado_en_sucursal_id ?? null;
+}
+
+/** Filtra filas con sucursal_id (o creado_en_sucursal_id). Datos legacy sin sucursal cuentan como matriz. */
+function filterBySucursal(rows, sucursalId, { matrizId = null } = {}) {
+  if (!sucursalId) return rows || [];
+  return (rows || []).filter((row) => {
+    const sid = rowSucursalId(row);
+    if (sid == null || sid === '') {
+      return matrizId != null && String(sucursalId) === String(matrizId);
+    }
+    return String(sid) === String(sucursalId);
+  });
+}
+
+function withSucursalSummary(summary, options) {
+  if (!options?.sucursalId) return summary || '';
+  const label = options.sucursalNombre || 'Sucursal';
+  return `${summary || ''}${summary ? ' · ' : ''}${label}`;
+}
+
+const REPORT_TYPES_GLOBAL_ONLY = new Set(['mensajes', 'proveedores', 'empleados']);
 
 function sumBy(rows, keys) {
   return (rows || []).reduce((acc, r) => {
@@ -166,7 +190,7 @@ function ventaProductosNombres(v) {
   return nombres.length ? nombres.join(', ') : '—';
 }
 
-async function fetchCajaReport(startIso, endIso) {
+async function fetchCajaReport(startIso, endIso, options = {}) {
   const startDay = startIso.slice(0, 10);
   const endDay = endIso.slice(0, 10);
   const { data: cajas, error: cajasErr } = await db.cajas.getByDateRange(startDay, endDay);
@@ -184,7 +208,9 @@ async function fetchCajaReport(startIso, endIso) {
     return false;
   };
 
-  const cajasFiltradas = (cajas || []).filter(inRange);
+  const cajasFiltradas = filterBySucursal((cajas || []).filter(inRange), options.sucursalId, {
+    matrizId: options.matrizId,
+  });
   const cajaSessions = [];
 
   for (const caja of cajasFiltradas) {
@@ -252,9 +278,12 @@ async function fetchCajaReport(startIso, endIso) {
     }
   }
 
-  const summary = `Turnos: ${cajaSessions.length} · Movimientos/ventas: ${totalMovs} · Total ventas: ${formatQ(
-    totalVentasMonto,
-  )}`;
+  const summary = withSucursalSummary(
+    `Turnos: ${cajaSessions.length} · Movimientos/ventas: ${totalMovs} · Total ventas: ${formatQ(
+      totalVentasMonto,
+    )}`,
+    options,
+  );
 
   return { rows, cajaSessions, error: null, summary };
 }
@@ -336,7 +365,7 @@ function fmtFechaSolo(iso) {
   }
 }
 
-async function fetchInventarioHistorialRows(inventarioId, startIso, endIso, prodFallback = null) {
+async function fetchInventarioHistorialRows(inventarioId, startIso, endIso, prodFallback = null, options = {}) {
   const fromDay = String(startIso).slice(0, 10);
   const toDay = String(endIso).slice(0, 10);
   const { data: lotes, error: lErr } = await db.inventarioLotes.getByInventarioDateRange(
@@ -344,14 +373,19 @@ async function fetchInventarioHistorialRows(inventarioId, startIso, endIso, prod
     fromDay,
     toDay,
   );
+  const lotesScoped = filterBySucursal(lotes || [], options.sucursalId, { matrizId: options.matrizId });
   const { data: devAll, error: dErr } = await db.devoluciones.getByProducto(inventarioId);
   const devFiltered = filterByRange(devAll || [], startIso, endIso);
-  const { data: current, error: cErr } = await db.inventario.getById(inventarioId);
+  let { data: current, error: cErr } = await db.inventario.getById(inventarioId);
+  if (options.sucursalId && current) {
+    const { data: st } = await db.inventarioStockSucursal.getStock(options.sucursalId, inventarioId);
+    current = { ...current, stock_actual: st ?? 0 };
+  }
   const error = lErr || dErr || cErr;
   const prod = current || prodFallback;
 
   const eventRows = [
-    ...(lotes || []).map((l) => ({
+    ...lotesScoped.map((l) => ({
       id: `lote-${l.id}`,
       nombre: l.numero_lote || '—',
       descripcion: 'Ingreso de stock al inventario',
@@ -376,7 +410,10 @@ async function fetchInventarioHistorialRows(inventarioId, startIso, endIso, prod
   return {
     rows: eventRows,
     error,
-    summary: `Historial «${nombre}»: ${eventRows.length} movimiento(s) en el rango · Stock actual: ${stockActual}`,
+    summary: withSucursalSummary(
+      `Historial «${nombre}»: ${eventRows.length} movimiento(s) en el rango · Stock actual: ${stockActual}`,
+      options,
+    ),
     inventarioProductoNombre: nombre,
   };
 }
@@ -510,6 +547,7 @@ function buildInventarioReportHtml(item) {
     <div class="meta">Rango consulta: ${escHtml(new Date(item.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
       new Date(item.toIso).toLocaleDateString('es-GT'),
     )}</div>
+    ${item.sucursalLabel ? `<div class="meta">Sucursal: ${escHtml(item.sucursalLabel)}</div>` : ''}
     <div class="meta">${escHtml(item.summary || '')}</div>
     <div class="meta">Artículos: ${rows.length} · Unidades en stock (suma): ${totalStock}</div>
     <table>
@@ -576,55 +614,75 @@ function buildClienteFichaRows(cli) {
 async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
   switch (typeId) {
     case 'caja':
-      return fetchCajaReport(startIso, endIso);
+      return fetchCajaReport(startIso, endIso, options);
     case 'mensajes': {
       const { data, error } = await db.marketingDirectMessages.getByDateRange(startIso, endIso);
-      return { rows: data || [], error, summary: `Mensajes en rango: ${(data || []).length}` };
+      const note =
+        options.sucursalId && REPORT_TYPES_GLOBAL_ONLY.has(typeId)
+          ? ' (catálogo global · no filtrado por sucursal)'
+          : '';
+      return {
+        rows: data || [],
+        error,
+        summary: withSucursalSummary(`Mensajes en rango: ${(data || []).length}${note}`, options),
+      };
     }
     case 'metas': {
-      const { data: meta, error } = await db.metas.getGlobalMontoActiva();
-      let rows;
-      if (meta) {
-        rows = [
-          {
-            nombre: meta.titulo || 'Meta global',
-            descripcion: `Período ${meta.fecha_inicio || '—'} → ${meta.fecha_fin || '—'}`,
-            monto: Number(meta.actual || 0),
-            montoFmt: `Q${Number(meta.actual || 0).toFixed(2)} / Q${Number(meta.valor_objetivo || 0).toFixed(2)}`,
-            fecha: meta.fecha_fin || meta.creado_a,
-          },
-        ];
+      const { data: allMetas, error } = await db.metas.getAll();
+      let metaRows = allMetas || [];
+      if (options.sucursalId) {
+        metaRows = metaRows.filter((m) => {
+          if (String(m?.alcance || '').toLowerCase() === 'global') return false;
+          return filterBySucursal([m], options.sucursalId, { matrizId: options.matrizId }).length > 0;
+        });
       } else {
-        const { data: allMetas } = await db.metas.getAll();
-        rows = filterByRange(allMetas || [], startIso, endIso).map((m) => ({
-          nombre: m.titulo || m.tipo,
-          descripcion: `${m.alcance || '—'} · actual ${m.actual} / obj ${m.valor_objetivo}`,
-          monto: Number(m.actual || 0),
-          montoFmt: `Q${Number(m.actual || 0).toFixed(2)}`,
-          fecha: m.creado_a,
-        }));
+        const { data: meta } = await db.metas.getGlobalMontoActiva();
+        if (meta) {
+          const pct = meta.valor_objetivo
+            ? Math.min(100, Math.round((Number(meta.actual || 0) / Number(meta.valor_objetivo)) * 100))
+            : 0;
+          return {
+            rows: [
+              {
+                nombre: meta.titulo || 'Meta global',
+                descripcion: `Período ${meta.fecha_inicio || '—'} → ${meta.fecha_fin || '—'}`,
+                monto: Number(meta.actual || 0),
+                montoFmt: `Q${Number(meta.actual || 0).toFixed(2)} / Q${Number(meta.valor_objetivo || 0).toFixed(2)}`,
+                fecha: meta.fecha_fin || meta.creado_a,
+              },
+            ],
+            error,
+            summary: `Meta global: Q${Number(meta.actual || 0).toFixed(2)} de Q${Number(meta.valor_objetivo || 0).toFixed(2)} (${pct}%)`,
+          };
+        }
       }
-      const pct = meta?.valor_objetivo
-        ? Math.min(100, Math.round((Number(meta.actual || 0) / Number(meta.valor_objetivo)) * 100))
-        : 0;
+      const rows = filterByRange(metaRows, startIso, endIso).map((m) => ({
+        nombre: m.titulo || m.tipo,
+        descripcion: `${m.alcance || '—'} · actual ${m.actual} / obj ${m.valor_objetivo}`,
+        monto: Number(m.actual || 0),
+        montoFmt: `Q${Number(m.actual || 0).toFixed(2)}`,
+        fecha: m.creado_a,
+      }));
       return {
         rows,
         error,
-        summary: meta
-          ? `Meta global: Q${Number(meta.actual || 0).toFixed(2)} de Q${Number(meta.valor_objetivo || 0).toFixed(2)} (${pct}%)`
-          : `Metas en rango: ${rows.length}`,
+        summary: withSucursalSummary(`Metas en rango: ${rows.length}`, options),
       };
     }
     case 'pedidos': {
       const { data, error } = await db.orders.getAll();
-      const filtered = filterByRange(data || [], startIso, endIso);
+      const scoped = filterBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
+      const filtered = filterByRange(scoped, startIso, endIso);
       const rows = filtered.map(enrichPedidoRow);
       const totalQ = filtered.reduce((s, r) => s + Number(r.total_amount || 0), 0);
       const pendientes = filtered.filter((r) => r.status === 'pending').length;
       return {
         rows,
         error,
-        summary: `Pedidos: ${rows.length} · Q${totalQ.toFixed(2)} · ${pendientes} pendiente(s)`,
+        summary: withSucursalSummary(
+          `Pedidos: ${rows.length} · Q${totalQ.toFixed(2)} · ${pendientes} pendiente(s)`,
+          options,
+        ),
       };
     }
     case 'proveedores': {
@@ -641,23 +699,37 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
         (s, r) => s + Number(r?.monto_total_compras || r?.total_compras || r?.monto || 0),
         0,
       );
+      const note = options.sucursalId ? ' (catálogo global · no filtrado por sucursal)' : '';
       return {
         rows: data || [],
         error,
-        summary: `Proveedores: ${(data || []).length}. Compras acumuladas: ${totalCompra.toFixed(2)}`,
+        summary: withSucursalSummary(
+          `Proveedores: ${(data || []).length}. Compras acumuladas: ${totalCompra.toFixed(2)}${note}`,
+          options,
+        ),
       };
     }
     case 'clientes': {
       const { data, error } = await db.clientes.getAll();
       let rows = filterByRange(data || [], startIso, endIso);
+      if (options.sucursalId) {
+        rows = filterBySucursal(rows, options.sucursalId, { matrizId: options.matrizId });
+      }
       if (options.clientesModo === 'nuevos') {
         rows = rows.filter((r) => String(r?.categoria || '').toLowerCase().includes('nuevo'));
       }
-      return { rows, error, summary: `Clientes (${options.clientesModo || 'general'}): ${rows.length}` };
+      return {
+        rows,
+        error,
+        summary: withSucursalSummary(
+          `Clientes (${options.clientesModo || 'general'}): ${rows.length}`,
+          options,
+        ),
+      };
     }
     case 'agenda': {
       const { data, error } = await db.citas.getByDateRange(startIso, endIso);
-      let rows = data || [];
+      let rows = filterBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
       const modo = options.agendaModo || 'general';
       const cliSel = options.agendaCliente;
 
@@ -681,7 +753,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
         return {
           rows: [...header, ...enriched],
           error,
-          summary: `${cliSel.nombre}: ${visitas} visita(s) / citas en el rango`,
+          summary: withSucursalSummary(`${cliSel.nombre}: ${visitas} visita(s) / citas en el rango`, options),
         };
       }
 
@@ -689,7 +761,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       return {
         rows: enriched,
         error,
-        summary: `General: ${rows.length} citas en el rango (todos los clientes)`,
+        summary: withSucursalSummary(`General: ${rows.length} citas en el rango (todos los clientes)`, options),
       };
     }
     case 'ventas_cliente': {
@@ -724,7 +796,8 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       if (errVen) {
         return { rows: ficha, error: errVen, summary: 'Error al cargar ventas' };
       }
-      const raw = (ventasData || []).filter((r) => String(r?.cliente_id ?? '') === String(cliFresh.id));
+      const ventasScoped = filterBySucursal(ventasData || [], options.sucursalId, { matrizId: options.matrizId });
+      const raw = ventasScoped.filter((r) => String(r?.cliente_id ?? '') === String(cliFresh.id));
       const totalMonto = raw.reduce((s, r) => s + montoVenta(r), 0);
       const ventasRows = raw.map(enrichVentaRow);
       const desde = new Date(startIso).toLocaleDateString('es-GT');
@@ -742,7 +815,10 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       return {
         rows,
         error: null,
-        summary: `${cliFresh.nombre} (activo): ${raw.length} compras · Total Q${totalMonto.toFixed(2)} en el rango`,
+        summary: withSucursalSummary(
+          `${cliFresh.nombre} (activo): ${raw.length} compras · Total Q${totalMonto.toFixed(2)} en el rango`,
+          options,
+        ),
       };
     }
     case 'empleado_ventas': {
@@ -751,13 +827,17 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
         return { rows: [], error: null, summary: 'Sin empleado seleccionado' };
       }
       const { data, error } = await db.ventas.getByRangoFechas(startIso, endIso);
-      const raw = (data || []).filter((r) => String(r?.vendedor_id ?? '') === String(emp.id));
+      const scoped = filterBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
+      const raw = scoped.filter((r) => String(r?.vendedor_id ?? '') === String(emp.id));
       const totalMonto = raw.reduce((s, r) => s + montoVenta(r), 0);
       const rows = raw.map(enrichVentaRow);
       return {
         rows,
         error,
-        summary: `${emp.nombre}: ${raw.length} ventas · Total Q${totalMonto.toFixed(2)} en el rango`,
+        summary: withSucursalSummary(
+          `${emp.nombre}: ${raw.length} ventas · Total Q${totalMonto.toFixed(2)} en el rango`,
+          options,
+        ),
       };
     }
     case 'inventario': {
@@ -766,20 +846,34 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
         if (!prod?.id) {
           return { rows: [], error: { message: 'Seleccioná un producto.' }, summary: '' };
         }
-        const { rows, error, summary } = await fetchInventarioHistorialRows(prod.id, startIso, endIso, prod);
+        const { rows, error, summary } = await fetchInventarioHistorialRows(
+          prod.id,
+          startIso,
+          endIso,
+          prod,
+          options,
+        );
         return { rows, error, summary };
       }
 
       const { data: invRows, error: invErr } = await db.inventario.getAll();
-      let rows = (invRows || []).map(enrichInventarioRow);
-      let summary = `Inventario global: ${rows.length} artículos`;
+      let catalog = invRows || [];
+      if (options.sucursalId) {
+        const { data: stocks, error: stErr } = await db.inventarioStockSucursal.getForSucursal(options.sucursalId);
+        if (stErr) return { rows: [], error: stErr, summary: '' };
+        catalog = db.inventarioStockSucursal.mergeCatalogo(catalog, stocks || []);
+      }
+      let rows = catalog.map(enrichInventarioRow);
+      let summary = options.sucursalId
+        ? `Inventario local: ${rows.length} artículos`
+        : `Inventario global: ${rows.length} artículos`;
       if (options.inventarioModo === 'producto_servicio') {
         const q = (options.itemNombre || '').trim().toLowerCase();
         rows = rows.filter((r) => String(r?.nombre || '').toLowerCase().includes(q));
         const vendido = rows.reduce((s, r) => s + Number(r?.vendidos || r?.cantidad_vendida || r?.salidas || 0), 0);
         summary = `Item "${options.itemNombre || 'N/A'}" · ${rows.length} coincidencia(s) · vendidos en rango: ${vendido}`;
       }
-      return { rows, error: invErr, summary };
+      return { rows, error: invErr, summary: withSucursalSummary(summary, options) };
     }
     case 'incidentes': {
       const { data, error } = await db.incidentes.getByDateRange(startIso, endIso);
@@ -789,16 +883,22 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
         descripcion: `${r.estado || '—'} · ${r.empleado_nombre || '—'} · Pérdida Q${Number(r.monto_perdida || 0).toFixed(2)}`,
         fecha: r.fecha,
       }));
+      const note = options.sucursalId ? ' (sin sucursal en BD · listado global)' : '';
       return {
         rows,
         error,
-        summary: `Incidentes en rango: ${rows.length} (fecha de registro)`,
+        summary: withSucursalSummary(`Incidentes en rango: ${rows.length} (fecha de registro)${note}`, options),
       };
     }
     case 'empleados': {
       const { data, error } = await db.empleados.getAll();
       const rows = filterByRange(data || [], startIso, endIso);
-      return { rows, error, summary: `Empleados registrados: ${rows.length}` };
+      const note = options.sucursalId ? ' (catálogo global · no filtrado por sucursal)' : '';
+      return {
+        rows,
+        error,
+        summary: withSucursalSummary(`Empleados registrados: ${rows.length}${note}`, options),
+      };
     }
     default:
       return { rows: [], error: { message: 'Tipo de reporte no soportado' } };
@@ -890,6 +990,7 @@ function buildCajaReportHtml(item) {
     <div class="meta">Rango: ${escHtml(new Date(item.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
       new Date(item.toIso).toLocaleDateString('es-GT'),
     )}</div>
+    ${item.sucursalLabel ? `<div class="meta">Sucursal: ${escHtml(item.sucursalLabel)}</div>` : ''}
     <div class="meta">${escHtml(item.summary || '')}</div>
     ${sections || '<p>Sin turnos de caja en el rango.</p>'}
   </body></html>`;
@@ -930,6 +1031,7 @@ async function printReport(item) {
       <div class="meta">Rango: ${escHtml(new Date(resolved.fromIso).toLocaleDateString('es-GT'))} – ${escHtml(
         new Date(resolved.toIso).toLocaleDateString('es-GT'),
       )}</div>
+      ${resolved.sucursalLabel ? `<div class="meta">Sucursal: ${escHtml(resolved.sucursalLabel)}</div>` : ''}
       <div class="meta">${escHtml(resolved.summary || '')}</div>
       <div class="meta">Registros: ${resolved.total}</div>
       <table><thead><tr><th>Concepto</th><th>Detalle</th><th>Monto</th><th>Fecha</th></tr></thead><tbody>${rowsHtml}</tbody></table>
@@ -986,6 +1088,19 @@ export function ReportesScreen({ onBack }) {
   const [agendaClienteResults, setAgendaClienteResults] = useState([]);
   const [agendaClienteSelected, setAgendaClienteSelected] = useState(null);
   const [printingId, setPrintingId] = useState(null);
+  const [reportSucursales, setReportSucursales] = useState([]);
+  const [reportSucursalId, setReportSucursalId] = useState(null);
+
+  const sessionProfile = getSalonSessionProfile();
+  const isGlobalAdmin = isSalonGlobalAdmin(sessionProfile?.role);
+  const matrizSucursalId = useMemo(
+    () => reportSucursales.find((s) => s.es_matriz)?.id || reportSucursales[0]?.id || null,
+    [reportSucursales],
+  );
+  const reportSucursalNombre = useMemo(() => {
+    if (!reportSucursalId) return null;
+    return reportSucursales.find((s) => String(s.id) === String(reportSucursalId))?.nombre || 'Sucursal';
+  }, [reportSucursalId, reportSucursales]);
 
   const refreshReportList = useCallback(async () => {
     const list = await loadReportes();
@@ -1104,6 +1219,18 @@ export function ReportesScreen({ onBack }) {
     };
   }, [typeId, agendaModo, agendaClienteSearch]);
 
+  useEffect(() => {
+    if (!modalOpen || !isGlobalAdmin) return;
+    let cancelled = false;
+    void db.sucursales.listActivas().then(({ data, error }) => {
+      if (cancelled || error) return;
+      setReportSucursales(Array.isArray(data) ? data : []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, isGlobalAdmin]);
+
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
   const selected = REPORT_TYPES.find((x) => x.id === typeId);
 
@@ -1157,6 +1284,9 @@ export function ReportesScreen({ onBack }) {
       clienteVentas: clienteVentasSelected,
       agendaModo,
       agendaCliente: agendaClienteSelected,
+      sucursalId: isGlobalAdmin ? reportSucursalId : null,
+      sucursalNombre: isGlobalAdmin ? reportSucursalNombre : null,
+      matrizId: matrizSucursalId,
     };
     const { rows, error, summary, cajaSessions } = await fetchRowsByType(typeId, startIso, endIso, options);
     setLoading(false);
@@ -1176,6 +1306,8 @@ export function ReportesScreen({ onBack }) {
       rows,
       cajaSessions: cajaSessions || null,
       summary,
+      sucursalId: reportSucursalId || null,
+      sucursalLabel: reportSucursalId ? reportSucursalNombre : 'Todas (consolidado)',
       inventarioModo: typeId === 'inventario' ? inventarioModo : undefined,
       inventarioProductoId:
         typeId === 'inventario' && inventarioModo === 'historial_producto'
@@ -1257,6 +1389,11 @@ export function ReportesScreen({ onBack }) {
                       {r.summary ? (
                         <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
                           {r.summary}
+                        </Text>
+                      ) : null}
+                      {r.sucursalLabel && r.sucursalLabel !== 'Todas (consolidado)' ? (
+                        <Text style={[styles.rowSub, { color: c.foregroundSubtle }]} numberOfLines={1}>
+                          {r.sucursalLabel}
                         </Text>
                       ) : null}
                     </View>
@@ -1352,6 +1489,53 @@ export function ReportesScreen({ onBack }) {
                     if (date) setToDate(date);
                   }}
                 />
+              ) : null}
+
+              {isGlobalAdmin ? (
+                <>
+                  <Text style={styles.fieldLbl}>Sucursal</Text>
+                  <View style={styles.typeGrid}>
+                    <TouchableOpacity
+                      style={[
+                        styles.typeChip,
+                        {
+                          borderColor: !reportSucursalId ? c.primary : c.cardBorder,
+                          backgroundColor: !reportSucursalId ? c.surfaceMuted : c.card,
+                        },
+                      ]}
+                      onPress={() => setReportSucursalId(null)}
+                    >
+                      <Text style={[styles.typeChipTxt, { color: !reportSucursalId ? c.primary : c.foreground }]}>
+                        Todas (consolidado)
+                      </Text>
+                    </TouchableOpacity>
+                    {reportSucursales.map((s) => {
+                      const on = String(reportSucursalId) === String(s.id);
+                      return (
+                        <TouchableOpacity
+                          key={s.id}
+                          style={[
+                            styles.typeChip,
+                            {
+                              borderColor: on ? c.primary : c.cardBorder,
+                              backgroundColor: on ? c.surfaceMuted : c.card,
+                            },
+                          ]}
+                          onPress={() => setReportSucursalId(s.id)}
+                        >
+                          <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>
+                            {s.nombre}
+                            {s.es_matriz ? ' · Matriz' : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <Text style={[subStyles.muted, { marginBottom: spacing.md, fontSize: 12 }]}>
+                    Elegí una sucursal para filtrar caja, ventas, pedidos, agenda, inventario local y clientes de
+                    esa sucursal. Empleados, proveedores y mensajes son catálogo global.
+                  </Text>
+                </>
               ) : null}
 
               <TextInput

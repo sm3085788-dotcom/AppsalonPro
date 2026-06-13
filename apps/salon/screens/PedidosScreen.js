@@ -130,7 +130,7 @@ export function PedidosScreen({ onBack }) {
       Alert.alert(
         'Pedidos',
         msg.includes('permission denied') || msg.includes('row-level security')
-          ? `${msg}\n\nEjecutá supabase-ecommerce-orders-salon.sql en Supabase SQL Editor.`
+          ? `${msg}\n\nEjecutá supabase-sucursales-pedidos.sql (y supabase-ecommerce-orders-salon.sql si falta) en Supabase SQL Editor.`
           : msg || 'No se pudo cargar la bandeja.',
       );
       setOrders([]);

@@ -1,6 +1,6 @@
 import { db, supabase } from './supabaseClient.js';
 
-const STAFF_CHAT_TYPES = new Set(['chat', 'broadcast_promo', 'incident_report', 'cita_confirmacion']);
+const STAFF_CHAT_TYPES = new Set(['chat', 'broadcast_promo', 'promo_inventario', 'incident_report', 'cita_confirmacion']);
 
 /**
  * Envío desde App Salón (RPC security definer; evita fallos .single() tras INSERT).
@@ -28,6 +28,20 @@ export async function sendSalonAuraMessage(payload) {
 
   if (!rpcError && rpcRow?.id) {
     return { data: rpcRow, error: null };
+  }
+
+  const rpcMsg = String(rpcError?.message || rpcError?.details || '');
+  const rpcDenied =
+    /sin permiso|permission denied|is_staff_or_admin|admin_sucursal/i.test(rpcMsg);
+  if (rpcDenied) {
+    return {
+      data: null,
+      error: {
+        message:
+          rpcMsg ||
+          'Sin permiso para enviar mensajes. Ejecutá supabase-sucursales-mensajes.sql en Supabase.',
+      },
+    };
   }
 
   const { data: sessionData } = await supabase.auth.getSession();

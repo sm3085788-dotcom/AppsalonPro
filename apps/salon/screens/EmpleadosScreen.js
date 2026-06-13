@@ -24,7 +24,7 @@ import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { useTheme } from '../theme/ThemeProvider';
-import { db, uploadEmpleadoFotoFromUri } from '@appsalon/shared-config';
+import { db, uploadEmpleadoFotoFromUri, getSalonSessionProfile, isSalonSucursalAdmin } from '@appsalon/shared-config';
 
 function mensajeErrorStorage(msg) {
   const m = String(msg || '').toLowerCase();
@@ -101,6 +101,7 @@ export function EmpleadosScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
+  const catalogReadOnly = isSalonSucursalAdmin(getSalonSessionProfile()?.role);
   const [search, setSearch] = useState('');
   const [modalFiltros, setModalFiltros] = useState(false);
   const [sortMode, setSortMode] = useState('nombre_asc');
@@ -409,7 +410,7 @@ export function EmpleadosScreen({ onBack }) {
     return rows;
   }, [empleados, search, sortMode, rolFiltro, activoFiltro]);
 
-  const rightAction = (
+  const rightAction = catalogReadOnly ? null : (
     <TouchableOpacity
       style={[styles.addCircle, { backgroundColor: c.card, borderColor: c.cardBorder }]}
       onPress={openNuevo}
@@ -426,7 +427,11 @@ export function EmpleadosScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Empleados"
-        subtitle="Fichas manuales en Supabase; no crean cuenta Auth ni perfil verificado."
+        subtitle={
+          catalogReadOnly
+            ? 'Equipo de matriz (solo lectura). No podés crear ni editar fichas desde sucursal.'
+            : 'Fichas manuales en Supabase; no crean cuenta Auth ni perfil verificado.'
+        }
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
@@ -451,8 +456,12 @@ export function EmpleadosScreen({ onBack }) {
                 : `${filtered.length} ficha${filtered.length === 1 ? '' : 's'} de ${empleados.length}`}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
-              <Text style={{ color: c.foregroundSubtle }}> · </Text>
+              {!catalogReadOnly ? (
+                <>
+                  <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+                  <Text style={{ color: c.foregroundSubtle }}> · </Text>
+                </>
+              ) : null}
               <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
                 <Text style={[styles.toolbarLink, { color: c.primary }]}>Filtros</Text>
               </TouchableOpacity>
@@ -500,6 +509,7 @@ export function EmpleadosScreen({ onBack }) {
                         else openEditar(item);
                       }}
                       onLongPress={() => {
+                        if (catalogReadOnly) return;
                         if (!sel.active) sel.setActive(true);
                         sel.toggleId(item.id);
                       }}
@@ -560,7 +570,7 @@ export function EmpleadosScreen({ onBack }) {
             </View>
           )}
         </View>
-        {sel.active && sel.count > 0 ? (
+        {sel.active && sel.count > 0 && !catalogReadOnly ? (
           <ListSelectionActionBar
             count={sel.count}
             onCancel={sel.exitSelectMode}
@@ -584,17 +594,18 @@ export function EmpleadosScreen({ onBack }) {
         fields={EMPLEADO_FICHA_FIELDS}
         onSaveField={saveEmpleadoField}
         savingKey={fotoUploading ? 'foto' : savingKey}
+        readOnly={catalogReadOnly}
         isNew={!!detailEmpleado && !detailEmpleado.id}
         initialEditKey="nombre"
         advanceOnEnter
         newHint="Completá los datos (Enter pasa al siguiente campo; en dirección Enter es nueva línea). Luego «Crear empleado»."
         photo={{
           uri: detailEmpleado?.foto_url || undefined,
-          onPress: detailEmpleado?.id ? pickFoto : undefined,
+          onPress: detailEmpleado?.id && !catalogReadOnly ? pickFoto : undefined,
         }}
         footer={
           <>
-            {detailEmpleado && !detailEmpleado.id ? (
+            {!catalogReadOnly && detailEmpleado && !detailEmpleado.id ? (
               <SalonButton
                 title={savingKey === 'create' ? 'Creando…' : 'Crear empleado'}
                 variant="heroGold"
@@ -604,7 +615,7 @@ export function EmpleadosScreen({ onBack }) {
                 style={{ marginTop: spacing.md }}
               />
             ) : null}
-            {detailEmpleado?.id ? (
+            {!catalogReadOnly && detailEmpleado?.id ? (
               <SalonButton
                 title="Eliminar ficha"
                 variant="outlineGray"

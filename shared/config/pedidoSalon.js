@@ -1,4 +1,5 @@
 import { db, supabase, isPostgrestSingleRowError } from './supabaseClient.js';
+import { getClientSucursalId } from './clientSucursal.js';
 import { registrarMontoVentaEnMeta } from './metaGlobal.js';
 import { requireCajaAbierta } from './cajaGuard.js';
 import { enqueueClientNotification } from './clientNotifications.js';
@@ -64,8 +65,16 @@ async function crearPedidoTiendaCliente({
     return { ok: false, error: { message: 'El carrito está vacío.' } };
   }
 
+  const sucursalId = await getClientSucursalId();
+  if (!sucursalId) {
+    return {
+      ok: false,
+      error: { message: 'Elegí una sucursal en la tienda antes de hacer tu pedido.' },
+    };
+  }
+
   for (const line of lines) {
-    const { data: prod, error: pErr } = await db.inventario.getById(line.id);
+    const { data: prod, error: pErr } = await db.inventario.getById(line.id, { sucursalId });
     if (pErr || !prod) {
       return { ok: false, error: { message: `Producto no encontrado: ${line.title || line.id}` } };
     }
@@ -108,6 +117,7 @@ async function crearPedidoTiendaCliente({
     delivery_reference: fulfillment.delivery_reference,
     delivery_address: deliveryAddress || null,
     checkout_snapshot: checkout_snapshot || null,
+    sucursal_id: sucursalId,
   });
 
   if (oErr || !order) {
@@ -225,7 +235,8 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
   for (const line of items) {
     const pid = line.product_id;
     const qty = Number(line.qty || 0);
-    const { data: prod } = await db.inventario.getById(pid);
+    const orderSucursalId = order.sucursal_id || null;
+    const { data: prod } = await db.inventario.getById(pid, { sucursalId: orderSucursalId });
     const stock = Number(prod?.stock_actual ?? 0);
     if (stock < qty) {
       return {
@@ -299,6 +310,7 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
       no_factura: noFactura,
       descuento: descuentoMonto,
       caja_id: caja.id,
+      sucursal_id: order.sucursal_id || null,
       notas: canjeSnap
         ? `Pedido tienda · cobro confirmado · canje ANDREAS ${canjeSnap.descuento_pct}% · ${order.tracking_code || orderId}`
         : `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
@@ -311,7 +323,9 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
   const ventaId = ventaInsert?.id ?? null;
 
   for (const line of items) {
-    const { error: dErr } = await db.inventario.decrementarStock(line.product_id, line.qty);
+    const { error: dErr } = await db.inventario.decrementarStock(line.product_id, line.qty, {
+      sucursal_id: order.sucursal_id || null,
+    });
     if (dErr) {
       return {
         ok: false,

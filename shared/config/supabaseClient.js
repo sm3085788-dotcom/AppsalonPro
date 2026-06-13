@@ -12,6 +12,25 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { isSalonAdminRole } from './salonRoles.js';
+import { getSalonSucursalScope } from './salonSession.js';
+import { localCalendarDateString } from './localDate.js';
+import { getClientSucursalId, mergeInventarioWithSucursalStock, ensureClientSucursalId } from './clientSucursal.js';
+
+function applySalonSucursalFilter(q, column = 'sucursal_id') {
+  const scope = getSalonSucursalScope();
+  if (scope.isGlobal || !scope.sucursalId) return q;
+  return q.eq(column, scope.sucursalId);
+}
+
+async function resolveStockSucursalId(explicitId = null) {
+  if (explicitId) return explicitId;
+  const scope = getSalonSucursalScope();
+  if (!scope.isGlobal && scope.sucursalId) return scope.sucursalId;
+  return await getClientSucursalId();
+}
+
+export { mergeInventarioWithSucursalStock };
+export { localCalendarDateString } from './localDate.js';
 import {
   inventarioRowToAgendaServicio,
   inventarioRowToAgendaItem,
@@ -157,6 +176,12 @@ export {
   sanitizeInventarioFechaVencimiento,
   inventarioRowToAgendaServicio,
   inventarioRowToAgendaItem,
+  INVENTARIO_PROMO_DIAS_DEFAULT,
+  isPromocionVigente,
+  maybeRevertInventarioPromoExpired,
+  computePromocionHastaISO,
+  toInventarioISODate,
+  formatPromocionHastaLabel,
 } from './inventarioMeta.js';
 
 // Variables de entorno - Configura en cada app
@@ -267,6 +292,13 @@ export const db = {
         options: { data: metadata } 
       });
     },
+    signUpWithPhone: async ({ phone, password, metadata }) => {
+      return await supabase.auth.signUp({
+        phone,
+        password,
+        options: { data: metadata || {} },
+      });
+    },
     /** SMS OTP. No fuerces shouldCreateUser: false por defecto (rompe el flujo igual que en GoTrue: default true). */
     signInWithOtp: async (phone, otpOptions = {}) => {
       return await supabase.auth.signInWithOtp({ phone, options: otpOptions });
@@ -294,10 +326,7 @@ export const db = {
   clientes: {
     // Obtener todos los clientes
     getAll: async () => {
-      return await supabase
-        .from('clientes')
-        .select('*')
-        .order('created_at', { ascending: false });
+      return await supabase.from('clientes').select('*').order('created_at', { ascending: false });
     },
 
     // Obtener un cliente por ID
@@ -322,6 +351,20 @@ export const db = {
 
     // Crear nuevo cliente
     create: async (data) => {
+      const scope = getSalonSucursalScope();
+      const sucursalId =
+        data.creado_en_sucursal_id ||
+        (!scope.isGlobal ? scope.sucursalId : null) ||
+        null;
+      if (!scope.isGlobal && !sucursalId) {
+        return {
+          data: null,
+          error: {
+            message:
+              'Tu perfil admin_sucursal debe tener sucursal_id en profiles. Cerrá sesión y volvé a entrar.',
+          },
+        };
+      }
       return await supabase
         .from('clientes')
         .insert({
@@ -338,6 +381,7 @@ export const db = {
           referido_por: data.referido_por || null,
           photo_url: data.photo_url || null,
           user_id: data.user_id || null,
+          creado_en_sucursal_id: sucursalId,
         })
         .select()
         .single();
@@ -1290,7 +1334,7 @@ export const db = {
   citas: {
     // Obtener todas las citas
     getAll: async () => {
-      return await supabase
+      let q = supabase
         .from('citas')
         .select(`
           *,
@@ -1298,6 +1342,8 @@ export const db = {
           empleado:empleados(id, nombre)
         `)
         .order('fecha_hora', { ascending: false });
+      q = applySalonSucursalFilter(q);
+      return await q;
     },
 
     // Obtener citas por fecha
@@ -1308,7 +1354,7 @@ export const db = {
       const endOfDay = new Date(fecha);
       endOfDay.setHours(23, 59, 59, 999);
 
-      return await supabase
+      let q = supabase
         .from('citas')
         .select(`
           *,
@@ -1318,11 +1364,13 @@ export const db = {
         .gte('fecha_hora', startOfDay.toISOString())
         .lte('fecha_hora', endOfDay.toISOString())
         .order('fecha_hora');
+      q = applySalonSucursalFilter(q);
+      return await q;
     },
 
     // Obtener citas por rango de fechas
     getByDateRange: async (startDate, endDate) => {
-      return await supabase
+      let q = supabase
         .from('citas')
         .select(`
           *,
@@ -1332,21 +1380,30 @@ export const db = {
         .gte('fecha_hora', startDate)
         .lte('fecha_hora', endDate)
         .order('fecha_hora');
+      q = applySalonSucursalFilter(q);
+      return await q;
     },
 
     // Obtener citas de un cliente ({ forClientApp: true } evita join empleados — RLS app clientes)
     getByCliente: async (clienteId, options = {}) => {
       const forClientApp = options.forClientApp === true;
-      return await supabase
+      let q = supabase
         .from('citas')
         .select(forClientApp ? '*' : `*, empleado:empleados(id, nombre)`)
         .eq('cliente_id', clienteId)
         .order('fecha_hora', { ascending: true });
+      if (forClientApp) {
+        const sid = await getClientSucursalId();
+        if (sid) q = q.eq('sucursal_id', sid);
+      } else {
+        q = applySalonSucursalFilter(q);
+      }
+      return await q;
     },
 
     // Obtener citas de un empleado
     getByEmpleado: async (empleadoId) => {
-      return await supabase
+      let q = supabase
         .from('citas')
         .select(`
           *,
@@ -1354,11 +1411,13 @@ export const db = {
         `)
         .eq('empleado_id', empleadoId)
         .order('fecha_hora');
+      q = applySalonSucursalFilter(q);
+      return await q;
     },
 
     // Obtener citas por estado
     getByEstado: async (estado) => {
-      return await supabase
+      let q = supabase
         .from('citas')
         .select(`
           *,
@@ -1367,6 +1426,8 @@ export const db = {
         `)
         .eq('estado', estado)
         .order('fecha_hora');
+      q = applySalonSucursalFilter(q);
+      return await q;
     },
 
     search: async (query, limit = 20) => {
@@ -1439,6 +1500,13 @@ export const db = {
     // Crear nueva cita
     create: async (data, options = {}) => {
       const forClientApp = options.forClientApp === true;
+      const scope = getSalonSucursalScope();
+      const clientSucursal = forClientApp ? await ensureClientSucursalId() : null;
+      const sucursalId =
+        data.sucursal_id ||
+        clientSucursal ||
+        (!scope.isGlobal ? scope.sucursalId : null) ||
+        null;
       const insert = supabase.from('citas').insert({
         cliente_id: data.cliente_id,
         servicio: data.servicio,
@@ -1448,6 +1516,7 @@ export const db = {
         estado: data.estado || 'pendiente',
         notas_servicio: data.notas_servicio || null,
         empleado_id: data.empleado_id || null,
+        sucursal_id: sucursalId,
       });
       if (forClientApp) {
         return await insert.select('*').single();
@@ -2328,6 +2397,11 @@ export const db = {
         .single();
     },
 
+    /** Vincula admin_sucursal desde metadata de auth (post signUp sucursal). */
+    finalizeBranchAdminSignup: async () => {
+      return await supabase.rpc('finalize_branch_admin_signup');
+    },
+
     // Obtener perfiles por rol
     getByRole: async (role) => {
       return await supabase
@@ -2510,7 +2584,7 @@ export const db = {
   ventas: {
     // Obtener todas las ventas
     getAll: async () => {
-      return await supabase
+      let q = supabase
         .from('ventas')
         .select(`
           *,
@@ -2518,6 +2592,8 @@ export const db = {
           vendedor:empleados!ventas_vendedor_id_fkey(id, nombre)
         `)
         .order('fecha', { ascending: false });
+      q = applySalonSucursalFilter(q);
+      return await q;
     },
 
     // Obtener venta por ID
@@ -2649,6 +2725,20 @@ export const db = {
 
     // Crear venta (`minimalReturn`: solo id — evita fallo .single() si el SELECT con joins no devuelve fila)
     create: async (data, options = {}) => {
+      const scope = getSalonSucursalScope();
+      const sucursalId =
+        data.sucursal_id ||
+        (!scope.isGlobal ? scope.sucursalId : null) ||
+        null;
+      if (!scope.isGlobal && !sucursalId) {
+        return {
+          data: null,
+          error: {
+            message:
+              'Tu perfil admin_sucursal debe tener sucursal_id en profiles. Cerrá sesión y volvé a entrar.',
+          },
+        };
+      }
       const payload = {
         cliente_id: data.cliente_id || null,
         cliente_nombre: data.cliente_nombre || null,
@@ -2663,6 +2753,7 @@ export const db = {
         descuento: data.descuento || 0,
         vendedor_id: data.vendedor_id || null,
         caja_id: data.caja_id || null,
+        sucursal_id: sucursalId,
       };
       const finishVenta = async (result) => {
         const ventaId = result?.data?.id;
@@ -2856,12 +2947,20 @@ export const db = {
     },
 
     // Obtener productos visibles en tienda (para e-commerce; sin servicios)
-    getVisiblesEnTienda: async () => {
-      return await supabase
+    getVisiblesEnTienda: async (options = {}) => {
+      const res = await supabase
         .from('inventario')
         .select('*')
         .eq('visible_en_tienda', true)
         .order('nombre');
+      const sucursalId = options.sucursalId || (await getClientSucursalId());
+      if (!sucursalId || res.error || !Array.isArray(res.data)) return res;
+      const { data: stocks, error: stErr } = await supabase
+        .from('inventario_stock_sucursal')
+        .select('*')
+        .eq('sucursal_id', sucursalId);
+      if (stErr) return res;
+      return { ...res, data: mergeInventarioWithSucursalStock(res.data, stocks) };
     },
 
     /** Catálogo App Clientes: productos en tienda + servicios (Mis citas). Requiere RLS inventario_tienda_public_read. */
@@ -2870,12 +2969,27 @@ export const db = {
     },
 
     // Obtener por ID
-    getById: async (id) => {
-      return await supabase
-        .from('inventario')
-        .select('*')
-        .eq('id', id)
-        .single();
+    getById: async (id, options = {}) => {
+      const res = await supabase.from('inventario').select('*').eq('id', id).single();
+      const sucursalId = options.sucursalId || (await getClientSucursalId());
+      if (!sucursalId || res.error || !res.data) return res;
+      const { data: st } = await supabase
+        .from('inventario_stock_sucursal')
+        .select('stock_actual, stock_minimo')
+        .eq('sucursal_id', sucursalId)
+        .eq('inventario_id', id)
+        .maybeSingle();
+      if (st) {
+        return {
+          ...res,
+          data: {
+            ...res.data,
+            stock_actual: Number(st.stock_actual ?? 0),
+            stock_minimo: Number(st.stock_minimo ?? res.data.stock_minimo ?? 5),
+          },
+        };
+      }
+      return { ...res, data: { ...res.data, stock_actual: 0 } };
     },
 
     // Obtener por categoría
@@ -2997,8 +3111,35 @@ export const db = {
         .single();
     },
 
-    // Decrementar stock
-    decrementarStock: async (id, cantidad) => {
+    // Decrementar stock (catálogo global o stock por sucursal)
+    decrementarStock: async (id, cantidad, options = {}) => {
+      const qty = Math.max(0, Math.floor(Number(cantidad) || 0));
+      const sucursalId = await resolveStockSucursalId(options.sucursal_id);
+
+      if (sucursalId) {
+        const { data: stRow, error: readErr } = await supabase
+          .from('inventario_stock_sucursal')
+          .select('id, stock_actual')
+          .eq('sucursal_id', sucursalId)
+          .eq('inventario_id', id)
+          .maybeSingle();
+        if (readErr && !isPostgrestSingleRowError(readErr)) return { error: readErr };
+        const nuevoStock = Math.max(0, Number(stRow?.stock_actual ?? 0) - qty);
+        const { error: patchErr } = await supabase
+          .from('inventario_stock_sucursal')
+          .upsert(
+            {
+              sucursal_id: sucursalId,
+              inventario_id: id,
+              stock_actual: nuevoStock,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'sucursal_id,inventario_id' },
+          );
+        if (patchErr) return { error: patchErr };
+        return { data: { id, stock_actual: nuevoStock, sucursal_id: sucursalId }, error: null };
+      }
+
       const { data: producto, error: readErr } = await supabase
         .from('inventario')
         .select('stock_actual')
@@ -3008,7 +3149,7 @@ export const db = {
       if (readErr && !isPostgrestSingleRowError(readErr)) return { error: readErr };
       if (!producto) return { error: { message: 'Producto no encontrado' } };
 
-      const nuevoStock = Math.max(0, producto.stock_actual - cantidad);
+      const nuevoStock = Math.max(0, producto.stock_actual - qty);
 
       const { error: patchErr } = await supabase
         .from('inventario')
@@ -3128,7 +3269,7 @@ export const db = {
         .order('fecha_ingreso', { ascending: false });
     },
 
-    registrarIngreso: async ({ inventario_id, numero_lote, fecha_ingreso, cantidad }) => {
+    registrarIngreso: async ({ inventario_id, numero_lote, fecha_ingreso, cantidad, sucursal_id: sucursalIdArg }) => {
       const qty = Math.max(1, Math.floor(Number(cantidad) || 0));
       const loteNum = String(numero_lote || '').trim();
       if (!inventario_id || !loteNum) {
@@ -3149,8 +3290,21 @@ export const db = {
         return { data: null, error: pErr || { message: 'Producto no encontrado' } };
       }
 
-      const stockAntes = Math.max(0, Math.floor(Number(producto.stock_actual ?? 0)));
-      const stockDespues = stockAntes + qty;
+      const sucursalId = await resolveStockSucursalId(sucursalIdArg);
+      let stockAntes = Math.max(0, Math.floor(Number(producto.stock_actual ?? 0)));
+      let stockDespues = stockAntes + qty;
+
+      if (sucursalId) {
+        const { data: stRow, error: stErr } = await supabase
+          .from('inventario_stock_sucursal')
+          .select('id, stock_actual')
+          .eq('sucursal_id', sucursalId)
+          .eq('inventario_id', inventario_id)
+          .maybeSingle();
+        if (stErr) return { data: null, error: stErr };
+        stockAntes = Math.max(0, Math.floor(Number(stRow?.stock_actual ?? 0)));
+        stockDespues = stockAntes + qty;
+      }
 
       const { data: lote, error: lErr } = await supabase
         .from('inventario_lotes')
@@ -3161,26 +3315,67 @@ export const db = {
           cantidad: qty,
           stock_antes: stockAntes,
           stock_despues: stockDespues,
+          sucursal_id: sucursalId || null,
         })
         .select()
         .single();
 
       if (lErr) return { data: null, error: lErr };
 
-      const { error: sErr } = await supabase
-        .from('inventario')
-        .update({
-          stock_actual: stockDespues,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', inventario_id);
-
-      if (sErr) return { data: null, error: sErr };
+      if (sucursalId) {
+        const { error: sErr } = await supabase
+          .from('inventario_stock_sucursal')
+          .upsert(
+            {
+              sucursal_id: sucursalId,
+              inventario_id,
+              stock_actual: stockDespues,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'sucursal_id,inventario_id' },
+          );
+        if (sErr) return { data: null, error: sErr };
+      } else {
+        const { error: sErr } = await supabase
+          .from('inventario')
+          .update({
+            stock_actual: stockDespues,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', inventario_id);
+        if (sErr) return { data: null, error: sErr };
+      }
 
       return {
         data: { lote, stockAntes, stockDespues, producto },
         error: null,
       };
+    },
+
+    /** Importa varios productos del mismo lote (p. ej. desde QR de traslado). */
+    registrarIngresoBatch: async ({ sucursal_id, numero_lote, fecha_ingreso, items }) => {
+      const rows = Array.isArray(items) ? items : [];
+      if (!rows.length) {
+        return { data: null, error: { message: 'No hay productos para importar.' } };
+      }
+      const results = [];
+      for (const item of rows) {
+        const { data, error } = await db.inventarioLotes.registrarIngreso({
+          inventario_id: item.inventario_id || item.id,
+          cantidad: item.cantidad ?? item.qty,
+          numero_lote,
+          fecha_ingreso,
+          sucursal_id,
+        });
+        if (error) {
+          return {
+            data: { results, imported: results.length, total: rows.length },
+            error,
+          };
+        }
+        results.push(data);
+      }
+      return { data: { results, imported: results.length, total: rows.length }, error: null };
     },
   },
 
@@ -3251,11 +3446,22 @@ export const db = {
   orders: {
     // Obtener todas las órdenes (salón: RLS staff o RPC salon_pedidos_inbox)
     getAll: async () => {
-      const direct = await supabase
+      const scope = getSalonSucursalScope();
+      if (!scope.isGlobal && scope.sucursalId) {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('salon_pedidos_inbox', {
+          p_limit: 500,
+        });
+        if (!rpcError && Array.isArray(rpcData)) {
+          return { data: rpcData, error: null };
+        }
+      }
+      let q = supabase
         .from('ecommerce_orders')
         .select('*')
         .order('created_at', { ascending: false });
-      if (!direct.error && Array.isArray(direct.data) && direct.data.length > 0) {
+      q = applySalonSucursalFilter(q);
+      const direct = await q;
+      if (!direct.error) {
         return direct;
       }
       const { data: rpcData, error: rpcError } = await supabase.rpc('salon_pedidos_inbox', {
@@ -3269,12 +3475,14 @@ export const db = {
 
     // Obtener órdenes por estado
     getByStatus: async (status) => {
-      const direct = await supabase
+      let q = supabase
         .from('ecommerce_orders')
         .select('*')
         .eq('status', status)
         .order('created_at', { ascending: false });
-      if (!direct.error && Array.isArray(direct.data) && direct.data.length > 0) {
+      q = applySalonSucursalFilter(q);
+      const direct = await q;
+      if (!direct.error) {
         return direct;
       }
       if (status !== 'pending') return direct;
@@ -3323,13 +3531,26 @@ export const db = {
         .single();
     },
 
-    // Obtener órdenes de un cliente
-    getByCliente: async (clientUserId) => {
-      return await supabase
+    // Obtener órdenes del cliente (todas sus compras; no filtrar por sucursal del picker)
+    getByCliente: async (clientUserId, options = {}) => {
+      let q = supabase
         .from('ecommerce_orders')
         .select('*')
         .eq('client_user_id', clientUserId)
         .order('created_at', { ascending: false });
+      if (options.filterSucursal === true) {
+        const sid = options.sucursalId || (await getClientSucursalId());
+        if (sid) q = q.eq('sucursal_id', sid);
+      }
+      const direct = await q;
+      if (!direct.error) return direct;
+      const { data: rpcData, error: rpcError } = await supabase.rpc('client_mis_pedidos', {
+        p_limit: 500,
+      });
+      if (!rpcError && Array.isArray(rpcData)) {
+        return { data: rpcData, error: null };
+      }
+      return direct;
     },
 
     // Buscar órdenes (por nombre, teléfono o tracking code)
@@ -3343,6 +3564,7 @@ export const db = {
 
     // Crear nueva orden
     create: async (data) => {
+      const clientSucursal = data.sucursal_id || (await getClientSucursalId());
       return await supabase
         .from('ecommerce_orders')
         .insert({
@@ -3359,6 +3581,7 @@ export const db = {
           delivery_address: data.delivery_address || null,
           delivery_reference: data.delivery_reference || null,
           checkout_snapshot: data.checkout_snapshot || null,
+          sucursal_id: clientSucursal || null,
         })
         .select()
         .single();
@@ -3563,10 +3786,12 @@ export const db = {
   // ==================== METAS (OBJETIVOS) ====================
   metas: {
     getAll: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('metas')
         .select('*, asignado_a:empleados(id, nombre, rol)')
         .order('creado_a', { ascending: false });
+      q = applySalonSucursalFilter(q);
+      const { data, error } = await q;
       return { data, error };
     },
 
@@ -3580,11 +3805,13 @@ export const db = {
     },
 
     getActivas: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('metas')
         .select('*, asignado_a:empleados(id, nombre, rol)')
         .eq('activo', true)
         .order('creado_a', { ascending: false });
+      q = applySalonSucursalFilter(q);
+      const { data, error } = await q;
       return { data, error };
     },
 
@@ -3646,9 +3873,17 @@ export const db = {
     },
 
     create: async (data) => {
+      const scope = getSalonSucursalScope();
+      const row = {
+        ...data,
+        sucursal_id:
+          data.sucursal_id ||
+          (String(data.alcance || '').toLowerCase() === 'global' ? null : !scope.isGlobal ? scope.sucursalId : null) ||
+          null,
+      };
       const { data: nuevaMeta, error } = await supabase
         .from('metas')
-        .insert([data])
+        .insert([row])
         .select('*, asignado_a:empleados(id, nombre, rol)')
         .single();
       return { data: nuevaMeta, error };
@@ -5096,320 +5331,12 @@ export const db = {
     },
   },
 
-  // ==================== ADMIN AUDIT LOGS ====================
-  adminAuditLogs: {
-    getAll: async () => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .order('created_at', { ascending: false });
-      return { data, error };
-    },
-
-    getById: async (id) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .eq('id', id)
-        .single();
-      return { data, error };
-    },
-
-    getByAdmin: async (adminId) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*')
-        .eq('admin_id', adminId)
-        .order('created_at', { ascending: false });
-      return { data, error };
-    },
-
-    getByAction: async (actionKey) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .eq('action_key', actionKey)
-        .order('created_at', { ascending: false });
-      return { data, error };
-    },
-
-    getByTable: async (targetTable) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .eq('target_table', targetTable)
-        .order('created_at', { ascending: false });
-      return { data, error };
-    },
-
-    search: async (query) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .or(`action_key.ilike.%${query}%,target_table.ilike.%${query}%,label.ilike.%${query}%`)
-        .order('created_at', { ascending: false });
-      return { data, error };
-    },
-
-    create: async (data) => {
-      const logData = {
-        ...data,
-        created_at: new Date().toISOString(),
-      };
-
-      const { data: newLog, error } = await supabase
-        .from('admin_audit_logs')
-        .insert([logData])
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .single();
-      return { data: newLog, error };
-    },
-
-    delete: async (id) => {
-      const { error } = await supabase
-        .from('admin_audit_logs')
-        .delete()
-        .eq('id', id);
-      return { error };
-    },
-
-    deleteOlderThan: async (days) => {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - days);
-
-      const { error } = await supabase
-        .from('admin_audit_logs')
-        .delete()
-        .lt('created_at', cutoffDate.toISOString());
-      return { error };
-    },
-
-    getRecent: async (limit = 50) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      return { data, error };
-    },
-
-    getByDateRange: async (startDate, endDate) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .gte('created_at', startDate)
-        .lte('created_at', endDate)
-        .order('created_at', { ascending: false });
-      return { data, error };
-    },
-
-    getHoy: async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      return await db.adminAuditLogs.getByDateRange(
-        today.toISOString(),
-        tomorrow.toISOString()
-      );
-    },
-
-    getEliminacionesMasivas: async (threshold = 10) => {
-      const { data, error } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .gte('removed_count', threshold)
-        .order('created_at', { ascending: false });
-      return { data, error };
-    },
-
-    getAccionesSospechosas: async () => {
-      const { data: eliminacionesMasivas } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))')
-        .gte('removed_count', 50)
-        .order('created_at', { ascending: false });
-
-      const oneHourAgo = new Date();
-      oneHourAgo.setHours(oneHourAgo.getHours() - 1);
-
-      const { data: accionesRecientes } = await supabase
-        .from('admin_audit_logs')
-        .select('admin_id')
-        .gte('created_at', oneHourAgo.toISOString());
-
-      const actividadPorAdmin = {};
-      accionesRecientes?.forEach(log => {
-        actividadPorAdmin[log.admin_id] = (actividadPorAdmin[log.admin_id] || 0) + 1;
-      });
-
-      const adminsSospechosos = Object.entries(actividadPorAdmin)
-        .filter(([_, count]) => count > 100)
-        .map(([adminId]) => adminId);
-
-      return {
-        data: {
-          eliminacionesMasivas: eliminacionesMasivas || [],
-          adminsSospechosos,
-          totalSospechosas: (eliminacionesMasivas?.length || 0) + adminsSospechosos.length,
-        },
-        error: null,
-      };
-    },
-
-    getEstadisticas: async () => {
-      const { data: allLogs } = await supabase
-        .from('admin_audit_logs')
-        .select('*');
-
-      const totalLogs = allLogs?.length || 0;
-      const totalEliminaciones = allLogs?.reduce((sum, log) => sum + (log.removed_count || 0), 0) || 0;
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const logsHoy = allLogs?.filter(log =>
-        new Date(log.created_at) >= today
-      ) || [];
-
-      const last7Days = new Date();
-      last7Days.setDate(last7Days.getDate() - 7);
-
-      const logsUltimos7Dias = allLogs?.filter(log =>
-        new Date(log.created_at) >= last7Days
-      ) || [];
-
-      const accionesPorKey = {};
-      allLogs?.forEach(log => {
-        if (log.action_key) {
-          accionesPorKey[log.action_key] = (accionesPorKey[log.action_key] || 0) + 1;
-        }
-      });
-
-      const accionMasFrecuente = Object.entries(accionesPorKey)
-        .sort(([, a], [, b]) => b - a)[0];
-
-      const tablasPorTarget = {};
-      allLogs?.forEach(log => {
-        if (log.target_table) {
-          tablasPorTarget[log.target_table] = (tablasPorTarget[log.target_table] || 0) + 1;
-        }
-      });
-
-      const tablaMasModificada = Object.entries(tablasPorTarget)
-        .sort(([, a], [, b]) => b - a)[0];
-
-      const adminsUnicos = new Set(allLogs?.map(log => log.admin_id) || []);
-
-      return {
-        data: {
-          totalLogs,
-          logsHoy: logsHoy.length,
-          logsUltimos7Dias: logsUltimos7Dias.length,
-          totalEliminaciones,
-          accionMasFrecuente: accionMasFrecuente ? accionMasFrecuente[0] : null,
-          frecuenciaAccion: accionMasFrecuente ? accionMasFrecuente[1] : 0,
-          tablaMasModificada: tablaMasModificada ? tablaMasModificada[0] : null,
-          frecuenciaTabla: tablaMasModificada ? tablaMasModificada[1] : 0,
-          adminsActivos: adminsUnicos.size,
-          promedioLogsPorDia: logsUltimos7Dias.length > 0 ? Math.round(logsUltimos7Dias.length / 7) : 0,
-        },
-        error: null,
-      };
-    },
-
-    getEstadisticasPorAdmin: async () => {
-      const { data: allLogs } = await supabase
-        .from('admin_audit_logs')
-        .select('*, admin:admin_id(id, email, profiles(full_name))');
-
-      if (!allLogs) return { data: [], error: null };
-
-      const adminStats = {};
-      allLogs.forEach(log => {
-        const adminId = log.admin_id;
-        if (!adminStats[adminId]) {
-          adminStats[adminId] = {
-            admin_id: adminId,
-            admin_email: log.admin?.email || 'Desconocido',
-            admin_name: log.admin?.profiles?.full_name || 'N/A',
-            totalAcciones: 0,
-            totalEliminaciones: 0,
-          };
-        }
-        adminStats[adminId].totalAcciones++;
-        adminStats[adminId].totalEliminaciones += log.removed_count || 0;
-      });
-
-      const stats = Object.values(adminStats)
-        .sort((a, b) => b.totalAcciones - a.totalAcciones);
-
-      return { data: stats, error: null };
-    },
-
-    getEstadisticasPorAccion: async () => {
-      const { data: allLogs } = await supabase
-        .from('admin_audit_logs')
-        .select('*');
-
-      if (!allLogs) return { data: [], error: null };
-
-      const accionStats = {};
-      allLogs.forEach(log => {
-        const action = log.action_key || 'Sin especificar';
-        if (!accionStats[action]) {
-          accionStats[action] = {
-            action_key: action,
-            count: 0,
-            totalEliminaciones: 0,
-          };
-        }
-        accionStats[action].count++;
-        accionStats[action].totalEliminaciones += log.removed_count || 0;
-      });
-
-      const stats = Object.values(accionStats)
-        .sort((a, b) => b.count - a.count);
-
-      return { data: stats, error: null };
-    },
-
-    getEstadisticasPorTabla: async () => {
-      const { data: allLogs } = await supabase
-        .from('admin_audit_logs')
-        .select('*');
-
-      if (!allLogs) return { data: [], error: null };
-
-      const tablaStats = {};
-      allLogs.forEach(log => {
-        const table = log.target_table || 'Sin especificar';
-        if (!tablaStats[table]) {
-          tablaStats[table] = {
-            target_table: table,
-            count: 0,
-            totalEliminaciones: 0,
-          };
-        }
-        tablaStats[table].count++;
-        tablaStats[table].totalEliminaciones += log.removed_count || 0;
-      });
-
-      const stats = Object.values(tablaStats)
-        .sort((a, b) => b.count - a.count);
-
-      return { data: stats, error: null };
-    },
-  },
-
   // ==================== CAJAS ====================
   cajas: {
     getAll: async () => {
-      const { data, error } = await supabase
-        .from('cajas')
-        .select('*')
-        .order('creado_a', { ascending: false });
+      let q = supabase.from('cajas').select('*').order('creado_a', { ascending: false });
+      q = applySalonSucursalFilter(q);
+      const { data, error } = await q;
       return { data, error };
     },
 
@@ -5423,11 +5350,9 @@ export const db = {
     },
 
     getAbiertas: async () => {
-      const { data, error } = await supabase
-        .from('cajas')
-        .select('*')
-        .eq('estado', 'abierta')
-        .order('fecha_apertura', { ascending: false });
+      let q = supabase.from('cajas').select('*').eq('estado', 'abierta').order('fecha_apertura', { ascending: false });
+      q = applySalonSucursalFilter(q);
+      const { data, error } = await q;
       return { data, error };
     },
 
@@ -5441,13 +5366,14 @@ export const db = {
     },
 
     getCajaActual: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('cajas')
         .select('*')
         .eq('estado', 'abierta')
         .order('fecha_apertura', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
+      q = applySalonSucursalFilter(q);
+      const { data, error } = await q.maybeSingle();
       return { data, error };
     },
 
@@ -5470,7 +5396,7 @@ export const db = {
     },
 
     getHoy: async () => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localCalendarDateString();
       return await db.cajas.getByFecha(today);
     },
 
@@ -5499,13 +5425,25 @@ export const db = {
     },
 
     abrir: async (data) => {
+      const scope = getSalonSucursalScope();
+      const sucursalId = data.sucursal_id || (!scope.isGlobal ? scope.sucursalId : null) || null;
+      if (!scope.isGlobal && !sucursalId) {
+        return {
+          data: null,
+          error: {
+            message:
+              'Tu perfil admin_sucursal debe tener sucursal_id en profiles. Cerrá sesión y volvé a entrar, o pedí a matriz que revise tu cuenta.',
+          },
+        };
+      }
       const cajaData = {
         monto_apertura: data.monto_apertura,
         responsable: data.responsable,
         responsable_apertura: data.responsable_apertura || data.responsable,
         estado: 'abierta',
-        fecha_apertura: new Date().toISOString().split('T')[0],
+        fecha_apertura: localCalendarDateString(),
         creado_a: new Date().toISOString(),
+        sucursal_id: sucursalId,
       };
 
       const { data: newCaja, error } = await supabase
@@ -5666,9 +5604,7 @@ export const db = {
       const totalAperturas = allCajas?.reduce((sum, c) => sum + Number(c.monto_apertura || 0), 0) || 0;
       const totalCierres = cerradas.reduce((sum, c) => sum + Number(c.monto_cierre || 0), 0) || 0;
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayStr = today.toISOString().split('T')[0];
+      const todayStr = localCalendarDateString();
 
       const cajasHoy = allCajas?.filter(c =>
         c.fecha_apertura === todayStr
@@ -6884,6 +6820,70 @@ export const db = {
     },
   },
 
+  // ==================== SUCURSALES ====================
+  sucursales: {
+    listActivas: async () => {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('list_sucursales_activas');
+      if (!rpcError && Array.isArray(rpcData)) {
+        return { data: rpcData, error: null };
+      }
+      const direct = await supabase
+        .from('sucursales')
+        .select('id, codigo, nombre, direccion, telefono, es_matriz, activa, created_at')
+        .eq('activa', true)
+        .order('es_matriz', { ascending: false })
+        .order('nombre', { ascending: true });
+      if (!direct.error) {
+        return { data: direct.data || [], error: null };
+      }
+      return { data: [], error: rpcError || direct.error };
+    },
+
+    crear: async ({ codigo, nombre, direccion, telefono }) => {
+      const { data, error } = await supabase.rpc('crear_sucursal', {
+        p_codigo: codigo,
+        p_nombre: nombre,
+        p_direccion: direccion || null,
+        p_telefono: telefono || null,
+      });
+      return { data, error };
+    },
+
+    vincularAdmin: async ({ sucursalId, userId, nombre }) => {
+      const { data, error } = await supabase.rpc('vincular_admin_sucursal', {
+        p_sucursal_id: sucursalId,
+        p_user_id: userId,
+        p_nombre: nombre || null,
+      });
+      return { data, error };
+    },
+  },
+
+  inventarioStockSucursal: {
+    getForSucursal: async (sucursalId) => {
+      if (!sucursalId) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('inventario_stock_sucursal')
+        .select('*')
+        .eq('sucursal_id', sucursalId);
+      return { data: data || [], error };
+    },
+
+    getStock: async (sucursalId, inventarioId) => {
+      if (!sucursalId || !inventarioId) return { data: 0, error: null };
+      const { data, error } = await supabase
+        .from('inventario_stock_sucursal')
+        .select('stock_actual')
+        .eq('sucursal_id', sucursalId)
+        .eq('inventario_id', inventarioId)
+        .maybeSingle();
+      if (error) return { data: 0, error };
+      return { data: Number(data?.stock_actual ?? 0), error: null };
+    },
+
+    mergeCatalogo: (items, stockRows) => mergeInventarioWithSucursalStock(items, stockRows),
+  },
+
   // ==================== ESTADÍSTICAS ====================
   stats: {
     // Resumen del dashboard
@@ -7001,9 +7001,6 @@ export const db = {
       // Estadísticas de cajas
       const { data: statsCajas } = await db.cajas.getEstadisticas();
 
-      // Estadísticas de admin audit logs
-      const { data: statsAuditLogs } = await db.adminAuditLogs.getEstadisticas();
-
       return {
         citasHoy: citasHoy || 0,
         totalClientes: totalClientes || 0,
@@ -7065,13 +7062,6 @@ export const db = {
         incidentesHoy: statsIncidentes?.incidentesHoy || 0,
         totalPerdidasIncidentes: statsIncidentes?.totalPerdidas || 0,
         tasaResolucionIncidentes: statsIncidentes?.tasaResolucion || 0,
-        // Admin Audit Logs
-        totalAuditLogs: statsAuditLogs?.totalLogs || 0,
-        auditLogsHoy: statsAuditLogs?.logsHoy || 0,
-        auditLogsUltimos7Dias: statsAuditLogs?.logsUltimos7Dias || 0,
-        totalEliminacionesAudit: statsAuditLogs?.totalEliminaciones || 0,
-        adminsActivos: statsAuditLogs?.adminsActivos || 0,
-        promedioLogsPorDia: statsAuditLogs?.promedioLogsPorDia || 0,
         // E-commerce Order Items
         totalOrderItems: statsOrderItems?.totalItems || 0,
         totalUnidadesVendidas: statsOrderItems?.totalUnidades || 0,

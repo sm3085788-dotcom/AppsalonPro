@@ -10,10 +10,10 @@ import {
   LayoutDashboard,
   AlertTriangle,
   Boxes,
-  Trash2,
   ScrollText,
   Truck,
   ClipboardList,
+  Building2,
 } from 'lucide-react-native';
 
 /**
@@ -77,7 +77,7 @@ export const SALON_MODULES = [
   {
     id: 'panel',
     title: 'Panel de control',
-    subtitle: 'Resumen y KPIs del salón',
+    subtitle: 'Borrado masivo y basurero local',
     Icon: LayoutDashboard,
   },
   {
@@ -91,12 +91,6 @@ export const SALON_MODULES = [
     title: 'Inventario',
     subtitle: 'Catálogo tienda: productos y servicios',
     Icon: Boxes,
-  },
-  {
-    id: 'basurero',
-    title: 'Basurero general',
-    subtitle: 'Elementos eliminados y recuperación',
-    Icon: Trash2,
   },
   {
     id: 'papeleria',
@@ -116,6 +110,12 @@ export const SALON_MODULES = [
     subtitle: 'Compras, Tendencias y carrusel desde App Clientes',
     Icon: ClipboardList,
   },
+  {
+    id: 'sucursales',
+    title: 'Sucursales',
+    subtitle: 'Crear locales y ver matriz (solo admin global)',
+    Icon: Building2,
+  },
 ];
 
 export function getModuleById(id) {
@@ -132,13 +132,13 @@ const MODULE_KEYWORDS = {
   reportes: ['reporte', 'reportes', 'indicador', 'exportar', 'pdf'],
   marketing: ['marketing', 'tendencias', 'carrusel', 'publicacion', 'post'],
   mensajes: ['mensaje', 'mensajes', 'chat', 'andreas', 'promo'],
-  panel: ['panel', 'kpi', 'control', 'resumen'],
+  panel: ['panel', 'kpi', 'control', 'resumen', 'basurero', 'eliminado', 'papelera', 'recuperar', 'borrado'],
   incidentes: ['incidente', 'accidente', 'reporte', 'folio', 'pdf'],
   inventory: ['inventario', 'producto', 'stock', 'sku', 'barcode', 'tienda'],
-  basurero: ['basurero', 'eliminado', 'papelera', 'recuperar'],
   papeleria: ['papeleria', 'factura', 'folio', 'venta', 'ticket'],
   proveedores: ['proveedor', 'compania', 'nit', 'agente'],
   pedidos: ['pedido', 'pedidos', 'tracking', 'compra', 'envio'],
+  sucursales: ['sucursal', 'sucursales', 'local', 'matriz', 'branch'],
 };
 
 export function filterModulesBySearch(list, query) {

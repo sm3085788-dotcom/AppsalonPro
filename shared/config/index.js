@@ -3,6 +3,7 @@
  * Carga supabaseClient primero; los módulos de dominio importan `db` sin ciclo.
  */
 export * from './supabaseClient.js';
+export { localCalendarDateString } from './localDate.js';
 export { upsertPushDeviceToken } from './pushTokens.js';
 export {
   getMetaGlobal,
@@ -58,6 +59,21 @@ export {
   BROADCAST_LINK_TYPES,
 } from './broadcastPromo.js';
 export {
+  PROMO_INVENTARIO_CONTENT_TYPE,
+  parsePromoInventarioContent,
+  formatPromoInventarioContent,
+  promoInventarioPreviewText,
+  isPromoInventarioMessage,
+  resolveInventarioPromoActionTarget,
+} from './promoInventarioChat.js';
+export {
+  fetchClientPromosVigentesForChat,
+  expandAuraMessagesWithLivePromos,
+  collapsePromoChatRowsForDisplay,
+  isPromoIntroSalonChat,
+  inventarioRowToPromoChatPayload,
+} from './clientChatPromos.js';
+export {
   fetchClientAuraMessages,
   fetchClientAuraUnreadCount,
   markClientAuraDelivered,
@@ -68,6 +84,15 @@ export {
   sortAuraMessages,
 } from './auraLineClient.js';
 export { sendSalonAuraMessage } from './auraLineSalon.js';
+export {
+  CHAT_QUICK_INTENTS,
+  CLIENT_CHAT_QUICK_ACTIONS,
+  matchChatQuickIntent,
+  getChatQuickIntentById,
+  getSalonSuggestedReply,
+  listChatQuickIntentsForAutomation,
+} from './chatQuickActions.js';
+export { getChatAutomationSettings, setChatAutomationEnabled } from './chatAutomationSalon.js';
 export {
   syncClientNotifPrefsToServer,
   upsertClientPushToken,
@@ -95,6 +120,11 @@ export {
   CITA_COMPROMISO_NOTE_SEGMENTS,
   CITA_UBICACION_HINT,
 } from './citaConfirmacionMessage.js';
+export {
+  SALON_CONTACTO,
+  getSalonMapLinks,
+  getSalonGoogleMapsUrl,
+} from './salonContacto.js';
 export {
   buildCarouselOverlayFromInventario,
   parseHomeCarouselOverlay,
@@ -172,6 +202,28 @@ export {
 } from './andreasReferidos.js';
 export { computeMembresiaStatusFromRow } from './membresiaStatus.js';
 export {
+  isSalonGlobalAdmin,
+  isSalonSucursalAdmin,
+  canAccessSalonApp,
+  isSalonAdminRole,
+  normalizeProfileRole,
+} from './salonRoles.js';
+export {
+  setSalonSessionProfile,
+  getSalonSessionProfile,
+  clearSalonSessionProfile,
+  getSalonSucursalScope,
+  requireSalonSucursalId,
+  getSalonBranchDisplayName,
+  enrichSalonSessionProfile,
+} from './salonSession.js';
+export {
+  getClientSucursalId,
+  setClientSucursalId,
+  ensureClientSucursalId,
+  mergeInventarioWithSucursalStock,
+} from './clientSucursal.js';
+export {
   ANDREAS_ORDER_STATUSES_PENDIENTES,
   CITA_ESTADOS_PENDIENTES_PREMIO,
   parseReferidoInvitadoState,
@@ -186,6 +238,14 @@ export {
   visitaQrImageUrl,
   VISITA_QR_PREFIX,
 } from './visitaQr.js';
+export {
+  STOCK_TRANSFER_QR_PREFIX,
+  buildStockTransferPayload,
+  buildStockTransferQrPayload,
+  parseStockTransferQrPayload,
+  stockTransferQrImageUrl,
+  stockTransferSucursalMatches,
+} from './stockTransferQr.js';
 export {
   SERVICIO_CATEGORIAS,
   normalizeServicioCategoria,

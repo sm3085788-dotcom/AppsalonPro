@@ -349,7 +349,15 @@ export function CajaScreen({ onBack }) {
       setView('dash');
       await refreshTxsFromDb(nueva.id);
     } catch (e) {
-      Alert.alert('Caja', e?.message || 'No se pudo abrir la caja.');
+      const msg = String(e?.message || '');
+      if (/row-level security|permission denied|policy/i.test(msg)) {
+        Alert.alert(
+          'Caja',
+          `${msg}\n\nEjecutá en Supabase el archivo supabase-sucursales-caja-fix.sql y volvé a intentar.`,
+        );
+      } else {
+        Alert.alert('Caja', msg || 'No se pudo abrir la caja.');
+      }
     } finally {
       setAbriendo(false);
     }

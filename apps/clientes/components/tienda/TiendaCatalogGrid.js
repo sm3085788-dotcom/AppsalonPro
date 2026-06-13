@@ -30,7 +30,7 @@ function isTiendaProductRow(row) {
   return true;
 }
 
-export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: productsProp }) {
+export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: productsProp, sucursalId }) {
   const { colors: c } = useTheme();
   const { width: winW } = useWindowDimensions();
   const outerPad = spacing.lg * 2;
@@ -46,7 +46,7 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
   const loadRemote = useCallback(async () => {
     setLoading(true);
     try {
-      const invRes = await db.inventario.getVisiblesEnTienda();
+      const invRes = await db.inventario.getVisiblesEnTienda({ sucursalId });
       const rows = !invRes.error && Array.isArray(invRes.data) ? invRes.data : [];
       const productRows = rows.filter(isTiendaProductRow);
       const mapped = productRows.map(mapInventarioToTiendaProduct).filter(Boolean);
@@ -54,7 +54,7 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sucursalId]);
 
   useEffect(() => {
     if (productsProp) return undefined;

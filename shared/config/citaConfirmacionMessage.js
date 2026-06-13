@@ -13,7 +13,9 @@ export const CITA_COMPROMISO_NOTE_SEGMENTS = [
   { t: '.' },
 ];
 
-export const CITA_UBICACION_HINT = 'Para ubicación: Perfil → Contactos.';
+export const CITA_UBICACION_HINT = 'Tocá para ver la ubicación.';
+
+const CITA_UBICACION_HINT_LEGACY = 'Para ubicación: Perfil → Contactos.';
 
 const OLD_NOTE_PREFIX = 'Cita confirmada por el salón';
 
@@ -106,8 +108,16 @@ export function resolveCitaConfirmacionNoteSegments(card) {
   return [{ t: n }];
 }
 
+function normalizeCitaUbicacionHint(text) {
+  const u = String(text || '').trim();
+  if (!u || u === CITA_UBICACION_HINT_LEGACY || /perfil\s*→?\s*contactos/i.test(u)) {
+    return CITA_UBICACION_HINT;
+  }
+  return u;
+}
+
 export function resolveCitaConfirmacionUbicacion(card) {
-  if (card?.ubicacion) return String(card.ubicacion).trim();
+  if (card?.ubicacion) return normalizeCitaUbicacionHint(card.ubicacion);
   const footer = String(card?.footer || '').trim();
   if (!footer) return CITA_UBICACION_HINT;
   const low = footer.toLowerCase();
@@ -117,7 +127,7 @@ export function resolveCitaConfirmacionUbicacion(card) {
   }
   if (/ubicaci[oó]n/i.test(footer)) {
     const m = footer.match(/Para ubicaci[oó]n[^.]*\.?/i);
-    return m ? m[0].trim() : CITA_UBICACION_HINT;
+    return normalizeCitaUbicacionHint(m ? m[0].trim() : CITA_UBICACION_HINT);
   }
   return CITA_UBICACION_HINT;
 }

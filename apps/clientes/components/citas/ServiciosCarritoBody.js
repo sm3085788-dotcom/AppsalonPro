@@ -11,12 +11,14 @@ import {
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import { CitaFechaHoraPicker, openAndroidCitaPicker } from './CitaFechaHoraPicker';
+import { ClientSucursalPicker } from '../sucursal/ClientSucursalPicker';
 import { AgendarServicioResumenCard } from './AgendarServicioResumenCard';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   db,
   resolvePrecioServicioConCanjeCitas,
   mergeNotasServicioConCanje,
+  ensureClientSucursalId,
 } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
 import { SalonButton } from '../luxury/SalonButton';
@@ -45,6 +47,7 @@ export function ServiciosCarritoBody({
   const n = items.length;
 
   const [schedules, setSchedules] = useState({});
+  const [sucursalId, setSucursalId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [canjeCitas, setCanjeCitas] = useState(null);
 
@@ -80,6 +83,12 @@ export function ServiciosCarritoBody({
     }
     if (!items.length) return;
 
+    const sid = sucursalId || (await ensureClientSucursalId());
+    if (!sid) {
+      Alert.alert('Sucursal', 'Elegí la sucursal donde querés atenderte.');
+      return;
+    }
+
     setSaving(true);
     const creadas = [];
     let canjeConsumido = false;
@@ -114,6 +123,7 @@ export function ServiciosCarritoBody({
             estado: 'pendiente',
             notas_servicio: notasServicio,
             empleado_id: null,
+            sucursal_id: sid,
           },
           { forClientApp: true },
         );
@@ -157,7 +167,7 @@ export function ServiciosCarritoBody({
     } finally {
       setSaving(false);
     }
-  }, [clienteRow?.id, items, schedules, canjeCitas, clear, onCitasChanged, onClose, onGoTab]);
+  }, [clienteRow?.id, items, schedules, canjeCitas, sucursalId, clear, onCitasChanged, onClose, onGoTab]);
 
   if (!clienteRow?.id) {
     return (
@@ -184,6 +194,14 @@ export function ServiciosCarritoBody({
           </Text>
         </View>
       ) : null}
+
+      <View style={styles.card}>
+        <Text style={styles.whenLbl}>Sucursal</Text>
+        <Text style={[styles.intro, { marginBottom: spacing.sm }]}>
+          Las citas se enviarán a la agenda de esta sucursal.
+        </Text>
+        <ClientSucursalPicker onChange={setSucursalId} compact />
+      </View>
 
       {n === 0 ? (
         <Text style={styles.intro}>

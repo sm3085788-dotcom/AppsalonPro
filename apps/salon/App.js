@@ -9,8 +9,9 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   useColorScheme,
+  Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearPendingBranchAdminSetup } from './services/branchAdminSetup';
 
 const hasSupabaseEnv = Boolean(
   process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
@@ -36,6 +37,10 @@ import {
   getModuleById,
   filterModulesBySearch,
 } from './navigation/salonRoutes';
+import {
+  filterSalonModulesForProfile,
+  canOpenSalonModule,
+} from './navigation/salonModuleAccess';
 import { VenderScreen } from './screens/VenderScreen';
 import { AppointmentsScreen } from './screens/AppointmentsScreen';
 import { CajaScreen } from './screens/CajaScreen';
@@ -53,19 +58,25 @@ import {
 } from './utils/salonPush';
 import { IncidentesScreen } from './screens/IncidentesScreen';
 import { InventarioScreen } from './screens/InventarioScreen';
-import { BasureroScreen } from './screens/BasureroScreen';
 import { PapeleriaScreen } from './screens/PapeleriaScreen';
 import { ProveedoresScreen } from './screens/ProveedoresScreen';
 import { PedidosScreen } from './screens/PedidosScreen';
 import { SalonModulePlaceholder } from './screens/SalonModulePlaceholder';
 import { ControlPanelScreen } from './screens/ControlPanelScreen';
+import { SucursalesScreen } from './screens/SucursalesScreen';
 import { SalonAdminSignInScreen } from './screens/SalonAdminSignInScreen';
 import {
   db,
   supabase,
-  isSalonAdminRole,
+  canAccessSalonApp,
+  isSalonSucursalAdmin,
+  isSalonGlobalAdmin,
+  setSalonSessionProfile,
+  clearSalonSessionProfile,
   isInvalidRefreshTokenError,
   fetchMarketingEngagementSince,
+  enrichSalonSessionProfile,
+  getSalonBranchDisplayName,
 } from '@appsalon/shared-config';
 
 const MAX_CONTENT_WIDTH = 1120;
@@ -92,9 +103,9 @@ const ROW_ACCENTS = [
   { border: '#6A2BA0', bg: '#EFE7FA', icon: '#6A2BA0' }, // morado
 ];
 const BROWN_ACCENT = { border: '#7B4B2A', bg: '#F5EADF', icon: '#7B4B2A' };
-const BROWN_MODULE_IDS = new Set(['incidentes', 'inventory', 'basurero']);
+const BROWN_MODULE_IDS = new Set(['incidentes', 'inventory']);
 /** Solo título visible (sin subtítulo); icono centrado arriba. */
-const TITLE_ONLY_MODULE_IDS = new Set(['panel', 'basurero']);
+const TITLE_ONLY_MODULE_IDS = new Set(['panel']);
 
 /** Modulos con badge de notificaciones (contador rojo). Sustituir por API cuando exista. */
 const BADGE_MODULE_IDS = ['agenda', 'cajas', 'clients', 'mensajes', 'inventory'];
@@ -110,7 +121,7 @@ function isPendingCashOrder(order) {
   );
 }
 
-function SalonAdminShell({ onSignOut }) {
+function SalonAdminShell({ onSignOut, profile }) {
   const insets = useSafeAreaInsets();
   const { width: winW } = useWindowDimensions();
   const [openedModuleId, setOpenedModuleId] = useState(null);
@@ -139,10 +150,10 @@ function SalonAdminShell({ onSignOut }) {
 
   const { cols, tileWidth, gap } = useMemo(() => computeModuleGridLayout(winW), [winW]);
 
-  const modules = useMemo(
-    () => filterModulesBySearch(SALON_MODULES, search),
-    [search],
-  );
+  const modules = useMemo(() => {
+    const scoped = filterSalonModulesForProfile(SALON_MODULES, profile);
+    return filterModulesBySearch(scoped, search);
+  }, [search, profile]);
 
   const styles = useMemo(() => buildStyles(c), [c]);
 
@@ -341,17 +352,20 @@ function SalonAdminShell({ onSignOut }) {
   }, [refreshPedidosAlert]);
 
   const openModule = useCallback(async (id) => {
+    if (!canOpenSalonModule(id, profile)) {
+      Alert.alert('Sin acceso', 'Tu sucursal no tiene permiso para abrir este módulo.');
+      return;
+    }
+    setOpenedModuleId(id);
     if (id === 'mensajes') {
       setHasNewMensajes(false);
       void AsyncStorage.setItem(SALON_MESSAGES_LAST_SEEN_KEY, new Date().toISOString());
     }
     if (id === 'pedidos') {
-      const nowIso = new Date().toISOString();
-      await AsyncStorage.setItem(SALON_PEDIDOS_LAST_SEEN_KEY, nowIso);
       setHasNewPedidos(false);
+      void AsyncStorage.setItem(SALON_PEDIDOS_LAST_SEEN_KEY, new Date().toISOString());
     }
-    setOpenedModuleId(id);
-  }, []);
+  }, [profile]);
   const onHomeRefresh = useCallback(async () => {
     setHomeRefreshing(true);
     try {
@@ -454,10 +468,6 @@ function SalonAdminShell({ onSignOut }) {
     return <InventarioScreen onBack={closeModule} />;
   }
 
-  if (openedModuleId === 'basurero') {
-    return <BasureroScreen onBack={closeModule} />;
-  }
-
   if (openedModuleId === 'papeleria') {
     return <PapeleriaScreen onBack={closeModule} />;
   }
@@ -472,6 +482,10 @@ function SalonAdminShell({ onSignOut }) {
 
   if (openedModuleId === 'panel') {
     return <ControlPanelScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'sucursales') {
+    return <SucursalesScreen onBack={closeModule} onRequestSignOut={onSignOut} />;
   }
 
   if (openedModule) {
@@ -503,7 +517,13 @@ function SalonAdminShell({ onSignOut }) {
           <View style={[styles.headerTop, { paddingTop: insets.top + spacing.md }]}>
             <View style={styles.titleBlock}>
               <Text style={styles.brand}>App Andrea</Text>
-              <Text style={styles.brandLead}>Administracion</Text>
+              <Text style={styles.brandLead}>
+                {isSalonSucursalAdmin(profile?.role)
+                  ? getSalonBranchDisplayName(profile) || 'Mi sucursal'
+                  : isSalonGlobalAdmin(profile?.role)
+                    ? 'Matriz · admin global'
+                    : 'Administracion'}
+              </Text>
             </View>
             <View style={styles.headerActions}>
               <TouchableOpacity
@@ -688,37 +708,56 @@ async function resolveSalonAuthPhase() {
   const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
   if (sessionErr && isInvalidRefreshTokenError(sessionErr)) {
     await supabase.auth.signOut({ scope: 'local' });
+    clearSalonSessionProfile();
     return { phase: 'signin' };
   }
-  if (!session?.user?.id) return { phase: 'signin' };
+  if (!session?.user?.id) {
+    clearSalonSessionProfile();
+    return { phase: 'signin' };
+  }
   const { data: profile, error } = await db.profiles.getById(session.user.id);
   if (error || !profile) {
     await db.auth.signOut();
+    clearSalonSessionProfile();
     return {
       phase: 'signin',
       message: `No hay perfil con id = ${session.user.id}. Creá o enlazá la fila en profiles con ese UUID (Authentication → Users).`,
     };
   }
-  if (!isSalonAdminRole(profile.role)) {
+  if (!canAccessSalonApp(profile.role)) {
     await db.auth.signOut();
+    clearSalonSessionProfile();
     return {
       phase: 'signin',
-      message: 'Tu cuenta no tiene role = admin en profiles (check_rol_types: admin o staff; la app salón exige admin).',
+      message:
+        'Tu cuenta no tiene permiso para App Salón. Debe ser admin (global), admin_global o admin_sucursal en profiles.',
     };
   }
-  return { phase: 'ready' };
+  if (isSalonSucursalAdmin(profile.role) && !profile.sucursal_id) {
+    await db.auth.signOut();
+    clearSalonSessionProfile();
+    return {
+      phase: 'signin',
+      message: 'Tu perfil admin_sucursal debe tener sucursal_id asignado en profiles.',
+    };
+  }
+  const enriched = await enrichSalonSessionProfile(profile, () => db.sucursales.listActivas());
+  setSalonSessionProfile(enriched);
+  return { phase: 'ready', profile: enriched };
 }
 
 function SalonAppWithAuth() {
   const { colors: c } = useTheme();
   const [phase, setPhase] = useState('checking');
   const [signInError, setSignInError] = useState(null);
+  const [sessionProfile, setSessionProfile] = useState(null);
 
   const refreshPhase = useCallback(async () => {
     setPhase('checking');
     try {
       const result = await resolveSalonAuthPhase();
       setSignInError(result.message ?? null);
+      setSessionProfile(result.profile ?? null);
       setPhase(result.phase);
     } catch {
       setSignInError(null);
@@ -730,12 +769,15 @@ function SalonAppWithAuth() {
     refreshPhase();
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
+        clearSalonSessionProfile();
+        setSessionProfile(null);
         setPhase('signin');
         return;
       }
       resolveSalonAuthPhase()
         .then((result) => {
           setSignInError(result.message ?? null);
+          setSessionProfile(result.profile ?? null);
           setPhase(result.phase);
         })
         .catch(() => setPhase('signin'));
@@ -744,7 +786,10 @@ function SalonAppWithAuth() {
   }, [refreshPhase]);
 
   const handleSignOut = useCallback(async () => {
+    await clearPendingBranchAdminSetup();
     await db.auth.signOut();
+    clearSalonSessionProfile();
+    setSessionProfile(null);
     setSignInError(null);
     setPhase('signin');
   }, []);
@@ -761,15 +806,17 @@ function SalonAppWithAuth() {
     return (
       <SalonAdminSignInScreen
         initialError={signInError}
-        onSignedIn={() => {
+        onSignedIn={async () => {
           setSignInError(null);
-          setPhase('ready');
+          const result = await resolveSalonAuthPhase();
+          setSessionProfile(result.profile ?? null);
+          setPhase(result.phase);
         }}
       />
     );
   }
 
-  return <SalonAdminShell onSignOut={handleSignOut} />;
+  return <SalonAdminShell onSignOut={handleSignOut} profile={sessionProfile} />;
 }
 
 function MissingConfigScreen() {

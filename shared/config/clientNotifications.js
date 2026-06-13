@@ -165,7 +165,7 @@ export async function notifyClientSalonMessage({
     tipo = 'cita';
     titulo = 'Tu cita está confirmada';
     mensaje = previewText || 'El salón confirmó tu cita. Revisá los detalles en Mensajes.';
-  } else if (ct === 'broadcast_promo') {
+  } else if (ct === 'broadcast_promo' || ct === 'promo_inventario') {
     tipo = 'promo';
     titulo = 'Novedad del salón';
     mensaje = previewText || 'Tenés una promoción en Mensajes.';

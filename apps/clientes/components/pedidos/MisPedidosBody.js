@@ -143,19 +143,32 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   const load = useCallback(
     async (isRefresh) => {
       if (!sessionUser?.id) {
         setOrders([]);
+        setLoadError('');
         setLoading(false);
         return;
       }
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
+      setLoadError('');
       const { data, error } = await db.orders.getByCliente(sessionUser.id);
-      if (!error && Array.isArray(data)) setOrders(data);
-      else setOrders([]);
+      if (error) {
+        const msg = String(error.message || '');
+        const low = msg.toLowerCase();
+        setOrders([]);
+        setLoadError(
+          low.includes('permission denied') || low.includes('row-level security')
+            ? 'Faltan permisos en Supabase. Ejecutá supabase-ecommerce-orders-clientes.sql y supabase-sucursales-client-pedidos.sql.'
+            : msg || 'No se pudieron cargar tus pedidos.',
+        );
+      } else {
+        setOrders(Array.isArray(data) ? data : []);
+      }
       if (isRefresh) setRefreshing(false);
       else setLoading(false);
     },
@@ -314,7 +327,21 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
     );
   }
 
-  const listHeader = <PedidosIntroPanel c={c} />;
+  const listHeader = (
+    <>
+      <PedidosIntroPanel c={c} />
+      {loadError ? (
+        <TouchableOpacity
+          style={[styles.errorBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+          onPress={() => void load(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.errorTxt, { color: c.foregroundMuted }]}>{loadError}</Text>
+          <Text style={[styles.errorRetry, { color: c.primary }]}>Tocá para reintentar</Text>
+        </TouchableOpacity>
+      ) : null}
+    </>
+  );
 
   const listEmpty = (
     <View style={[subStyles.card, { marginTop: spacing.sm }]}>
@@ -371,6 +398,22 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: spacing.md,
     flexGrow: 1,
+  },
+  errorBar: {
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  errorTxt: {
+    fontFamily: typography.fontSans,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  errorRetry: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 13,
+    marginTop: spacing.xs,
   },
   introCard: {
     borderWidth: 1,

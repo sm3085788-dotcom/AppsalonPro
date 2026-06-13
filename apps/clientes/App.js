@@ -53,6 +53,8 @@ import {
   BROADCAST_PROMO_ACTIONS,
   BROADCAST_LINK_TYPES,
   parseBroadcastContent,
+  resolveInventarioPromoActionTarget,
+  PROMO_INVENTARIO_CONTENT_TYPE,
   mapHomeHeroPostToClientSlide,
   enrichHomeCarouselSlidesWithInventario,
   getArticuloTipo,
@@ -450,7 +452,11 @@ function AppMain({ onLogout }) {
 
   const handlePromoAction = useCallback(
     (action, promoItem) => {
-      const parsed = parseBroadcastContent(promoItem?.content);
+      const ct = String(promoItem?.content_type || '');
+      const parsed =
+        ct === PROMO_INVENTARIO_CONTENT_TYPE
+          ? resolveInventarioPromoActionTarget(promoItem) || {}
+          : parseBroadcastContent(promoItem?.content);
       const payload = { promoItem, parsed };
 
       if (action === BROADCAST_PROMO_ACTIONS.CALL) {

@@ -1,0 +1,236 @@
+{
+  "name": "Andreas Pro — Chat automático",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "andreas-pro-chat",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Supabase",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "andreas-pro-chat"
+    },
+    {
+      "parameters": {
+        "amount": 4,
+        "unit": "seconds"
+      },
+      "id": "wait-debounce",
+      "name": "Espera debounce",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [460, 300],
+      "notes": "Alineado con chat_automation_settings.debounce_seconds (default 4s)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/n8n_claim_chat_automation",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"p_queue_id\": {{ $json.record.id }} }",
+        "options": {}
+      },
+      "id": "claim-job",
+      "name": "Reclamar trabajo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "notes": "Header Auth: Authorization Bearer SERVICE_ROLE + apikey"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "ok-claim",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-claimed",
+      "name": "¿Reclamado OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-reply",
+              "leftValue": "={{ $json.suggested_reply }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-reply",
+      "name": "¿Hay respuesta sugerida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "promo-mode",
+              "leftValue": "={{ $json.reply_mode }}",
+              "rightValue": "promo_catalog",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-promo-catalog",
+      "name": "¿Catálogo promos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 140]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/n8n_send_promos_chat_reply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_queue_id\": {{ $json.queue_id }},\n  \"p_n8n_intent\": \"chat.promos\"\n}",
+        "options": {}
+      },
+      "id": "send-promo-catalog",
+      "name": "Enviar catálogo promos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 60],
+      "notes": "Un mensaje intro + un promo_inventario por ítem con media_url"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/n8n_send_aura_reply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_queue_id\": {{ $json.queue_id }},\n  \"p_content\": {{ JSON.stringify($json.suggested_reply) }},\n  \"p_n8n_intent\": {{ JSON.stringify($json.matched_intent && $json.matched_intent.n8nIntent ? $json.matched_intent.n8nIntent : null) }}\n}",
+        "options": {}
+      },
+      "id": "send-reply",
+      "name": "Enviar respuesta texto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/n8n_skip_chat_automation",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_queue_id\": {{ $('Reclamar trabajo').item.json.queue_id || $json.queue_id }},\n  \"p_reason\": \"no_intent_match\"\n}",
+        "options": {}
+      },
+      "id": "skip-no-intent",
+      "name": "Omitir (sin intención)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {},
+      "id": "noop-skip",
+      "name": "Fin (superseded / debounce)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1120, 420]
+    }
+  ],
+  "connections": {
+    "Webhook Supabase": {
+      "main": [[{ "node": "Espera debounce", "type": "main", "index": 0 }]]
+    },
+    "Espera debounce": {
+      "main": [[{ "node": "Reclamar trabajo", "type": "main", "index": 0 }]]
+    },
+    "Reclamar trabajo": {
+      "main": [[{ "node": "¿Reclamado OK?", "type": "main", "index": 0 }]]
+    },
+    "¿Reclamado OK?": {
+      "main": [
+        [{ "node": "¿Catálogo promos?", "type": "main", "index": 0 }],
+        [{ "node": "Fin (superseded / debounce)", "type": "main", "index": 0 }]
+      ]
+    },
+    "¿Catálogo promos?": {
+      "main": [
+        [{ "node": "Enviar catálogo promos", "type": "main", "index": 0 }],
+        [{ "node": "¿Hay respuesta sugerida?", "type": "main", "index": 0 }]
+      ]
+    },
+    "¿Hay respuesta sugerida?": {
+      "main": [
+        [{ "node": "Enviar respuesta texto", "type": "main", "index": 0 }],
+        [{ "node": "Omitir (sin intención)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Promos: nodo Enviar catálogo promos → n8n_send_promos_chat_reply. Resto → n8n_send_aura_reply."
+  },
+  "active": false
+}

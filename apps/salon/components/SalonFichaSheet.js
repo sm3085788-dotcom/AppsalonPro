@@ -54,6 +54,7 @@ function draftForField(field, record) {
  * @param {string} [props.initialEditKey] - abre ese campo al abrir (ej. nombre)
  * @param {string} [props.newHint] - texto bajo el título para altas nuevas
  * @param {boolean} [props.advanceOnEnter] - Enter / «siguiente» pasa al siguiente campo (clientes, empleados)
+ * @param {boolean} [props.readOnly] - solo consulta; no edita campos ni switches
  */
 export function SalonFichaSheet({
   visible,
@@ -73,6 +74,7 @@ export function SalonFichaSheet({
   initialEditKey = null,
   newHint = null,
   advanceOnEnter = false,
+  readOnly = false,
 }) {
   const styles = useMemo(() => createFichaStyles(c), [c]);
   const [editingKey, setEditingKey] = useState(null);
@@ -142,6 +144,7 @@ export function SalonFichaSheet({
   };
 
   const beginEdit = (field) => {
+    if (readOnly) return;
     if (field.type === 'switch') {
       const raw = field.getValue(record);
       const next = !(raw === true || raw === 'true' || raw === 1);
@@ -306,6 +309,7 @@ export function SalonFichaSheet({
                         <Switch
                           value={raw === true || raw === 'true' || raw === 1}
                           onValueChange={() => beginEdit(field)}
+                          disabled={readOnly}
                           trackColor={{ false: c.cardBorder, true: c.primary }}
                           thumbColor={c.foreground}
                         />
@@ -355,10 +359,10 @@ export function SalonFichaSheet({
                   ) : (
                     <TouchableOpacity
                       onPress={() => beginEdit(field)}
-                      disabled={isSaving}
-                      activeOpacity={0.7}
+                      disabled={isSaving || readOnly}
+                      activeOpacity={readOnly ? 1 : 0.7}
                       accessibilityRole="button"
-                      accessibilityLabel={`Editar ${field.label}`}
+                      accessibilityLabel={readOnly ? field.label : `Editar ${field.label}`}
                     >
                       <View style={styles.valRow}>
                         <Text style={[styles.val, displayVal === emptyDisplay && { color: c.foregroundSubtle }]}>
@@ -368,11 +372,13 @@ export function SalonFichaSheet({
                           <ActivityIndicator color={c.primary} size="small" style={{ marginLeft: 8 }} />
                         ) : null}
                       </View>
-                      <Text style={[styles.tapHint, { color: c.foregroundSubtle }]}>
-                        {advanceOnEnter
-                          ? 'Tocá para editar · Enter siguiente (dirección: nueva línea)'
-                          : 'Tocá para editar · se guarda al salir del campo'}
-                      </Text>
+                      {!readOnly ? (
+                        <Text style={[styles.tapHint, { color: c.foregroundSubtle }]}>
+                          {advanceOnEnter
+                            ? 'Tocá para editar · Enter siguiente (dirección: nueva línea)'
+                            : 'Tocá para editar · se guarda al salir del campo'}
+                        </Text>
+                      ) : null}
                     </TouchableOpacity>
                   )}
                 </View>
