@@ -4,39 +4,50 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  TouchableOpacity,
   useWindowDimensions,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Calendar, Store, Flame, User } from 'lucide-react-native';
 import { spacing, typography } from '@appsalon/design-tokens';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
+import { AppTourSlidePreview } from './AppTourSlidePreview';
 
 const SLIDES = [
   {
+    id: 'inicio',
+    title: 'Inicio y accesos rápidos',
+    body: 'Mensajes con Andreas Pro, tienda, tendencias, premios, pedidos y servicios desde un solo lugar.',
+  },
+  {
+    id: 'sucursal',
+    title: 'Tu sucursal de preferencia',
+    body: 'Elegí la más cercana o la que más uses. Tienda, citas y pedidos piden sucursal en cada acción: el stock y las solicitudes van a ese local y esa sucursal ve tus pedidos y citas.',
+  },
+  {
     id: 'citas',
-    title: 'Agenda y recordatorios',
-    body: 'Mirá tus próximas citas, reprogramá o confirmá. Cuando conectemos el salón, todo vendrá en tiempo real.',
-    Icon: Calendar,
+    title: 'Servicios y citas',
+    body: 'Elegí sucursal, servicios y horario. Revisá próximas citas e historial; la sucursal elegida recibe tu solicitud.',
   },
   {
     id: 'tienda',
-    title: 'Tienda del salón',
-    body: 'Explorá productos y promos como en una tienda en línea. El checkout de ejemplo es solo navegación.',
-    Icon: Store,
+    title: 'Tienda y pedidos',
+    body: 'Comprá productos con stock de tu sucursal, seguí el estado de tus pedidos y retirá en salón con QR.',
   },
   {
-    id: 'tendencias',
-    title: 'Tendencias y premios',
-    body: 'Videos inspiración, puntos Aura y canjes cuando el programa esté activo.',
-    Icon: Flame,
+    id: 'premios',
+    title: 'Premios y referidos',
+    body: 'Sumá puntos, canjeá beneficios e invitá amigos con tu código ANDREAS.',
+  },
+  {
+    id: 'soporte',
+    title: 'Servicio al cliente',
+    body: 'WhatsApp, llamada y ubicación en Perfil → Servicio al cliente. El equipo del salón te atiende para dudas, cambios o ayuda con tus solicitudes.',
   },
   {
     id: 'perfil',
     title: 'Tu perfil',
-    body: 'Datos de contacto, membresías, notificaciones y configuración. Ahí también cerrarás sesión.',
-    Icon: User,
+    body: 'Completá teléfono, dirección y cumpleaños para citas y entregas. Membresías, configuración y servicio al cliente.',
   },
 ];
 
@@ -56,49 +67,37 @@ export function AppTourScreen({ onDone }) {
         root: {
           flex: 1,
           backgroundColor: c.background,
-        },
-        topBar: {
-          flexDirection: 'row',
-          justifyContent: 'flex-end',
-          paddingHorizontal: spacing.lg,
           paddingTop: insets.top + spacing.sm,
-          paddingBottom: spacing.sm,
-        },
-        skipTxt: {
-          fontFamily: typography.fontSansMedium,
-          fontSize: 14,
-          color: c.foregroundMuted,
         },
         slide: {
           width,
-          paddingHorizontal: spacing.xl,
-          justifyContent: 'center',
-          alignItems: 'center',
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.sm,
+          paddingBottom: spacing.md,
         },
-        iconCircle: {
-          width: 88,
-          height: 88,
-          borderRadius: 44,
-          backgroundColor: c.surfaceMuted,
-          borderWidth: 1,
-          borderColor: c.cardBorder,
+        slideScroll: {
+          flexGrow: 1,
           alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: spacing.xl,
+          paddingBottom: spacing.sm,
+        },
+        previewWrap: {
+          width: '100%',
+          alignItems: 'center',
+          marginBottom: spacing.lg,
         },
         slideTitle: {
           fontFamily: typography.fontDisplay,
-          fontSize: 24,
+          fontSize: 22,
           color: c.foreground,
           textAlign: 'center',
-          marginBottom: spacing.md,
+          marginBottom: spacing.sm,
         },
         slideBody: {
           fontFamily: typography.fontSans,
-          fontSize: 15,
+          fontSize: 14,
           color: c.foregroundMuted,
           textAlign: 'center',
-          lineHeight: 22,
+          lineHeight: 20,
           maxWidth: 340,
         },
         dots: {
@@ -143,8 +142,6 @@ export function AppTourScreen({ onDone }) {
     setIndex(next);
   };
 
-  const skip = () => onDone();
-
   const onMomentumEnd = (e) => {
     const x = e.nativeEvent.contentOffset.x;
     const i = Math.round(x / width);
@@ -153,12 +150,6 @@ export function AppTourScreen({ onDone }) {
 
   return (
     <View style={styles.root}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={skip} hitSlop={12} accessibilityRole="button">
-          <Text style={styles.skipTxt}>Saltar</Text>
-        </TouchableOpacity>
-      </View>
-
       <FlatList
         ref={listRef}
         data={SLIDES}
@@ -166,6 +157,7 @@ export function AppTourScreen({ onDone }) {
         style={styles.tourList}
         horizontal
         pagingEnabled
+        scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
         onScrollToIndexFailed={(info) => {
@@ -176,18 +168,21 @@ export function AppTourScreen({ onDone }) {
             });
           }, 350);
         }}
-        renderItem={({ item }) => {
-          const Icon = item.Icon;
-          return (
-            <View style={styles.slide}>
-              <View style={styles.iconCircle}>
-                <Icon size={40} color={c.primary} strokeWidth={1.6} />
+        renderItem={({ item }) => (
+          <View style={styles.slide}>
+            <ScrollView
+              contentContainerStyle={styles.slideScroll}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              <View style={styles.previewWrap}>
+                <AppTourSlidePreview slideId={item.id} />
               </View>
               <Text style={styles.slideTitle}>{item.title}</Text>
               <Text style={styles.slideBody}>{item.body}</Text>
-            </View>
-          );
-        }}
+            </ScrollView>
+          </View>
+        )}
         getItemLayout={(_, i) => ({
           length: width,
           offset: width * i,

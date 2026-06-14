@@ -38,8 +38,53 @@ export function isEmailNotConfirmedError(error) {
   return (
     msg.includes('email not confirmed') ||
     msg.includes('correo no confirmado') ||
+    msg.includes('not confirmed') ||
     code === 'email_not_confirmed'
   );
+}
+
+/** signUp con correo ya registrado: user sin identities y sin error (anti-enumeración). */
+export function isSignUpDuplicateEmail(signUpData) {
+  const user = signUpData?.user;
+  if (!user) return false;
+  const identities = user.identities;
+  return Array.isArray(identities) && identities.length === 0;
+}
+
+export const REGISTER_EMAIL_ACTIVE_TITLE = 'Correo en uso';
+
+export const REGISTER_EMAIL_ACTIVE_MESSAGE =
+  'Este correo ya tiene una cuenta activa en Aura Salón. No podés crear otra con otro nombre o contraseña.\n\n' +
+  '• Si es tu cuenta: iniciá sesión con la contraseña original.\n' +
+  '• Para usar otro nombre o contraseña con el mismo correo: eliminá la cuenta en Perfil → Configuración → Eliminar cuenta.\n' +
+  '• Solo cuando la cuenta esté eliminada por completo podrás registrarte de nuevo con ese correo.';
+
+export function isSignUpEmailAlreadyRegisteredError(error) {
+  const lower = String(error?.message || '').toLowerCase();
+  return (
+    lower.includes('already registered') ||
+    lower.includes('user already exists') ||
+    lower.includes('already been registered')
+  );
+}
+
+export function translateClientLoginError(error) {
+  const msg = String(error?.message || '').toLowerCase();
+  if (
+    msg.includes('invalid login') ||
+    msg.includes('invalid credentials') ||
+    msg.includes('wrong password')
+  ) {
+    return (
+      'Correo o contraseña incorrectos. Si este correo ya tiene cuenta activa, usá la contraseña del primer registro. ' +
+      'Un segundo intento de registro con otro nombre o contraseña no crea cuenta nueva. ' +
+      'Para empezar de cero con el mismo correo, eliminá la cuenta en Perfil → Configuración → Eliminar cuenta.'
+    );
+  }
+  if (isEmailNotConfirmedError(error)) {
+    return 'Confirmá tu correo antes de ingresar. Revisá tu bandeja de entrada o spam.';
+  }
+  return error?.message || 'No se pudo iniciar sesión.';
 }
 
 function parseUrlParams(url) {

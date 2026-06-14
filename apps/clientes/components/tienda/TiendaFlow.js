@@ -23,6 +23,9 @@ import {
   normalizeEnvioGuardado,
   REFERIDO_PREMIOS_COPY,
   applyDiscountToSubtotal,
+  isProductAvailableAtBranch,
+  validateCartBranchStock,
+  fetchBranchStock,
 } from '@appsalon/shared-config';
 import {
   buildTiendaCanjeAlertMessage,
@@ -137,6 +140,7 @@ export function TiendaFlow({
   const [sucursalId, setSucursalId] = useState(null);
   const [catalogReloadKey, setCatalogReloadKey] = useState(0);
   const [referidorCheckout, setReferidorCheckout] = useState(null);
+  const [esReferidoInvitado, setEsReferidoInvitado] = useState(false);
   const [referidorCodigoInput, setReferidorCodigoInput] = useState('');
   const [tiendaCanjeAvisos, setTiendaCanjeAvisos] = useState([]);
   const [payCanjePreview, setPayCanjePreview] = useState(null);
@@ -150,6 +154,7 @@ export function TiendaFlow({
   useEffect(() => {
     if (!clientUserId) {
       setReferidorCheckout(null);
+      setEsReferidoInvitado(false);
       return;
     }
     void db.referidosAndreas.checkoutInfo(clientUserId).then(({ data }) => {
@@ -160,10 +165,17 @@ export function TiendaFlow({
         setReferidorCheckout(null);
       }
     });
-  }, [clientUserId]);
+    if (clienteId) {
+      void db.clientes.getById(clienteId).then(({ data }) => {
+        setEsReferidoInvitado(Boolean(data?.referido_por));
+      });
+    } else {
+      setEsReferidoInvitado(false);
+    }
+  }, [clientUserId, clienteId]);
 
   const avisarPremiosPedidoCreado = () => {
-    if (!clientUserId || !clienteId) return;
+    if (!clientUserId || !clienteId || !esReferidoInvitado) return;
     void db.premiosAndreas.notifyReferidoAccion({
       clientUserId,
       clienteId,
@@ -338,6 +350,13 @@ export function TiendaFlow({
   };
 
   const quickAddToCart = (product) => {
+    if (!isProductAvailableAtBranch(product)) {
+      Alert.alert(
+        'Sin existencia',
+        `«${product?.title || 'Este producto'}» no tiene stock en la sucursal elegida. Cambiá de sucursal o elegí otro producto.`,
+      );
+      return;
+    }
     addToCart(product, 1);
     showGridCartToast(product?.title);
   };
@@ -363,7 +382,10 @@ export function TiendaFlow({
   };
 
   const bumpQty = (delta) => {
-    setQty((q) => Math.min(9, Math.max(0, q + delta)));
+    setQty((q) => {
+      const max = selected?.stockActual != null ? Math.min(9, selected.stockActual) : 9;
+      return Math.min(max, Math.max(0, q + delta));
+    });
   };
 
   const setCartProductQty = useCallback((product, quantity) => {
@@ -418,6 +440,13 @@ export function TiendaFlow({
       );
       return;
     }
+    if (!isProductAvailableAtBranch(product)) {
+      Alert.alert(
+        'Sin existencia',
+        `«${product.title || 'Este producto'}» no tiene stock en la sucursal elegida.`,
+      );
+      return;
+    }
     setCartItems((prev) => {
       const idx = prev.findIndex((i) => i.id === product.id);
       if (idx >= 0) {
@@ -450,11 +479,40 @@ export function TiendaFlow({
   };
 
   useEffect(() => {
+    if (!sucursalId || !cartItems.length) return undefined;
+    let cancelled = false;
+    void (async () => {
+      const kept = [];
+      const removed = [];
+      for (const item of cartItems) {
+        const stock = await fetchBranchStock(item.id, sucursalId);
+        if (cancelled) return;
+        if (stock >= Number(item.qty || 0) && stock > 0) {
+          kept.push(item);
+        } else {
+          removed.push(item.title || 'Producto');
+        }
+      }
+      if (cancelled || removed.length === 0) return;
+      setCartItems(kept);
+      Alert.alert(
+        'Carrito actualizado',
+        removed.length === 1
+          ? `«${removed[0]}» no tiene existencia en la sucursal elegida y se quitó del carrito.`
+          : `${removed.length} productos sin stock en esta sucursal se quitaron del carrito.`,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sucursalId]);
+
+  useEffect(() => {
     const productId = initialProductId != null ? String(initialProductId).trim() : '';
     if (!productId || deepLinkDone.current) return undefined;
     let cancelled = false;
     (async () => {
-      const { data, error } = await db.inventario.getById(productId);
+      const { data, error } = await db.inventario.getById(productId, { sucursalId: sucursalId || undefined });
       if (cancelled || error || !data) {
         if (tiendaAddToCart && !cancelled) {
           Alert.alert(
@@ -480,6 +538,13 @@ export function TiendaFlow({
           Alert.alert(
             'Servicio',
             'Este ítem se agenda en Mis citas, no en la tienda.',
+          );
+          return;
+        }
+        if (!isProductAvailableAtBranch(product)) {
+          Alert.alert(
+            'Sin existencia',
+            `«${product.title}» no tiene stock en la sucursal elegida.`,
           );
           return;
         }
@@ -769,6 +834,18 @@ export function TiendaFlow({
             </View>
           ) : (
             <>
+              {!isProductAvailableAtBranch(selected) ? (
+                <View style={[subStyles.card, { marginTop: spacing.md }]}>
+                  <Text style={[subStyles.rowLabel, { color: tc.foregroundMuted }]}>
+                    Sin existencia en esta sucursal
+                  </Text>
+                  <Text style={subStyles.bullets}>
+                    Este producto no tiene stock en la sucursal elegida. Cambiá de sucursal en el catálogo o elegí otro
+                    artículo.
+                  </Text>
+                </View>
+              ) : (
+                <>
               <Text style={[subStyles.rowLabel, { marginTop: spacing.md }]}>Cantidad</Text>
               <View style={styles.qtyRow}>
                 <TouchableOpacity
@@ -785,6 +862,7 @@ export function TiendaFlow({
                   onPress={() => bumpQty(1)}
                   accessibilityRole="button"
                   accessibilityLabel="Más"
+                  disabled={selected.stockActual != null && qty >= selected.stockActual}
                 >
                   <Text style={styles.qtyBtnTxt}>+</Text>
                 </TouchableOpacity>
@@ -801,6 +879,8 @@ export function TiendaFlow({
                   setPhase('cart');
                 }}
               />
+                </>
+              )}
             </>
           )}
         </View>
@@ -1261,6 +1341,11 @@ export function TiendaFlow({
                   Alert.alert('Código de referido', 'Ingresá el código de quien te invitó para tu primera compra.');
                   return;
                 }
+                const stockOk = await validateCartBranchStock(cartItems, sucursalId);
+                if (!stockOk.ok) {
+                  Alert.alert('Sin existencia', stockOk.message || 'No hay stock en la sucursal elegida.');
+                  return;
+                }
                 setCheckoutBusy(true);
                 const canjeCard = await resolveAndreasCanjeForCheckout('tarjeta');
                 const snapCard = canjeCard.snapExtra
@@ -1279,6 +1364,7 @@ export function TiendaFlow({
                   cardLast4: cardLast4FromSelection(),
                   checkout_snapshot: snapCard,
                   total_amount: canjeCard.total,
+                  sucursalId: stockOk.sucursalId,
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {
@@ -1334,6 +1420,11 @@ export function TiendaFlow({
                   Alert.alert('Código de referido', 'Ingresá el código de quien te invitó para tu primera compra.');
                   return;
                 }
+                const stockOkCash = await validateCartBranchStock(cartItems, sucursalId);
+                if (!stockOkCash.ok) {
+                  Alert.alert('Sin existencia', stockOkCash.message || 'No hay stock en la sucursal elegida.');
+                  return;
+                }
                 setCheckoutBusy(true);
                 const canjeCash = await resolveAndreasCanjeForCheckout('efectivo');
                 const snapCash = canjeCash.snapExtra
@@ -1351,6 +1442,7 @@ export function TiendaFlow({
                   deliveryAddress: buildDeliveryAddressSnapshot(),
                   checkout_snapshot: snapCash,
                   total_amount: canjeCash.total,
+                  sucursalId: stockOkCash.sucursalId,
                 });
                 setCheckoutBusy(false);
                 if (!res.ok) {

@@ -24,7 +24,7 @@ import {
   Lock,
 } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase } from '@appsalon/shared-config';
+import { db, supabase, getSalonBranchDisplayName } from '@appsalon/shared-config';
 import { SubScreenChrome, useSubStyles, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
@@ -104,6 +104,7 @@ export function CajaScreen({ onBack }) {
   const [administradorCierre, setAdministradorCierre] = useState('');
   const [txs, setTxs] = useState([]);
   const [metaApertura, setMetaApertura] = useState(null);
+  const branchLabel = getSalonBranchDisplayName();
 
   const [modalIngresos, setModalIngresos] = useState(false);
   const [modalEgresos, setModalEgresos] = useState(false);
@@ -643,6 +644,7 @@ export function CajaScreen({ onBack }) {
               </View>
               <Text style={subStyles.muted}>
                 Registrá quién abre el turno. El monto inicial sale de la caja chica y se descuenta al abrir.
+                {branchLabel ? ` Control de «${branchLabel}» (caja chica propia, independiente de otras sucursales).` : ''}
               </Text>
               <Text style={styles.label}>Administrador responsable</Text>
               <TextInput

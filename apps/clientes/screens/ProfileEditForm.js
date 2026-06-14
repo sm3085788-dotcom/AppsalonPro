@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,17 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../theme/ThemeProvider';
 import { db } from '@appsalon/shared-config';
 import { shareClienteFicha } from '../utils/shareClienteFicha';
+import { splitFullName, joinFullName, profileNameFromClienteAndAuth } from '../utils/clientDisplayName';
+import { useAuthKeyboardScroll } from '../utils/useAuthKeyboardScroll';
 
 function computeAge(birth) {
   if (!birth) return null;
@@ -32,7 +36,7 @@ function parseBirth(iso) {
   return Number.isNaN(d.getTime()) ? new Date(1995, 0, 15) : d;
 }
 
-function Field({ label, value, onChange, placeholder, keyboardType, autoCapitalize }) {
+function Field({ label, value, onChange, placeholder, keyboardType, autoCapitalize, fieldBind }) {
   const { colors: c } = useTheme();
   const styles = useMemo(
     () =>
@@ -60,7 +64,7 @@ function Field({ label, value, onChange, placeholder, keyboardType, autoCapitali
   );
 
   return (
-    <View style={{ marginBottom: spacing.md }}>
+    <View ref={fieldBind?.setRef} collapsable={false} style={{ marginBottom: spacing.md }}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         style={styles.input}
@@ -70,6 +74,7 @@ function Field({ label, value, onChange, placeholder, keyboardType, autoCapitali
         placeholderTextColor={c.foregroundSubtle}
         keyboardType={keyboardType ?? 'default'}
         autoCapitalize={autoCapitalize ?? 'sentences'}
+        onFocus={fieldBind?.onFocus}
       />
     </View>
   );
@@ -77,7 +82,17 @@ function Field({ label, value, onChange, placeholder, keyboardType, autoCapitali
 
 export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
   const { colors: c } = useTheme();
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef(null);
+  const { contentRef, keyboardOpen, keyboardHeight, bindField, onScroll } =
+    useAuthKeyboardScroll(scrollRef, insets);
+  const fieldNombre = bindField('nombre');
+  const fieldApellido = bindField('apellido');
+  const fieldTelefono = bindField('telefono');
+  const fieldCorreo = bindField('correo');
+  const fieldDireccion = bindField('direccion');
   const [nombre, setNombre] = useState('');
+  const [apellido, setApellido] = useState('');
   const [telLocal, setTelLocal] = useState('');
   const [correo, setCorreo] = useState('');
   const [direccion, setDireccion] = useState('');
@@ -88,11 +103,9 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
 
   useEffect(() => {
     const row = clienteRow || {};
-    const metaName =
-      sessionUser?.user_metadata?.full_name != null
-        ? String(sessionUser.user_metadata.full_name).trim()
-        : '';
-    setNombre(row.nombre || metaName || '');
+    const { nombre: n, apellido: a } = profileNameFromClienteAndAuth(row, sessionUser);
+    setNombre(n);
+    setApellido(a);
     setCorreo(row.email || sessionUser?.email || '');
     setDireccion(row.direccion || '');
     setBirth(parseBirth(row.cumpleanos));
@@ -200,8 +213,14 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
 
   const guardar = async () => {
     const nom = nombre.trim();
+    const ape = apellido.trim();
+    const fullName = joinFullName(nom, ape);
     if (nom.length < 2) {
       Alert.alert('Nombre', 'Ingresá tu nombre (mínimo 2 caracteres).');
+      return;
+    }
+    if (ape.length < 2) {
+      Alert.alert('Apellido', 'Ingresá tu apellido (mínimo 2 caracteres).');
       return;
     }
     if (!clienteRow?.id) {
@@ -216,7 +235,7 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
     setSaving(true);
     try {
       const { error } = await db.clientes.update(clienteRow.id, {
-        nombre: nom,
+        nombre: fullName,
         telefono,
         email: correo.trim() || null,
         direccion: direccion.trim() || null,
@@ -237,7 +256,7 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
   const exportar = async () => {
     const payload = {
       ...(clienteRow || {}),
-      nombre: nombre.trim() || clienteRow?.nombre,
+      nombre: joinFullName(nombre, apellido) || clienteRow?.nombre,
       telefono: telLocal ? `+502${telLocal.replace(/\D/g, '').slice(0, 8)}` : clienteRow?.telefono,
       email: correo.trim() || clienteRow?.email,
       direccion: direccion.trim() || clienteRow?.direccion,
@@ -254,10 +273,39 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
   };
 
   return (
-    <>
+    <ScrollView
+      ref={scrollRef}
+      style={{ flex: 1 }}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+      contentContainerStyle={{
+        paddingBottom:
+          insets.bottom +
+          spacing.xl +
+          (keyboardOpen ? keyboardHeight + spacing.lg : 0),
+      }}
+    >
+      <View ref={contentRef} collapsable={false}>
       <View style={st.card}>
-        <Field label="Nombre" value={nombre} onChange={setNombre} placeholder="Tu nombre" />
+        <Field
+          label="Nombre"
+          value={nombre}
+          onChange={setNombre}
+          placeholder="Nombre"
+          fieldBind={fieldNombre}
+        />
+        <Field
+          label="Apellido"
+          value={apellido}
+          onChange={setApellido}
+          placeholder="Apellido"
+          fieldBind={fieldApellido}
+        />
 
+        <View ref={fieldTelefono.setRef} collapsable={false}>
         <Text
           style={{
             fontFamily: typography.fontSansMedium,
@@ -293,7 +341,9 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
             placeholder="1234 5678"
             placeholderTextColor={c.foregroundSubtle}
             keyboardType="phone-pad"
+            onFocus={fieldTelefono.onFocus}
           />
+        </View>
         </View>
 
         <Field
@@ -303,6 +353,7 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
           placeholder="tu@correo.com"
           keyboardType="email-address"
           autoCapitalize="none"
+          fieldBind={fieldCorreo}
         />
 
         <Field
@@ -310,6 +361,7 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
           value={direccion}
           onChange={setDireccion}
           placeholder="Zona, calle, ciudad"
+          fieldBind={fieldDireccion}
         />
 
         <Text
@@ -385,6 +437,7 @@ export function ProfileEditForm({ clienteRow, sessionUser, onClose, onSaved }) {
         onPress={exportar}
         style={{ marginTop: spacing.sm }}
       />
-    </>
+      </View>
+    </ScrollView>
   );
 }

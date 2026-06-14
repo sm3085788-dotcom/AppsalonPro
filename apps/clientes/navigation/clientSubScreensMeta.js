@@ -24,7 +24,7 @@ export function getSubScreenTitles(id) {
     case CLIENT_SUB.EDITAR_PERFIL:
       return { title: 'Editar perfil', subtitle: 'Tus datos (solo vista previa).' };
     case CLIENT_SUB.CONTACTO:
-      return { title: 'Contacto', subtitle: 'Canales directos del salón.' };
+      return { title: 'Servicio al cliente', subtitle: 'WhatsApp, llamada y ubicación del salón.' };
     case CLIENT_SUB.NOTIFICACIONES:
       return {
         title: 'Eventos Profesionales',

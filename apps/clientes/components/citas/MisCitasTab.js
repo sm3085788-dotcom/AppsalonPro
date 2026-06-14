@@ -508,7 +508,9 @@ function createStyles(c) {
     root: { flex: 1, backgroundColor: c.background },
     headerStatic: {
       backgroundColor: c.background,
-      zIndex: 2,
+      zIndex: 4,
+      overflow: 'visible',
+      elevation: 4,
     },
     scroll: { flex: 1 },
     scrollInner: { flexGrow: 1, paddingHorizontal: spacing.lg },

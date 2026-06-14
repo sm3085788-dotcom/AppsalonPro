@@ -78,6 +78,8 @@ export const REFERIDO_PREMIOS_COPY = {
   compraPendiente:
     'Tu pedido suma puntos en Premios. Se confirman al retirar o recibir en el salón.',
   compraVerificada: 'Tu compra verificada en salón sumó puntos en Premios ANDREAS.',
+  referidorPrimeraCompra:
+    'Tu invitado completó su primera compra verificada: sumaste un referido validado en Premios ANDREAS.',
   citaSolicitada:
     'Tu cita quedó registrada. Cuando el salón la confirme y valides la visita, sumará en Premios.',
   citaConfirmada:

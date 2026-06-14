@@ -50,6 +50,7 @@ export function mapInventarioToTiendaProduct(row) {
   return {
     id: fresh.id,
     inventarioId: fresh.id,
+    stockActual: stock,
     brandLine: fresh.categoria || (tipo === 'servicio' ? 'Servicio' : 'Salón'),
     title: fresh.nombre,
     sku: fresh.barcode || null,
@@ -67,10 +68,10 @@ export function mapInventarioToTiendaProduct(row) {
           : stock > 0
             ? tipo === 'servicio'
               ? 'Disponible para agendar'
-              : 'Disponible en salón'
+              : 'Disponible en esta sucursal'
             : tipo === 'servicio'
-              ? 'Consultá disponibilidad en salón'
-              : 'Consultá disponibilidad en salón',
+              ? 'Sin cupo en esta sucursal'
+              : 'Sin existencia en esta sucursal',
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
     shippingLabel: meta.shippingLabel || DEFAULT_TIENDA_META.shippingLabel,

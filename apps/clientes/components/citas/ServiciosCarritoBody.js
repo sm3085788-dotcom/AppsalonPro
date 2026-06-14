@@ -195,7 +195,7 @@ export function ServiciosCarritoBody({
         </View>
       ) : null}
 
-      <View style={styles.card}>
+      <View style={styles.sucursalCard}>
         <Text style={styles.whenLbl}>Sucursal</Text>
         <Text style={[styles.intro, { marginBottom: spacing.sm }]}>
           Las citas se enviarán a la agenda de esta sucursal.
@@ -316,6 +316,14 @@ function createStyles(c) {
       marginBottom: spacing.md,
       overflow: 'hidden',
       position: 'relative',
+    },
+    sucursalCard: {
+      borderRadius: radii.lg,
+      backgroundColor: c.card,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      overflow: 'visible',
+      zIndex: 2,
     },
     removeBtn: {
       position: 'absolute',

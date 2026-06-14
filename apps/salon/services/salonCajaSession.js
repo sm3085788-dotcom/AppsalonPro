@@ -1,25 +1,99 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from '@appsalon/shared-config';
+import { db, getSalonSessionProfile, getSalonSucursalScope } from '@appsalon/shared-config';
 
-const KEY = '@salon/caja_abierta_v1';
-const KEY_CHICA = '@salon/caja_chica_saldo_v1';
+const KEY_PREFIX = '@salon/caja_abierta_v1';
+const KEY_CHICA_PREFIX = '@salon/caja_chica_saldo_v1';
+const LEGACY_CHICA_KEY = '@salon/caja_chica_saldo_v1';
+const LEGACY_SESSION_KEY = '@salon/caja_abierta_v1';
 
-/** Saldo manual de caja chica (se descuenta al abrir turno con monto inicial). */
-export async function getCajaChicaSaldo() {
+let matrizScopeCache = null;
+let matrizScopeUserId = null;
+
+export function invalidateSalonCajaStorageScope() {
+  matrizScopeCache = null;
+  matrizScopeUserId = null;
+}
+
+function chicaKey(scopeId) {
+  return `${KEY_CHICA_PREFIX}/${scopeId}`;
+}
+
+function sessionKey(scopeId) {
+  return `${KEY_PREFIX}/${scopeId}`;
+}
+
+/** Sucursal activa para caja / caja chica (perfil admin_sucursal o matriz para admin global). */
+export async function resolveCajaSucursalId() {
+  const profile = getSalonSessionProfile();
+  const userId = profile?.id ? String(profile.id) : null;
+  const { sucursalId, isGlobal } = getSalonSucursalScope();
+  if (sucursalId) return String(sucursalId);
+  if (!isGlobal) return null;
+  if (matrizScopeCache && matrizScopeUserId === userId) return matrizScopeCache;
   try {
-    const raw = await AsyncStorage.getItem(KEY_CHICA);
-    if (raw == null || raw === '') return 0;
-    const n = Number(String(raw).replace(',', '.'));
-    return Number.isFinite(n) ? Math.max(0, n) : 0;
+    const { data } = await db.sucursales.listActivas();
+    const matriz = (data || []).find((s) => s.es_matriz) || (data || [])[0];
+    if (matriz?.id) {
+      matrizScopeCache = String(matriz.id);
+      matrizScopeUserId = userId;
+      return matrizScopeCache;
+    }
   } catch {
-    return 0;
+    // noop
   }
+  return null;
+}
+
+async function readLocalChica(scopeId) {
+  if (!scopeId) return 0;
+  const key = chicaKey(scopeId);
+  let raw = await AsyncStorage.getItem(key);
+  if (raw == null || raw === '') {
+    raw = await AsyncStorage.getItem(LEGACY_CHICA_KEY);
+    if (raw != null && raw !== '') {
+      await AsyncStorage.setItem(key, raw);
+      await AsyncStorage.removeItem(LEGACY_CHICA_KEY);
+    }
+  }
+  if (raw == null || raw === '') return 0;
+  const n = Number(String(raw).replace(',', '.'));
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+async function writeLocalChica(scopeId, amount) {
+  if (!scopeId) return;
+  await AsyncStorage.setItem(chicaKey(scopeId), String(amount));
+}
+
+/** Saldo de caja chica de la sucursal actual (independiente por local; nueva sucursal = Q 0). */
+export async function getCajaChicaSaldo() {
+  const scopeId = await resolveCajaSucursalId();
+  if (scopeId) {
+    const { data, error } = await db.cajaChica.getSaldo(scopeId);
+    if (!error && data != null) {
+      const n = Number(data);
+      if (Number.isFinite(n)) {
+        const safe = Math.max(0, Math.round(n * 100) / 100);
+        await writeLocalChica(scopeId, safe);
+        return safe;
+      }
+    }
+  }
+  return readLocalChica(scopeId);
 }
 
 export async function setCajaChicaSaldo(amount) {
   const n = Number(amount);
   const safe = Number.isFinite(n) ? Math.max(0, Math.round(n * 100) / 100) : 0;
-  await AsyncStorage.setItem(KEY_CHICA, String(safe));
+  const scopeId = await resolveCajaSucursalId();
+  if (scopeId) {
+    const { error } = await db.cajaChica.setSaldo(scopeId, safe);
+    if (!error) {
+      await writeLocalChica(scopeId, safe);
+      return safe;
+    }
+  }
+  if (scopeId) await writeLocalChica(scopeId, safe);
   return safe;
 }
 
@@ -27,7 +101,16 @@ export async function setCajaChicaSaldo(amount) {
 
 export async function getCajaSession() {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const scopeId = await resolveCajaSucursalId();
+    const key = scopeId ? sessionKey(scopeId) : LEGACY_SESSION_KEY;
+    let raw = await AsyncStorage.getItem(key);
+    if (!raw && scopeId) {
+      raw = await AsyncStorage.getItem(LEGACY_SESSION_KEY);
+      if (raw) {
+        await AsyncStorage.setItem(key, raw);
+        await AsyncStorage.removeItem(LEGACY_SESSION_KEY);
+      }
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.cajaId) return null;
@@ -38,11 +121,18 @@ export async function getCajaSession() {
 }
 
 export async function setCajaSession(session) {
-  await AsyncStorage.setItem(KEY, JSON.stringify(session));
+  const scopeId = await resolveCajaSucursalId();
+  const key = scopeId ? sessionKey(scopeId) : LEGACY_SESSION_KEY;
+  await AsyncStorage.setItem(key, JSON.stringify(session));
 }
 
 export async function clearCajaSession() {
-  await AsyncStorage.removeItem(KEY);
+  const scopeId = await resolveCajaSucursalId();
+  if (scopeId) {
+    await AsyncStorage.removeItem(sessionKey(scopeId));
+    return;
+  }
+  await AsyncStorage.removeItem(LEGACY_SESSION_KEY);
 }
 
 export function mapMovimientoToTx(m) {

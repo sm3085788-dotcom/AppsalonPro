@@ -19,6 +19,12 @@ export {
   montoInputFromNumber,
 } from './metaGlobal.js';
 export { confirmarCompraConTarjeta, mapInventarioToTiendaProduct, buildTiendaProductFicha } from './tiendaCheckout.js';
+export {
+  fetchBranchStock,
+  isProductAvailableAtBranch,
+  productStockFromRow,
+  validateCartBranchStock,
+} from './tiendaStock.js';
 export { crearPedidoEfectivo, crearPedidoTarjetaPendiente, confirmarCobroPedidoSalon } from './pedidoSalon.js';
 export { fetchClientMisFacturas } from './clientVentas.js';
 export {
@@ -231,6 +237,21 @@ export {
   countCitasPremios,
   REFERIDO_PREMIOS_COPY,
 } from './referidoPremios.js';
+export {
+  normalizeReferralCode,
+  isAndreasReferralCode,
+  buildReferralInviteUrl,
+  buildReferralShareMessage,
+  parseReferralCodeFromUrl,
+  storePendingReferralCode,
+  peekPendingReferralCode,
+  consumePendingReferralCode,
+  resolveReferralCodeForAuth,
+  getReferralCodeFromUserMetadata,
+  isAuthRedirectUrl,
+  REFERRAL_PENDING_STORAGE_KEY,
+  REFERRAL_LINK_PATH,
+} from './referralInvite.js';
 export {
   buildVisitaQrPayload,
   parseVisitaQrPayload,

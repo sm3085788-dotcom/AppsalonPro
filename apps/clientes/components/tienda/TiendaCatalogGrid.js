@@ -17,6 +17,7 @@ import {
   db,
   mapInventarioToTiendaProduct,
   getArticuloTipo,
+  isProductAvailableAtBranch,
 } from '@appsalon/shared-config';
 import { ProductCardPlaceholder } from './ProductCardPlaceholder';
 
@@ -50,7 +51,9 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
       const rows = !invRes.error && Array.isArray(invRes.data) ? invRes.data : [];
       const productRows = rows.filter(isTiendaProductRow);
       const mapped = productRows.map(mapInventarioToTiendaProduct).filter(Boolean);
-      setLiveProducts(mapped.map((p) => ({ ...p, catalogKind: 'producto' })));
+      setLiveProducts(
+        mapped.filter(isProductAvailableAtBranch).map((p) => ({ ...p, catalogKind: 'producto' })),
+      );
     } finally {
       setLoading(false);
     }
@@ -284,7 +287,7 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
           <Text style={styles.emptyTxt}>
             {search.trim()
               ? 'Probá otro término de búsqueda.'
-              : 'El salón debe marcar productos como «visible en tienda» en Inventario (App Salón).'}
+              : 'Sin productos con existencia en esta sucursal. Cambiá de sucursal o pedí al salón que reponga stock.'}
           </Text>
         </View>
       ) : null}

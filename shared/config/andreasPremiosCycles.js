@@ -127,6 +127,33 @@ export function applyDiscountToSubtotal(subtotal, descuentoPct) {
 }
 
 /**
+ * Reconcilia reglas de producto app con pedidos entregados (self-heal al abrir Premios).
+ */
+export function syncReglasProductosFromPedidos(ap, orders, lines, meta, membresiaNivel) {
+  if (!Array.isArray(orders) || !Array.isArray(lines)) return getReglasState(ap);
+  let apNorm = getReglasState(ap);
+  for (const order of orders) {
+    if (String(order?.status || '').toLowerCase() !== 'delivered') continue;
+    const qty = countProductoQtyInOrder(lines, order.id);
+    if (qty < 1) continue;
+    const canjeSnap = parseCanjeFromCheckoutSnapshot(order.checkout_snapshot);
+    if (canjeSnap?.rule_id) {
+      apNorm = syncReglaOnCanjeRedeemed(
+        apNorm,
+        canjeSnap.rule_id,
+        order.id,
+        qty,
+        meta,
+        membresiaNivel,
+      );
+    } else {
+      apNorm = syncReglaOnPedidoDelivered(apNorm, order, qty, meta, membresiaNivel);
+    }
+  }
+  return apNorm;
+}
+
+/**
  * Tras entregar un pedido app: actualiza ciclo, reinicia si había canje pendiente, marca nuevo canje.
  */
 export function syncReglaOnPedidoDelivered(ap, order, productQty, meta, membresiaNivel) {

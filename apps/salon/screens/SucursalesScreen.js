@@ -16,6 +16,7 @@ import { db } from '@appsalon/shared-config';
 import { useTheme } from '../theme/ThemeProvider';
 import { SubScreenChrome } from '../components/luxury/SubScreenChrome';
 import { SalonButton } from '../components/luxury';
+import { PinField } from '../components/auth/PinField';
 import {
   normalizeSucursalCodigo,
   savePendingBranchAdminSetup,
@@ -158,6 +159,9 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
     }
   };
 
+  const pinMismatch =
+    loginPinConfirm.length > 0 && loginPin !== loginPinConfirm;
+
   const canSubmit =
     String(nombre || '').trim().length > 0 &&
     codigoValidation.ok &&
@@ -247,45 +251,25 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
             </Text>
           )}
 
-          <Text style={styles.label}>PIN de {BRANCH_PIN_LENGTH} números *</Text>
-          <TextInput
-            style={[styles.input, styles.pinInput, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
-            placeholder={`${BRANCH_PIN_LENGTH} números`}
-            placeholderTextColor={c.foregroundSubtle}
-            keyboardType="number-pad"
-            maxLength={BRANCH_PIN_LENGTH}
-            secureTextEntry
+          <PinField
+            label={`PIN de ${BRANCH_PIN_LENGTH} números *`}
             value={loginPin}
             onChangeText={(t) => setLoginPin(sanitizeBranchPinInput(t))}
+            placeholder={`${BRANCH_PIN_LENGTH} números`}
+            maxLength={BRANCH_PIN_LENGTH}
             editable={!saving}
           />
 
-          <Text style={styles.label}>Confirmar PIN *</Text>
-          <TextInput
-            style={[
-              styles.input,
-              styles.pinInput,
-              {
-                borderColor:
-                  loginPinConfirm.length === BRANCH_PIN_LENGTH && loginPin !== loginPinConfirm
-                    ? c.error || '#c0392b'
-                    : c.cardBorder,
-                backgroundColor: c.card,
-                color: c.foreground,
-              },
-            ]}
-            placeholder="Repetí el PIN"
-            placeholderTextColor={c.foregroundSubtle}
-            keyboardType="number-pad"
-            maxLength={BRANCH_PIN_LENGTH}
-            secureTextEntry
+          <PinField
+            label="Confirmar PIN *"
             value={loginPinConfirm}
             onChangeText={(t) => setLoginPinConfirm(sanitizeBranchPinInput(t))}
+            placeholder="Repetí el PIN"
+            maxLength={BRANCH_PIN_LENGTH}
+            showMismatch={pinMismatch}
+            mismatchText="Los PIN no coinciden."
             editable={!saving}
           />
-          {loginPinConfirm.length === BRANCH_PIN_LENGTH && loginPin !== loginPinConfirm ? (
-            <Text style={[styles.fieldErr, { color: c.error || '#c0392b' }]}>Los PIN no coinciden.</Text>
-          ) : null}
 
           {loginPreview && codigoValidation.ok && loginPin.length === BRANCH_PIN_LENGTH && loginPin === loginPinConfirm ? (
             <View style={[styles.previewCard, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}>
@@ -385,10 +369,6 @@ function createStyles(c) {
       borderRadius: radii.lg,
       borderWidth: 1,
       paddingHorizontal: spacing.md,
-    },
-    pinInput: {
-      letterSpacing: 4,
-      fontFamily: typography.fontSansMedium,
     },
     previewCard: {
       borderWidth: 1,

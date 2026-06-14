@@ -79,11 +79,12 @@ export function PostLoginIntroScreen({ profile, onContinue }) {
         <View style={styles.logoShadow}>
           <AuraLogoMark diameter={156} />
         </View>
-        <Text style={styles.welcome}>¡Bienvenido a Aura Salón!</Text>
+        <Text style={styles.welcome}>¡Bienvenida a Salón Andreas!</Text>
         <Text style={styles.name}>{firstName}</Text>
         <Text style={styles.lead}>
-          En un momento te mostramos un recorrido corto por la app: citas, tienda, tendencias y tu
-          perfil. Los datos de tu cuenta se sincronizan con el salón cuando esté configurado.
+          Te damos la bienvenida a tu espacio en el salón: tienda, citas, premios ANDREAS y mensajes con
+          Andreas Pro. Elegí tu sucursal de preferencia (la más cercana o la que más uses): cada acción usa
+          ese local y esa sucursal verá tus solicitudes. A continuación, un recorrido corto por la app.
         </Text>
         {profile?.referralCode ? (
           <Text style={styles.refNote}>

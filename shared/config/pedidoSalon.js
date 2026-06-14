@@ -1,5 +1,5 @@
 import { db, supabase, isPostgrestSingleRowError } from './supabaseClient.js';
-import { getClientSucursalId } from './clientSucursal.js';
+import { validateCartBranchStock } from './tiendaStock.js';
 import { registrarMontoVentaEnMeta } from './metaGlobal.js';
 import { requireCajaAbierta } from './cajaGuard.js';
 import { enqueueClientNotification } from './clientNotifications.js';
@@ -59,33 +59,14 @@ async function crearPedidoTiendaCliente({
   notes,
   checkout_snapshot = null,
   total_amount: totalAmountOverride = null,
+  sucursalId: sucursalIdOverride = null,
 }) {
+  const stockCheck = await validateCartBranchStock(cartItems, sucursalIdOverride);
+  if (!stockCheck.ok) {
+    return { ok: false, error: { message: stockCheck.message } };
+  }
+  const sucursalId = stockCheck.sucursalId;
   const lines = (cartItems || []).filter((i) => i?.id && Number(i.qty) > 0);
-  if (!lines.length) {
-    return { ok: false, error: { message: 'El carrito está vacío.' } };
-  }
-
-  const sucursalId = await getClientSucursalId();
-  if (!sucursalId) {
-    return {
-      ok: false,
-      error: { message: 'Elegí una sucursal en la tienda antes de hacer tu pedido.' },
-    };
-  }
-
-  for (const line of lines) {
-    const { data: prod, error: pErr } = await db.inventario.getById(line.id, { sucursalId });
-    if (pErr || !prod) {
-      return { ok: false, error: { message: `Producto no encontrado: ${line.title || line.id}` } };
-    }
-    const stock = Number(prod.stock_actual ?? 0);
-    if (stock < Number(line.qty)) {
-      return {
-        ok: false,
-        error: { message: `Stock insuficiente para «${prod.nombre}» (hay ${stock}, pediste ${line.qty}).` },
-      };
-    }
-  }
 
   const subtotal = lines.reduce((s, l) => s + Number(l.priceAmount || 0) * Number(l.qty || 0), 0);
   const total_amount =
@@ -155,6 +136,7 @@ export async function crearPedidoEfectivo({
   deliveryAddress = null,
   checkout_snapshot = null,
   total_amount = null,
+  sucursalId = null,
 }) {
   return crearPedidoTiendaCliente({
     clienteNombre,
@@ -164,6 +146,7 @@ export async function crearPedidoEfectivo({
     shipId,
     homeAddressType,
     deliveryAddress,
+    sucursalId,
     payment_method: 'efectivo',
     card_last4: null,
     notes: notes || 'Pedido app clientes · pago en efectivo',
@@ -187,6 +170,7 @@ export async function crearPedidoTarjetaPendiente({
   cardLast4 = null,
   checkout_snapshot = null,
   total_amount = null,
+  sucursalId = null,
 }) {
   return crearPedidoTiendaCliente({
     clienteNombre,
@@ -196,6 +180,7 @@ export async function crearPedidoTarjetaPendiente({
     shipId,
     homeAddressType,
     deliveryAddress,
+    sucursalId,
     payment_method: 'tarjeta',
     card_last4: cardLast4,
     notes:
@@ -344,10 +329,19 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
 
   if (uErr) return { ok: false, error: friendlyOrderDbError(uErr) };
 
-  void supabase.rpc('validar_referido_primera_compra', { p_order_id: orderId });
+  const { data: refVal } = await supabase.rpc('validar_referido_primera_compra', { p_order_id: orderId });
+  if (__DEV__ && refVal && refVal.ok === false && !refVal.skip) {
+    console.warn('[referido] validar_referido_primera_compra', refVal);
+  }
 
   if (clienteId) {
-    void db.premiosAndreas.syncReglasPedidoEntregado({ clienteId, orderId });
+    const { data: premSync, error: premErr } = await db.premiosAndreas.syncReglasPedidoEntregado({
+      clienteId,
+      orderId,
+    });
+    if (__DEV__ && premErr) {
+      console.warn('[premios] syncReglasPedidoEntregado', premErr, premSync);
+    }
   }
 
   if (order.client_user_id && clienteId) {
@@ -366,6 +360,18 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
       tipo: 'premios',
       titulo: 'Sumaste puntos en Premios',
       mensaje: REFERIDO_PREMIOS_COPY.compraVerificada,
+      targetScreen: 'premios',
+    });
+  }
+
+  if (refVal?.ok === true && refVal.referidor) {
+    const { data: refCliente } = await db.clientes.getByUserId(refVal.referidor);
+    void enqueueClientNotification({
+      clientUserId: refVal.referidor,
+      clienteId: refCliente?.id ?? null,
+      tipo: 'premios',
+      titulo: 'Referido validado',
+      mensaje: REFERIDO_PREMIOS_COPY.referidorPrimeraCompra,
       targetScreen: 'premios',
     });
   }

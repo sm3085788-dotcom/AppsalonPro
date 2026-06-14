@@ -36,7 +36,7 @@ import {
 import { SalonButton } from '../luxury/SalonButton';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
-import { db, supabase, ANDREAS_META, getReferralPrizeByCiclo, ANDREAS_REFERRAL_META } from '@appsalon/shared-config';
+import { db, supabase, ANDREAS_META, getReferralPrizeByCiclo, ANDREAS_REFERRAL_META, buildReferralShareMessage, buildReferralInviteUrl } from '@appsalon/shared-config';
 import {
   buildPremiosCanjeFlags,
   anyPremiosCanjeReady,
@@ -636,11 +636,14 @@ export function PremiosDashboard({
       Alert.alert('Premios', 'Iniciá sesión y enlazá tu ficha para obtener tu código de invitación.');
       return;
     }
-    const msg =
-      `¡Te invito a Salon Andreas! Descargá la app de clientes, creá tu cuenta verificada y usá mi código ${codigo}. ` +
-      `Programa ANDREAS: con 3 referidos verificados (primera compra en tienda o primera cita confirmada en salón) ganás: ${referidosPrize.title}.`;
+    const msg = buildReferralShareMessage(codigo, referidosPrize.title);
+    const url = buildReferralInviteUrl(codigo);
     try {
-      await Share.share({ message: msg, title: 'Invitación Salon Andreas' });
+      await Share.share({
+        message: msg,
+        title: 'Invitación Salon Andreas',
+        ...(url ? { url } : {}),
+      });
     } catch {
       /* cancelado */
     }

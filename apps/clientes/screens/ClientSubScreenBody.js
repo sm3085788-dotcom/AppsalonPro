@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { ProfileEditForm } from './ProfileEditForm';
 import { AgendarCitaForm } from './AgendarCitaForm';
 import { ServiciosCarritoBody } from '../components/citas/ServiciosCarritoBody';
-import { View, Text, TouchableOpacity, Linking, StyleSheet, Switch, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, Linking, StyleSheet, Switch, ActivityIndicator, Alert } from 'react-native';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
@@ -19,6 +19,7 @@ import { EventosProfesionalesBody } from '../components/eventos/EventosProfesion
 import { BROADCAST_PROMO_ACTIONS } from '@appsalon/shared-config';
 import { labelEstadoCita, estadoCitaTone } from '../utils/citasLabels';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
+import { CLIENT_ALERT_BELL_RED } from '../constants/clientAlertColors';
 import { useTheme } from '../theme/ThemeProvider';
 
 function formatGtq(n) {
@@ -56,9 +57,9 @@ function ContactoBody() {
   return (
     <>
       <View style={[subStyles.card, padTop]}>
-        <Text style={subStyles.rowLabel}>Canales disponibles</Text>
+        <Text style={subStyles.rowLabel}>Servicio al cliente</Text>
         <Text style={subStyles.rowSub}>
-          Elige cómo comunicarte con el salón. Acciones directas en tu dispositivo.
+          Canales directos del salón para consultas, cambios o ayuda con tus pedidos y citas.
         </Text>
         <View style={subStyles.divider} />
 
@@ -73,7 +74,7 @@ function ContactoBody() {
 
         <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('tel:+50247132123')}>
           <View style={{ flex: 1 }}>
-            <Text style={subStyles.rowLabel}>Llamada telefónica</Text>
+            <Text style={subStyles.rowLabel}>Servicio al cliente</Text>
             <Text style={subStyles.rowSub}>+502 4713-2123</Text>
           </View>
           <Text style={chipText}>Llamar</Text>
@@ -151,13 +152,73 @@ const configStyles = StyleSheet.create({
     marginTop: 2,
     gap: spacing.sm,
   },
+  deleteBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: CLIENT_ALERT_BELL_RED,
+  },
+  deleteBtnText: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 14,
+    color: CLIENT_ALERT_BELL_RED,
+  },
 });
 
 const padTop = { paddingTop: 2 };
 
-function ConfiguracionBody({ onClose }) {
+function ConfiguracionBody({ onClose, onLogout, sessionUser }) {
   const subStyles = useSubStyles();
   const { isDark, setScheme, colors: tc } = useTheme();
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDeleteAccount = () => {
+    if (!sessionUser?.id || deleting) return;
+    Alert.alert(
+      'Eliminar cuenta',
+      'Se borrará tu acceso a la app (correo y contraseña) y se desvinculará tu perfil del salón. ' +
+        'Tus compras y citas anteriores pueden conservarse en el salón sin datos de contacto. ' +
+        'Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              '¿Confirmás la eliminación?',
+              'Vas a salir de la app y no podrás ingresar con esta cuenta.',
+              [
+                { text: 'No', style: 'cancel' },
+                {
+                  text: 'Sí, eliminar',
+                  style: 'destructive',
+                  onPress: () => void runDeleteAccount(),
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  const runDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      const { error } = await db.clientes.deleteOwnAccount();
+      if (error) {
+        Alert.alert('Eliminar cuenta', error.message || 'No se pudo eliminar la cuenta.');
+        return;
+      }
+      onClose?.();
+      await onLogout?.();
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <>
@@ -190,6 +251,27 @@ function ConfiguracionBody({ onClose }) {
         <View style={subStyles.divider} />
         <RowStatic label="Versión cliente" value="Aura Clientes" />
       </View>
+
+      <View style={[subStyles.card, { marginTop: spacing.md }]}>
+        <Text style={subStyles.rowLabel}>Cuenta</Text>
+        <Text style={[subStyles.rowSub, { marginBottom: spacing.sm }]}>
+          Podés eliminar tu acceso a la app. Si volvés a registrarte con el mismo correo, será una cuenta nueva.
+        </Text>
+        {deleting ? (
+          <ActivityIndicator color={CLIENT_ALERT_BELL_RED} style={{ marginVertical: spacing.sm }} />
+        ) : (
+          <TouchableOpacity
+            onPress={confirmDeleteAccount}
+            disabled={!sessionUser?.id}
+            accessibilityRole="button"
+            accessibilityLabel="Eliminar cuenta"
+            style={configStyles.deleteBtn}
+          >
+            <Text style={configStyles.deleteBtnText}>Eliminar cuenta</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       <SalonButton variant="outlineGray" title="Listo" fullWidth onPress={onClose} />
     </>
   );
@@ -553,7 +635,13 @@ export function ClientSubScreenBody({
       );
 
     case CLIENT_SUB.CONFIGURACION:
-      return <ConfiguracionBody onClose={onClose} />;
+      return (
+        <ConfiguracionBody
+          onClose={onClose}
+          onLogout={onLogout}
+          sessionUser={sessionUser}
+        />
+      );
 
     case CLIENT_SUB.CERRAR_SESION:
       return (

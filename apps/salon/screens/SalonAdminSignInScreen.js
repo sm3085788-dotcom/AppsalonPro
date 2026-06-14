@@ -136,19 +136,24 @@ async function loadProfileAfterSignIn(userId, { retries = 6 } = {}) {
 }
 
 const SQL_FINALIZE_HINT =
-  'En Supabase: SQL Editor → pegá y ejecutá el archivo supabase-branch-admin-finalize.sql del proyecto → Run. Luego tocá «Entrar» (la cuenta ya puede existir).';
+  'En Supabase → SQL Editor ejecutá supabase-sucursales-login-fix.sql (o supabase-branch-admin-finalize.sql). Luego «Entrar» con código + PIN de 10 números.';
 
 function profileMatchesBranch(profile, expectedSucursalId) {
   if (!profile || !isSalonAdminRole(profile.role)) return false;
+  if (expectedSucursalId) {
+    if (!isSalonSucursalAdmin(profile.role)) return false;
+    if (!profile.sucursal_id) return false;
+    if (String(profile.sucursal_id) !== String(expectedSucursalId)) return false;
+    return true;
+  }
   if (isSalonSucursalAdmin(profile.role)) {
     if (!profile.sucursal_id) return false;
-    if (expectedSucursalId && String(profile.sucursal_id) !== String(expectedSucursalId)) return false;
   }
   return true;
 }
 
 async function finalizeBranchProfile(expectedSucursalId) {
-  const { data, error } = await db.profiles.finalizeBranchAdminSignup();
+  const { data, error } = await db.profiles.finalizeBranchAdminSignup(expectedSucursalId);
   if (error) {
     const msg = String(error.message || '');
     if (/finalize_branch_admin_signup|function.*does not exist|could not find the function/i.test(msg)) {
@@ -243,7 +248,99 @@ function isInvalidCredentialsError(err) {
 }
 
 function branchCredentialsHint() {
-  return `Verificá código + PIN de ${BRANCH_PIN_LENGTH} números. Si la activaste antes del cambio a teléfono, probá «Entrar» de nuevo tras ejecutar supabase-branch-admin-finalize.sql en Supabase.`;
+  return `Usá el código exacto de matriz (ej. NORTE19) y el PIN de ${BRANCH_PIN_LENGTH} números que definiste al crear la sucursal. Si falla, en Supabase → Authentication activá Phone y desactivá confirmación de teléfono/email.`;
+}
+
+async function branchSetupFromSucursal(codigo) {
+  const loginCodigo = normalizeSucursalCodigo(codigo);
+  if (!loginCodigo) return null;
+  const { data } = await db.sucursales.listActivas();
+  const row = (data || []).find(
+    (s) => !s.es_matriz && normalizeSucursalCodigo(s.codigo) === loginCodigo,
+  );
+  if (!row?.id) return null;
+  return {
+    sucursalId: String(row.id),
+    sucursalNombre: row.nombre || loginCodigo,
+    loginCodigo,
+    loginPhone: row.login_phone || resolveBranchLoginPhone(loginCodigo),
+    adminNombre: row.nombre || loginCodigo,
+  };
+}
+
+/** Primera vez: signUp + finalize. Siguientes: signIn. */
+async function activateOrSignInBranchAdmin(branchSetup, pin) {
+  const loginCodigo = normalizeSucursalCodigo(branchSetup?.loginCodigo);
+  const pinCheck = validateBranchLoginPassword(pin);
+  if (!pinCheck.ok) {
+    return { ok: false, message: pinCheck.message };
+  }
+  if (!branchSetup?.sucursalId) {
+    return { ok: false, message: 'No encontramos esa sucursal activa. Verificá el código en matriz → Sucursales.' };
+  }
+
+  const loginPhone = branchSetup.loginPhone || resolveBranchLoginPhone(loginCodigo);
+  const meta = {
+    full_name: branchSetup.adminNombre || branchSetup.sucursalNombre || loginCodigo,
+    admin_sucursal_id: branchSetup.sucursalId,
+    branch_codigo: loginCodigo,
+  };
+
+  const existing = await signInSalonAdmin(loginCodigo, pinCheck.password, {
+    forceBranch: true,
+    branchLoginPhone: loginPhone,
+  });
+  if (existing.data?.user?.id && !existing.error) {
+    const done = await completeBranchSession(existing.data.user.id, branchSetup.sucursalId);
+    return done.ok ? { ok: true } : { ok: false, message: done.message };
+  }
+  if (
+    existing.error &&
+    !isInvalidCredentialsError(existing.error) &&
+    !isEmailNotConfirmedError(existing.error)
+  ) {
+    return { ok: false, message: translateAuthError(existing.error) };
+  }
+  if (existing.error && isEmailNotConfirmedError(existing.error)) {
+    return { ok: false, message: EMAIL_CONFIRM_HINT };
+  }
+
+  const { data: signUpData, error: signUpErr } = await signUpBranchAdmin({
+    loginCodigo,
+    loginPhone,
+    password: pinCheck.password,
+    meta,
+  });
+
+  if (signUpErr && !isAlreadyRegisteredError(signUpErr)) {
+    return { ok: false, message: translateAuthError(signUpErr) };
+  }
+
+  let sessionUserId = signUpData?.session?.user?.id || signUpData?.user?.id;
+
+  if (!sessionUserId || signUpErr) {
+    const retrySignIn = await signInSalonAdmin(loginCodigo, pinCheck.password, {
+      forceBranch: true,
+      branchLoginPhone: loginPhone,
+    });
+    if (retrySignIn.error) {
+      if (isEmailNotConfirmedError(retrySignIn.error)) {
+        return { ok: false, message: EMAIL_CONFIRM_HINT };
+      }
+      if (isAlreadyRegisteredError(signUpErr) || isInvalidCredentialsError(retrySignIn.error)) {
+        return {
+          ok: false,
+          message:
+            'El PIN no coincide con el definido al crear la sucursal, o la cuenta aún no pudo crearse. Verificá el PIN de 10 números.',
+        };
+      }
+      return { ok: false, message: translateAuthError(retrySignIn.error) };
+    }
+    sessionUserId = retrySignIn.data?.user?.id;
+  }
+
+  const done = await completeBranchSession(sessionUserId, branchSetup.sucursalId);
+  return done.ok ? { ok: true } : { ok: false, message: done.message };
 }
 
 const EMAIL_CONFIRM_HINT =
@@ -334,6 +431,24 @@ export function SalonAdminSignInScreen({ onSignedIn, initialError }) {
       if (signErr) {
         if (isEmailNotConfirmedError(signErr)) {
           setErr(EMAIL_CONFIRM_HINT);
+        } else if (isInvalidCredentialsError(signErr) && branchCtx?.sucursalId) {
+          const setup =
+            branchSetup ||
+            (await branchSetupFromSucursal(branchCtx.loginCodigo));
+          if (setup) {
+            const activated = await activateOrSignInBranchAdmin(setup, pass);
+            if (activated.ok) {
+              if (branchSetup) await clearPendingBranchAdminSetup();
+              setBranchSetup(null);
+              onSignedIn?.();
+              return;
+            }
+            setErr(activated.message || branchCredentialsHint());
+          } else {
+            setErr(
+              `Código «${branchCtx.loginCodigo}» no encontrado en sucursales activas.\n\n${branchCredentialsHint()}`,
+            );
+          }
         } else if (isInvalidCredentialsError(signErr) && branchCtx) {
           setErr(`${translateAuthError(signErr)}\n\n${branchCredentialsHint()}`);
         } else {
@@ -375,84 +490,17 @@ export function SalonAdminSignInScreen({ onSignedIn, initialError }) {
       setErr('Código de sucursal inválido.');
       return;
     }
-    const pinCheck = validateBranchLoginPassword(password);
-    if (!pinCheck.ok) {
-      setErr(pinCheck.message);
-      return;
-    }
 
     setBusy(true);
     try {
-      const meta = {
-        full_name: branchSetup.adminNombre,
-        admin_sucursal_id: branchSetup.sucursalId,
-        branch_codigo: loginCodigo,
-      };
-
-      // 1) Si la cuenta ya existe, entrar directo
-      const existing = await signInSalonAdmin(loginCodigo, pinCheck.password, {
-        forceBranch: true,
-        branchLoginPhone: branchSetup.loginPhone,
-      });
-      if (existing.data?.user?.id && !existing.error) {
-        const done = await completeBranchSession(existing.data.user.id, branchSetup.sucursalId);
-        if (!done.ok) {
-          setErr(done.message);
-          return;
-        }
-        await clearPendingBranchAdminSetup();
-        setBranchSetup(null);
-        onSignedIn?.();
+      const result = await activateOrSignInBranchAdmin(
+        { ...branchSetup, loginCodigo },
+        password,
+      );
+      if (!result.ok) {
+        setErr(result.message || branchCredentialsHint());
         return;
       }
-      if (existing.error && !isInvalidCredentialsError(existing.error) && !isEmailNotConfirmedError(existing.error)) {
-        setErr(existing.error.message || 'No se pudo verificar la cuenta.');
-        return;
-      }
-      if (existing.error && isEmailNotConfirmedError(existing.error)) {
-        setErr(EMAIL_CONFIRM_HINT);
-        return;
-      }
-
-      // 2) Crear cuenta nueva
-      const { data: signUpData, error: signUpErr } = await signUpBranchAdmin({
-        loginCodigo,
-        loginPhone: branchSetup.loginPhone,
-        password: pinCheck.password,
-        meta,
-      });
-
-      if (signUpErr && !isAlreadyRegisteredError(signUpErr)) {
-        setErr(translateAuthError(signUpErr));
-        return;
-      }
-
-      let sessionUserId = signUpData?.session?.user?.id || signUpData?.user?.id;
-
-      if (!sessionUserId || signUpErr) {
-        const retrySignIn = await signInSalonAdmin(loginCodigo, pinCheck.password, {
-          forceBranch: true,
-          branchLoginPhone: branchSetup.loginPhone,
-        });
-        if (retrySignIn.error) {
-          if (isEmailNotConfirmedError(retrySignIn.error)) {
-            setErr(EMAIL_CONFIRM_HINT);
-          } else if (isAlreadyRegisteredError(signUpErr) || isInvalidCredentialsError(retrySignIn.error)) {
-            setErr('Ese código ya tiene cuenta pero la contraseña no coincide con la que usaste al crear la sucursal.');
-          } else {
-            setErr(translateAuthError(retrySignIn.error));
-          }
-          return;
-        }
-        sessionUserId = retrySignIn.data?.user?.id;
-      }
-
-      const done = await completeBranchSession(sessionUserId, branchSetup.sucursalId);
-      if (!done.ok) {
-        setErr(done.message);
-        return;
-      }
-
       await clearPendingBranchAdminSetup();
       setBranchSetup(null);
       onSignedIn?.();
@@ -498,13 +546,14 @@ export function SalonAdminSignInScreen({ onSignedIn, initialError }) {
               Activar sucursal: {branchSetup.sucursalNombre}
             </Text>
             <Text style={[styles.setupBannerTxt, { color: c.foregroundMuted }]}>
-              Código {branchSetup.loginCodigo} y PIN de {BRANCH_PIN_LENGTH} números (definido en matriz). Primera vez:
-              «Activar sucursal». Si ya activaste, «Entrar».
+              Código {branchSetup.loginCodigo} y PIN de {BRANCH_PIN_LENGTH} números. Podés usar «Activar sucursal» o
+              «Entrar» (la primera vez crea la cuenta automáticamente).
             </Text>
           </View>
         ) : (
           <Text style={[styles.lead, { color: c.foregroundMuted }]}>
-            Sucursal: código (ej. NORTE) + PIN de {BRANCH_PIN_LENGTH} números. Matriz: teléfono +502… + contraseña.
+            Sucursal: código exacto (ej. NORTE19) + PIN de {BRANCH_PIN_LENGTH} números. La primera vez «Entrar» activa la
+            cuenta. Matriz: teléfono +502… + contraseña.
           </Text>
         )}
 

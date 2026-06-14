@@ -6,15 +6,12 @@ import { typography } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
 
-/**
- * @param {{ id: string, label: string, icon: import('react').ComponentType<{ size?: number, color?: string, strokeWidth?: number }> }[]} items
- * @param {(id: string) => void} onChange
- */
 const CHARCOAL = '#1A1510';
 const GOLD = '#C5A368';
 /** paddingTop + ítem (icono + etiqueta); debe coincidir con tabBarOverlayHeight en App.js */
 const TAB_BAR_CORE_HEIGHT = 8 + 4 + 40 + 4 + 14;
 
+/** @param {{ id: string, label: string, icon: import('react').ComponentType, alert?: boolean }[]} items */
 export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPress }) {
   const { colors: c, isDark } = useTheme();
   const inactiveLabelColor = isDark ? c.foreground : CHARCOAL;
@@ -60,6 +57,17 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
     fontFamily: typography.fontSansMedium,
     fontSize: 9,
     color: '#FFF',
+  },
+  alertDot: {
+    position: 'absolute',
+    top: 2,
+    right: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: CLIENT_ALERT_BELL_RED,
+    borderWidth: 1.5,
+    borderColor: c.background,
   },
   iconShell: {
     width: 40,
@@ -137,6 +145,7 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
             >
               <View style={styles.iconShell}>
                 <Icon size={22} color={iconColor} strokeWidth={active ? 2.1 : 1.6} />
+                {item.alert ? <View style={styles.alertDot} /> : null}
               </View>
               <Text
                 style={[

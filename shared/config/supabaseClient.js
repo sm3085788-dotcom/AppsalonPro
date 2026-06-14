@@ -48,6 +48,7 @@ import {
   buildPremiosCountsFromReglas,
   syncReglaOnPedidoDelivered,
   syncReglaOnCanjeRedeemed,
+  syncReglasProductosFromPedidos,
   syncReglaCitas,
   syncReglaCitasOnCanjeRedeemed,
   getReglasState,
@@ -66,6 +67,14 @@ import {
   parseReferidoInvitadoState,
   REFERIDO_PREMIOS_COPY,
 } from './referidoPremios.js';
+import {
+  buildDefaultCodigoReferido,
+  normalizeReferralCode,
+  resolveReferralCodeForAuth,
+  consumePendingReferralCode,
+} from './referralInvite.js';
+
+export { buildDefaultCodigoReferido } from './referralInvite.js';
 import { parseReferidosPremiosState } from './andreasReferidos.js';
 import {
   andreasMetaCitasForMembresia,
@@ -244,21 +253,107 @@ if (typeof __DEV__ !== 'undefined' && __DEV__) {
  * Funciones mapeadas a tu esquema existente
  */
 
-/**
- * Código de invitación visible en Premios (columna opcional `clientes.codigo_referido`).
- */
-function buildDefaultCodigoReferido(userId) {
-  const raw = String(userId || '').replace(/-/g, '');
-  if (raw.length < 8) return `ANDREAS-${String(userId).slice(0, 12).toUpperCase()}`;
-  const mid = `${raw.slice(0, 6)}${raw.slice(-6)}`.toUpperCase();
-  return `ANDREAS-${mid}`;
+function mapClienteEnsureError(error) {
+  const msg = String(error?.message || '');
+  if (/duplicate key|unique constraint|23505/i.test(msg)) {
+    if (/user_id|clientes_user_id/i.test(msg)) {
+      return {
+        message: 'Esta cuenta ya tiene ficha de cliente. Usá «Iniciar sesión» en lugar de crear otra cuenta.',
+      };
+    }
+    if (/email/i.test(msg)) {
+      return {
+        message:
+          'Ese correo ya está vinculado a otra ficha. Iniciá sesión con ese correo o usá otro correo para registrarte.',
+      };
+    }
+    if (/nombre/i.test(msg)) {
+      return {
+        message:
+          'El salón tenía un límite de nombre único en la base de datos. Ejecutá supabase-clientes-nombre-unique-fix.sql en Supabase y volvé a intentar.',
+      };
+    }
+    return {
+      message:
+        'No se pudo crear la ficha (conflicto en base de datos). Ejecutá supabase-clientes-nombre-unique-fix.sql en Supabase e intentá de nuevo.',
+    };
+  }
+  return error;
+}
+
+async function ensureClienteRowViaRpc({ userId, nombre, email }) {
+  const { data: rpcId, error: rpcErr } = await supabase.rpc('ensure_cliente_for_auth_user', {
+    p_user_id: userId,
+    p_nombre: nombre,
+    p_email: email || null,
+    p_telefono: null,
+  });
+  if (rpcErr) {
+    if (/does not exist|could not find the function/i.test(String(rpcErr.message || ''))) {
+      return { data: null, error: null };
+    }
+    return { data: null, error: mapClienteEnsureError(rpcErr) };
+  }
+  if (!rpcId) return { data: null, error: null };
+  const { data, error } = await supabase.from('clientes').select('*').eq('id', rpcId).maybeSingle();
+  return { data, error: error ? mapClienteEnsureError(error) : null };
+}
+
+async function aplicarCodigoReferidoRegistro(userId, referralCode) {
+  const codigo = normalizeReferralCode(referralCode);
+  if (!userId || !codigo) return { data: null, error: null };
+  const { data, error } = await supabase.rpc('cliente_aplicar_codigo_referido', {
+    p_user_id: userId,
+    p_codigo: codigo,
+  });
+  if (error) {
+    if (/does not exist|could not find the function/i.test(String(error.message || ''))) {
+      return { data: null, error: null };
+    }
+    return { data: null, error: mapClienteEnsureError(error) };
+  }
+  if (data?.ok === false && data?.error && !/no encontrado/i.test(String(data.error))) {
+    return { data: null, error: { message: String(data.error) } };
+  }
+  const { data: row } = await supabase.from('clientes').select('*').eq('user_id', userId).maybeSingle();
+  return { data: row, error: null };
+}
+
+async function patchClienteFromAuthExtras(row, { userId, referralCode, referidor, notas }) {
+  if (!row?.id) return row;
+  const patch = {};
+  if (referidor && !row.referido_por) patch.referido_por = referidor;
+  if (notas && !String(row.notas || '').includes('Código referido:')) patch.notas = notas;
+  if (!String(row.codigo_referido || '').trim()) patch.codigo_referido = buildDefaultCodigoReferido(userId);
+  if (referidor && referralCode && !row.referido_codigo_pendiente) {
+    patch.referido_codigo_pendiente = String(referralCode).trim().toUpperCase();
+  }
+  if (!Object.keys(patch).length) return row;
+  const { data, error } = await supabase
+    .from('clientes')
+    .update(patch)
+    .eq('id', row.id)
+    .select()
+    .single();
+  if (error && /codigo_referido|referido_|column/i.test(String(error.message || ''))) {
+    const minimal = { ...patch };
+    delete minimal.codigo_referido;
+    delete minimal.referido_codigo_pendiente;
+    delete minimal.referido_por;
+    if (Object.keys(minimal).length) {
+      const retry = await supabase.from('clientes').update(minimal).eq('id', row.id).select().single();
+      return retry.data || row;
+    }
+    return row;
+  }
+  return data || row;
 }
 
 /**
  * UUID de auth del referidor: código UUID directo o `codigo_referido` vía RPC.
  */
 async function resolveReferidorUserIdForSignup(referralCode, newUserId) {
-  const raw = String(referralCode || '').trim();
+  const raw = normalizeReferralCode(referralCode);
   if (!raw) return null;
   const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (uuidLike.test(raw)) {
@@ -267,9 +362,80 @@ async function resolveReferidorUserIdForSignup(referralCode, newUserId) {
     return id;
   }
   const { data, error } = await supabase.rpc('resolve_codigo_referido_andreas', { p_codigo: raw });
-  if (error || data == null) return null;
-  if (String(data).toLowerCase() === String(newUserId || '').toLowerCase()) return null;
-  return String(data);
+  if (!error && data != null) {
+    if (String(data).toLowerCase() === String(newUserId || '').toLowerCase()) return null;
+    return String(data);
+  }
+  const { data: byStored } = await supabase
+    .from('clientes')
+    .select('user_id')
+    .not('user_id', 'is', null)
+    .ilike('codigo_referido', raw)
+    .limit(1)
+    .maybeSingle();
+  if (byStored?.user_id) {
+    if (String(byStored.user_id).toLowerCase() === String(newUserId || '').toLowerCase()) return null;
+    return String(byStored.user_id);
+  }
+  return null;
+}
+
+async function ensureOwnReferralCode(userId, row) {
+  if (!row?.id || !userId) return row;
+  if (String(row.codigo_referido || '').trim()) return row;
+  const { data: rpcCode, error: rpcErr } = await supabase.rpc('ensure_cliente_codigo_referido', {
+    p_user_id: userId,
+  });
+  if (!rpcErr && rpcCode) {
+    const { data: upd } = await supabase.from('clientes').select('*').eq('id', row.id).maybeSingle();
+    if (upd) return upd;
+  }
+  const code = buildDefaultCodigoReferido(userId);
+  const { data: upd, error: upErr } = await supabase
+    .from('clientes')
+    .update({ codigo_referido: code })
+    .eq('id', row.id)
+    .select()
+    .single();
+  if (!upErr && upd) return upd;
+  return row;
+}
+
+async function patchNombreIfFuller(row, nom) {
+  if (!row?.id) return row;
+  const incoming = String(nom || '').trim();
+  if (!incoming) return row;
+  const existing = String(row.nombre || '').trim();
+  const inParts = incoming.split(/\s+/).filter(Boolean).length;
+  const exParts = existing.split(/\s+/).filter(Boolean).length;
+  if (existing && inParts <= exParts) return row;
+  const { data, error } = await supabase
+    .from('clientes')
+    .update({ nombre: incoming })
+    .eq('id', row.id)
+    .select()
+    .single();
+  if (!error && data) return data;
+  return row;
+}
+
+async function tryApplyPendingReferral(userId, row, referralCode) {
+  if (!userId || !referralCode || !row?.id) return row;
+  if (row.referido_por || row.referido_beneficio_registrado) return row;
+  const linked = await aplicarCodigoReferidoRegistro(userId, referralCode);
+  if (linked.data) return linked.data;
+  const referidor = await resolveReferidorUserIdForSignup(referralCode, userId);
+  if (referidor) {
+    const patched = await patchClienteFromAuthExtras(row, {
+      userId,
+      referralCode,
+      referidor,
+      notas: `Código referido: ${referralCode}`,
+    });
+    void supabase.rpc('referido_registrar_invitacion', { p_cliente_id: patched.id || row.id });
+    return patched;
+  }
+  return row;
 }
 
 export const db = {
@@ -409,24 +575,10 @@ export const db = {
         .maybeSingle();
       if (findErr) return { data: null, error: findErr };
 
-      const backfillCodigo = async (row) => {
-        if (!row?.id || String(row.codigo_referido || '').trim()) return row;
-        const code = buildDefaultCodigoReferido(userId);
-        const { data: upd, error: upErr } = await supabase
-          .from('clientes')
-          .update({ codigo_referido: code })
-          .eq('id', row.id)
-          .select()
-          .single();
-        if (!upErr && upd) return upd;
-        return row;
-      };
-
       if (existing) {
         const patch = {};
         const nom = String(nombre || '').trim();
         const em = String(email || '').trim();
-        if (nom && !String(existing.nombre || '').trim()) patch.nombre = nom;
         if (em && !String(existing.email || '').trim()) patch.email = em;
         let nextRow = existing;
         if (Object.keys(patch).length > 0) {
@@ -439,32 +591,30 @@ export const db = {
           if (error) return { data: null, error, created: false };
           nextRow = data || existing;
         }
-        const withCode = await backfillCodigo(nextRow);
+        nextRow = await patchNombreIfFuller(nextRow, nom);
+        let withCode = await ensureOwnReferralCode(userId, nextRow);
+        if (referralCode) {
+          withCode = await tryApplyPendingReferral(userId, withCode, referralCode);
+        }
         return { data: withCode, error: null, created: false };
       }
 
       const nom = String(nombre || '').trim() || String(email || '').split('@')[0] || 'Cliente';
       const notas = referralCode ? `Código referido: ${String(referralCode).trim()}` : null;
       const referidor = await resolveReferidorUserIdForSignup(referralCode, userId);
-      const codigo_referido = buildDefaultCodigoReferido(userId);
-      const refCodigoPendiente = referralCode ? String(referralCode).trim().toUpperCase() : null;
-      const insertPayload = {
-        user_id: userId,
-        nombre: nom,
-        email: email || null,
-        tipo_registro: 'app_clientes',
-        categoria: 'Nuevo',
-        notas,
-        referido_por: referidor,
-        codigo_referido,
-        referido_codigo_pendiente: referidor && refCodigoPendiente ? refCodigoPendiente : null,
-      };
-      let { data, error } = await supabase.from('clientes').insert(insertPayload).select().single();
-      if (
-        error &&
-        /codigo_referido|referido_por|andreas_premios|column/i.test(String(error.message || ''))
-      ) {
-        const fallback = await supabase
+
+      let row = null;
+      let created = false;
+
+      const viaRpc = await ensureClienteRowViaRpc({ userId, nombre: nom, email });
+      if (viaRpc.error) return { data: null, error: viaRpc.error, created: false };
+      if (viaRpc.data) {
+        row = viaRpc.data;
+        created = true;
+      }
+
+      if (!row) {
+        const { data, error } = await supabase
           .from('clientes')
           .insert({
             user_id: userId,
@@ -476,14 +626,35 @@ export const db = {
           })
           .select()
           .single();
-        return { data: fallback.data, error: fallback.error, created: !fallback.error };
+        if (error) {
+          const retry = await ensureClienteRowViaRpc({ userId, nombre: nom, email });
+          if (retry.data) {
+            row = retry.data;
+            created = true;
+          } else {
+            return { data: null, error: mapClienteEnsureError(error), created: false };
+          }
+        } else {
+          row = data;
+          created = true;
+        }
       }
-      if (!error && data?.id && referidor) {
-        void supabase.rpc('referido_registrar_invitacion', { p_cliente_id: data.id });
+
+      row = await patchClienteFromAuthExtras(row, { userId, referralCode, referidor, notas });
+      row = await patchNombreIfFuller(row, nom);
+      row = await ensureOwnReferralCode(userId, row);
+
+      if (referralCode) {
+        row = await tryApplyPendingReferral(userId, row, referralCode);
+      } else if (row?.id && referidor) {
+        void supabase.rpc('referido_registrar_invitacion', { p_cliente_id: row.id });
+      }
+
+      if (row?.id && (row.referido_por || referidor)) {
         void import('./clientNotifications.js').then(({ enqueueClientNotification }) =>
           enqueueClientNotification({
             clientUserId: userId,
-            clienteId: data.id,
+            clienteId: row.id,
             tipo: 'premios',
             titulo: 'Bienvenida ANDREAS',
             mensaje: REFERIDO_PREMIOS_COPY.bienvenida,
@@ -491,7 +662,7 @@ export const db = {
           }),
         );
       }
-      return { data, error, created: !error };
+      return { data: row, error: null, created };
     },
 
     updateByUserId: async (userId, data) => {
@@ -501,6 +672,45 @@ export const db = {
         .eq('user_id', userId)
         .select()
         .single();
+    },
+
+    /** true si el correo sigue ligado a una cuenta Auth activa (bloquear segundo registro). */
+    isEmailAccountActive: async (email) => {
+      const em = String(email || '').trim();
+      if (!em) return { data: false, error: null };
+      const { data, error } = await supabase.rpc('cliente_correo_cuenta_activa', { p_email: em });
+      if (error) {
+        if (/function|does not exist|42883/i.test(String(error.message || ''))) {
+          return { data: null, error: null, rpcMissing: true };
+        }
+        return { data: null, error };
+      }
+      return { data: Boolean(data), error: null, rpcMissing: false };
+    },
+
+    /** Elimina la cuenta Auth del cliente y desvincula/anonymiza su ficha (RPC SECURITY DEFINER). */
+    deleteOwnAccount: async () => {
+      const { data, error } = await supabase.rpc('cliente_eliminar_cuenta_propia');
+      if (error) {
+        if (/function|does not exist|42883/i.test(String(error.message || ''))) {
+          return {
+            data: null,
+            error: {
+              message:
+                'Falta ejecutar supabase-cliente-eliminar-cuenta.sql en Supabase para habilitar eliminar cuenta.',
+            },
+          };
+        }
+        return { data: null, error };
+      }
+      if (data && typeof data === 'object' && data.ok === false) {
+        return {
+          data: null,
+          error: { message: String(data.error || 'No se pudo eliminar la cuenta') },
+        };
+      }
+      await supabase.auth.signOut({ scope: 'local' });
+      return { data, error: null };
     },
 
     // Actualizar cliente
@@ -604,15 +814,22 @@ export const db = {
       ).trim() || null;
       let codigoReferidoFinal = codigoReferido;
       if (!codigoReferidoFinal && clientUserId) {
-        const code = buildDefaultCodigoReferido(clientUserId);
-        const { data: codUp, error: codErr } = await supabase
-          .from('clientes')
-          .update({ codigo_referido: code })
-          .eq('id', clienteRow.id)
-          .select('codigo_referido')
-          .maybeSingle();
-        if (!codErr && codUp?.codigo_referido) {
-          codigoReferidoFinal = String(codUp.codigo_referido).trim();
+        const { data: rpcCode, error: rpcErr } = await supabase.rpc('ensure_cliente_codigo_referido', {
+          p_user_id: clientUserId,
+        });
+        if (!rpcErr && rpcCode) {
+          codigoReferidoFinal = String(rpcCode).trim();
+        } else {
+          const code = buildDefaultCodigoReferido(clientUserId);
+          const { data: codUp, error: codErr } = await supabase
+            .from('clientes')
+            .update({ codigo_referido: code })
+            .eq('id', clienteRow.id)
+            .select('codigo_referido')
+            .maybeSingle();
+          if (!codErr && codUp?.codigo_referido) {
+            codigoReferidoFinal = String(codUp.codigo_referido).trim();
+          }
         }
       }
       let productosSalonFisico = 0;
@@ -624,7 +841,7 @@ export const db = {
 
       const { data: orders, error: eOrd } = await supabase
         .from('ecommerce_orders')
-        .select('id, status, payment_method, fulfillment_type')
+        .select('id, status, payment_method, fulfillment_type, checkout_snapshot')
         .eq('client_user_id', clientUserId)
         .in('status', ['pending', 'confirmed', 'prepared', 'ready', 'delivered']);
       if (eOrd && !isPremiosSoftDbError(eOrd)) {
@@ -644,12 +861,14 @@ export const db = {
       let productosAppTarjetaDelivery = 0;
       let productosAppEfectivoRetiroPendiente = 0;
       let productosAppTarjetaDeliveryPendiente = 0;
+      let orderLines = [];
       if (orderIds.length) {
         const { data: lines, error: eItems } = await supabase
           .from('ecommerce_order_items')
           .select('qty, order_id, product:inventario(notas)')
           .in('order_id', orderIds);
         if (!eItems && Array.isArray(lines)) {
+          orderLines = lines;
           const tallies = tallyAndreasProductoPuntos(allOrders, lines, orderById);
           productosAppEfectivoRetiro = tallies.efectivoRetiro;
           productosAppTarjetaDelivery = tallies.tarjetaDelivery;
@@ -734,6 +953,13 @@ export const db = {
         }
       }
       apWorking = syncReglaCitas(apWorking, citasVerificadas, citasMeta, clienteRow.membresia_nivel);
+      apWorking = syncReglasProductosFromPedidos(
+        apWorking,
+        allOrders,
+        orderLines,
+        membresiaMeta,
+        clienteRow.membresia_nivel,
+      );
       const salonMeta = andreasMetaSalonForMembresia(clienteRow.membresia_nivel);
       apWorking = ensureSalonFisicoCanjeEnAp(apWorking, clienteRow.membresia_nivel);
 
@@ -835,6 +1061,17 @@ export const db = {
 
     syncReglasPedidoEntregado: async ({ clienteId, orderId }) => {
       if (!clienteId || !orderId) return { data: null, error: { message: 'Datos incompletos' } };
+
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('premios_andreas_sync_pedido_entregado', {
+        p_order_id: orderId,
+      });
+      if (!rpcErr && rpcData && (rpcData.ok === true || rpcData.skip === true)) {
+        return { data: rpcData, error: null };
+      }
+      if (rpcErr && !/function|does not exist|42883/i.test(String(rpcErr.message || ''))) {
+        if (__DEV__) console.warn('[premios] premios_andreas_sync_pedido_entregado', rpcErr);
+      }
+
       const { data: row, error: e0 } = await supabase
         .from('clientes')
         .select('id, membresia_nivel, andreas_premios')
@@ -2397,9 +2634,10 @@ export const db = {
         .single();
     },
 
-    /** Vincula admin_sucursal desde metadata de auth (post signUp sucursal). */
-    finalizeBranchAdminSignup: async () => {
-      return await supabase.rpc('finalize_branch_admin_signup');
+    /** Vincula admin_sucursal (metadata, teléfono interno o id de sucursal). */
+    finalizeBranchAdminSignup: async (sucursalId = null) => {
+      const args = sucursalId ? { p_sucursal_id: sucursalId } : {};
+      return await supabase.rpc('finalize_branch_admin_signup', args);
     },
 
     // Obtener perfiles por rol
@@ -2959,7 +3197,9 @@ export const db = {
         .from('inventario_stock_sucursal')
         .select('*')
         .eq('sucursal_id', sucursalId);
-      if (stErr) return res;
+      if (stErr) {
+        return { ...res, data: mergeInventarioWithSucursalStock(res.data, []) };
+      }
       return { ...res, data: mergeInventarioWithSucursalStock(res.data, stocks) };
     },
 
@@ -6829,7 +7069,7 @@ export const db = {
       }
       const direct = await supabase
         .from('sucursales')
-        .select('id, codigo, nombre, direccion, telefono, es_matriz, activa, created_at')
+        .select('id, codigo, nombre, direccion, telefono, login_phone, es_matriz, activa, created_at')
         .eq('activa', true)
         .order('es_matriz', { ascending: false })
         .order('nombre', { ascending: true });
@@ -6856,6 +7096,28 @@ export const db = {
         p_nombre: nombre || null,
       });
       return { data, error };
+    },
+  },
+
+  cajaChica: {
+    getSaldo: async (sucursalId) => {
+      if (!sucursalId) return { data: 0, error: null };
+      const { data, error } = await supabase.rpc('salon_caja_chica_get', {
+        p_sucursal_id: sucursalId,
+      });
+      if (error) return { data: null, error };
+      return { data: Number(data ?? 0), error: null };
+    },
+    setSaldo: async (sucursalId, saldo) => {
+      if (!sucursalId) {
+        return { data: null, error: { message: 'Sucursal no definida para caja chica.' } };
+      }
+      const { data, error } = await supabase.rpc('salon_caja_chica_set', {
+        p_saldo: saldo,
+        p_sucursal_id: sucursalId,
+      });
+      if (error) return { data: null, error };
+      return { data: Number(data ?? saldo), error: null };
     },
   },
 

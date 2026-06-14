@@ -1,0 +1,3 @@
+-- DEPRECATED (dirección incorrecta): Andrea NO se vincula con su propio código.
+-- Usar: supabase-referidos-vincular-samuel-invita-andrea.sql
+--       Samuel (referidor) → Andrea (invitada) con ANDREAS-9F014A9E4D9B

@@ -1,39 +1,79 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { supabase, db } from '@appsalon/shared-config';
+import {
+  supabase,
+  db,
+  normalizeReferralCode,
+  peekPendingReferralCode,
+  storePendingReferralCode,
+  resolveReferralCodeForAuth,
+} from '@appsalon/shared-config';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { AuraLogoMark } from '../components/AuraLogoMark';
+import { PasswordField } from '../components/auth/PasswordField';
+import {
+  resetOnboardingForUser,
+  markPendingOnboardingEmail,
+  consumePendingOnboardingEmail,
+  markPendingOnboardingUserId,
+} from './onboardingStorage';
+import { splitFullName, displayNameFromAuthUser } from '../utils/clientDisplayName';
+import { useAuthKeyboardScroll } from '../utils/useAuthKeyboardScroll';
+import {
+  getEmailRedirectTo,
+  isSignUpDuplicateEmail,
+  isSignUpEmailAlreadyRegisteredError,
+  translateClientLoginError,
+  REGISTER_EMAIL_ACTIVE_TITLE,
+  REGISTER_EMAIL_ACTIVE_MESSAGE,
+} from '../utils/clientAuthEmail';
+
 const MIN_PASSWORD = 6;
 
 /**
  * Registro e inicio de sesión con Supabase Auth (correo + contraseña).
- * La confirmación de correo se activará al lanzar con proveedor SMTP propio.
  */
-export function ClientAuthScreen({ onAuthSuccess }) {
+export function ClientAuthScreen({ onAuthSuccess, onAuthHandoffStart }) {
   const { colors: c } = useTheme();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('login');
 
-  const [nombre, setNombre] = useState('');
+  const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const scrollRef = useRef(null);
+  const { contentRef, keyboardOpen, keyboardHeight, bindField, onScroll } =
+    useAuthKeyboardScroll(scrollRef, insets);
+
+  const fieldNombre = bindField('nombre');
+  const fieldEmail = bindField('email');
+  const fieldPassword = bindField('password');
+  const fieldPassword2 = bindField('password2');
+  const fieldReferral = bindField('referral');
+
+  useEffect(() => {
+    void peekPendingReferralCode().then((pending) => {
+      if (pending) setReferralCode(pending);
+    });
+  }, []);
+
+  const passwordMismatch =
+    mode === 'register' && password2.length > 0 && password !== password2;
 
   const styles = useMemo(
     () =>
@@ -53,7 +93,7 @@ export function ClientAuthScreen({ onAuthSuccess }) {
         },
         brandRow: {
           alignItems: 'center',
-          marginBottom: spacing.xl,
+          marginBottom: keyboardOpen ? spacing.md : spacing.xl,
         },
         logoShadow: {
           marginBottom: spacing.md,
@@ -125,7 +165,6 @@ export function ClientAuthScreen({ onAuthSuccess }) {
           paddingHorizontal: spacing.md,
           paddingVertical: 14,
           backgroundColor: c.card,
-          marginBottom: spacing.md,
         },
         hint: {
           fontFamily: typography.fontSans,
@@ -136,7 +175,7 @@ export function ClientAuthScreen({ onAuthSuccess }) {
           lineHeight: 18,
         },
       }),
-    [c, insets.bottom, insets.top],
+    [c, insets.bottom, insets.top, keyboardOpen],
   );
 
   const validateEmail = (v) => /\S+@\S+\.\S+/.test(v.trim());
@@ -160,15 +199,29 @@ export function ClientAuthScreen({ onAuthSuccess }) {
     return { ok: true };
   };
 
-  const finishAuth = async (user, displayName, em, ref) => {
+  const finishAuth = async (user, displayName, em, ref, { isNewAccount = false } = {}) => {
     const link = await linkClienteFicha(user, displayName, ref);
     if (!link.ok) {
       Alert.alert('Cuenta', link.message);
       return;
     }
-    onAuthSuccess({
+    let newAccount = isNewAccount;
+    if (!newAccount && user?.id && em) {
+      const pending = await consumePendingOnboardingEmail(em);
+      if (pending) {
+        await resetOnboardingForUser(user.id);
+        newAccount = true;
+      }
+    }
+    if (newAccount && user?.id) {
+      await resetOnboardingForUser(user.id);
+      await markPendingOnboardingUserId(user.id);
+    }
+    await onAuthSuccess({
+      userId: user?.id,
       name: displayName,
       email: user?.email || em,
+      isNewAccount: newAccount,
       ...(ref ? { referralCode: ref } : {}),
     });
   };
@@ -189,13 +242,14 @@ export function ClientAuthScreen({ onAuthSuccess }) {
     }
     if (busy) return;
     setBusy(true);
+    onAuthHandoffStart?.();
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: em,
         password: pw,
       });
       if (error) {
-        Alert.alert('Inicio de sesión', error.message || 'No se pudo iniciar sesión.');
+        Alert.alert('Inicio de sesión', translateClientLoginError(error));
         return;
       }
       const u = data.user;
@@ -203,22 +257,28 @@ export function ClientAuthScreen({ onAuthSuccess }) {
         Alert.alert('Sesión', 'No se pudo abrir sesión.');
         return;
       }
-      const name =
-        (u?.user_metadata?.full_name && String(u.user_metadata.full_name).trim()) ||
-        u?.email?.split('@')[0] ||
-        'Cliente';
-      await finishAuth(u, name, em);
+      const name = displayNameFromAuthUser(u);
+      const pendingRef = await resolveReferralCodeForAuth(u);
+      await finishAuth(u, name, em, pendingRef || undefined);
     } finally {
       setBusy(false);
     }
   };
 
   const submitRegister = async () => {
-    const n = nombre.trim();
+    const fullName = nombreCompleto.trim().replace(/\s+/g, ' ');
+    const { nombre: nom, apellido: ape } = splitFullName(fullName);
     const em = email.trim();
     const pw = password;
-    if (n.length < 2) {
-      Alert.alert('Nombre', 'Ingresá tu nombre (mínimo 2 caracteres).');
+    if (nom.length < 2) {
+      Alert.alert('Nombre y apellido', 'Ingresá tu nombre (mínimo 2 caracteres).');
+      return;
+    }
+    if (ape.length < 2) {
+      Alert.alert(
+        'Nombre y apellido',
+        'Ingresá nombre y apellido en el mismo campo, separados por un espacio.',
+      );
       return;
     }
     if (!validateEmail(em)) {
@@ -233,22 +293,47 @@ export function ClientAuthScreen({ onAuthSuccess }) {
       return;
     }
     if (pw !== password2) {
-      Alert.alert('Contraseña', 'Las contraseñas no coinciden.');
+      Alert.alert('Contraseña', 'Las contraseñas no coinciden. Revisá confirmar contraseña.');
       return;
     }
-    const ref = referralCode.trim();
+    const ref = normalizeReferralCode(referralCode.trim());
     if (busy) return;
     setBusy(true);
+    onAuthHandoffStart?.();
     try {
+      if (ref) await storePendingReferralCode(ref);
+
+      const emailCheck = await db.clientes.isEmailAccountActive(em);
+      if (emailCheck.error) {
+        Alert.alert('Registro', emailCheck.error.message || 'No se pudo verificar el correo.');
+        return;
+      }
+      if (emailCheck.data === true) {
+        Alert.alert(REGISTER_EMAIL_ACTIVE_TITLE, REGISTER_EMAIL_ACTIVE_MESSAGE);
+        setMode('login');
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: em,
         password: pw,
         options: {
-          data: { full_name: n },
+          emailRedirectTo: getEmailRedirectTo(),
+          data: {
+            full_name: fullName,
+            first_name: nom,
+            last_name: ape,
+            ...(ref ? { referral_code: ref } : {}),
+          },
         },
       });
       if (error) {
         const msg = error.message || 'No se pudo crear la cuenta.';
+        if (isSignUpEmailAlreadyRegisteredError(error)) {
+          Alert.alert(REGISTER_EMAIL_ACTIVE_TITLE, REGISTER_EMAIL_ACTIVE_MESSAGE);
+          setMode('login');
+          return;
+        }
         const hint = /database error saving new user/i.test(msg)
           ? '\n\nEjecutá supabase-auth-signup-app-clientes.sql en Supabase.'
           : '';
@@ -256,15 +341,25 @@ export function ClientAuthScreen({ onAuthSuccess }) {
         return;
       }
 
-      if (data.session?.user) {
-        await finishAuth(data.session.user, n, em, ref || undefined);
+      if (isSignUpDuplicateEmail(data)) {
+        Alert.alert(REGISTER_EMAIL_ACTIVE_TITLE, REGISTER_EMAIL_ACTIVE_MESSAGE);
+        setMode('login');
         return;
       }
 
+      if (data.session?.user) {
+        await markPendingOnboardingUserId(data.session.user.id);
+        await finishAuth(data.session.user, fullName, em, ref || undefined, { isNewAccount: true });
+        return;
+      }
+
+      await markPendingOnboardingEmail(em);
       setMode('login');
       Alert.alert(
         'Cuenta creada',
-        'Iniciá sesión con tu correo y contraseña.',
+        ref
+          ? 'Confirmá tu correo e iniciá sesión. Tu código de referido y la bienvenida te esperan al entrar.'
+          : 'Confirmá tu correo e iniciá sesión para ver la bienvenida y el recorrido de la app.',
       );
     } finally {
       setBusy(false);
@@ -272,24 +367,45 @@ export function ClientAuthScreen({ onAuthSuccess }) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={styles.root}>
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        automaticallyAdjustKeyboardInsets
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom:
+              insets.bottom +
+              spacing.xl +
+              (keyboardOpen ? keyboardHeight + spacing.lg : 0),
+          },
+        ]}
       >
+        <View ref={contentRef} collapsable={false}>
         <View style={styles.brandRow}>
-          <View style={styles.logoShadow}>
-            <AuraLogoMark diameter={124} />
-          </View>
-          <Text style={styles.title}>Aura Salón</Text>
-          <Text style={styles.subtitle}>
-            Tienda del salón: creá tu cuenta e iniciá sesión para comprar y agendar.
+          {!keyboardOpen ? (
+            <View style={styles.logoShadow}>
+              <AuraLogoMark diameter={124} />
+            </View>
+          ) : (
+            <View style={styles.logoShadow}>
+              <AuraLogoMark diameter={56} />
+            </View>
+          )}
+          <Text style={[styles.title, keyboardOpen && { fontSize: 22, marginBottom: 0 }]}>
+            Aura Salón
           </Text>
+          {!keyboardOpen ? (
+            <Text style={styles.subtitle}>
+              Tienda del salón: creá tu cuenta e iniciá sesión para comprar y agendar.
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.segment}>
@@ -316,22 +432,24 @@ export function ClientAuthScreen({ onAuthSuccess }) {
         </View>
 
         {mode === 'register' ? (
-          <>
-            <Text style={styles.label}>Nombre</Text>
+          <View ref={fieldNombre.setRef} collapsable={false} style={{ marginBottom: spacing.md }}>
+            <Text style={styles.label}>Nombre y apellido</Text>
             <TextInput
               style={styles.input}
-              value={nombre}
-              onChangeText={setNombre}
-              placeholder="Tu nombre"
+              value={nombreCompleto}
+              onChangeText={setNombreCompleto}
+              placeholder="Nombre y apellido"
               placeholderTextColor={c.foregroundSubtle}
               autoCapitalize="words"
+              onFocus={fieldNombre.onFocus}
             />
-          </>
+          </View>
         ) : null}
 
+        <View ref={fieldEmail.setRef} collapsable={false}>
         <Text style={styles.label}>Correo</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { marginBottom: spacing.md }]}
           value={email}
           onChangeText={setEmail}
           placeholder="tu@correo.com"
@@ -339,43 +457,47 @@ export function ClientAuthScreen({ onAuthSuccess }) {
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          onFocus={fieldEmail.onFocus}
         />
+        </View>
 
-        <Text style={styles.label}>Contraseña</Text>
-        <TextInput
-          style={styles.input}
+        <PasswordField
+          label="Contraseña"
           value={password}
           onChangeText={setPassword}
           placeholder={`Mínimo ${MIN_PASSWORD} caracteres`}
-          placeholderTextColor={c.foregroundSubtle}
-          secureTextEntry
+          wrapRef={fieldPassword.setRef}
+          onInputFocus={fieldPassword.onFocus}
         />
 
         {mode === 'register' ? (
           <>
-            <Text style={styles.label}>Confirmar contraseña</Text>
-            <TextInput
-              style={styles.input}
+            <PasswordField
+              label="Confirmar contraseña"
               value={password2}
               onChangeText={setPassword2}
               placeholder="Repetí la contraseña"
-              placeholderTextColor={c.foregroundSubtle}
-              secureTextEntry
+              showMismatch={passwordMismatch}
+              wrapRef={fieldPassword2.setRef}
+              onInputFocus={fieldPassword2.onFocus}
             />
 
+            <View ref={fieldReferral.setRef} collapsable={false}>
             <View style={{ marginBottom: 4 }}>
               <Text style={styles.label}>Código de referido</Text>
               <Text style={styles.labelOptional}>Opcional.</Text>
             </View>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { marginBottom: spacing.md }]}
               value={referralCode}
               onChangeText={setReferralCode}
-              placeholder="Ej. AURA-SM308-482"
+              placeholder="Ej. ANDREAS-9F014A9E4D9B"
               placeholderTextColor={c.foregroundSubtle}
               autoCapitalize="characters"
               autoCorrect={false}
+              onFocus={fieldReferral.onFocus}
             />
+            </View>
           </>
         ) : null}
 
@@ -390,7 +512,8 @@ export function ClientAuthScreen({ onAuthSuccess }) {
         <Text style={styles.hint}>
           Al continuar aceptás las prácticas descritas en la política de privacidad del salón.
         </Text>
+        </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

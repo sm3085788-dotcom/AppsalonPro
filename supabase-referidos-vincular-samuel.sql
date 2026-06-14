@@ -1,0 +1,2 @@
+-- DEPRECATED: usar supabase-referidos-vincular-samuel-invita-andrea.sql
+-- Samuel Morales REFIERE a Andrea Morales (no al revés).

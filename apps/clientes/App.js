@@ -114,10 +114,20 @@ import {
   clearLegacyLocalSession,
   getIntroDone,
   getTourDone,
+  resetOnboardingForUser,
+  consumePendingOnboardingUserId,
+  consumePendingOnboardingEmail,
 } from './onboarding/onboardingStorage';
 import { ClientAuthScreen } from './onboarding/ClientAuthScreen';
 import { SupabaseConfigScreen } from './onboarding/SupabaseConfigScreen';
 import { completeAuthFromRedirectUrl } from './utils/clientAuthEmail';
+import {
+  parseReferralCodeFromUrl,
+  storePendingReferralCode,
+  isAuthRedirectUrl,
+  resolveReferralCodeForAuth,
+  consumePendingReferralCode,
+} from '@appsalon/shared-config';
 import {
   tryShowCitaConfirmacionAlert,
   getCitaConfirmacionMsgAlertadas,
@@ -137,6 +147,13 @@ import { partitionCitasCliente } from './utils/citasLabels';
 import * as Linking from 'expo-linking';
 import { PostLoginIntroScreen } from './onboarding/PostLoginIntroScreen';
 import { AppTourScreen } from './onboarding/AppTourScreen';
+import { ProfileIncompleteBanner } from './components/profile/ProfileIncompleteBanner';
+import {
+  isClienteProfileComplete,
+  getClienteProfileMissing,
+} from './utils/clientProfileComplete';
+import { displayNameFromAuthUser } from './utils/clientDisplayName';
+import { CLIENT_ALERT_BELL_RED } from './constants/clientAlertColors';
 import {
   DEFAULT_PROFILE,
   DEFAULT_GREETING_NAME,
@@ -176,7 +193,7 @@ function paddingForTabBar(insets) {
   return tabBarOverlayHeight(insets) + spacing.md;
 }
 
-function ProfileMenuRow({ icon: Icon, label, onPress }) {
+function ProfileMenuRow({ icon: Icon, label, onPress, showAlert }) {
   const { colors: c } = useTheme();
   const rowStyles = useMemo(
     () =>
@@ -194,6 +211,12 @@ function ProfileMenuRow({ icon: Icon, label, onPress }) {
           fontSize: 15,
           color: c.foreground,
         },
+        alertDot: {
+          width: 9,
+          height: 9,
+          borderRadius: 5,
+          backgroundColor: CLIENT_ALERT_BELL_RED,
+        },
       }),
     [c],
   );
@@ -207,6 +230,7 @@ function ProfileMenuRow({ icon: Icon, label, onPress }) {
     >
       <Icon size={20} color={c.foreground} strokeWidth={1.75} />
       <Text style={rowStyles.label}>{label}</Text>
+      {showAlert ? <View style={rowStyles.alertDot} /> : null}
     </TouchableOpacity>
   );
 }
@@ -711,17 +735,19 @@ function AppMain({ onLogout }) {
   const ensureClienteFicha = useCallback(async () => {
     if (!hasSupabaseEnv || !session?.user?.id) return null;
     const u = session.user;
-    const name =
-      (u.user_metadata?.full_name && String(u.user_metadata.full_name).trim()) ||
-      u.email?.split('@')[0] ||
-      'Cliente';
-    await db.clientes.ensureFromAuth({
+    const name = displayNameFromAuthUser(u);
+    const refCode = await resolveReferralCodeForAuth(u);
+    const { data: ficha } = await db.clientes.ensureFromAuth({
       userId: u.id,
       nombre: name,
       email: u.email,
+      referralCode: refCode || undefined,
     });
+    if (refCode && ficha?.referido_por) {
+      await consumePendingReferralCode();
+    }
     return refreshClienteFicha(u.id);
-  }, [session?.user, refreshClienteFicha]);
+  }, [session?.user, refreshClienteFicha, hasSupabaseEnv]);
 
   // Al abrir Premios, asegurar ficha cliente antes de que el dashboard cargue contadores.
   useEffect(() => {
@@ -1217,6 +1243,27 @@ function AppMain({ onLogout }) {
   const profileEmail =
     session?.user?.email || clienteRow?.email || DEFAULT_PROFILE.emailPlaceholder;
 
+  const profileIncomplete = useMemo(
+    () => Boolean(clienteRow?.id && !isClienteProfileComplete(clienteRow)),
+    [clienteRow],
+  );
+  const profileMissingLabels = useMemo(
+    () => (profileIncomplete ? getClienteProfileMissing(clienteRow) : []),
+    [profileIncomplete, clienteRow],
+  );
+  const tabItemsWithAlerts = useMemo(
+    () =>
+      TAB_ITEMS.map((item) => ({
+        ...item,
+        alert: item.id === TABS.PERFIL ? profileIncomplete : false,
+      })),
+    [profileIncomplete],
+  );
+
+  const openEditarPerfil = useCallback(() => {
+    openSub(CLIENT_SUB.EDITAR_PERFIL);
+  }, [openSub]);
+
   const primaryHeader = (
     <ScreenHeader
       showHomeBar={tab === TABS.INICIO}
@@ -1241,6 +1288,12 @@ function AppMain({ onLogout }) {
         />
 
         <View style={styles.inicioBelowHero}>
+          {profileIncomplete ? (
+            <ProfileIncompleteBanner
+              missingLabels={profileMissingLabels}
+              onPress={openEditarPerfil}
+            />
+          ) : null}
           <QuickPosterGrid
             fillHeight
             items={[
@@ -1331,7 +1384,8 @@ function AppMain({ onLogout }) {
         <ProfileMenuRow
           icon={User}
           label="Editar perfil"
-          onPress={() => openSub(CLIENT_SUB.EDITAR_PERFIL)}
+          showAlert={profileIncomplete}
+          onPress={openEditarPerfil}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
@@ -1354,7 +1408,7 @@ function AppMain({ onLogout }) {
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={Phone}
-          label="Contacto"
+          label="Servicio al cliente"
           onPress={() => openSub(CLIENT_SUB.CONTACTO)}
         />
         <View style={styles.menuHairline} />
@@ -1472,7 +1526,8 @@ function AppMain({ onLogout }) {
             disableBodyScroll={
               openedSub === CLIENT_SUB.MENSAJES ||
               openedSub === CLIENT_SUB.MIS_PEDIDOS ||
-              openedSub === CLIENT_SUB.MIS_FACTURAS
+              openedSub === CLIENT_SUB.MIS_FACTURAS ||
+              openedSub === CLIENT_SUB.EDITAR_PERFIL
             }
             bodyPaddingHorizontal={openedSub === CLIENT_SUB.MENSAJES ? 0 : undefined}
             bottomPadding={
@@ -1520,7 +1575,7 @@ function AppMain({ onLogout }) {
           {body}
           <View style={styles.tabDock}>
             <BottomTabs
-              items={TAB_ITEMS}
+              items={tabItemsWithAlerts}
               activeId={tab}
               onChange={setTab}
               cartCount={cartCount}
@@ -1562,38 +1617,63 @@ export default function App() {
     phase: 'main',
     profile: null,
   });
+  const gateRef = useRef(gate);
+  const authGateHandoffRef = useRef(false);
+  useEffect(() => {
+    gateRef.current = gate;
+  }, [gate]);
 
   const enterAppAfterAuthUser = useCallback(async (user) => {
     if (!user) {
       setGate({ ready: true, phase: 'auth', profile: null });
       return;
     }
-    const nom =
-      (user.user_metadata?.full_name && String(user.user_metadata.full_name).trim()) ||
-      user.email?.split('@')[0] ||
-      'Cliente';
-    await db.clientes.ensureFromAuth({
+    const nom = displayNameFromAuthUser(user);
+    const refCode = await resolveReferralCodeForAuth(user);
+    const { data: ficha } = await db.clientes.ensureFromAuth({
       userId: user.id,
       nombre: nom,
       email: user.email,
+      referralCode: refCode || undefined,
     });
+    if (refCode && ficha?.referido_por) {
+      await consumePendingReferralCode();
+    }
     await clearLegacyLocalSession();
-    const intro = await getIntroDone();
-    const tour = await getTourDone();
-    if (!intro) {
-      const name =
-        (user.user_metadata?.full_name && String(user.user_metadata.full_name).trim()) ||
-        user.email?.split('@')[0] ||
-        'Cliente';
+
+    const pendingNewAccount =
+      (await consumePendingOnboardingUserId(user.id)) ||
+      (await consumePendingOnboardingEmail(user.email));
+    if (pendingNewAccount) {
+      await resetOnboardingForUser(user.id);
       setGate({
         ready: true,
         phase: 'intro',
-        profile: { name, email: user.email || '' },
+        profile: { name: nom, email: user.email || '', userId: user.id },
+      });
+      return;
+    }
+
+    if (authGateHandoffRef.current) {
+      return;
+    }
+
+    if (gateRef.current.phase === 'intro' || gateRef.current.phase === 'tour') {
+      return;
+    }
+
+    const intro = await getIntroDone(user.id);
+    const tour = await getTourDone(user.id);
+    if (!intro) {
+      setGate({
+        ready: true,
+        phase: 'intro',
+        profile: { name: nom, email: user.email || '', userId: user.id },
       });
       return;
     }
     if (!tour) {
-      setGate({ ready: true, phase: 'tour', profile: null });
+      setGate({ ready: true, phase: 'tour', profile: { userId: user.id } });
       return;
     }
     setGate({ ready: true, phase: 'main', profile: null });
@@ -1626,19 +1706,33 @@ export default function App() {
         await enterAppAfterAuthUser(session.user);
       }
     },
-    [enterAppAfterAuthUser],
+    [enterAppAfterAuthUser, hasSupabaseEnv],
+  );
+
+  const handleIncomingUrl = useCallback(
+    async (url) => {
+      if (!url || !hasSupabaseEnv) return;
+      const refFromLink = parseReferralCodeFromUrl(url);
+      if (refFromLink) {
+        await storePendingReferralCode(refFromLink);
+      }
+      if (isAuthRedirectUrl(url)) {
+        await handleAuthRedirectUrl(url);
+      }
+    },
+    [hasSupabaseEnv, handleAuthRedirectUrl],
   );
 
   useEffect(() => {
     if (!fontsLoaded || !hasSupabaseEnv) return;
     Linking.getInitialURL().then((url) => {
-      if (url) void handleAuthRedirectUrl(url);
+      if (url) void handleIncomingUrl(url);
     });
     const sub = Linking.addEventListener('url', ({ url }) => {
-      void handleAuthRedirectUrl(url);
+      void handleIncomingUrl(url);
     });
     return () => sub.remove();
-  }, [fontsLoaded, handleAuthRedirectUrl]);
+  }, [fontsLoaded, handleIncomingUrl, hasSupabaseEnv]);
 
   useEffect(() => {
     if (!fontsLoaded) return;
@@ -1681,7 +1775,10 @@ export default function App() {
         setGate({ ready: true, phase: 'auth', profile: null });
         return;
       }
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && s?.user) {
+      if (event === 'SIGNED_IN' && s?.user) {
+        if (authGateHandoffRef.current) {
+          return;
+        }
         void enterAppAfterAuthUser(s.user);
       }
     });
@@ -1689,20 +1786,50 @@ export default function App() {
   }, [enterAppAfterAuthUser]);
 
   const handleAuthSuccess = async (profile) => {
-    setGate({ ready: true, phase: 'intro', profile: profile ?? null });
+    authGateHandoffRef.current = true;
+    try {
+      const uid = profile?.userId;
+
+      if (profile?.isNewAccount && uid) {
+        await resetOnboardingForUser(uid);
+        await consumePendingOnboardingUserId(uid);
+        setGate({ ready: true, phase: 'intro', profile: profile ?? null });
+        return;
+      }
+
+      const introDone = uid ? await getIntroDone(uid) : false;
+      const tourDone = uid ? await getTourDone(uid) : false;
+      if (!introDone) {
+        setGate({ ready: true, phase: 'intro', profile: profile ?? null });
+        return;
+      }
+      if (!tourDone) {
+        setGate({
+          ready: true,
+          phase: 'tour',
+          profile: { userId: uid, name: profile?.name, email: profile?.email },
+        });
+        return;
+      }
+      setGate({ ready: true, phase: 'main', profile: null });
+    } finally {
+      authGateHandoffRef.current = false;
+    }
   };
 
   const handleIntroContinue = async () => {
-    await setIntroDone();
-    const tour = await getTourDone();
+    const uid = gate.profile?.userId;
+    await setIntroDone(uid);
+    const tour = await getTourDone(uid);
     setGate((g) => ({
       ...g,
       phase: tour ? 'main' : 'tour',
+      profile: tour ? null : { userId: uid },
     }));
   };
 
   const handleTourDone = async () => {
-    await setTourDone();
+    await setTourDone(gate.profile?.userId);
     setGate({ ready: true, phase: 'main', profile: null });
   };
 
@@ -1721,7 +1848,12 @@ export default function App() {
           ) : !hasSupabaseEnv ? (
             <SupabaseConfigScreen />
           ) : gate.phase === 'auth' ? (
-            <ClientAuthScreen onAuthSuccess={handleAuthSuccess} />
+            <ClientAuthScreen
+              onAuthHandoffStart={() => {
+                authGateHandoffRef.current = true;
+              }}
+              onAuthSuccess={handleAuthSuccess}
+            />
           ) : gate.phase === 'intro' ? (
             <PostLoginIntroScreen
               profile={gate.profile}
