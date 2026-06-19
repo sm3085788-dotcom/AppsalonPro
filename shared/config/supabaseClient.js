@@ -2678,19 +2678,26 @@ export const db = {
 
     // Crear perfil (normalmente se hace automáticamente con trigger)
     create: async (data) => {
+      const role = data.role || 'admin';
+      if (!['admin', 'admin_global', 'admin_sucursal', 'staff'].includes(role)) {
+        return {
+          data: null,
+          error: { message: 'profiles solo admite cuentas del salón. Los clientes van en clientes.' },
+        };
+      }
       return await supabase
         .from('profiles')
         .insert({
           id: data.id, // UUID del auth.users
           full_name: data.full_name || null,
-          role: data.role || 'client',
+          role,
           phone: data.phone || null,
           address: data.address || null,
           birthday: data.birthday || null,
           age: data.age || null,
           photo_url: data.photo_url || null,
           marketing_access: data.marketing_access || false,
-          app_scope: data.app_scope ?? 'clientes',
+          app_scope: data.app_scope ?? 'staff',
           community_enabled: data.community_enabled !== undefined ? data.community_enabled : true,
         })
         .select()
@@ -2721,10 +2728,10 @@ export const db = {
         .single();
     },
 
-    // Roles permitidos en app: solo admin (gestión salón) y client (app clientes). Sin staff.
+    // Roles permitidos en profiles: solo cuentas del salón.
     changeRole: async (userId, newRole) => {
-      if (!['admin', 'client'].includes(newRole)) {
-        return { error: { message: 'Rol no válido. Usá admin o client.' } };
+      if (!['admin', 'admin_global', 'admin_sucursal', 'staff'].includes(newRole)) {
+        return { error: { message: 'Rol no válido en profiles. Los clientes se gestionan en clientes.' } };
       }
 
       return await supabase

@@ -60,6 +60,10 @@ import {
   isSalonGlobalAdmin,
   getChatAutomationSettings,
   setChatAutomationEnabled,
+  isPromoInventarioMessage,
+  expandAuraMessagesWithLivePromos,
+  collapsePromoChatRowsForDisplay,
+  fetchClientPromosVigentesForChat,
 } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 
@@ -87,6 +91,7 @@ function resolvePromoLinkToggle(currentLink, entry) {
   };
 }
 import { BroadcastPromoCard } from '../../clientes/components/mensajes/BroadcastPromoCard';
+import { InventarioPromoChatList } from '../../../shared/components/PromoInventarioListCard';
 import { MarketingInterestCard } from '../../clientes/components/mensajes/MarketingInterestCard';
 import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
@@ -333,6 +338,7 @@ export function MensajesScreen({ onBack }) {
   const [refreshingInbox, setRefreshingInbox] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [livePromoPayloads, setLivePromoPayloads] = useState([]);
   const [loadingChat, setLoadingChat] = useState(false);
   const [draft, setDraft] = useState('');
   const [pendingImage, setPendingImage] = useState(null);
@@ -678,6 +684,21 @@ export function MensajesScreen({ onBack }) {
     chatStickToBottomRef.current = distFromBottom < 72;
   }, []);
 
+  const refreshLivePromos = useCallback(async () => {
+    const { data } = await fetchClientPromosVigentesForChat();
+    setLivePromoPayloads(Array.isArray(data) ? data : []);
+  }, []);
+
+  const clientAppUserId = selectedClient?.user_id ?? null;
+  const chatDisplayMessages = useMemo(
+    () => expandAuraMessagesWithLivePromos(messages, livePromoPayloads, clientAppUserId),
+    [messages, livePromoPayloads, clientAppUserId],
+  );
+  const chatListData = useMemo(
+    () => collapsePromoChatRowsForDisplay(chatDisplayMessages, clientAppUserId),
+    [chatDisplayMessages, clientAppUserId],
+  );
+
   const loadChat = useCallback(async (clientId, opts = {}) => {
     const id = String(clientId || '');
     const silent = Boolean(opts.silent);
@@ -690,6 +711,7 @@ export function MensajesScreen({ onBack }) {
       if (String(selectedClientIdRef.current) !== id) return;
       chatCacheByClient.set(id, sorted);
       setMessages(sorted);
+      void refreshLivePromos();
       chatStickToBottomRef.current = true;
       if (!silent || sorted.length) scrollChatToEnd(false, true);
     } catch (e) {
@@ -702,7 +724,7 @@ export function MensajesScreen({ onBack }) {
     } finally {
       if (String(selectedClientIdRef.current) === id) setLoadingChat(false);
     }
-  }, [scrollChatToEnd]);
+  }, [scrollChatToEnd, refreshLivePromos]);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -1181,6 +1203,22 @@ export function MensajesScreen({ onBack }) {
       );
     }
 
+    if (item.__promoList && !isInbound) {
+      return (
+        <View style={styles.postWrap}>
+          <InventarioPromoChatList items={item.promos} isDark={isDark} />
+        </View>
+      );
+    }
+
+    if (isPromoInventarioMessage(item) && !isInbound) {
+      return (
+        <View style={styles.postWrap}>
+          <InventarioPromoChatList items={[item]} isDark={isDark} />
+        </View>
+      );
+    }
+
     if (isInbound && isInterest) {
       const when = `${new Date(item.created_at).toLocaleString('es-GT', {
         day: 'numeric',
@@ -1475,7 +1513,7 @@ export function MensajesScreen({ onBack }) {
           ) : (
             <FlatList
               ref={listRef}
-              data={messages}
+              data={chatListData}
               keyExtractor={(m) => String(m.id)}
               renderItem={renderBubble}
               style={styles.chatList}

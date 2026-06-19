@@ -92,7 +92,9 @@ BEGIN
     RETURN cid;
   END IF;
 
-  IF auth.uid() IS DISTINCT FROM p_user_id AND NOT COALESCE(public.is_staff_or_admin(), false) THEN
+  IF auth.uid() IS NOT NULL
+     AND auth.uid() IS DISTINCT FROM p_user_id
+     AND NOT COALESCE(public.is_staff_or_admin(), false) THEN
     RAISE EXCEPTION 'No autorizado para crear ficha de otro usuario';
   END IF;
 

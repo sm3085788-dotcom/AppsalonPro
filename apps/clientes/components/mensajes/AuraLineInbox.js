@@ -44,7 +44,7 @@ import { saveChatImageWithAlert } from '../../utils/saveChatImage';
 import { BroadcastPromoCard } from './BroadcastPromoCard';
 import { CitaConfirmacionCard } from './CitaConfirmacionCard';
 import { MarketingInterestCard } from './MarketingInterestCard';
-import { InventarioPromoChatList } from './InventarioPromoChatCard';
+import { InventarioPromoChatList } from '../../../../shared/components/PromoInventarioListCard';
 import { CLIENT_CHAT_QUICK_ACTIONS } from '@appsalon/shared-config';
 import { keyboardComposerLift } from '../../../../shared/utils/chatKeyboard';
 import { openSalonUbicacionEnMapas } from '../../utils/openSalonMap';
@@ -541,6 +541,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
             items={item.promos}
             onAction={handlePromoAction}
             busy={promoBusy}
+            isDark={isDark}
           />
         </View>
       );
@@ -553,6 +554,7 @@ export function AuraLineInbox({ clienteRow, sessionUser, onUnreadChange, onPromo
             items={[item]}
             onAction={handlePromoAction}
             busy={promoBusy}
+            isDark={isDark}
           />
         </View>
       );

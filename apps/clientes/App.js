@@ -118,6 +118,7 @@ import {
   consumePendingOnboardingUserId,
   consumePendingOnboardingEmail,
 } from './onboarding/onboardingStorage';
+import { useClientOtaUpdate } from './hooks/useClientOtaUpdate';
 import { ClientAuthScreen } from './onboarding/ClientAuthScreen';
 import { SupabaseConfigScreen } from './onboarding/SupabaseConfigScreen';
 import { completeAuthFromRedirectUrl } from './utils/clientAuthEmail';
@@ -1605,6 +1606,8 @@ function AppMain({ onLogout }) {
 }
 
 export default function App() {
+  useClientOtaUpdate();
+
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,

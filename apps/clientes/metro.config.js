@@ -11,5 +11,10 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
+// Evita que `eas update` (carpeta dist/) tumbe Metro en desarrollo.
+const distBlock = new RegExp(
+  `${path.resolve(projectRoot, 'dist').replace(/\\/g, '\\\\')}[/\\\\].*`,
+);
+config.resolver.blockList = [...(config.resolver.blockList ?? []), distBlock];
 
 module.exports = config;

@@ -1,6 +1,6 @@
 -- App Clientes: arreglar "Database error saving new user" al registrarse
--- Causa habitual: trigger en auth.users que inserta en profiles con columnas/rol inválidos.
--- Ejecutar en Supabase → SQL Editor (una vez).
+-- NOTA: reemplazado por supabase-profiles-solo-sucursales.sql (clientes → tabla clientes, no profiles).
+-- Ejecutar supabase-profiles-solo-sucursales.sql en su lugar.
 
 -- 1) Permitir rol "client" en profiles (además de admin/staff)
 ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS check_rol_types;

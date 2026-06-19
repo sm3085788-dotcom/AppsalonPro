@@ -10,14 +10,19 @@ AS $$
 DECLARE
   v_uid uuid := auth.uid();
   v_cli_id uuid;
-  v_role text;
+  v_staff_role text;
 BEGIN
   IF v_uid IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'Sin sesión activa');
   END IF;
 
-  SELECT role INTO v_role FROM public.profiles WHERE id = v_uid LIMIT 1;
-  IF v_role IS NOT NULL AND v_role <> 'client' THEN
+  SELECT role INTO v_staff_role
+  FROM public.profiles
+  WHERE id = v_uid
+    AND role IN ('admin', 'admin_global', 'admin_sucursal', 'staff')
+  LIMIT 1;
+
+  IF v_staff_role IS NOT NULL THEN
     RETURN jsonb_build_object(
       'ok', false,
       'error', 'Esta acción solo está disponible para cuentas de clientes de la app.'
