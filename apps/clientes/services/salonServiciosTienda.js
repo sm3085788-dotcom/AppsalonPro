@@ -37,6 +37,8 @@ export function inventarioRowToServicioOption(row) {
     priceLabel: mapped?.priceLabel || null,
     compareAtLabel: mapped?.compareAtLabel || null,
     badge: mapped?.badge || null,
+    promocionVigente: Boolean(mapped?.promocionVigente),
+    promocionHasta: mapped?.promocionHasta || null,
     rating: mapped?.rating ?? 4.5,
     reviewCount: mapped?.reviewCount ?? 0,
     stockHint: mapped?.stockHint || null,

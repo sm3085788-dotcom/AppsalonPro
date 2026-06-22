@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Package, QrCode, Truck } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db } from '@appsalon/shared-config';
+import { db, needsPickupQr, isHomeDeliveryOrder, isCardPayment, isPedidoTarjetaDomicilioCapturado } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSubStyles } from '../luxury/SubScreenChrome';
 import { SalonButton } from '../luxury/SalonButton';
@@ -40,8 +40,12 @@ function formatWhen(iso) {
   }
 }
 
-function statusLabel(status) {
-  const s = String(status || '');
+function statusLabel(order) {
+  const s = String(order?.status || '');
+  if (isPedidoTarjetaDomicilioCapturado(order)) {
+    if (s === 'confirmed') return 'Pago confirmado · preparando envío';
+    if (s === 'prepared') return 'Listo · en camino';
+  }
   if (s === 'pending') return 'Pendiente · pago en salón';
   if (s === 'delivered') return 'Completado';
   if (s === 'cancelled') return 'Cancelado';
@@ -80,11 +84,11 @@ function PedidosIntroPanel({ c }) {
       <View style={[styles.introAccent, { backgroundColor: c.primary }]} />
       <Text style={[styles.introKicker, { color: c.primary }]}>Tu bandeja de compras</Text>
       <Text style={[styles.introHeadline, { color: c.foreground }]}>
-        QR de retiro, efectivo y envío a domicilio
+        Retiro, envío a domicilio y seguimiento
       </Text>
       <Text style={[styles.introBody, { color: c.foregroundMuted }]}>
-        Pedidos de la tienda (efectivo, retiro o envío). Los pendientes en efectivo incluyen tu código QR para el
-        salón. Los completados se marcan en verde; podés cancelar mientras no estén entregados.
+        Pedidos de la tienda. Retiro en efectivo incluye código QR para el salón. Envío con tarjeta se confirma al pagar
+        y no requiere QR. Los completados se marcan en verde; podés cancelar mientras no estén entregados.
       </Text>
       <View style={styles.introIcons}>
         <View style={[styles.introIconCell, { backgroundColor: c.surfaceMuted }]}>
@@ -225,7 +229,7 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
 
   const renderItem = ({ item: o }) => {
     const pendingCash = isPendingCash(o);
-    const showQr = pendingCash && o.tracking_code;
+    const showQr = needsPickupQr(o);
     const expanded = expandedId === o.id;
     const st = String(o.status || '');
     const cancelled = st === 'cancelled';
@@ -271,13 +275,19 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
               { color: delivered ? GREEN : cancelled ? CANCEL_RED : c.foregroundMuted },
             ]}
           >
-            {statusLabel(o.status)}
+            {statusLabel(o)}
           </Text>
           <Text style={[styles.meta, { color: c.foregroundSubtle }]}>
             {formatWhen(o.created_at)} ·{' '}
-            {o.fulfillment_type === 'domicilio' ? 'Envío a domicilio' : 'Retiro en salón'}
+            {isHomeDeliveryOrder(o) ? 'Envío a domicilio' : 'Retiro en salón'}
+            {isPedidoTarjetaDomicilioCapturado(o) && isCardPayment(o) ? ' · tarjeta confirmada' : ''}
           </Text>
-          {o.notes ? (
+          {isHomeDeliveryOrder(o) && o.delivery_address ? (
+            <Text style={[styles.notes, { color: c.foregroundMuted }]} numberOfLines={expanded ? 8 : 2}>
+              {o.delivery_address}
+            </Text>
+          ) : null}
+          {!isHomeDeliveryOrder(o) && o.notes ? (
             <Text style={[styles.notes, { color: c.foregroundMuted }]} numberOfLines={expanded ? 6 : 2}>
               {o.notes}
             </Text>
@@ -347,7 +357,7 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
     <View style={[subStyles.card, { marginTop: spacing.sm }]}>
       <Text style={subStyles.rowLabel}>Sin pedidos todavía</Text>
       <Text style={subStyles.bullets}>
-        Cuando compres en la tienda con efectivo o tarjeta, aparecerán aquí con su código de seguimiento.
+        Cuando compres en la tienda, aparecerán aquí con su código de seguimiento. Envío con tarjeta no usa QR.
       </Text>
       {onOpenTienda ? (
         <SalonButton

@@ -23,6 +23,14 @@ import {
 import { useTheme } from '../../theme/ThemeProvider';
 import { SalonButton } from '../luxury/SalonButton';
 import { useServiciosCart } from '../../context/ServiciosCartContext';
+import {
+  ANDREAS_CANJE_PROMO_BLOCK_MSG,
+  ANDREAS_CANJE_PROMO_PARTIAL_MSG,
+  cartHasPromoItems,
+  itemHasPromocionVigente,
+  itemsBlockAndreasCanje,
+  subtotalEligibleForAndreasCanje,
+} from '../../utils/andreasCanjePromo';
 
 function servicioKey(s) {
   return String(s?.id ?? s?.nombre ?? '');
@@ -51,15 +59,23 @@ export function ServiciosCarritoBody({
   const [saving, setSaving] = useState(false);
   const [canjeCitas, setCanjeCitas] = useState(null);
 
+  const carritoBloqueaCanje = itemsBlockAndreasCanje(items);
+  const carritoCanjeParcial = cartHasPromoItems(items) && subtotalEligibleForAndreasCanje(items) > 0;
+  const canjeTargetKey = useMemo(() => {
+    if (!canjeCitas || carritoBloqueaCanje) return null;
+    const hit = items.find((s) => !itemHasPromocionVigente(s));
+    return hit ? servicioKey(hit) : null;
+  }, [canjeCitas, carritoBloqueaCanje, items]);
+
   useEffect(() => {
-    if (!clienteRow?.id) {
+    if (!clienteRow?.id || carritoBloqueaCanje) {
       setCanjeCitas(null);
       return;
     }
     void db.premiosAndreas.getCanjeCitaAgenda({ clienteRow }).then(({ data }) => {
       setCanjeCitas(data || null);
     });
-  }, [clienteRow?.id, clienteRow?.andreas_premios, clienteRow?.membresia_nivel]);
+  }, [clienteRow?.id, clienteRow?.andreas_premios, clienteRow?.membresia_nivel, carritoBloqueaCanje]);
 
   useEffect(() => {
     setSchedules((prev) => {
@@ -101,7 +117,7 @@ export function ServiciosCarritoBody({
           return;
         }
         const precioBase = Number(s.precio);
-        const aplicarCanje = !canjeConsumido && canjeCitas;
+        const aplicarCanje = !canjeConsumido && canjeCitas && !itemHasPromocionVigente(s);
         const { precio, canjeSnap } = resolvePrecioServicioConCanjeCitas(
           precioBase,
           aplicarCanje ? canjeCitas : null,
@@ -142,6 +158,8 @@ export function ServiciosCarritoBody({
           void db.premiosAndreas.registrarCanjeCitaAgendada({
             clienteId: clienteRow.id,
             citaId: citaRow.id,
+            ruleId: canjeSnap.rule_id,
+            referidosCiclo: canjeSnap.referidos_ciclo,
           });
         }
         creadas.push(s.nombre);
@@ -186,11 +204,20 @@ export function ServiciosCarritoBody({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      {canjeCitas ? (
+      {carritoBloqueaCanje ? (
+        <View style={[styles.canjeBanner, { backgroundColor: c.surfaceMuted, borderColor: c.foregroundSubtle }]}>
+          <Text style={[styles.canjeBannerTxt, { color: c.foregroundMuted }]}>{ANDREAS_CANJE_PROMO_BLOCK_MSG}</Text>
+        </View>
+      ) : carritoCanjeParcial ? (
+        <View style={[styles.canjeBanner, { backgroundColor: c.surfaceMuted, borderColor: c.foregroundSubtle }]}>
+          <Text style={[styles.canjeBannerTxt, { color: c.foregroundMuted }]}>{ANDREAS_CANJE_PROMO_PARTIAL_MSG}</Text>
+        </View>
+      ) : canjeCitas ? (
         <View style={[styles.canjeBanner, { backgroundColor: c.surfaceMuted, borderColor: c.primary }]}>
           <Text style={[styles.canjeBannerTxt, { color: c.foreground }]}>
-            Canje ANDREAS activo: {canjeCitas.descuento_pct}% de descuento en el primer servicio de esta
-            solicitud.
+            {(canjeCitas.rule_id || canjeCitas.ruleId) === 'referidos'
+              ? `Premio referidos: ${canjeCitas.descuento_pct}% de descuento en el primer servicio sin promoción de esta solicitud.`
+              : `Canje ANDREAS activo: ${canjeCitas.descuento_pct}% de descuento en el primer servicio sin promoción de esta solicitud.`}
           </Text>
         </View>
       ) : null}
@@ -212,10 +239,8 @@ export function ServiciosCarritoBody({
       {items.map((s, index) => {
         const key = servicioKey(s);
         const fechaHora = schedules[key] ?? defaultSlotForIndex(index);
-        const esPrimeroConCanje = index === 0 && canjeCitas;
-        const precioCanje = esPrimeroConCanje
-          ? resolvePrecioServicioConCanjeCitas(s.precio, canjeCitas)
-          : null;
+        const esConCanje = canjeTargetKey === key;
+        const precioCanje = esConCanje ? resolvePrecioServicioConCanjeCitas(s.precio, canjeCitas) : null;
 
         return (
           <View key={key} style={styles.card}>
@@ -232,7 +257,8 @@ export function ServiciosCarritoBody({
             <AgendarServicioResumenCard
               kicker={n > 1 ? `Servicio ${index + 1} de ${n}` : 'Servicio seleccionado'}
               servicio={s}
-              precioConCanje={esPrimeroConCanje && precioCanje?.calc ? precioCanje : null}
+              precioConCanje={esConCanje ? precioCanje : null}
+              canjeDescuentoPct={esConCanje ? canjeCitas?.descuento_pct : null}
             />
 
             <View style={styles.whenBlock}>

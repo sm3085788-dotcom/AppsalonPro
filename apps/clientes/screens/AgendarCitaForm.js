@@ -26,6 +26,13 @@ import {
 } from '@appsalon/shared-config';
 import { loadServiciosTiendaCatalog } from '../services/salonServiciosTienda';
 import { useServiciosCart } from '../context/ServiciosCartContext';
+import {
+  ANDREAS_CANJE_PROMO_BLOCK_MSG,
+  itemsBlockAndreasCanje,
+  servicioBlocksAndreasCanje,
+  cartHasPromoItems,
+  ANDREAS_CANJE_PROMO_PARTIAL_MSG,
+} from '../utils/andreasCanjePromo';
 
 function defaultNextSlot() {
   const d = new Date();
@@ -79,15 +86,24 @@ export function AgendarCitaForm({
   const [canjeCitas, setCanjeCitas] = useState(null);
   const canjeUsadoRef = useRef(false);
 
+  const promoBloqueaCanje = useMemo(() => {
+    if (modoCarrito) return itemsBlockAndreasCanje(cartItems);
+    return servicioBlocksAndreasCanje(servicioSel);
+  }, [modoCarrito, cartItems, servicioSel]);
+
+  const servicioSelBloqueaCanje = servicioBlocksAndreasCanje(servicioSel);
+  const carritoCanjeParcial =
+    modoCarrito && cartHasPromoItems(cartItems) && !itemsBlockAndreasCanje(cartItems);
+
   useEffect(() => {
-    if (!clienteRow?.id) {
+    if (!clienteRow?.id || promoBloqueaCanje) {
       setCanjeCitas(null);
       return;
     }
     void db.premiosAndreas.getCanjeCitaAgenda({ clienteRow }).then(({ data }) => {
       setCanjeCitas(data || null);
     });
-  }, [clienteRow?.id, clienteRow?.andreas_premios, clienteRow?.membresia_nivel]);
+  }, [clienteRow?.id, clienteRow?.andreas_premios, clienteRow?.membresia_nivel, promoBloqueaCanje]);
 
   useEffect(() => {
     let alive = true;
@@ -250,7 +266,7 @@ export function AgendarCitaForm({
       return;
     }
     setSaving(true);
-    const aplicarCanje = canjeCitas && !canjeUsadoRef.current;
+    const aplicarCanje = canjeCitas && !canjeUsadoRef.current && !servicioSelBloqueaCanje;
     const { precio, canjeSnap } = resolvePrecioServicioConCanjeCitas(
       servicioSel.precio,
       aplicarCanje ? canjeCitas : null,
@@ -292,6 +308,8 @@ export function AgendarCitaForm({
       void db.premiosAndreas.registrarCanjeCitaAgendada({
         clienteId: clienteRow.id,
         citaId: citaRow.id,
+        ruleId: canjeSnap.rule_id,
+        referidosCiclo: canjeSnap.referidos_ciclo,
       });
     }
     onCitasChanged?.();
@@ -385,16 +403,30 @@ export function AgendarCitaForm({
   }
 
   const precioConCanje =
-    servicioSel && canjeCitas && !canjeUsadoRef.current
+    servicioSel && canjeCitas && !canjeUsadoRef.current && !servicioSelBloqueaCanje
       ? resolvePrecioServicioConCanjeCitas(servicioSel.precio, canjeCitas)
       : null;
 
   return (
     <>
-      {canjeCitas && !canjeUsadoRef.current ? (
+      {promoBloqueaCanje ? (
+        <View style={[styles.canjeBanner, { backgroundColor: tc.surfaceMuted, borderColor: tc.foregroundSubtle }]}>
+          <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>{ANDREAS_CANJE_PROMO_BLOCK_MSG}</Text>
+        </View>
+      ) : carritoCanjeParcial && servicioSelBloqueaCanje ? (
+        <View style={[styles.canjeBanner, { backgroundColor: tc.surfaceMuted, borderColor: tc.foregroundSubtle }]}>
+          <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>{ANDREAS_CANJE_PROMO_PARTIAL_MSG}</Text>
+        </View>
+      ) : servicioSelBloqueaCanje ? (
+        <View style={[styles.canjeBanner, { backgroundColor: tc.surfaceMuted, borderColor: tc.foregroundSubtle }]}>
+          <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>{ANDREAS_CANJE_PROMO_BLOCK_MSG}</Text>
+        </View>
+      ) : canjeCitas && !canjeUsadoRef.current ? (
         <View style={[styles.canjeBanner, { backgroundColor: tc.surfaceMuted, borderColor: tc.primary }]}>
           <Text style={[styles.canjeBannerTxt, { color: tc.foreground }]}>
-            Canje ANDREAS: {canjeCitas.descuento_pct}% de descuento en este servicio al confirmar la solicitud.
+            {(canjeCitas.rule_id || canjeCitas.ruleId) === 'referidos'
+              ? `Premio referidos: ${canjeCitas.descuento_pct}% de descuento en este servicio al confirmar la solicitud.`
+              : `Canje ANDREAS: ${canjeCitas.descuento_pct}% de descuento en este servicio al confirmar la solicitud.`}
           </Text>
         </View>
       ) : null}
@@ -405,6 +437,9 @@ export function AgendarCitaForm({
             kicker={`Servicio ${cartPaso} de ${cartTotalFijo}`}
             servicio={servicioSel}
             precioConCanje={precioConCanje}
+            canjeDescuentoPct={
+              canjeCitas && !canjeUsadoRef.current && !servicioSelBloqueaCanje ? canjeCitas.descuento_pct : null
+            }
           />
         </View>
       ) : soloServicioVinculado ? (
@@ -416,6 +451,9 @@ export function AgendarCitaForm({
               kicker="Servicio de la promoción"
               servicio={servicioSel}
               precioConCanje={precioConCanje}
+              canjeDescuentoPct={
+              canjeCitas && !canjeUsadoRef.current && !servicioSelBloqueaCanje ? canjeCitas.descuento_pct : null
+            }
             />
           </View>
         ) : (
@@ -473,6 +511,9 @@ export function AgendarCitaForm({
                 kicker="Servicio seleccionado"
                 servicio={servicioSel}
                 precioConCanje={precioConCanje}
+                canjeDescuentoPct={
+              canjeCitas && !canjeUsadoRef.current && !servicioSelBloqueaCanje ? canjeCitas.descuento_pct : null
+            }
               />
             </View>
           ) : null}

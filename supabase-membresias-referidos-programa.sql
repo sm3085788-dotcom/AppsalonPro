@@ -224,6 +224,12 @@ BEGIN
   v_ciclo := COALESCE((v_ap->>'referidos_ciclo')::int, 0);
   v_en := COALESCE((v_ap->>'referidos_en_ciclo')::int, 0) + 1;
   IF v_en >= 3 THEN
+    v_ap := v_ap || jsonb_build_object(
+      'referidos_canje_pendiente', jsonb_build_object(
+        'at', to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+        'ciclo', v_ciclo
+      )
+    );
     v_en := 0;
     v_ciclo := (v_ciclo + 1) % 3;
   END IF;

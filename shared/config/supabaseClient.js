@@ -60,6 +60,8 @@ import {
   PREMIO_REGLA,
   resolvePremioDiscountPct,
   markSalonFisicoCanjePendiente,
+  andreasMetaAppForMembresia,
+  resolveCheckoutCanjeParaCliente,
 } from './andreasPremiosCycles.js';
 import {
   tallyAndreasProductoPuntos,
@@ -75,10 +77,13 @@ import {
 } from './referralInvite.js';
 
 export { buildDefaultCodigoReferido } from './referralInvite.js';
-import { parseReferidosPremiosState } from './andreasReferidos.js';
+import {
+  parseReferidosPremiosState,
+  resolveReferidosCanjePendiente,
+  syncReferidosOnCanjeRedeemed,
+} from './andreasReferidos.js';
 import {
   andreasMetaCitasForMembresia,
-  findCanjePendienteForCitas as findCanjeCitasPending,
   parseCanjeFromNotasServicio,
 } from './andreasPremiosCitasAgenda.js';
 import {
@@ -86,10 +91,7 @@ import {
   resolveSalonCanjeParaCliente,
   ensureSalonFisicoCanjeEnAp,
 } from './andreasPremiosSalonVenta.js';
-import {
-  ensureCitasCanjeEnAp,
-  resolveCitasCanjeParaCliente,
-} from './andreasPremiosSalonServicio.js';
+import { resolveCitasCanjeParaCliente } from './andreasPremiosSalonServicio.js';
 import { syncSalonFisicoOnCanjeRedeemed, mergeVentaNotasConCanjeSalon } from './andreasPremiosCycles.js';
 import { mergeNotasServicioConCanje } from './andreasPremiosCitasAgenda.js';
 
@@ -101,6 +103,90 @@ function isPremiosSoftDbError(error) {
     /permission denied for (table|relation)/i.test(msg) ||
     error?.code === '42501'
   );
+}
+
+async function hydrateAndreasPremiosForCanje(clienteRow) {
+  if (!clienteRow?.id) {
+    return {
+      cliente: clienteRow,
+      apWorking: null,
+      citasVerificadas: 0,
+      referidosTotalValidados: null,
+    };
+  }
+
+  const { data: fresh } = await supabase
+    .from('clientes')
+    .select('id, user_id, andreas_premios, membresia_nivel')
+    .eq('id', clienteRow.id)
+    .maybeSingle();
+
+  const merged = {
+    ...clienteRow,
+    ...(fresh || {}),
+    id: clienteRow.id,
+  };
+  const membresia = merged.membresia_nivel;
+  let ap = merged.andreas_premios;
+  let apWorking = ap && typeof ap === 'object' ? { ...ap } : {};
+
+  const citasVerificadas = await countCitasVerificadasCliente(merged.id);
+  const citasMeta = andreasMetaCitasForMembresia(membresia);
+  apWorking = syncReglaCitas(apWorking, citasVerificadas, citasMeta, membresia);
+
+  if (merged.user_id) {
+    const { data: orders } = await supabase
+      .from('ecommerce_orders')
+      .select('id, status, payment_method, fulfillment_type, checkout_snapshot')
+      .eq('client_user_id', merged.user_id)
+      .in('status', ['pending', 'confirmed', 'prepared', 'ready', 'delivered']);
+    const allOrders = Array.isArray(orders) ? orders : [];
+    const orderIds = allOrders.map((o) => o.id).filter(Boolean);
+    let orderLines = [];
+    if (orderIds.length) {
+      const { data: lines } = await supabase
+        .from('ecommerce_order_items')
+        .select('qty, order_id, product:inventario(notas)')
+        .in('order_id', orderIds);
+      if (Array.isArray(lines)) orderLines = lines;
+    }
+    const membresiaMeta = andreasMetaAppForMembresia(membresia);
+    apWorking = syncReglasProductosFromPedidos(
+      apWorking,
+      allOrders,
+      orderLines,
+      membresiaMeta,
+      membresia,
+    );
+  }
+
+  const apPersistNeeded =
+    JSON.stringify(apWorking.reglas) !== JSON.stringify(ap?.reglas) ||
+    JSON.stringify(apWorking.salon_fisico_canje_pendiente) !==
+      JSON.stringify(ap?.salon_fisico_canje_pendiente);
+  if (apPersistNeeded) {
+    await supabase
+      .from('clientes')
+      .update({ andreas_premios: apWorking })
+      .eq('id', merged.id);
+  }
+
+  let referidosTotalValidados = null;
+  if (merged.user_id) {
+    const { data: refResumen } = await supabase.rpc('premios_andreas_referidos_resumen', {
+      p_referidor: merged.user_id,
+    });
+    if (refResumen && typeof refResumen === 'object' && refResumen.total_validados != null) {
+      referidosTotalValidados = Math.max(0, Math.floor(Number(refResumen.total_validados) || 0));
+    }
+  }
+
+  return {
+    cliente: { ...merged, andreas_premios: apWorking },
+    apWorking,
+    citasVerificadas,
+    referidosTotalValidados,
+  };
 }
 
 async function countCitasVerificadasCliente(clienteId) {
@@ -973,6 +1059,16 @@ export const db = {
         productosSalonFisico,
       });
 
+      const referidosTotalValidados =
+        refResumen && typeof refResumen === 'object' && refResumen.total_validados != null
+          ? Math.max(0, Math.floor(Number(refResumen.total_validados) || 0))
+          : null;
+      const referidosCanjePendiente = resolveReferidosCanjePendiente(apWorking, referidosTotalValidados);
+      const canjePendiente = {
+        ...counts.canjePendiente,
+        ...(referidosCanjePendiente ? { referidos: referidosCanjePendiente } : {}),
+      };
+
       const apPersistNeeded =
         JSON.stringify(apWorking.reglas) !== JSON.stringify(ap?.reglas) ||
         JSON.stringify(apWorking.salon_fisico_canje_pendiente) !==
@@ -992,7 +1088,7 @@ export const db = {
         citasVerificadas: counts.citasVerificadas,
         citasPendientes: counts.citasPendientes,
         productosSalonFisico: counts.productosSalonFisico,
-        canjePendiente: counts.canjePendiente,
+        canjePendiente,
         referidosPrimeraCompra,
         referidosCiclo,
         esReferidoInvitado,
@@ -1006,31 +1102,30 @@ export const db = {
 
     getCanjeCheckout: async ({ clienteRow, shipId, payment_method }) => {
       if (!clienteRow?.id) return { data: null, error: null };
-      const ap = clienteRow.andreas_premios;
-      const pending = findCanjePendienteForCheckout(ap, {
-        payment_method,
-        shipId,
-      });
+      const { cliente } = await hydrateAndreasPremiosForCanje(clienteRow);
+      const pending = resolveCheckoutCanjeParaCliente(cliente, { payment_method, shipId });
       return { data: pending, error: null };
     },
 
     getCanjeCitaAgenda: async ({ clienteRow }) => {
       if (!clienteRow?.id) return { data: null, error: null };
-      let ap = clienteRow.andreas_premios;
-      if (!ap?.reglas) {
-        const { data: fresh } = await supabase
-          .from('clientes')
-          .select('andreas_premios')
-          .eq('id', clienteRow.id)
-          .maybeSingle();
-        ap = fresh?.andreas_premios ?? ap;
-      }
-      const pending = findCanjeCitasPending(ap, clienteRow.membresia_nivel);
-      if (!pending) return { data: null, error: null };
-      return { data: pending, error: null };
+      const { cliente, citasVerificadas, referidosTotalValidados } =
+        await hydrateAndreasPremiosForCanje(clienteRow);
+      const canje = resolveCitasCanjeParaCliente(cliente, citasVerificadas, referidosTotalValidados);
+      if (!canje) return { data: null, error: null };
+      return {
+        data: {
+          rule_id: canje.rule_id || canje.ruleId,
+          ruleId: canje.ruleId || canje.rule_id,
+          descuento_pct: canje.descuento_pct,
+          meta: canje.meta,
+          ciclo: canje.ciclo,
+        },
+        error: null,
+      };
     },
 
-    registrarCanjeCitaAgendada: async ({ clienteId, citaId }) => {
+    registrarCanjeCitaAgendada: async ({ clienteId, citaId, ruleId, referidosCiclo }) => {
       if (!clienteId || !citaId) {
         return { data: null, error: { message: 'Datos incompletos' } };
       }
@@ -1041,15 +1136,21 @@ export const db = {
         .maybeSingle();
       if (e0 || !row) return { data: null, error: e0 || { message: 'Sin cliente' } };
 
-      const meta = andreasMetaCitasForMembresia(row.membresia_nivel);
-      const citasVerificadas = await countCitasVerificadasCliente(clienteId);
-      const apNext = syncReglaCitasOnCanjeRedeemed(
-        row.andreas_premios,
-        citaId,
-        citasVerificadas,
-        meta,
-        row.membresia_nivel,
-      );
+      const rid = String(ruleId || PREMIO_REGLA.CITAS).trim();
+      let apNext = row.andreas_premios;
+      if (rid === PREMIO_REGLA.REFERIDOS) {
+        apNext = syncReferidosOnCanjeRedeemed(row.andreas_premios, citaId, referidosCiclo);
+      } else {
+        const meta = andreasMetaCitasForMembresia(row.membresia_nivel);
+        const citasVerificadas = await countCitasVerificadasCliente(clienteId);
+        apNext = syncReglaCitasOnCanjeRedeemed(
+          row.andreas_premios,
+          citaId,
+          citasVerificadas,
+          meta,
+          row.membresia_nivel,
+        );
+      }
       const { data, error } = await supabase
         .from('clientes')
         .update({ andreas_premios: apNext })
@@ -1143,29 +1244,15 @@ export const db = {
     getCitasCanjeParaVenta: async ({ clienteRow, clienteId }) => {
       const id = clienteRow?.id || clienteId;
       if (!id) return { data: null, error: null };
-      const { data: row, error } = await supabase
-        .from('clientes')
-        .select('id, user_id, nombre, andreas_premios, membresia_nivel')
-        .eq('id', id)
-        .maybeSingle();
-      if (error || !row) return { data: null, error: error || null };
 
-      const citasVerificadas = await countCitasVerificadasCliente(id);
+      const { cliente, citasVerificadas, referidosTotalValidados } =
+        await hydrateAndreasPremiosForCanje(clienteRow?.id ? clienteRow : { id });
 
-      let ap = row.andreas_premios;
-      const apNorm = ensureCitasCanjeEnAp(ap, citasVerificadas, row.membresia_nivel);
-      if (JSON.stringify(apNorm) !== JSON.stringify(ap)) {
-        await supabase.from('clientes').update({ andreas_premios: apNorm }).eq('id', id);
-      }
-
-      const canje = resolveCitasCanjeParaCliente(
-        { ...row, andreas_premios: apNorm },
-        citasVerificadas,
-      );
+      const canje = resolveCitasCanjeParaCliente(cliente, citasVerificadas, referidosTotalValidados);
       return { data: canje, error: null };
     },
 
-    registrarCanjeCitasVenta: async ({ clienteId, ventaId }) => {
+    registrarCanjeCitasVenta: async ({ clienteId, ventaId, ruleId, referidosCiclo }) => {
       if (!clienteId || !ventaId) {
         return { data: null, error: { message: 'Datos incompletos' } };
       }
@@ -1175,15 +1262,21 @@ export const db = {
         .eq('id', clienteId)
         .maybeSingle();
       if (e0 || !row) return { data: null, error: e0 };
-      const meta = andreasMetaCitasForMembresia(row.membresia_nivel);
-      const citasVerificadas = await countCitasVerificadasCliente(clienteId);
-      const apNext = syncReglaCitasOnCanjeRedeemed(
-        row.andreas_premios,
-        ventaId,
-        citasVerificadas,
-        meta,
-        row.membresia_nivel,
-      );
+      const rid = String(ruleId || PREMIO_REGLA.CITAS).trim();
+      let apNext = row.andreas_premios;
+      if (rid === PREMIO_REGLA.REFERIDOS) {
+        apNext = syncReferidosOnCanjeRedeemed(row.andreas_premios, ventaId, referidosCiclo);
+      } else {
+        const meta = andreasMetaCitasForMembresia(row.membresia_nivel);
+        const citasVerificadas = await countCitasVerificadasCliente(clienteId);
+        apNext = syncReglaCitasOnCanjeRedeemed(
+          row.andreas_premios,
+          ventaId,
+          citasVerificadas,
+          meta,
+          row.membresia_nivel,
+        );
+      }
       const { data, error } = await supabase
         .from('clientes')
         .update({ andreas_premios: apNext })
@@ -3819,6 +3912,8 @@ export const db = {
           customer_phone: data.customer_phone,
           notes: data.notes || null,
           status: data.status || 'pending',
+          confirmed_at:
+            data.confirmed_at || (data.status === 'confirmed' ? new Date().toISOString() : null),
           total_amount: data.total_amount || 0,
           source: data.source || 'mobile-client',
           client_user_id: data.client_user_id || null,

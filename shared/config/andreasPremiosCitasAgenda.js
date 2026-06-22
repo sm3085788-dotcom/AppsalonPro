@@ -15,22 +15,36 @@ export function andreasMetaCitasForMembresia(membresiaNivel) {
   return ANDREAS_META.citas;
 }
 
-/** Precio del servicio con descuento de canje citas (si hay canje pendiente). */
+/** Elige el canje de servicio con mayor descuento (citas verificadas vs referidos). */
+export function pickBestCanjeServicio(...candidates) {
+  const list = candidates.filter(Boolean);
+  if (!list.length) return null;
+  return list.reduce((best, cur) =>
+    (Number(cur.descuento_pct) || 0) > (Number(best.descuento_pct) || 0) ? cur : best,
+  );
+}
+
+/** Precio del servicio con descuento de canje (citas verificadas o referidos). */
 export function resolvePrecioServicioConCanjeCitas(precioBase, canjePending) {
   const base = Math.max(0, Number(precioBase) || 0);
   if (!canjePending?.descuento_pct) {
     return { precio: base, canjeSnap: null, calc: null };
   }
   const calc = applyDiscountToSubtotal(base, canjePending.descuento_pct);
+  const ruleId = canjePending.rule_id || canjePending.ruleId || PREMIO_REGLA.CITAS;
+  const snap = {
+    rule_id: ruleId,
+    descuento_pct: calc.descuento_pct,
+    descuento_monto: calc.discount,
+    precio_antes: calc.subtotal,
+  };
+  if (ruleId === PREMIO_REGLA.REFERIDOS && canjePending.ciclo != null) {
+    snap.referidos_ciclo = Math.max(0, Math.min(2, Math.floor(Number(canjePending.ciclo) || 0)));
+  }
   return {
     precio: calc.total,
     calc,
-    canjeSnap: {
-      rule_id: PREMIO_REGLA.CITAS,
-      descuento_pct: calc.descuento_pct,
-      descuento_monto: calc.discount,
-      precio_antes: calc.subtotal,
-    },
+    canjeSnap: snap,
   };
 }
 

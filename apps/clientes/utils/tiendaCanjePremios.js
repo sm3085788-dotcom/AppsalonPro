@@ -23,34 +23,34 @@ export function formatPctCanje(pct) {
   return `${n}%`;
 }
 
-/** Aviso al abrir la tienda (una o dos reglas de producto). */
-export function buildTiendaCanjeAlertMessage(avisos) {
+/** Resumen único en catálogo (ficha sucursal): canje + regla promo en pocas líneas. */
+export function buildTiendaCanjeCatalogSummary(avisos) {
   if (!Array.isArray(avisos) || !avisos.length) return '';
-  const lines = avisos.map((a) => {
-    const copy = getTiendaCanjeReglaCopy(a.ruleId);
+  const lineas = avisos.map((a) => {
     const pct = formatPctCanje(a.descuento_pct);
-    const modo = copy?.metodo || 'tienda app';
-    return `· ${pct} de descuento en un producto (${modo})`;
+    const rid = String(a.ruleId || '').trim();
+    if (rid === 'p_app_efectivo_retiro') return `${pct} · efectivo y retiro en salón`;
+    if (rid === 'p_app_tarjeta_delivery') return `${pct} · tarjeta y envío a domicilio`;
+    const copy = getTiendaCanjeReglaCopy(rid);
+    return `${pct} · ${copy?.metodo || 'tienda app'}`;
   });
-  return [
-    'Tenés un premio ANDREAS listo para canjear en la tienda:',
-    '',
-    ...lines,
-    '',
-    'El descuento se aplica automáticamente al confirmar el pedido si elegís el mismo método de pago y tipo de envío.',
-    'Los puntos del programa se actualizan cuando el salón entrega o confirma tu compra.',
-  ].join('\n');
+  const canjes =
+    lineas.length === 1
+      ? lineas[0]
+      : lineas.length === 2
+        ? lineas.join(' · ')
+        : 'canje disponible en tienda';
+  return `Premio ANDREAS: ${canjes}. Se aplica al confirmar el pedido con el mismo pago y envío. No aplica en productos en promoción.`;
+}
+
+/** @deprecated Usar buildTiendaCanjeCatalogSummary (sin modal duplicado). */
+export function buildTiendaCanjeAlertMessage(avisos) {
+  return buildTiendaCanjeCatalogSummary(avisos);
 }
 
 /** Banner corto en catálogo. */
 export function buildTiendaCanjeBannerText(avisos) {
-  if (!avisos?.length) return '';
-  if (avisos.length === 1) {
-    const a = avisos[0];
-    const copy = getTiendaCanjeReglaCopy(a.ruleId);
-    return `Premio ANDREAS: ${formatPctCanje(a.descuento_pct)} en producto (${copy?.metodo || 'tienda'}). Se aplica al confirmar el pedido.`;
-  }
-  return 'Premio ANDREAS: tenés canje para producto en tienda (efectivo+retiro o tarjeta+envío). Revisá el total al pagar.';
+  return buildTiendaCanjeCatalogSummary(avisos);
 }
 
 /** Texto en pantalla «Pedido enviado» tras aplicar canje. */

@@ -540,6 +540,8 @@ export function VenderScreen({ onBack }) {
         const { error: canjeCitErr } = await db.premiosAndreas.registrarCanjeCitasVenta({
           clienteId: clienteSel.id,
           ventaId: ventaRow.id,
+          ruleId: citasCanjeCalc.canjeSnap?.rule_id || citasCanje?.ruleId,
+          referidosCiclo: citasCanjeCalc.canjeSnap?.referidos_ciclo ?? citasCanje?.ciclo,
         });
         if (canjeCitErr) {
           Alert.alert(

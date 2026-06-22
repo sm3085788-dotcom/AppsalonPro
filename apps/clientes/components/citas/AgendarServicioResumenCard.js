@@ -9,7 +9,7 @@ import { formatCategoriaLabel, resolveServicioImageUri } from '../../data/servic
 /**
  * Resumen visual del servicio al agendar (solo UI, datos ya cargados en `servicio`).
  */
-export function AgendarServicioResumenCard({ kicker, servicio, precioConCanje }) {
+export function AgendarServicioResumenCard({ kicker, servicio, precioConCanje, canjeDescuentoPct }) {
   const { colors: c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
 
@@ -21,6 +21,20 @@ export function AgendarServicioResumenCard({ kicker, servicio, precioConCanje })
   const duracionTxt = formatServicioDuracion(servicio);
   const descripcion = String(servicio.descripcion || '').trim();
   const hint = String(servicio.stockHint || '').trim();
+  const esPrecioVariable =
+    Boolean(servicio.precioVariable) ||
+    !(Number(servicio.precio) > 0) ||
+    /variable|volumen|según/i.test(precioTxt);
+  const descuentoPct =
+    precioConCanje?.calc?.descuento_pct ??
+    precioConCanje?.canjeSnap?.descuento_pct ??
+    canjeDescuentoPct ??
+    null;
+  const descuentoTxt =
+    descuentoPct != null && Number(descuentoPct) > 0
+      ? `${Number(descuentoPct).toFixed(2).replace('.', ',')}%`
+      : null;
+  const tieneCanje = Boolean(descuentoTxt);
 
   return (
     <View style={styles.wrap}>
@@ -49,14 +63,24 @@ export function AgendarServicioResumenCard({ kicker, servicio, precioConCanje })
           </Text>
 
           <View style={styles.priceRow}>
-            {precioConCanje?.calc ? (
-              <>
-                <Text style={styles.precioTachado}>{precioTxt}</Text>
-                <Text style={[styles.precioLive, { color: c.foreground }]}>
-                  Q {precioConCanje.precio.toFixed(2)}
-                  <Text style={[styles.precioCanjeLbl, { color: c.primary }]}> · con canje ANDREAS</Text>
-                </Text>
-              </>
+            {tieneCanje ? (
+              esPrecioVariable ? (
+                <View style={styles.priceStack}>
+                  <Text style={[styles.precioVariable, { color: c.primary }]}>{precioTxt}</Text>
+                  <Text style={[styles.precioLive, { color: c.foreground }]}>
+                    {descuentoTxt}
+                    <Text style={[styles.precioCanjeLbl, { color: c.primary }]}> de descuento · con canje ANDREAS</Text>
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.precioTachado}>{precioTxt}</Text>
+                  <Text style={[styles.precioLive, { color: c.foreground }]}>
+                    Q {(precioConCanje?.precio ?? 0).toFixed(2)}
+                    <Text style={[styles.precioCanjeLbl, { color: c.primary }]}> · con canje ANDREAS</Text>
+                  </Text>
+                </>
+              )
             ) : (
               <Text style={[styles.precioLive, { color: c.foreground }]}>{precioTxt}</Text>
             )}
@@ -150,6 +174,15 @@ function createStyles(c, isDark) {
       flexWrap: 'wrap',
       alignItems: 'center',
       marginBottom: 4,
+    },
+    priceStack: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: 2,
+    },
+    precioVariable: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 15,
     },
     precioTachado: {
       fontFamily: typography.fontSans,

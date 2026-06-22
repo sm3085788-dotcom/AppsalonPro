@@ -10,6 +10,7 @@ import { TiendaCatalogGrid } from './TiendaCatalogGrid';
 import { ClientSucursalPicker } from '../sucursal/ClientSucursalPicker';
 import { ProductImageStrip } from './ProductImageStrip';
 import { PickupQrDisplay } from './PickupQrDisplay';
+import { TarjetaPagoForm } from './TarjetaPagoForm';
 import { TiendaCartItemCard } from './TiendaCartItemCard';
 import {
   confirmarCompraConTarjeta,
@@ -26,15 +27,23 @@ import {
   isProductAvailableAtBranch,
   validateCartBranchStock,
   fetchBranchStock,
+  validateTarjetaForm,
+  isStripeConfigured,
 } from '@appsalon/shared-config';
+import { TiendaDomicilioStripePay } from '../stripe/TiendaDomicilioStripePay';
 import {
-  buildTiendaCanjeAlertMessage,
-  buildTiendaCanjeBannerText,
+  buildTiendaCanjeCatalogSummary,
   buildTiendaCanjeSuccessNote,
   fetchTiendaProductoCanjesPendientes,
   formatPctCanje,
-  getTiendaCanjeReglaCopy,
 } from '../../utils/tiendaCanjePremios';
+import {
+  ANDREAS_CANJE_PROMO_BLOCK_MSG,
+  ANDREAS_CANJE_PROMO_PARTIAL_MSG,
+  cartHasPromoItems,
+  itemsBlockAndreasCanje,
+  subtotalEligibleForAndreasCanje,
+} from '../../utils/andreasCanjePromo';
 
 const STAR_GOLD = '#FFB800';
 const STAR_EMPTY = '#E3E3E3';
@@ -133,6 +142,10 @@ export function TiendaFlow({
   const [selectedCardId, setSelectedCardId] = useState('card-4242');
   const [showAddCardForm, setShowAddCardForm] = useState(false);
   const [cardSavedToast, setCardSavedToast] = useState(false);
+  const [cardHolder, setCardHolder] = useState('');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExp, setCardExp] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
   const [lastOrder, setLastOrder] = useState(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
@@ -144,8 +157,8 @@ export function TiendaFlow({
   const [referidorCodigoInput, setReferidorCodigoInput] = useState('');
   const [tiendaCanjeAvisos, setTiendaCanjeAvisos] = useState([]);
   const [payCanjePreview, setPayCanjePreview] = useState(null);
-  const tiendaCanjeAlertShownKey = useRef(null);
   const deepLinkDone = useRef(false);
+  const stripePayRef = useRef(null);
 
   useEffect(() => {
     deepLinkDone.current = false;
@@ -201,6 +214,16 @@ export function TiendaFlow({
   };
 
   const resolveAndreasCanjeForCheckout = async (payment_method) => {
+    const eligibleSubtotal = subtotalEligibleForAndreasCanje(cartItems);
+    if (eligibleSubtotal <= 0) {
+      return {
+        total: cartSubtotal,
+        snapExtra: null,
+        discount: null,
+        pending: null,
+        blockedByPromo: cartHasPromoItems(cartItems),
+      };
+    }
     if (!clienteId) return { total: cartSubtotal, snapExtra: null, discount: null };
     const { data: row, error } = await db.clientes.getById(clienteId);
     if (error || !row) return { total: cartSubtotal, snapExtra: null, discount: null };
@@ -210,17 +233,21 @@ export function TiendaFlow({
       payment_method,
     });
     if (!pending?.ruleId) return { total: cartSubtotal, snapExtra: null, discount: null, pending: null };
-    const calc = applyDiscountToSubtotal(cartSubtotal, pending.descuento_pct);
+    const calc = applyDiscountToSubtotal(eligibleSubtotal, pending.descuento_pct);
+    const promoSubtotal = Math.max(0, cartSubtotal - eligibleSubtotal);
+    const total = Math.round((promoSubtotal + calc.total) * 100) / 100;
     return {
-      total: calc.total,
+      total,
       discount: calc,
       pending,
+      partialPromo: cartHasPromoItems(cartItems),
       snapExtra: {
         andreas_canje: {
           rule_id: pending.ruleId,
           descuento_pct: calc.descuento_pct,
           descuento_monto: calc.discount,
           subtotal_antes: calc.subtotal,
+          excluye_promocion: cartHasPromoItems(cartItems) || undefined,
         },
       },
     };
@@ -251,17 +278,7 @@ export function TiendaFlow({
   }, [phase, clienteId, tiendaOpenKey]);
 
   useEffect(() => {
-    if (phase !== 'catalog' || !tiendaCanjeAvisos.length) return;
-    const key = `${tiendaOpenKey}-${clienteId}`;
-    if (tiendaCanjeAlertShownKey.current === key) return;
-    tiendaCanjeAlertShownKey.current = key;
-    Alert.alert('Premio ANDREAS · Tienda', buildTiendaCanjeAlertMessage(tiendaCanjeAvisos), [
-      { text: 'Entendido', style: 'default' },
-    ]);
-  }, [phase, tiendaCanjeAvisos, tiendaOpenKey, clienteId]);
-
-  useEffect(() => {
-    if (phase !== 'pay' || !clienteId || !cartItems.length) {
+    if (phase !== 'pay' || !clienteId || !cartItems.length || itemsBlockAndreasCanje(cartItems)) {
       setPayCanjePreview(null);
       return;
     }
@@ -273,7 +290,7 @@ export function TiendaFlow({
     return () => {
       cancelled = true;
     };
-  }, [phase, payId, shipId, clienteId, cartSubtotal, cartItems.length]);
+  }, [phase, payId, shipId, clienteId, cartSubtotal, cartItems]);
   const gridToastTimer = useRef(null);
 
   useEffect(() => {
@@ -335,6 +352,12 @@ export function TiendaFlow({
   const cartSubtotal = useMemo(
     () => cartItems.reduce((acc, item) => acc + item.priceAmount * item.qty, 0),
     [cartItems],
+  );
+  const cartBloqueaCanjePorPromo = itemsBlockAndreasCanje(cartItems);
+  const cartCanjeParcialPromo = cartHasPromoItems(cartItems) && !cartBloqueaCanjePorPromo;
+  const tiendaCanjeResumen = useMemo(
+    () => (tiendaCanjeAvisos.length ? buildTiendaCanjeCatalogSummary(tiendaCanjeAvisos) : ''),
+    [tiendaCanjeAvisos],
   );
 
   const goCatalog = () => {
@@ -406,6 +429,7 @@ export function TiendaFlow({
                 imageUri: item.imageUri || product.imageUri || null,
                 stockHint: item.stockHint || product.stockHint || null,
                 shippingLabel: item.shippingLabel || product.shippingLabel || null,
+                promocionVigente: Boolean(item.promocionVigente || product.promocionVigente),
               }
             : item,
         );
@@ -420,6 +444,7 @@ export function TiendaFlow({
           imageUri: product.imageUri || null,
           stockHint: product.stockHint || null,
           shippingLabel: product.shippingLabel || null,
+          promocionVigente: Boolean(product.promocionVigente),
           qty: capped,
         },
       ];
@@ -458,6 +483,7 @@ export function TiendaFlow({
                 imageUri: item.imageUri || product.imageUri || null,
                 stockHint: item.stockHint || product.stockHint || null,
                 shippingLabel: item.shippingLabel || product.shippingLabel || null,
+                promocionVigente: Boolean(item.promocionVigente || product.promocionVigente),
               }
             : item,
         );
@@ -472,6 +498,7 @@ export function TiendaFlow({
           imageUri: product.imageUri || null,
           stockHint: product.stockHint || null,
           shippingLabel: product.shippingLabel || null,
+          promocionVigente: Boolean(product.promocionVigente),
           qty: quantity,
         },
       ];
@@ -579,25 +606,34 @@ export function TiendaFlow({
     {
       id: 'ship-home',
       label: 'Envío a domicilio',
-      sub: 'Un agente te llamará para coordinar el envío.',
+      sub: 'Confirmá tu dirección y pagá con tarjeta. Tu pedido queda en camino al completar el pago.',
     },
     { id: 'ship-salon', label: 'Retiro en salón', sub: 'Aura Salón · listo en 24 h' },
   ];
 
-  const payOptions = [
-    {
-      id: 'pay-card',
-      label: 'Tarjeta guardada',
-      sub: 'Se envía el pedido al salón; el cobro lo confirma el equipo con su pasarela.',
-      Icon: CreditCard,
-    },
-    {
-      id: 'pay-cash',
-      label: 'Pagar en efectivo',
-      sub: 'Un agente del salón te llamará para coordinar tu envío.',
-      Icon: Wallet,
-    },
-  ];
+  const payOptions = useMemo(
+    () => [
+      {
+        id: 'pay-card',
+        label: shipId === 'ship-home' ? 'Tarjeta de crédito o débito' : 'Tarjeta guardada',
+        sub:
+          shipId === 'ship-home'
+            ? 'Ingresá los datos de tu tarjeta. El pago se confirma al finalizar la compra.'
+            : 'Se envía el pedido al salón; el cobro lo confirma el equipo con su pasarela.',
+        Icon: CreditCard,
+      },
+      {
+        id: 'pay-cash',
+        label: 'Pagar en efectivo',
+        sub:
+          shipId === 'ship-home'
+            ? 'Un agente del salón te llamará para coordinar el envío y el cobro.'
+            : 'Pagás al retirar en recepción. Recibirás un código QR para el salón.',
+        Icon: Wallet,
+      },
+    ],
+    [shipId],
+  );
   const savedCards = [
     { id: 'card-4242', label: 'Visa ··· 4242', sub: 'Predeterminada · vence 08/29' },
     { id: 'card-1189', label: 'Mastercard ··· 1189', sub: 'Personal · vence 11/28' },
@@ -624,6 +660,27 @@ export function TiendaFlow({
     return m ? m[1] : null;
   };
 
+  const resolveCardPaymentForCheckout = () => {
+    if (shipId === 'ship-home') {
+      return validateTarjetaForm({
+        holder: cardHolder,
+        number: cardNumber,
+        exp: cardExp,
+        cvv: cardCvv,
+      });
+    }
+    return { ok: true, last4: cardLast4FromSelection() };
+  };
+
+  const domicilioUsaStripe = shipId === 'ship-home' && payId === 'pay-card' && isStripeConfigured();
+
+  const checkoutButtonTitle = useMemo(() => {
+    if (checkoutBusy) return 'Procesando…';
+    if (domicilioUsaStripe) return 'Pagar con Stripe';
+    if (shipId === 'ship-home' && payId === 'pay-card') return 'Confirmar pago y pedido';
+    return 'Enviar pedido al salón';
+  }, [checkoutBusy, shipId, payId, domicilioUsaStripe]);
+
   return (
     <View style={styles.wrap}>
       {phase === 'catalog' && (
@@ -631,16 +688,9 @@ export function TiendaFlow({
           {gridCartToast ? (
             <Text style={styles.cartBanner}>✓ {gridCartToast} · añadido al carrito</Text>
           ) : null}
-          {tiendaCanjeAvisos.length > 0 ? (
-            <View style={[styles.canjeBanner, { borderColor: tc.primary, backgroundColor: tc.surfaceMuted }]}>
-              <Text style={[styles.canjeBannerTitle, { color: tc.primary }]}>Premio ANDREAS · producto</Text>
-              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
-                {buildTiendaCanjeBannerText(tiendaCanjeAvisos)}
-              </Text>
-            </View>
-          ) : null}
           <ClientSucursalPicker
             compact
+            canjeSummary={tiendaCanjeResumen}
             onChange={(id) => {
               setSucursalId(id);
               setCatalogReloadKey((k) => k + 1);
@@ -669,6 +719,7 @@ export function TiendaFlow({
                     : []
               }
               badgeText={selected.badge}
+              badgePromo={!!selected.promocionVigente}
             />
           </View>
 
@@ -676,6 +727,14 @@ export function TiendaFlow({
             <Text style={styles.brandLine}>{selected.brandLine}</Text>
           ) : null}
           <Text style={styles.detailTitle}>{selected.title}</Text>
+
+          {selected.promocionVigente ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.foregroundSubtle, backgroundColor: tc.surfaceMuted, marginBottom: spacing.sm }]}>
+              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                {ANDREAS_CANJE_PROMO_BLOCK_MSG}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.ratingBlock}>
             <TouchableOpacity
@@ -922,6 +981,19 @@ export function TiendaFlow({
                   · Envío y pago en los siguientes pasos
                 </Text>
               </View>
+              {cartBloqueaCanjePorPromo ? (
+                <View style={[styles.canjeBanner, { borderColor: tc.foregroundSubtle, backgroundColor: tc.surfaceMuted }]}>
+                  <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                    {ANDREAS_CANJE_PROMO_BLOCK_MSG}
+                  </Text>
+                </View>
+              ) : cartCanjeParcialPromo ? (
+                <View style={[styles.canjeBanner, { borderColor: tc.foregroundSubtle, backgroundColor: tc.surfaceMuted }]}>
+                  <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                    {ANDREAS_CANJE_PROMO_PARTIAL_MSG}
+                  </Text>
+                </View>
+              ) : null}
             </>
           )}
 
@@ -965,6 +1037,20 @@ export function TiendaFlow({
             <RowAmt label="Total estimado" value={formatQ(cartSubtotal)} bold />
           </View>
 
+          {cartBloqueaCanjePorPromo ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.foregroundSubtle, backgroundColor: tc.surfaceMuted }]}>
+              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                {ANDREAS_CANJE_PROMO_BLOCK_MSG}
+              </Text>
+            </View>
+          ) : cartCanjeParcialPromo ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.foregroundSubtle, backgroundColor: tc.surfaceMuted }]}>
+              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                {ANDREAS_CANJE_PROMO_PARTIAL_MSG}
+              </Text>
+            </View>
+          ) : null}
+
           <SalonButton
             title="Continuar · envío"
             variant="heroGold"
@@ -991,6 +1077,7 @@ export function TiendaFlow({
                 setHomeSaved(false);
                 if (o.id === 'ship-home') {
                   setPickupQrIssued(false);
+                  setPayId('pay-card');
                 }
                 if (o.id === 'ship-salon') {
                   setHomeSaved(false);
@@ -1008,8 +1095,8 @@ export function TiendaFlow({
             <View style={[subStyles.card, styles.shipScenarioCard]}>
               <Text style={subStyles.rowLabel}>Dirección de entrega</Text>
               <Text style={styles.choiceSub}>
-                Un agente te llamará para coordinar el envío. Completá estos datos para que el salón te ubique sin
-                errores. Si ya guardaste una dirección con tu cuenta, se muestra aquí automáticamente.
+                Completá estos datos para el envío. En el siguiente paso confirmás el pago con tarjeta y tu pedido queda
+                en preparación.
               </Text>
 
               <View style={styles.shipChipRow}>
@@ -1173,8 +1260,9 @@ export function TiendaFlow({
 
           <Text style={styles.stepHead}>Método de pago</Text>
           <Text style={styles.stepSub}>
-            Efectivo: pedido al salón y pagás al retirar. Tarjeta: pedido al salón; el cobro con pasarela lo confirma el
-            equipo antes de preparar tu compra.
+            {shipId === 'ship-home'
+              ? 'Envío a domicilio: pagá con tarjeta para confirmar tu pedido al instante. Efectivo: el salón te contactará para coordinar.'
+              : 'Efectivo: pedido al salón y pagás al retirar con QR. Tarjeta: el salón confirma el cobro con su pasarela antes de preparar tu compra.'}
           </Text>
 
           {referidorCheckout?.needs_code ? (
@@ -1220,6 +1308,27 @@ export function TiendaFlow({
           ))}
 
           {payId === 'pay-card' ? (
+            shipId === 'ship-home' && isStripeConfigured() ? (
+              <View style={[subStyles.card, styles.cardManager]}>
+                <TiendaDomicilioStripePay ref={stripePayRef} />
+              </View>
+            ) : shipId === 'ship-home' ? (
+              <View style={[subStyles.card, styles.cardManager]}>
+                <TarjetaPagoForm
+                  holder={cardHolder}
+                  onHolderChange={setCardHolder}
+                  number={cardNumber}
+                  onNumberChange={setCardNumber}
+                  exp={cardExp}
+                  onExpChange={setCardExp}
+                  cvv={cardCvv}
+                  onCvvChange={setCardCvv}
+                />
+                <Text style={[styles.choiceSub, { marginTop: spacing.sm }]}>
+                  Modo demo sin Stripe. Configurá EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY para pagos reales.
+                </Text>
+              </View>
+            ) : (
             <View style={[subStyles.card, styles.cardManager]}>
               <Text style={subStyles.rowLabel}>Tus tarjetas guardadas</Text>
               <Text style={styles.choiceSub}>Selecciona una o agrega una nueva.</Text>
@@ -1288,30 +1397,34 @@ export function TiendaFlow({
                 <Text style={styles.shipOkMsg}>Tarjeta guardada y lista para usar.</Text>
               ) : null}
             </View>
+            )
           ) : null}
 
-          {payCanjePreview?.discount ? (
-            <View style={[styles.canjeBanner, { borderColor: tc.primary, backgroundColor: tc.surfaceMuted }]}>
-              <Text style={[styles.canjeBannerTitle, { color: tc.primary }]}>
-                Canje que se aplicará en este pedido
-              </Text>
+          {cartBloqueaCanjePorPromo ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.foregroundSubtle, backgroundColor: tc.surfaceMuted }]}>
               <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
-                {formatPctCanje(payCanjePreview.discount.descuento_pct)} en productos (
-                {getTiendaCanjeReglaCopy(payCanjePreview.pending?.ruleId)?.metodo || 'según pago y envío'}
-                ). Subtotal {formatQ(cartSubtotal)} → total estimado {formatQ(payCanjePreview.total)}.
+                {ANDREAS_CANJE_PROMO_BLOCK_MSG}
               </Text>
             </View>
-          ) : payId === 'pay-cash' || payId === 'pay-card' ? (
-            tiendaCanjeAvisos.length > 0 ? (
-              <Text style={[styles.payCanjeHint, { color: tc.foregroundMuted }]}>
-                Tenés canje en Premios, pero no aplica con el envío y pago elegidos. Cambiá a{' '}
-                {tiendaCanjeAvisos.map((a) => getTiendaCanjeReglaCopy(a.ruleId)?.metodo).filter(Boolean).join(' o ')}.
+          ) : cartCanjeParcialPromo && payCanjePreview?.discount ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.foregroundSubtle, backgroundColor: tc.surfaceMuted }]}>
+              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                {ANDREAS_CANJE_PROMO_PARTIAL_MSG}
               </Text>
-            ) : null
+            </View>
+          ) : null}
+
+          {!cartBloqueaCanjePorPromo && payCanjePreview?.discount ? (
+            <View style={[styles.canjeBanner, { borderColor: tc.primary, backgroundColor: tc.surfaceMuted }]}>
+              <Text style={[styles.canjeBannerTxt, { color: tc.foregroundMuted }]}>
+                Canje {formatPctCanje(payCanjePreview.discount.descuento_pct)} · subtotal elegible{' '}
+                {formatQ(payCanjePreview.discount.subtotal)} → total {formatQ(payCanjePreview.total)}.
+              </Text>
+            </View>
           ) : null}
 
           <SalonButton
-            title={checkoutBusy ? 'Procesando…' : 'Enviar pedido al salón'}
+            title={checkoutButtonTitle}
             variant="heroGold"
             fullWidth
             style={{ marginTop: spacing.lg }}
@@ -1326,6 +1439,11 @@ export function TiendaFlow({
                 }
                 if (!cartItems.length) {
                   Alert.alert('Carrito', 'Agregá productos antes de confirmar.');
+                  return;
+                }
+                const cardPayment = resolveCardPaymentForCheckout();
+                if (shipId === 'ship-home' && !domicilioUsaStripe && !cardPayment.ok) {
+                  Alert.alert('Tarjeta', cardPayment.message || 'Revisá los datos de la tarjeta.');
                   return;
                 }
                 const hasLiveIds = cartItems.every((i) => i.id && !String(i.id).startsWith('sample-'));
@@ -1353,25 +1471,51 @@ export function TiendaFlow({
                   : Object.keys(snapBase).length
                     ? snapBase
                     : null;
-                const res = await confirmarCompraConTarjeta({
-                  clienteNombre,
-                  clienteTelefono,
-                  clientUserId: clientUserId || null,
-                  cartItems,
-                  shipId,
-                  homeAddressType,
-                  deliveryAddress: buildDeliveryAddressSnapshot(),
-                  cardLast4: cardLast4FromSelection(),
-                  checkout_snapshot: snapCard,
-                  total_amount: canjeCard.total,
-                  sucursalId: stockOk.sucursalId,
-                });
+
+                let res;
+                if (domicilioUsaStripe) {
+                  if (!stripePayRef.current?.checkout) {
+                    setCheckoutBusy(false);
+                    Alert.alert('Stripe', 'El módulo de pago no está listo. Reintentá en unos segundos.');
+                    return;
+                  }
+                  res = await stripePayRef.current.checkout({
+                    cartItems,
+                    total_amount: canjeCard.total,
+                    sucursalId: stockOk.sucursalId,
+                    checkout_snapshot: snapCard,
+                    clienteNombre,
+                    clienteTelefono,
+                    shipId,
+                    homeAddressType,
+                    deliveryAddress: buildDeliveryAddressSnapshot(),
+                  });
+                } else {
+                  res = await confirmarCompraConTarjeta({
+                    clienteNombre,
+                    clienteTelefono,
+                    clientUserId: clientUserId || null,
+                    cartItems,
+                    shipId,
+                    homeAddressType,
+                    deliveryAddress: buildDeliveryAddressSnapshot(),
+                    cardLast4: cardPayment.last4 || cardLast4FromSelection(),
+                    cardPayment: shipId === 'ship-home' ? cardPayment : null,
+                    checkout_snapshot: snapCard,
+                    total_amount: canjeCard.total,
+                    sucursalId: stockOk.sucursalId,
+                  });
+                }
                 setCheckoutBusy(false);
                 if (!res.ok) {
+                  if (res.cancelled) return;
                   Alert.alert('No se envió el pedido', res.error?.message || 'Intentá de nuevo.');
                   return;
                 }
                 const orderCode = res.trackingCode || res.order?.tracking_code || `APS-${String(Date.now()).slice(-6)}`;
+                const domicilioTarjeta = shipId === 'ship-home';
+                const stripeBrand = res.cardBrand ? String(res.cardBrand) : null;
+                const stripeLast4 = res.cardLast4 || res.order?.card_last4;
                 setLastOrder({
                   code: orderCode,
                   items: cartItems,
@@ -1379,13 +1523,17 @@ export function TiendaFlow({
                   total: canjeCard.total,
                   andreasDiscount: canjeCard.discount,
                   andreasCanje: buildAndreasCanjeFromCheckout(canjeCard),
-                  paymentSummary: `Tarjeta · últimos ${cardLast4FromSelection() || '—'} · pendiente de cobro en salón`,
+                  paymentSummary: domicilioTarjeta
+                    ? domicilioUsaStripe
+                      ? `Stripe · ${stripeBrand || 'Tarjeta'} · **** ${stripeLast4 || '—'} · pago confirmado`
+                      : `Tarjeta ${cardPayment.brand || '—'} · **** ${cardPayment.last4 || '—'} · pago confirmado`
+                    : `Tarjeta · últimos ${cardLast4FromSelection() || '—'} · pendiente de cobro en salón`,
                   shippingSummary:
                     shipId === 'ship-home'
-                      ? `Envío a domicilio · agente coordinará · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'}`
+                      ? `Envío a domicilio · ${homeAddressType === 'casa' ? 'Casa' : 'Trabajo'} · en preparación`
                       : 'Retiro en salón con QR',
                   qrCode: null,
-                  realSale: 'pending_card',
+                  realSale: domicilioTarjeta ? 'card_captured_delivery' : 'pending_card',
                 });
                 setPhase('success');
                 setCartItems([]);
@@ -1482,10 +1630,14 @@ export function TiendaFlow({
       {phase === 'success' ? (
         <View style={styles.section}>
           <View style={[subStyles.card, styles.successCard]}>
-            <Text style={styles.successTitle}>Pedido enviado</Text>
+            <Text style={styles.successTitle}>
+              {lastOrder?.realSale === 'card_captured_delivery' ? 'Pedido confirmado' : 'Pedido enviado'}
+            </Text>
             <Text style={subStyles.bullets}>
               Pedido #{lastOrder?.code ?? '—'}
-              {lastOrder?.realSale === 'pending_card'
+              {lastOrder?.realSale === 'card_captured_delivery'
+                ? ' · Pago con tarjeta confirmado. Tu pedido está en preparación para envío a domicilio; seguilo en Mis pedidos.'
+                : lastOrder?.realSale === 'pending_card'
                 ? ' · El salón recibió tu pedido con tarjeta indicada. El cobro real lo confirma el equipo con su pasarela; el stock se descuenta al cerrar la venta en Pedidos.'
                 : lastOrder?.realSale === 'pending_cash'
                   ? ' · Pedido enviado al salón. Pagá en efectivo al retirar; el equipo lo confirmará en Pedidos.'

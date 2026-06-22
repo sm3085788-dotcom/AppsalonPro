@@ -73,6 +73,14 @@ export function resolvePremioDiscountPct(membresiaNivel) {
   return Number((base + bonus).toFixed(2));
 }
 
+export function andreasMetaAppForMembresia(membresiaNivel) {
+  const id = String(membresiaNivel || '').toLowerCase().trim();
+  if (id === 'bronce') return 7;
+  if (id === 'plata') return 6;
+  if (id === 'vip') return 5;
+  return ANDREAS_META.appEfectivoRetiro;
+}
+
 /** Canje pendiente de la regla citas verificadas (próxima cita en app o venta en salón). */
 export function findCanjePendienteForCitas(ap, membresiaNivel) {
   const apNorm = getReglasState(ap);
@@ -82,6 +90,7 @@ export function findCanjePendienteForCitas(ap, membresiaNivel) {
     const meta = Math.max(1, Math.floor(Number(ANDREAS_META.citas) || 8));
     return {
       ruleId: PREMIO_REGLA.CITAS,
+      rule_id: PREMIO_REGLA.CITAS,
       descuento_pct: resolvePremioDiscountPct(membresiaNivel),
       meta,
     };
@@ -89,8 +98,49 @@ export function findCanjePendienteForCitas(ap, membresiaNivel) {
   if (typeof pending !== 'object') return null;
   return {
     ruleId: PREMIO_REGLA.CITAS,
+    rule_id: PREMIO_REGLA.CITAS,
     descuento_pct: Number(pending.descuento_pct) || resolvePremioDiscountPct(membresiaNivel),
     meta: Number(pending.meta) || ANDREAS_META.citas,
+  };
+}
+
+/**
+ * Canje de producto en tienda app (efectivo+retiro o tarjeta+envío).
+ * Incluye fallback cuando ya alcanzó la meta pero aún no se persistió canje_pendiente.
+ */
+export function resolveCheckoutCanjeParaCliente(cliente, { payment_method, shipId }) {
+  if (!cliente?.id) return null;
+  const apNorm = getReglasState(cliente.andreas_premios);
+  const fakeOrder = {
+    payment_method,
+    fulfillment_type: shipId === 'ship-home' ? 'domicilio' : 'retiro_salon',
+  };
+  const ruleId = ruleIdForOrder(fakeOrder);
+  if (!ruleId) return null;
+
+  const meta = andreasMetaAppForMembresia(cliente.membresia_nivel);
+  const pending = findCanjePendienteForCheckout(cliente.andreas_premios, { payment_method, shipId });
+  if (pending) {
+    return {
+      ...pending,
+      rule_id: pending.rule_id || pending.ruleId || ruleId,
+      ruleId: pending.ruleId || pending.rule_id || ruleId,
+      descuento_pct:
+        Number(pending.descuento_pct) || resolvePremioDiscountPct(cliente.membresia_nivel) || 19.99,
+    };
+  }
+
+  const rule = apNorm.reglas[ruleId];
+  if (rule?.canje_pendiente) return null;
+  const puntos = Math.max(0, Math.floor(Number(rule?.puntos) || 0));
+  if (puntos < meta) return null;
+
+  const pct = resolvePremioDiscountPct(cliente.membresia_nivel) || 19.99;
+  return {
+    ruleId,
+    rule_id: ruleId,
+    descuento_pct: pct,
+    meta,
   };
 }
 
@@ -109,6 +159,7 @@ export function findCanjePendienteForCheckout(ap, { payment_method, fulfillment_
   if (!pending || typeof pending !== 'object') return null;
   return {
     ruleId,
+    rule_id: ruleId,
     descuento_pct: Number(pending.descuento_pct) || resolvePremioDiscountPct(),
     meta: Number(pending.meta) || ANDREAS_META.appEfectivoRetiro,
   };

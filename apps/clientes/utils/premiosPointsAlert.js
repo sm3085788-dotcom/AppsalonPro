@@ -67,7 +67,7 @@ export function buildPremiosCanjeFlags(resumen, meta = ANDREAS_META.appEfectivoR
       n(resumen.productosAppTarjetaDelivery) >= m,
     citas: canjePendienteActivo(resumen, 'citas') || n(resumen.citasVerificadas) >= m,
     salon: canjePendienteActivo(resumen, 'salon') || n(resumen.productosSalonFisico) >= m,
-    referidos: n(resumen.referidosPrimeraCompra) >= refMeta,
+    referidos: canjePendienteActivo(resumen, 'referidos'),
   };
 }
 
@@ -80,6 +80,7 @@ export function buildPremiosCanjePendienteFlags(resumen) {
     p_app_tarjeta_delivery: Boolean(cp.p_app_tarjeta_delivery),
     citas: Boolean(cp.citas),
     salon: Boolean(cp.salon),
+    referidos: Boolean(cp.referidos),
   };
 }
 
@@ -128,7 +129,7 @@ const CELEBRATION_HINT_BY_RULE = {
   salon:
     'Usalo en tu próxima compra de producto en el salón físico (caja con tu perfil vinculado). El equipo aplica el descuento al cobrar.',
   referidos:
-    'Mostrá tu código o el premio en Premios cuando lo uses. Los beneficios de referidos se activan según las condiciones del programa.',
+    'Usalo al agendar un servicio desde Servicios en la app: el descuento se aplica automáticamente en el precio. Coordiná en recepción la sesión de fotos del premio.',
 };
 
 /** Texto corto del modal de celebración según el premio desbloqueado. */

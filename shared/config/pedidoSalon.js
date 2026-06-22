@@ -6,6 +6,7 @@ import { enqueueClientNotification } from './clientNotifications.js';
 import { REFERIDO_PREMIOS_COPY } from './referidoPremios.js';
 import { parseCanjeFromCheckoutSnapshot } from './andreasPremiosCycles.js';
 import { formatQ } from '../utils/ventaFactura.js';
+import { canSalonConfirmarEntregaPedido, isPedidoTarjetaDomicilioCapturado } from './orderFulfillment.js';
 
 function friendlyOrderDbError(err) {
   const msg = String(err?.message || '');
@@ -60,6 +61,7 @@ async function crearPedidoTiendaCliente({
   checkout_snapshot = null,
   total_amount: totalAmountOverride = null,
   sucursalId: sucursalIdOverride = null,
+  status = 'pending',
 }) {
   const stockCheck = await validateCartBranchStock(cartItems, sucursalIdOverride);
   if (!stockCheck.ok) {
@@ -89,7 +91,8 @@ async function crearPedidoTiendaCliente({
     customer_name: clienteNombre?.trim() || 'Cliente tienda',
     customer_phone: clienteTelefono?.trim() || '—',
     notes: notes || `Pedido app clientes · ${payment_method}`,
-    status: 'pending',
+    status,
+    confirmed_at: status === 'confirmed' ? new Date().toISOString() : null,
     total_amount,
     payment_method,
     card_last4: card_last4 || null,
@@ -156,8 +159,52 @@ export async function crearPedidoEfectivo({
 }
 
 /**
- * Pedido con tarjeta: mismo canal que efectivo (ecommerce_orders).
- * El stock y la venta en `ventas` se registran cuando el salón confirma el cobro con caja abierta.
+ * Domicilio + tarjeta: pago validado en app → pedido confirmado (sin QR).
+ * Venta y stock al marcar entregado en App Salón · Pedidos.
+ */
+export async function crearPedidoTarjetaDomicilioCapturada({
+  clienteNombre,
+  clienteTelefono,
+  clientUserId,
+  cartItems,
+  shipId,
+  homeAddressType,
+  deliveryAddress = null,
+  cardLast4 = null,
+  cardBrand = null,
+  cardHolder = null,
+  checkout_snapshot = null,
+  total_amount = null,
+  sucursalId = null,
+}) {
+  const snap = {
+    ...(checkout_snapshot && typeof checkout_snapshot === 'object' ? checkout_snapshot : {}),
+    payment_captured: true,
+    captured_at: new Date().toISOString(),
+    card_brand: cardBrand || null,
+    card_holder: cardHolder ? String(cardHolder).trim() : null,
+  };
+
+  return crearPedidoTiendaCliente({
+    clienteNombre,
+    clienteTelefono,
+    clientUserId,
+    cartItems,
+    shipId,
+    homeAddressType,
+    deliveryAddress,
+    sucursalId,
+    payment_method: 'tarjeta',
+    card_last4: cardLast4,
+    status: 'confirmed',
+    notes: 'Pedido app clientes · tarjeta confirmada · envío a domicilio',
+    checkout_snapshot: snap,
+    total_amount,
+  });
+}
+
+/**
+ * Retiro + tarjeta: pendiente hasta que el salón confirme cobro con su pasarela.
  */
 export async function crearPedidoTarjetaPendiente({
   clienteNombre,
@@ -207,7 +254,7 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
     }
     order = data;
   }
-  if (String(order.status) !== 'pending') {
+  if (!canSalonConfirmarEntregaPedido(order)) {
     return { ok: false, error: { message: `El pedido ya está en estado «${order.status}».` } };
   }
 
@@ -298,8 +345,14 @@ export async function confirmarCobroPedidoSalon(orderId, { order: orderPreload }
       sucursal_id: order.sucursal_id || null,
       notas: canjeSnap
         ? `Pedido tienda · cobro confirmado · canje ANDREAS ${canjeSnap.descuento_pct}% · ${order.tracking_code || orderId}`
-        : `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
-      detalles_pago: isTarjeta ? 'Tarjeta · pedido app clientes' : 'Efectivo (app clientes)',
+        : isPedidoTarjetaDomicilioCapturado(order)
+          ? `Pedido tienda · entrega domicilio · tarjeta confirmada · ${order.tracking_code || orderId}`
+          : `Pedido tienda · cobro confirmado en salón · ${order.tracking_code || orderId}`,
+      detalles_pago: isPedidoTarjetaDomicilioCapturado(order)
+        ? `Tarjeta · domicilio · **** ${order.card_last4 || '—'}`
+        : isTarjeta
+          ? 'Tarjeta · pedido app clientes'
+          : 'Efectivo (app clientes)',
     },
     { minimalReturn: true, skipSalonFisicoPremios: true },
   );

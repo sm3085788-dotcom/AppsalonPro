@@ -8,7 +8,8 @@ import {
   isPromocionVigente,
   formatPromocionHastaLabel,
 } from './inventarioMeta.js';
-import { crearPedidoTarjetaPendiente } from './pedidoSalon.js';
+import { crearPedidoTarjetaDomicilioCapturada, crearPedidoTarjetaPendiente } from './pedidoSalon.js';
+import { isStripeConfigured } from './stripeCheckout.js';
 
 /** Texto en catálogo App Clientes para servicios con precios por volumen (solo salón). */
 export const PRECIO_VARIABLE_LABEL = 'Precio variable';
@@ -21,11 +22,42 @@ function formatQ(n) {
 }
 
 /**
- * Tarjeta desde app clientes: crea pedido en `ecommerce_orders` (RLS cliente), sin tocar `ventas` ni stock.
- * El salón confirma cobro con su pasarela y usa «Pedidos» para cerrar venta y stock (mismo flujo que efectivo).
- * @param {{ clienteNombre?: string, clienteTelefono?: string, clientUserId?: string, cartItems: Array<{ id: string, title: string, qty: number, priceAmount: number }>, shipId?: string, homeAddressType?: string, deliveryAddress?: string | null, cardLast4?: string | null }} params
+ * Tarjeta desde app clientes.
+ * Domicilio + Stripe: usar checkoutDomicilioConStripe() antes de llamar con stripePaymentIntentId.
+ * Domicilio sin Stripe (dev): cardPayment validado localmente.
+ * Retiro → pedido pendiente; el salón confirma cobro con su pasarela.
  */
 export async function confirmarCompraConTarjeta(params) {
+  const { shipId, cardPayment, stripePaymentIntentId, cardBrand, cardHolder, ...rest } = params;
+
+  if (shipId === 'ship-home' && stripePaymentIntentId) {
+    return {
+      ok: false,
+      error: {
+        message: 'Usá finalizeStripeDomicilioOrder() tras confirmar el Payment Sheet.',
+      },
+    };
+  }
+
+  if (shipId === 'ship-home' && cardPayment?.ok && !isStripeConfigured()) {
+    return crearPedidoTarjetaDomicilioCapturada({
+      ...rest,
+      shipId,
+      cardLast4: cardPayment.last4,
+      cardBrand: cardPayment.brand || cardBrand,
+      cardHolder: cardPayment.holder || cardHolder,
+    });
+  }
+
+  if (shipId === 'ship-home' && isStripeConfigured()) {
+    return {
+      ok: false,
+      error: {
+        message: 'Completá el pago con Stripe antes de confirmar el pedido.',
+      },
+    };
+  }
+
   return crearPedidoTarjetaPendiente(params);
 }
 

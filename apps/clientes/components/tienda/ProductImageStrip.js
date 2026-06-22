@@ -13,7 +13,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 /**
  * Galería horizontal manual (sin auto-carrusel). Imágenes en cover dentro de cuadrado 1:1.
  */
-export function ProductImageStrip({ uris, badgeText, style }) {
+export function ProductImageStrip({ uris, badgeText, badgePromo = false, style }) {
   const { colors: c, isDark } = useTheme();
   const [stripW, setStripW] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -180,8 +180,15 @@ export function ProductImageStrip({ uris, badgeText, style }) {
       ) : null}
 
       {badgeText ? (
-        <View style={styles.badge} pointerEvents="none">
-          <Text style={styles.badgeTxt} numberOfLines={1}>
+        <View
+          style={[
+            styles.badge,
+            badgePromo && styles.badgePromo,
+            badgePromo && isDark && styles.badgePromoDark,
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={[styles.badgeTxt, badgePromo && styles.badgePromoTxt]} numberOfLines={1}>
             {badgeText}
           </Text>
         </View>
@@ -207,5 +214,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#FFF',
     letterSpacing: 0.3,
+  },
+  badgePromo: {
+    backgroundColor: '#43A047',
+    borderWidth: 1.5,
+    borderColor: '#A5D6A7',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1B5E20',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.45,
+        shadowRadius: 4,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
+  badgePromoDark: {
+    backgroundColor: '#66BB6A',
+    borderColor: '#C8E6C9',
+  },
+  badgePromoTxt: {
+    fontSize: 11,
+    letterSpacing: 0.35,
+    textTransform: 'uppercase',
   },
 });

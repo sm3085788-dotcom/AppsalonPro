@@ -16,7 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Package, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase, confirmarCobroPedidoSalon, parseCanjeFromCheckoutSnapshot } from '@appsalon/shared-config';
+import { db, supabase, confirmarCobroPedidoSalon, parseCanjeFromCheckoutSnapshot, needsPickupQr, isPedidoTarjetaDomicilioCapturado, canSalonConfirmarEntregaPedido, isHomeDeliveryOrder, isCashPayment } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
@@ -42,12 +42,26 @@ function formatWhen(iso) {
 }
 
 function isCashOrder(o) {
-  const pay = String(o?.payment_method || '').toLowerCase();
-  return ['efectivo', 'cash', 'efectivo_al_retirar'].includes(pay);
+  return isCashPayment(o);
 }
 
 function orderCardStyle(o, c, isDark) {
   const st = String(o?.status || '');
+  if (st === 'cancelled') {
+    return {
+      backgroundColor: isDark ? 'rgba(176,0,32,0.14)' : '#FFF5F5',
+      borderLeftWidth: 3,
+      borderLeftColor: '#B00020',
+      opacity: 0.92,
+    };
+  }
+  if (isHomeDeliveryOrder(o)) {
+    return {
+      backgroundColor: isDark ? 'rgba(100,181,246,0.2)' : '#E3F2FD',
+      borderLeftWidth: 3,
+      borderLeftColor: isDark ? '#64B5F6' : '#42A5F5',
+    };
+  }
   if (st === 'delivered') {
     return {
       backgroundColor: isDark ? 'rgba(46,125,50,0.18)' : '#E8F5E9',
@@ -62,19 +76,13 @@ function orderCardStyle(o, c, isDark) {
       borderLeftColor: '#D4AF37',
     };
   }
-  if (st === 'cancelled') {
-    return {
-      backgroundColor: isDark ? 'rgba(176,0,32,0.14)' : '#FFF5F5',
-      borderLeftWidth: 3,
-      borderLeftColor: '#B00020',
-      opacity: 0.92,
-    };
-  }
   return { backgroundColor: c.card };
 }
 
-function statusLabelSalon(status) {
+function statusLabelSalon(status, order) {
   const s = String(status || '');
+  if (isPedidoTarjetaDomicilioCapturado(order) && s === 'confirmed') return 'Confirmado · preparar envío';
+  if (isPedidoTarjetaDomicilioCapturado(order) && s === 'prepared') return 'Listo · en camino';
   if (s === 'pending') return 'Pendiente';
   if (s === 'delivered') return 'Completado';
   if (s === 'cancelled') return 'Cancelado';
@@ -85,7 +93,13 @@ function statusLabelSalon(status) {
 
 function matchesTab(o, tab) {
   if (tab === 'todos') return true;
-  return String(o?.status || '').toLowerCase() === tab;
+  const st = String(o?.status || '').toLowerCase();
+  if (tab === 'pending') {
+    if (st === 'pending') return true;
+    if (isPedidoTarjetaDomicilioCapturado(o) && (st === 'confirmed' || st === 'prepared')) return true;
+    return false;
+  }
+  return st === tab;
 }
 
 export function PedidosScreen({ onBack }) {
@@ -247,8 +261,19 @@ export function PedidosScreen({ onBack }) {
   const confirmarPagoEfectivo = useCallback(() => {
     if (!detail || detail.kind !== 'compra') return;
     const o = detail.data;
-    if (String(o.status) !== 'pending') {
+    if (!canSalonConfirmarEntregaPedido(o)) {
       Alert.alert('Pedido', 'Este pedido ya no está pendiente.');
+      return;
+    }
+    if (isPedidoTarjetaDomicilioCapturado(o)) {
+      Alert.alert(
+        'Confirmar entrega',
+        `Pedido domicilio · tarjeta confirmada · Q${Number(o.total_amount || 0).toFixed(2)}\n\nSe registrará la venta en la caja abierta, descontará stock y marcará el pedido como entregado.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Marcar entregado', onPress: ejecutarCobro },
+        ],
+      );
       return;
     }
     if (!o.tracking_code) {
@@ -256,7 +281,7 @@ export function PedidosScreen({ onBack }) {
       return;
     }
     setScannerOpen(true);
-  }, [detail]);
+  }, [detail, ejecutarCobro]);
 
   const onQrVerified = useCallback(() => {
     if (!detail || detail.kind !== 'compra') return;
@@ -330,8 +355,8 @@ export function PedidosScreen({ onBack }) {
               <Text style={[styles.rowTitle, { color: c.foreground }]} numberOfLines={1}>
                 {o.customer_name || 'Cliente'}
               </Text>
-              <Text style={[styles.rowMeta, { color: c.primary }]} numberOfLines={1}>
-                Compra tienda
+              <Text style={[styles.rowMeta, { color: isHomeDeliveryOrder(o) ? (isDark ? '#64B5F6' : '#1565C0') : c.primary }]} numberOfLines={1}>
+                {isHomeDeliveryOrder(o) ? 'Envío domicilio' : 'Compra tienda'}
               </Text>
             </View>
             <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
@@ -346,7 +371,7 @@ export function PedidosScreen({ onBack }) {
               ]}
               numberOfLines={1}
             >
-              {formatWhen(o.created_at)} · {statusLabelSalon(o.status)}
+              {formatWhen(o.created_at)} · {statusLabelSalon(o.status, o)}
             </Text>
           </View>
           {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} /> : null}
@@ -370,16 +395,18 @@ export function PedidosScreen({ onBack }) {
     const canjeLine = canje
       ? `Canje ANDREAS: ${canje.descuento_pct}% (−Q${Number(canje.descuento_monto || 0).toFixed(2)}) · subtotal Q${Number(canje.subtotal_antes || 0).toFixed(2)}`
       : '';
+    const domicilioTarjeta = isPedidoTarjetaDomicilioCapturado(o);
     return [
       `Cliente: ${o.customer_name}`,
       `Tel: ${o.customer_phone || '—'}`,
       `Tracking: ${o.tracking_code}`,
-      `Estado: ${statusLabelSalon(o.status)}`,
+      `Estado: ${statusLabelSalon(o.status, o)}`,
       o.cancelled_reason ? `Motivo cancelación: ${o.cancelled_reason}` : '',
-      `Pago: ${o.payment_method || '—'}`,
+      `Pago: ${o.payment_method || '—'}${o.card_last4 ? ` · **** ${o.card_last4}` : ''}${domicilioTarjeta ? ' · confirmado en app' : ''}`,
       canjeLine,
       `Total a cobrar: Q${Number(o.total_amount || 0).toFixed(2)}`,
       `Entrega: ${o.fulfillment_type || '—'}`,
+      o.delivery_address ? `Dirección:\n${o.delivery_address}` : '',
       `Notas: ${o.notes || '—'}`,
       `Creado: ${formatWhen(o.created_at)}`,
       detailItems.length
@@ -562,7 +589,7 @@ export function PedidosScreen({ onBack }) {
               >
                 {detail ? detailBody() : ''}
               </Text>
-              {detail?.data?.tracking_code ? (
+              {detail?.data?.tracking_code && needsPickupQr(detail.data) ? (
                 <PickupQrDisplay
                   trackingCode={detail.data.tracking_code}
                   size={180}
@@ -573,11 +600,15 @@ export function PedidosScreen({ onBack }) {
                   }
                 />
               ) : null}
-              {detail?.data &&
-              String(detail.data.status) === 'pending' &&
-              isCashOrder(detail.data) ? (
+              {detail?.data && canSalonConfirmarEntregaPedido(detail.data) ? (
                 <SalonButton
-                  title={confirmBusy ? 'Confirmando…' : 'Escanear QR y confirmar cobro'}
+                  title={
+                    confirmBusy
+                      ? 'Confirmando…'
+                      : isPedidoTarjetaDomicilioCapturado(detail.data)
+                        ? 'Marcar entregado y cerrar venta'
+                        : 'Escanear QR y confirmar cobro'
+                  }
                   variant="heroGold"
                   fullWidth
                   disabled={confirmBusy}

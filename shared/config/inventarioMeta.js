@@ -19,6 +19,8 @@ export const DEFAULT_TIENDA_META = {
   reviewCount: 0,
   /** Precio “antes” en tienda (opcional). Si no hay, se simula o se usa costo mayor al de venta. */
   precioRegular: null,
+  /** Precio tachado durante promoción vigente (App Clientes). */
+  precioRegularPromo: null,
   /** Promoción temporal (matriz): precio promo en columna / volumen; al vencer vuelve al original. */
   promocionActiva: false,
   promocionDesde: null,
@@ -113,6 +115,7 @@ function clearPromocionMetaFields(meta) {
     promocionHasta: null,
     promocionPrecioOriginal: null,
     promocionPreciosPorVolumenOriginal: null,
+    precioRegularPromo: null,
   };
 }
 
@@ -160,13 +163,15 @@ export function formatPromocionHastaLabel(iso) {
 
 /**
  * Precio regular para estrategia “antes / ahora” en tarjetas de tienda.
- * Prioridad: promo vigente (original guardado) → meta.precioRegular → precio_costo → simulado (+20 %).
+ * Prioridad: promo vigente (tachado promo → original guardado) → meta.precioRegular → precio_costo → simulado (+20 %).
  */
 export function resolvePrecioRegularTienda(row, precioVenta) {
   const venta = Number(precioVenta);
   if (!Number.isFinite(venta) || venta <= 0) return null;
   const { meta } = splitNotas(row?.notas);
   if (isPromocionVigente(meta)) {
+    const tachadoPromo = Number(meta.precioRegularPromo);
+    if (Number.isFinite(tachadoPromo) && tachadoPromo > venta) return tachadoPromo;
     const origCol = Number(meta.promocionPrecioOriginal);
     if (Number.isFinite(origCol) && origCol > venta) return origCol;
     if (meta.promocionPreciosPorVolumenOriginal && meta.volumenTrabajoActivo) {

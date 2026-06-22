@@ -25,7 +25,35 @@ export {
   productStockFromRow,
   validateCartBranchStock,
 } from './tiendaStock.js';
-export { crearPedidoEfectivo, crearPedidoTarjetaPendiente, confirmarCobroPedidoSalon } from './pedidoSalon.js';
+export { crearPedidoEfectivo, crearPedidoTarjetaPendiente, crearPedidoTarjetaDomicilioCapturada, confirmarCobroPedidoSalon } from './pedidoSalon.js';
+export {
+  isHomeDeliveryOrder,
+  isRetiroSalonOrder,
+  isCashPayment,
+  isCardPayment,
+  isPaymentCapturedInSnapshot,
+  isPedidoTarjetaDomicilioCapturado,
+  isPendingCashOrder,
+  needsPickupQr,
+  canSalonConfirmarEntregaPedido,
+} from './orderFulfillment.js';
+export {
+  isStripeConfigured,
+  STRIPE_PUBLISHABLE_KEY,
+  STRIPE_CHECKOUT_CURRENCY,
+  STRIPE_CHECKOUT_COUNTRY,
+  formatStripeGtqLabel,
+  createStripePaymentIntent,
+  finalizeStripeDomicilioOrder,
+  checkoutDomicilioConStripe,
+} from './stripeCheckout.js';
+export {
+  validateTarjetaForm,
+  detectCardBrand,
+  formatCardNumberDisplay,
+  formatCardExpDisplay,
+  digitsOnly,
+} from './tarjetaCheckout.js';
 export { fetchClientMisFacturas } from './clientVentas.js';
 export {
   CLIENTE_ENVIO_JSON_MARK,
@@ -174,12 +202,15 @@ export {
   findCanjePendienteForCitas,
   syncReglaCitasOnCanjeRedeemed,
   parseCanjeFromCheckoutSnapshot,
+  andreasMetaAppForMembresia,
+  resolveCheckoutCanjeParaCliente,
 } from './andreasPremiosCycles.js';
 export {
   resolvePrecioServicioConCanjeCitas,
   mergeNotasServicioConCanje,
   parseCanjeFromNotasServicio,
   stripCanjeMarkerFromNotas,
+  pickBestCanjeServicio,
 } from './andreasPremiosCitasAgenda.js';
 export {
   resolveSalonCanjeParaCliente,
@@ -205,6 +236,10 @@ export {
   ANDREAS_REFERRAL_META,
   getReferralPrizeByCiclo,
   parseReferidosPremiosState,
+  resolveReferidosCanjePendiente,
+  findCanjePendienteForReferidos,
+  syncReferidosOnCanjeRedeemed,
+  REFERRAL_PRIZE_SERVICIO_DISCOUNT,
 } from './andreasReferidos.js';
 export { computeMembresiaStatusFromRow } from './membresiaStatus.js';
 export {

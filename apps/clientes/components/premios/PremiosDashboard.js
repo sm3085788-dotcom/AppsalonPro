@@ -610,6 +610,7 @@ export function PremiosDashboard({
   }, [clienteRow?.membresia_nivel]);
 
   const membershipTier = getMembershipTier(clienteRow?.membresia_nivel);
+  const membresiaHeroLabel = membershipTier?.label ?? 'Estándar';
   const previewTier =
     selectedMembresiaId === 'estandar' ? null : getMembershipTier(selectedMembresiaId);
   // Meta efectiva según membresía elegida (sin membresía = 8; bronce = 7; plata = 6; vip = 5)
@@ -629,7 +630,13 @@ export function PremiosDashboard({
     productosEfectivoPendiente + productosTarjetaPendiente + citasPendientes;
   const referidosOk = resumen?.referidosPrimeraCompra ?? 0;
   const referidosCiclo = resumen?.referidosCiclo ?? 0;
-  const referidosPrize = getReferralPrizeByCiclo(referidosCiclo);
+  const referidosCanjePendiente = resumen?.canjePendiente?.referidos || null;
+  const referidosPrizeCiclo =
+    referidosCanjePendiente && typeof referidosCanjePendiente === 'object'
+      ? Math.max(0, Math.min(2, Math.floor(Number(referidosCanjePendiente.ciclo) || 0)))
+      : referidosCiclo;
+  const referidosPrize = getReferralPrizeByCiclo(referidosPrizeCiclo);
+  const referidosOkDisplay = referidosCanjePendiente ? ANDREAS_REFERRAL_META : referidosOk;
 
   const shareReferral = async () => {
     if (!codigo || codigo === '—') {
@@ -676,6 +683,7 @@ export function PremiosDashboard({
       p_app_tarjeta_delivery: Boolean(cp.p_app_tarjeta_delivery),
       citas: Boolean(cp.citas),
       salon: Boolean(cp.salon),
+      referidos: Boolean(cp.referidos),
     };
   }, [resumen?.canjePendiente]);
 
@@ -717,9 +725,11 @@ export function PremiosDashboard({
         ? 'Acercate en persona a recepción con la app abierta. El equipo aplica el descuento en tu próxima compra de producto en salón físico (venta en caja).'
         : id === 'p_app_efectivo_retiro' || id === 'p_app_tarjeta_delivery'
           ? 'Al confirmar tu pedido en la app (mismo método de pago y envío de esta regla), el descuento se aplica automáticamente en el total.'
-          : id === 'citas'
-            ? 'Al agendar tu próxima cita desde Servicios, el descuento se aplica automáticamente en el precio del primer servicio de la solicitud.'
-            : 'Presentate en recepción con la app abierta.';
+            : id === 'citas'
+            ? 'Al agendar tu próxima cita desde Servicios, el descuento se aplica automáticamente en el servicio elegido.'
+            : id === 'referidos'
+              ? 'Al agendar un servicio desde Servicios en la app, el descuento de referidos se aplica automáticamente en el precio (29,99% en el primer ciclo). Coordiná la sesión de fotos en recepción.'
+              : 'Presentate en recepción con la app abierta.';
     const tituloAlert = pendiente ? 'Canje pendiente' : 'Canje disponible';
     Alert.alert(tituloAlert, `${titulo}\n\n${instruccion}\n\n${detalle}`, acciones);
   };
@@ -822,7 +832,7 @@ export function PremiosDashboard({
               <Sparkles size={16} color={tc.primary} strokeWidth={2} />
               <Text style={styles.heroEyebrow}>Programa exclusivo</Text>
             </View>
-            <Text style={styles.heroPoints}>Premios</Text>
+            <Text style={styles.heroPoints}>{membresiaHeroLabel}</Text>
             <View style={[styles.heroDivider, { backgroundColor: tc.primary }]} />
             <Text style={styles.heroPointsLabel}>Programa de puntos Salon Andreas</Text>
 
@@ -924,7 +934,7 @@ export function PremiosDashboard({
           {/* Referidos visual */}
           <Text style={[styles.sectionLabel, { color: tc.foregroundSubtle }]}>REFERIDOS</Text>
           <ReferidosPoster
-            referidosOk={referidosOk}
+            referidosOk={referidosOkDisplay}
             meta={ANDREAS_REFERRAL_META}
             codigo={codigo}
             onCopy={copyCode}

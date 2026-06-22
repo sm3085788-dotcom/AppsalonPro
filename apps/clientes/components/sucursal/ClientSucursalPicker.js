@@ -28,7 +28,7 @@ function branchInitials(name) {
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
 }
 
-export function ClientSucursalPicker({ onChange, compact = false }) {
+export function ClientSucursalPicker({ onChange, compact = false, canjeSummary = '' }) {
   const { colors: c, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
@@ -127,6 +127,19 @@ export function ClientSucursalPicker({ onChange, compact = false }) {
       </View>
     );
   }
+
+  const canjeTxt = String(canjeSummary || '').trim();
+
+  const canjeStrip = canjeTxt ? (
+    <View
+      style={[
+        styles.canjeStrip,
+        { backgroundColor: isDark ? 'rgba(197,163,104,0.12)' : 'rgba(197,163,104,0.08)', borderTopColor: c.cardBorder },
+      ]}
+    >
+      <Text style={[styles.canjeStripTxt, { color: c.foregroundMuted }]}>{canjeTxt}</Text>
+    </View>
+  ) : null;
 
   if (loadError || sucursales.length === 0) {
     return (
@@ -239,40 +252,42 @@ export function ClientSucursalPicker({ onChange, compact = false }) {
   return (
     <>
       <View ref={anchorRef} collapsable={false} style={[styles.wrap, compact && styles.wrapCompact]}>
-        <TouchableOpacity
-          style={styles.bar}
-          onPress={toggleDropdown}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel="Elegir sucursal"
-          accessibilityState={{ expanded: open }}
-        >
-          <LinearGradient
-            colors={
-              isDark
-                ? ['rgba(197,163,104,0.35)', 'rgba(197,163,104,0.08)']
-                : ['rgba(197,163,104,0.28)', 'rgba(197,163,104,0.06)']
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.barGradient}
+        <View style={styles.bar}>
+          <TouchableOpacity
+            onPress={toggleDropdown}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Elegir sucursal"
+            accessibilityState={{ expanded: open }}
           >
-            <View style={styles.barIcon}>
-              <MapPin size={17} color={GOLD} strokeWidth={2.2} />
-            </View>
-            <View style={styles.barMid}>
-              <Text style={[styles.barKicker, { color: GOLD }]} numberOfLines={1}>
-                Tu sucursal
-              </Text>
-              <Text style={[styles.barTitle, { color: c.foreground }]} numberOfLines={1}>
-                {selectedLabel}
-              </Text>
-            </View>
-            <View style={open ? { transform: [{ rotate: '180deg' }] } : undefined}>
-              <ChevronDown size={18} color={GOLD} strokeWidth={2} />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(197,163,104,0.35)', 'rgba(197,163,104,0.08)']
+                  : ['rgba(197,163,104,0.28)', 'rgba(197,163,104,0.06)']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.barGradient}
+            >
+              <View style={styles.barIcon}>
+                <MapPin size={17} color={GOLD} strokeWidth={2.2} />
+              </View>
+              <View style={styles.barMid}>
+                <Text style={[styles.barKicker, { color: GOLD }]} numberOfLines={1}>
+                  Tu sucursal
+                </Text>
+                <Text style={[styles.barTitle, { color: c.foreground }]} numberOfLines={1}>
+                  {selectedLabel}
+                </Text>
+              </View>
+              <View style={open ? { transform: [{ rotate: '180deg' }] } : undefined}>
+                <ChevronDown size={18} color={GOLD} strokeWidth={2} />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+          {canjeStrip}
+        </View>
       </View>
 
       <Modal
@@ -358,6 +373,16 @@ function createStyles(c, isDark) {
     barSub: {
       fontFamily: typography.fontSans,
       fontSize: 11,
+    },
+    canjeStrip: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    canjeStripTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      lineHeight: 15,
     },
     dropdown: {
       position: 'absolute',

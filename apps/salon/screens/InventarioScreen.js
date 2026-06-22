@@ -160,6 +160,7 @@ function rowToTiendaCard(row) {
     priceLabel,
     compareAtLabel,
     badge: promoVigente ? meta.badge?.trim() || 'Promo' : meta.badge?.trim() || null,
+    badgePromo: promoVigente,
     rating: Math.min(5, Math.max(0, Number(meta.rating) || 4.5)),
     reviewCount: Math.max(0, Math.floor(Number(meta.reviewCount) || 0)),
     shippingLabel: meta.shippingLabel || 'Envío y retiro · coordinar en recepción',
@@ -187,9 +188,21 @@ function RatingStars({ rating, emptyColor, size = 12 }) {
   );
 }
 
-function GalleryStrip({ uris, badgeText, width, colors, compact = false }) {
+function GalleryStrip({ uris, badgeText, badgePromo = false, width, colors, isDark = false, compact = false }) {
   const aspect = compact ? IMAGE_ASPECT_COMPACT : IMAGE_ASPECT;
   const data = (uris || []).filter(Boolean);
+  const badgeStyle = badgePromo
+    ? [
+        stripStyles.badge,
+        stripStyles.badgePromo,
+        isDark && stripStyles.badgePromoDark,
+        compact && stripStyles.badgeCompact,
+        badgePromo && compact && stripStyles.badgePromoCompact,
+      ]
+    : [stripStyles.badge, compact && stripStyles.badgeCompact];
+  const badgeTxtStyle = badgePromo
+    ? [stripStyles.badgeTxt, stripStyles.badgePromoTxt, compact && stripStyles.badgeTxtCompact]
+    : [stripStyles.badgeTxt, compact && stripStyles.badgeTxtCompact];
   if (!data.length) {
     return (
       <View
@@ -220,8 +233,8 @@ function GalleryStrip({ uris, badgeText, width, colors, compact = false }) {
       >
         <Image source={{ uri: data[0] }} style={stripStyles.galleryImageFill} resizeMode="cover" />
         {badgeText ? (
-          <View style={[stripStyles.badge, compact && stripStyles.badgeCompact]}>
-            <Text style={[stripStyles.badgeTxt, compact && stripStyles.badgeTxtCompact]} numberOfLines={1}>
+          <View style={badgeStyle}>
+            <Text style={badgeTxtStyle} numberOfLines={1}>
               {badgeText}
             </Text>
           </View>
@@ -249,8 +262,8 @@ function GalleryStrip({ uris, badgeText, width, colors, compact = false }) {
         )}
       />
       {badgeText ? (
-        <View style={[stripStyles.badge, compact && stripStyles.badgeCompact]}>
-          <Text style={[stripStyles.badgeTxt, compact && stripStyles.badgeTxtCompact]} numberOfLines={1}>
+        <View style={badgeStyle}>
+          <Text style={badgeTxtStyle} numberOfLines={1}>
             {badgeText}
           </Text>
         </View>
@@ -293,6 +306,37 @@ const stripStyles = StyleSheet.create({
     maxWidth: '70%',
   },
   badgeTxt: { color: '#fff', fontSize: 10, fontFamily: typography.fontSansMedium },
+  badgePromo: {
+    backgroundColor: '#43A047',
+    borderWidth: 1.5,
+    borderColor: '#A5D6A7',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1B5E20',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.45,
+        shadowRadius: 4,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
+  badgePromoDark: {
+    backgroundColor: '#66BB6A',
+    borderColor: '#C8E6C9',
+  },
+  badgePromoTxt: {
+    fontSize: 11,
+    letterSpacing: 0.35,
+    textTransform: 'uppercase',
+  },
+  badgePromoCompact: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
   badgeCompact: {
     top: 4,
     left: 4,
@@ -440,8 +484,10 @@ function TiendaProductCard({ width, product, onPress, colors, isDark, compact = 
       <GalleryStrip
         uris={product.imageUris}
         badgeText={product.badge}
+        badgePromo={!!product.badgePromo}
         width={width}
         colors={colors}
+        isDark={isDark}
         compact={compact}
       />
       <View style={styles.body}>
@@ -508,8 +554,11 @@ const emptyForm = () => ({
   duracion_agenda: '60 min',
   volumenTrabajoActivo: false,
   preciosPorVolumen: emptyPreciosPorVolumen(),
-  /** Precio “antes” en tienda (JSON meta.precioRegular); vacío = reglas automáticas. */
+  /** Precio “antes” en tienda normal (JSON meta.precioRegular); vacío = reglas automáticas. */
   precio_regular_tienda: '',
+  /** Precio promo y tachado promo (solo mientras promoción activa en el formulario). */
+  precio_promo: '',
+  precio_tachado_promo: '',
   promocionActiva: false,
   promocion_desde: '',
   promocion_hasta: '',
@@ -876,7 +925,22 @@ export function InventarioScreen({ onBack }) {
       nombre: rowFresh.nombre || '',
       categoria: rowFresh.categoria || '',
       barcode: rowFresh.barcode || '',
-      precio_venta: montoInputFromNumber(rowFresh.precio_venta),
+      precio_venta:
+        isPromocionVigente(meta) && meta.promocionPrecioOriginal != null && Number(meta.promocionPrecioOriginal) > 0
+          ? montoInputFromNumber(meta.promocionPrecioOriginal)
+          : montoInputFromNumber(rowFresh.precio_venta),
+      precio_promo:
+        isPromocionVigente(meta) && Number(rowFresh.precio_venta) > 0
+          ? montoInputFromNumber(rowFresh.precio_venta)
+          : '',
+      precio_regular_tienda:
+        meta.precioRegular != null && Number(meta.precioRegular) > 0
+          ? montoInputFromNumber(meta.precioRegular)
+          : '',
+      precio_tachado_promo:
+        meta.precioRegularPromo != null && Number(meta.precioRegularPromo) > 0
+          ? montoInputFromNumber(meta.precioRegularPromo)
+          : '',
       stock_actual: String(rowFresh.stock_actual ?? 0),
       stock_minimo: String(rowFresh.stock_minimo ?? 5),
       es_consumible: !!rowFresh.es_consumible,
@@ -896,12 +960,6 @@ export function InventarioScreen({ onBack }) {
       preciosPorVolumen: preciosPorVolumenToForm(
         meta.volumenTrabajoActivo ? meta.preciosPorVolumen : emptyPreciosPorVolumen(),
       ),
-      precio_regular_tienda:
-        meta.precioRegular != null && Number(meta.precioRegular) > 0
-          ? montoInputFromNumber(meta.precioRegular)
-          : meta.promocionPrecioOriginal != null && Number(meta.promocionPrecioOriginal) > 0
-            ? montoInputFromNumber(meta.promocionPrecioOriginal)
-            : '',
       promocionActiva: isPromocionVigente(meta),
       promocion_desde: meta.promocionDesde || '',
       promocion_hasta: meta.promocionHasta || '',
@@ -963,25 +1021,20 @@ export function InventarioScreen({ onBack }) {
 
   const computePromoFormState = (f, enabled) => {
     if (!enabled) {
-      const next = {
+      return {
         ...f,
         promocionActiva: false,
         promocion_desde: '',
         promocion_hasta: '',
         promocion_precio_original: null,
         promocion_precios_original: null,
+        precio_promo: '',
+        precio_tachado_promo: '',
       };
-      if (f.promocion_precio_original != null && Number(f.promocion_precio_original) > 0) {
-        next.precio_venta = montoInputFromNumber(f.promocion_precio_original);
-      }
-      if (f.promocion_precios_original) {
-        next.preciosPorVolumen = preciosPorVolumenToForm(f.promocion_precios_original);
-      }
-      return next;
     }
     const desde = toInventarioISODate(new Date());
     const hasta = computePromocionHastaISO(new Date(), INVENTARIO_PROMO_DIAS_DEFAULT);
-    const precioActual = parsePrecioInput(f.precio_venta);
+    const precioNormal = parsePrecioInput(f.precio_venta);
     const precioOrigGuardado =
       f.promocion_precio_original != null && Number(f.promocion_precio_original) > 0
         ? Number(f.promocion_precio_original)
@@ -990,7 +1043,7 @@ export function InventarioScreen({ onBack }) {
       ? null
       : precioOrigGuardado != null
         ? precioOrigGuardado
-        : precioActual;
+        : precioNormal;
     const preciosOrig = f.volumenTrabajoActivo
       ? normalizePreciosPorVolumen(
           f.promocion_precios_original || {
@@ -1008,15 +1061,26 @@ export function InventarioScreen({ onBack }) {
       promocion_hasta: hasta,
       promocion_precio_original: precioOrig,
       promocion_precios_original: preciosOrig,
-      precio_regular_tienda:
-        f.precio_regular_tienda ||
-        (precioOrig && precioOrig > 0 ? montoInputFromNumber(precioOrig) : f.precio_regular_tienda),
       badge: f.badge?.trim() ? f.badge : 'Promo',
     };
   };
 
-  const buildInventarioTiendaMeta = (formSnap, { preciosVol, ventaCmp, precioTachadoInput }) => {
+  const resolveFormPreciosTienda = (formSnap) => {
+    const precioNormal =
+      formSnap.articuloTipo === 'servicio' && formSnap.volumenTrabajoActivo
+        ? 0
+        : parsePrecioInput(formSnap.precio_venta);
+    const precioPromo = formSnap.promocionActiva ? parsePrecioInput(formSnap.precio_promo) : 0;
+    const precioTachadoNormal = parsePrecioInput(formSnap.precio_regular_tienda);
+    const precioTachadoPromo = formSnap.promocionActiva ? parsePrecioInput(formSnap.precio_tachado_promo) : 0;
+    const precioVentaPublicado =
+      formSnap.promocionActiva && precioPromo > 0 ? precioPromo : precioNormal;
+    return { precioNormal, precioPromo, precioTachadoNormal, precioTachadoPromo, precioVentaPublicado };
+  };
+
+  const buildInventarioTiendaMeta = (formSnap, { preciosVol, preciosTienda }) => {
     const esServicio = formSnap.articuloTipo === 'servicio';
+    const { precioNormal, precioPromo, precioTachadoNormal, precioTachadoPromo } = preciosTienda;
     return {
       badge: formSnap.badge.trim(),
       hintTarjeta: esServicio ? String(formSnap.hintTarjeta || '').trim() : '',
@@ -1036,22 +1100,20 @@ export function InventarioScreen({ onBack }) {
       precioRegular:
         esServicio && formSnap.volumenTrabajoActivo
           ? null
-          : formSnap.promocionActiva &&
-              formSnap.promocion_precio_original != null &&
-              Number(formSnap.promocion_precio_original) > ventaCmp
-            ? Math.round(Number(formSnap.promocion_precio_original) * 100) / 100
-            : precioTachadoInput > ventaCmp && ventaCmp > 0
-              ? Math.round(precioTachadoInput * 100) / 100
-              : null,
+          : precioTachadoNormal > precioNormal && precioNormal > 0
+            ? Math.round(precioTachadoNormal * 100) / 100
+            : null,
+      precioRegularPromo:
+        formSnap.promocionActiva && precioTachadoPromo > precioPromo && precioPromo > 0
+          ? Math.round(precioTachadoPromo * 100) / 100
+          : null,
       promocionActiva: !!formSnap.promocionActiva,
       promocionDesde: formSnap.promocionActiva ? formSnap.promocion_desde || toInventarioISODate(new Date()) : null,
       promocionHasta: formSnap.promocionActiva
         ? formSnap.promocion_hasta || computePromocionHastaISO(new Date(), INVENTARIO_PROMO_DIAS_DEFAULT)
         : null,
       promocionPrecioOriginal:
-        formSnap.promocionActiva && formSnap.promocion_precio_original != null
-          ? Math.round(Number(formSnap.promocion_precio_original) * 100) / 100
-          : null,
+        formSnap.promocionActiva && precioNormal > 0 ? Math.round(precioNormal * 100) / 100 : null,
       promocionPreciosPorVolumenOriginal:
         formSnap.promocionActiva && formSnap.volumenTrabajoActivo && formSnap.promocion_precios_original
           ? normalizePreciosPorVolumen(formSnap.promocion_precios_original)
@@ -1080,7 +1142,10 @@ export function InventarioScreen({ onBack }) {
       return;
     }
     if (!(parsePrecioInput(formSnap.precio_venta) > 0)) {
-      throw new Error('Indicá el precio de venta antes de activar la promoción.');
+      throw new Error('Indicá el precio de venta normal.');
+    }
+    if (!(parsePrecioInput(formSnap.precio_promo) > 0)) {
+      throw new Error('Indicá el precio de promoción.');
     }
   };
 
@@ -1088,23 +1153,21 @@ export function InventarioScreen({ onBack }) {
     if (!formSnap.id || stockOnlyMode || formSnap.articuloTipo === 'nuevo_stock') return;
 
     const preciosVol = preciosVolFromForm(formSnap);
+    const preciosTienda = resolveFormPreciosTienda(formSnap);
     if (formSnap.promocionActiva) {
       assertPromoFormPrices(formSnap, preciosVol);
     }
 
-    const ventaCmp =
-      formSnap.articuloTipo === 'servicio' && formSnap.volumenTrabajoActivo
-        ? 0
-        : parsePrecioInput(formSnap.precio_venta);
-    const precioTachadoInput = parsePrecioInput(formSnap.precio_regular_tienda);
-    const meta = buildInventarioTiendaMeta(formSnap, { preciosVol, ventaCmp, precioTachadoInput });
+    const meta = buildInventarioTiendaMeta(formSnap, { preciosVol, preciosTienda });
     const notas = mergeNotas(formSnap.notasStaff, meta);
     const precioVentaCol =
       formSnap.articuloTipo === 'servicio' && formSnap.volumenTrabajoActivo
         ? formSnap.visible_en_tienda
           ? null
           : precioVentaReferencia(meta, preciosVol.medio)
-        : parsePrecioInput(formSnap.precio_venta) || null;
+        : formSnap.promocionActiva
+          ? preciosTienda.precioVentaPublicado || null
+          : preciosTienda.precioNormal || null;
 
     setPromoSaving(true);
     try {
@@ -1138,7 +1201,9 @@ export function InventarioScreen({ onBack }) {
     setForm((f) => {
       const prev = f;
       const next = computePromoFormState(f, enabled);
-      if (f.id && !stockOnlyMode) {
+      const shouldPersist =
+        f.id && !stockOnlyMode && (!enabled || parsePrecioInput(next.precio_promo) > 0);
+      if (shouldPersist) {
         void (async () => {
           try {
             await persistPromocionToggle(next);
@@ -1177,18 +1242,23 @@ export function InventarioScreen({ onBack }) {
       Alert.alert('Precio', 'Indicá el precio de venta.');
       return;
     }
+    if (form.promocionActiva && !(form.articuloTipo === 'servicio' && form.volumenTrabajoActivo)) {
+      if (!(parsePrecioInput(form.precio_promo) > 0)) {
+        Alert.alert('Promoción', 'Indicá el precio de promoción.');
+        return;
+      }
+    }
     if (
       !esFormServicio &&
       form.visible_en_tienda &&
       !(parsePrecioInput(form.precio_venta) > 0) &&
-      !form.volumenTrabajoActivo
+      !form.volumenTrabajoActivo &&
+      !(form.promocionActiva && parsePrecioInput(form.precio_promo) > 0)
     ) {
       Alert.alert('Tienda', 'Para publicar en App Clientes, indicá un precio de venta mayor a 0.');
       return;
     }
-    const ventaCmp =
-      form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? 0 : parsePrecioInput(form.precio_venta);
-    const precioTachadoInput = parsePrecioInput(form.precio_regular_tienda);
+    const preciosTienda = resolveFormPreciosTienda(form);
 
     setSaving(true);
     try {
@@ -1211,14 +1281,14 @@ export function InventarioScreen({ onBack }) {
         }
       };
 
-      const meta = buildInventarioTiendaMeta(form, { preciosVol, ventaCmp, precioTachadoInput });
+      const meta = buildInventarioTiendaMeta(form, { preciosVol, preciosTienda });
       const notas = mergeNotas(form.notasStaff, meta);
       const precioVentaCol =
         form.articuloTipo === 'servicio' && form.volumenTrabajoActivo
           ? form.visible_en_tienda
             ? null
             : precioVentaReferencia(meta, preciosVol.medio)
-          : parsePrecioInput(form.precio_venta) || null;
+          : preciosTienda.precioVentaPublicado || null;
 
       const payload = {
         nombre: form.nombre.trim(),
@@ -1838,7 +1908,15 @@ export function InventarioScreen({ onBack }) {
 
           {form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? null : (
             <Field
-              label={form.articuloTipo === 'servicio' ? 'Precio venta (GTQ) *' : 'Precio venta (Q) *'}
+              label={
+                form.promocionActiva
+                  ? form.articuloTipo === 'servicio'
+                    ? 'Precio venta normal (GTQ) *'
+                    : 'Precio venta normal (Q) *'
+                  : form.articuloTipo === 'servicio'
+                    ? 'Precio venta (GTQ) *'
+                    : 'Precio venta (Q) *'
+              }
               c={c}
             >
               <PrecioGtqInput
@@ -1852,7 +1930,13 @@ export function InventarioScreen({ onBack }) {
           {form.articuloTipo === 'servicio' && form.volumenTrabajoActivo ? null : (
             <Field
               label={
-                esFormServicio ? 'Precio tachado (Q, opcional)' : 'Precio tachado en tienda (Q, opcional)'
+                form.promocionActiva
+                  ? esFormServicio
+                    ? 'Precio tachado normal (Q, opcional)'
+                    : 'Precio tachado normal en tienda (Q, opcional)'
+                  : esFormServicio
+                    ? 'Precio tachado (Q, opcional)'
+                    : 'Precio tachado en tienda (Q, opcional)'
               }
               c={c}
             >
@@ -1866,7 +1950,9 @@ export function InventarioScreen({ onBack }) {
           )}
           {!esFormServicio ? (
             <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.md }]}>
-              Si es mayor al precio de venta, se muestra tachado en App Clientes. Vacío: costo o referencia automática.
+              {form.promocionActiva
+                ? 'Precios normales: se restauran al desactivar la promoción. En App Clientes se muestran solo mientras la promo esté apagada.'
+                : 'Si es mayor al precio de venta, se muestra tachado en App Clientes. Vacío: costo o referencia automática.'}
             </Text>
           ) : null}
 
@@ -1878,11 +1964,11 @@ export function InventarioScreen({ onBack }) {
                 </Text>
                 <Text style={{ color: c.foregroundMuted, fontFamily: typography.fontSans, fontSize: 12, marginTop: 4 }}>
                   {form.promocionActiva
-                    ? `Precio promo ${INVENTARIO_PROMO_DIAS_DEFAULT} días · vence ${formatPromocionHastaLabel(form.promocion_hasta)}. Al vencer vuelve al precio original.${
-                        form.id ? ' Guardado automáticamente.' : ''
+                    ? `Precio promo ${INVENTARIO_PROMO_DIAS_DEFAULT} días · vence ${formatPromocionHastaLabel(form.promocion_hasta)}. Completá precio promoción y guardá.${
+                        form.id ? ' Al desactivar se restaura el precio normal.' : ''
                       }`
-                    : `Activala para publicar precio promo ${INVENTARIO_PROMO_DIAS_DEFAULT} días.${
-                        form.id ? ' Se guarda al activar (no hace falta Guardar).' : ' Guardá el artículo para aplicar la promo.'
+                    : `Activala para publicar precio promo ${INVENTARIO_PROMO_DIAS_DEFAULT} días en App Clientes.${
+                        form.id ? ' Al activar aparecen campos de precio promo.' : ' Guardá el artículo para aplicar la promo.'
                       }`}
                 </Text>
               </View>
@@ -1894,6 +1980,41 @@ export function InventarioScreen({ onBack }) {
                 thumbColor={form.promocionActiva ? c.primary : c.foregroundSubtle}
               />
             </View>
+          ) : null}
+
+          {form.promocionActiva && !(form.articuloTipo === 'servicio' && form.volumenTrabajoActivo) ? (
+            <>
+              <Field
+                label={form.articuloTipo === 'servicio' ? 'Precio promoción (GTQ) *' : 'Precio promoción (Q) *'}
+                c={c}
+              >
+                <PrecioGtqInput
+                  c={c}
+                  value={form.precio_promo}
+                  onChangeText={(t) => setForm((f) => ({ ...f, precio_promo: t }))}
+                />
+              </Field>
+              <Field
+                label={
+                  esFormServicio
+                    ? 'Precio tachado promoción (Q, opcional)'
+                    : 'Precio tachado promoción en tienda (Q, opcional)'
+                }
+                c={c}
+              >
+                <PrecioGtqInput
+                  c={c}
+                  value={form.precio_tachado_promo}
+                  onChangeText={(t) => setForm((f) => ({ ...f, precio_tachado_promo: t }))}
+                  placeholder="Ej. 600"
+                />
+              </Field>
+              {!esFormServicio ? (
+                <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.md }]}>
+                  Estos precios se muestran en App Clientes mientras la promoción esté activa.
+                </Text>
+              ) : null}
+            </>
           ) : null}
 
           {form.articuloTipo === 'servicio' ? (
@@ -2090,9 +2211,51 @@ export function InventarioScreen({ onBack }) {
               style={[styles.inp, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
               value={form.badge}
               onChangeText={(t) => setForm((f) => ({ ...f, badge: t }))}
+              placeholder={form.promocionActiva ? 'Promo' : undefined}
               placeholderTextColor={c.foregroundSubtle}
             />
           </Field>
+          {form.promocionActiva ? (
+            <View style={{ marginBottom: spacing.md }}>
+              <Text style={[subStyles.muted, { fontSize: 12, marginBottom: spacing.xs }]}>
+                Vista en foto (promoción activa):
+              </Text>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: isDark ? '#66BB6A' : '#43A047',
+                  borderWidth: 1.5,
+                  borderColor: isDark ? '#C8E6C9' : '#A5D6A7',
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  ...Platform.select({
+                    ios: {
+                      shadowColor: '#1B5E20',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.45,
+                      shadowRadius: 4,
+                    },
+                    android: { elevation: 4 },
+                    default: {},
+                  }),
+                }}
+              >
+                <Text
+                  style={{
+                    color: '#fff',
+                    fontFamily: typography.fontSansMedium,
+                    fontSize: 12,
+                    letterSpacing: 0.4,
+                    textTransform: 'uppercase',
+                  }}
+                  numberOfLines={1}
+                >
+                  {form.badge.trim() || 'Promo'}
+                </Text>
+              </View>
+            </View>
+          ) : null}
           {!esFormServicio ? (
             <Field label="Texto envío / retiro (una línea bajo estrellas)" c={c}>
               <TextInput

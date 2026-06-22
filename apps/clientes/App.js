@@ -19,6 +19,7 @@ import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { TiendaCartProvider, useTiendaCart } from './context/TiendaCartContext';
 import { ServiciosCartProvider } from './context/ServiciosCartContext';
+import { StripeRoot } from './components/stripe/StripeRoot';
 import { TiendaCartButton } from './components/tienda/TiendaCartButton';
 import { countActivePedidos } from './utils/pedidosBadge';
 import {
@@ -413,15 +414,6 @@ function AppMain({ onLogout }) {
           premiosSnapshotRef.current = snap;
           try {
             await AsyncStorage.setItem(PREMIOS_PROGRESS_STORAGE_KEY, JSON.stringify(snap));
-          } catch {
-            /* ignore */
-          }
-        }
-        const meta = resolvePremiosMeta(clienteRow?.membresia_nivel);
-        const flags = buildPremiosCanjeFlags(r, meta);
-        if (flags) {
-          try {
-            await AsyncStorage.setItem(PREMIOS_CANJE_FLAGS_KEY, JSON.stringify(flags));
           } catch {
             /* ignore */
           }
@@ -1865,11 +1857,13 @@ export default function App() {
           ) : gate.phase === 'tour' ? (
             <AppTourScreen onDone={handleTourDone} />
           ) : (
-            <TiendaCartProvider>
-              <ServiciosCartProvider>
-                <AppMain onLogout={handleLogout} />
-              </ServiciosCartProvider>
-            </TiendaCartProvider>
+            <StripeRoot>
+              <TiendaCartProvider>
+                <ServiciosCartProvider>
+                  <AppMain onLogout={handleLogout} />
+                </ServiciosCartProvider>
+              </TiendaCartProvider>
+            </StripeRoot>
           )}
         </ClientThemedRoot>
       </SafeAreaProvider>

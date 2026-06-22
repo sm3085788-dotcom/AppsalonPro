@@ -220,7 +220,12 @@ export function ProductCardPlaceholder({ width, slotIndex, product, onPress, onA
     <View style={[styles.card, flatCard, { width }]}>
       <View style={styles.imageZone}>
         {hasProduct && galleryUris.length > 0 ? (
-          <ProductImageStrip uris={galleryUris} badgeText={product.badge} style={{ flex: 1 }} />
+          <ProductImageStrip
+            uris={galleryUris}
+            badgeText={product.badge}
+            badgePromo={!!product.promocionVigente}
+            style={{ flex: 1 }}
+          />
         ) : hasProduct ? null : (
           <>
             <ImageIcon size={36} color={c.foregroundSubtle} strokeWidth={1.4} />

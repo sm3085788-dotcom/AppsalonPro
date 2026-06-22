@@ -7,36 +7,57 @@ import {
   syncReglaCitas,
 } from './andreasPremiosCycles.js';
 import { andreasMetaCitasForMembresia } from './andreasPremiosCitasAgenda.js';
+import { findCanjePendienteForReferidos } from './andreasReferidos.js';
+import { pickBestCanjeServicio } from './andreasPremiosCitasAgenda.js';
 import { resolveSalonCanjeParaCliente } from './andreasPremiosSalonVenta.js';
 
 /**
  * Cliente con canje pendiente de citas / servicios (módulo Vender).
  * No exige user_id: el staff puede aplicar el descuento en caja aunque la ficha no esté enlazada.
  */
-export function resolveCitasCanjeParaCliente(cliente, citasVerificadasExternas = null) {
+export function resolveCitasCanjeParaCliente(
+  cliente,
+  citasVerificadasExternas = null,
+  referidosTotalValidados = null,
+) {
   if (!cliente?.id) return null;
 
   const meta = andreasMetaCitasForMembresia(cliente.membresia_nivel);
   const ap = cliente.andreas_premios;
-  const pending = findCanjePendienteForCitas(ap, cliente.membresia_nivel);
+  const citasPendingRaw = findCanjePendienteForCitas(ap, cliente.membresia_nivel);
+  const referidosPendingRaw = findCanjePendienteForReferidos(ap, referidosTotalValidados);
   const apNorm = getReglasState(ap);
   const rule = apNorm.reglas[PREMIO_REGLA.CITAS];
   const enCiclo =
     rule?.citas_base_verificadas !== null && rule?.citas_base_verificadas !== undefined;
 
-  if (pending) {
-    const pct =
-      Number(pending.descuento_pct) ||
-      resolvePremioDiscountPct(cliente.membresia_nivel) ||
-      19.99;
-    return {
-      descuento_pct: pct,
-      meta: Number(pending.meta) || meta,
-      citas: Math.max(rule?.puntos ?? 0, citasVerificadasExternas ?? 0),
-      ruleId: PREMIO_REGLA.CITAS,
-      requiereApp: !cliente.user_id,
-    };
-  }
+  const citasCandidate = citasPendingRaw
+    ? {
+        descuento_pct:
+          Number(citasPendingRaw.descuento_pct) ||
+          resolvePremioDiscountPct(cliente.membresia_nivel) ||
+          19.99,
+        meta: Number(citasPendingRaw.meta) || meta,
+        citas: Math.max(rule?.puntos ?? 0, citasVerificadasExternas ?? 0),
+        ruleId: PREMIO_REGLA.CITAS,
+        rule_id: PREMIO_REGLA.CITAS,
+        requiereApp: !cliente.user_id,
+      }
+    : null;
+
+  const referidosCandidate = referidosPendingRaw
+    ? {
+        descuento_pct: referidosPendingRaw.descuento_pct,
+        meta: referidosPendingRaw.meta,
+        ruleId: PREMIO_REGLA.REFERIDOS,
+        rule_id: PREMIO_REGLA.REFERIDOS,
+        ciclo: referidosPendingRaw.ciclo,
+        requiereApp: false,
+      }
+    : null;
+
+  const best = pickBestCanjeServicio(citasCandidate, referidosCandidate);
+  if (best) return best;
 
   if (enCiclo) return null;
 
@@ -54,6 +75,7 @@ export function resolveCitasCanjeParaCliente(cliente, citasVerificadasExternas =
     meta,
     citas,
     ruleId: PREMIO_REGLA.CITAS,
+    rule_id: PREMIO_REGLA.CITAS,
     requiereApp: !cliente.user_id,
   };
 }
@@ -79,16 +101,21 @@ export function calcCitasCanjeDescuentoEnLineas(lines, canje) {
     return { servicioSubtotal: 0, descuentoMonto: 0, descuentoPct: 0, canjeSnap: null };
   }
   const calc = applyDiscountToSubtotal(servicioSubtotal, canje.descuento_pct);
+  const ruleId = canje.rule_id || canje.ruleId || PREMIO_REGLA.CITAS;
+  const canjeSnap = {
+    rule_id: ruleId,
+    descuento_pct: calc.descuento_pct,
+    descuento_monto: calc.discount,
+    precio_antes: calc.subtotal,
+  };
+  if (ruleId === PREMIO_REGLA.REFERIDOS && canje.ciclo != null) {
+    canjeSnap.referidos_ciclo = Math.max(0, Math.min(2, Math.floor(Number(canje.ciclo) || 0)));
+  }
   return {
     servicioSubtotal,
     descuentoMonto: calc.discount,
     descuentoPct: calc.descuento_pct,
-    canjeSnap: {
-      rule_id: PREMIO_REGLA.CITAS,
-      descuento_pct: calc.descuento_pct,
-      descuento_monto: calc.discount,
-      precio_antes: calc.subtotal,
-    },
+    canjeSnap,
   };
 }
 

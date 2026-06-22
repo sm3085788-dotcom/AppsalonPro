@@ -83,6 +83,13 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
         return t.includes(q) || b.includes(q);
       });
     }
+    if (sortKey === 'promociones') {
+      list = list.filter((p) => Boolean(p.promocionVigente));
+      list.sort((a, b) =>
+        String(a.title || '').localeCompare(String(b.title || ''), 'es', { sensitivity: 'base' }),
+      );
+      return list;
+    }
     const priceNum = (p) => Number(p.priceAmount ?? 0) || 0;
     const name = (p) => String(p.title || '').toLowerCase();
     if (sortKey === 'nombre_desc') list.sort((a, b) => name(b).localeCompare(name(a), 'es'));
@@ -103,7 +110,9 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
   );
 
   const sortLabel =
-    sortKey === 'nombre_desc'
+    sortKey === 'promociones'
+      ? 'Promociones'
+      : sortKey === 'nombre_desc'
       ? 'Nombre Z → A'
       : sortKey === 'precio_asc'
         ? 'Precio menor'
@@ -255,6 +264,7 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
               showsVerticalScrollIndicator={false}
             >
               {[
+                { id: 'promociones', label: 'Promociones' },
                 { id: 'nombre_asc', label: 'Nombre A → Z' },
                 { id: 'nombre_desc', label: 'Nombre Z → A' },
                 { id: 'precio_asc', label: 'Precio menor primero' },
@@ -282,12 +292,18 @@ export function TiendaCatalogGrid({ onProductPress, onAddToCart, products: produ
       {!loading && slots.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>
-            {search.trim() ? 'Sin resultados' : 'Sin productos en tienda'}
+            {search.trim()
+              ? 'Sin resultados'
+              : sortKey === 'promociones'
+                ? 'Sin promociones'
+                : 'Sin productos en tienda'}
           </Text>
           <Text style={styles.emptyTxt}>
             {search.trim()
               ? 'Probá otro término de búsqueda.'
-              : 'Sin productos con existencia en esta sucursal. Cambiá de sucursal o pedí al salón que reponga stock.'}
+              : sortKey === 'promociones'
+                ? 'No hay productos en promoción vigente en esta sucursal. Volvé a «Ordenar» y elegí otra vista.'
+                : 'Sin productos con existencia en esta sucursal. Cambiá de sucursal o pedí al salón que reponga stock.'}
           </Text>
         </View>
       ) : null}
