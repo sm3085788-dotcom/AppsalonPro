@@ -1,154 +1,150 @@
-import Link from "next/link";
-import { Calendar, Sparkles, Clock, Star } from "lucide-react";
+import Link from 'next/link';
+import {
+  Sparkles,
+  CalendarCheck,
+  ShoppingBag,
+  Star,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react';
+import { IphoneMockup } from '@/components/ui/IphoneMockup';
+import { AppStoreButtons } from '@/components/site/AppStoreButtons';
+import { ServiceCard } from '@/components/catalog/ServiceCard';
+import { getServices } from '@/lib/data/catalog';
 
-export default function Home() {
+export default async function HomePage() {
+  const services = (await getServices()).slice(0, 3);
+
   return (
-    <div className="min-h-screen bg-[#FDFBF7]">
-      {/* Navigation */}
-      <nav className="border-b border-gray-100 bg-white/80 backdrop-blur-sm fixed w-full z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
-            <div className="flex items-center">
-              <Sparkles className="w-6 h-6 text-[#D4AF37]" />
-              <span className="ml-3 text-2xl font-light tracking-wider text-[#2C2C2C]">
-                AppSalon Pro
-              </span>
-            </div>
-            <div className="hidden md:flex space-x-8">
-              <a href="#servicios" className="text-[#2C2C2C] hover:text-[#D4AF37] font-light transition-colors">
-                Servicios
-              </a>
-              <a href="#galeria" className="text-[#2C2C2C] hover:text-[#D4AF37] font-light transition-colors">
-                Galería
-              </a>
-              <a href="#contacto" className="text-[#2C2C2C] hover:text-[#D4AF37] font-light transition-colors">
-                Contacto
-              </a>
-            </div>
-            <button className="bg-[#D4AF37] text-white px-6 py-2 rounded-full font-light hover:bg-[#C0A030] transition-colors">
-              Reservar Cita
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      {/* Hero Section */}
-      <section className="pt-32 pb-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center">
-            <h1 className="text-5xl md:text-7xl font-light tracking-wide text-[#2C2C2C] mb-6">
-              Experiencia de Lujo
-              <span className="block text-[#D4AF37] mt-2">Belleza Incomparable</span>
-            </h1>
-            <p className="text-lg md:text-xl text-[#C0C0C0] font-light max-w-2xl mx-auto mb-12 leading-relaxed">
-              Descubre un salón donde la elegancia se encuentra con la excelencia. 
-              Cada servicio está diseñado para realzar tu belleza natural.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button className="bg-[#D4AF37] text-white px-8 py-4 rounded-full font-light text-lg hover:bg-[#C0A030] transition-colors flex items-center justify-center">
-                <Calendar className="w-5 h-5 mr-2" />
-                Agendar Ahora
-              </button>
-              <button className="border border-[#D4AF37] text-[#D4AF37] px-8 py-4 rounded-full font-light text-lg hover:bg-[#D4AF37] hover:text-white transition-colors">
-                Ver Servicios
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-light text-[#2C2C2C] mb-4">
-              ¿Por qué elegirnos?
-            </h2>
-            <p className="text-[#C0C0C0] font-light">
-              Excelencia en cada detalle
-            </p>
-          </div>
-          
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center p-8 rounded-2xl bg-[#FDFBF7] hover:shadow-lg transition-shadow">
-              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-6">
-                <Star className="w-8 h-8 text-[#D4AF37]" fill="#D4AF37" />
-              </div>
-              <h3 className="text-xl font-light text-[#2C2C2C] mb-3">
-                Profesionales Certificados
-              </h3>
-              <p className="text-[#C0C0C0] font-light leading-relaxed">
-                Nuestro equipo de expertos está altamente capacitado en las últimas técnicas y tendencias
-              </p>
-            </div>
-
-            <div className="text-center p-8 rounded-2xl bg-[#FDFBF7] hover:shadow-lg transition-shadow">
-              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-6">
-                <Sparkles className="w-8 h-8 text-[#D4AF37]" />
-              </div>
-              <h3 className="text-xl font-light text-[#2C2C2C] mb-3">
-                Productos Premium
-              </h3>
-              <p className="text-[#C0C0C0] font-light leading-relaxed">
-                Utilizamos solo productos de la más alta calidad para garantizar resultados excepcionales
-              </p>
-            </div>
-
-            <div className="text-center p-8 rounded-2xl bg-[#FDFBF7] hover:shadow-lg transition-shadow">
-              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-6">
-                <Clock className="w-8 h-8 text-[#D4AF37]" />
-              </div>
-              <h3 className="text-xl font-light text-[#2C2C2C] mb-3">
-                Reserva Fácil
-              </h3>
-              <p className="text-[#C0C0C0] font-light leading-relaxed">
-                Sistema de reservas online disponible 24/7 para tu comodidad
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-[#2C2C2C]">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl md:text-5xl font-light text-white mb-6">
-            Comienza tu Transformación
-          </h2>
-          <p className="text-xl text-white/70 font-light mb-8">
-            Reserva tu cita hoy y descubre la diferencia
-          </p>
-          <button className="bg-[#D4AF37] text-white px-10 py-4 rounded-full font-light text-lg hover:bg-[#C0A030] transition-colors">
-            Reservar Ahora
-          </button>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-white py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto text-center">
-          <div className="flex items-center justify-center mb-4">
-            <Sparkles className="w-6 h-6 text-[#D4AF37]" />
-            <span className="ml-3 text-2xl font-light tracking-wider text-[#2C2C2C]">
-              AppSalon Pro
+    <div>
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div className="pointer-events-none absolute -top-40 right-0 h-96 w-96 rounded-full bg-gold/10 blur-3xl" />
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:px-8 lg:py-28">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs uppercase tracking-[0.25em] text-gold">
+              <Sparkles className="h-3.5 w-3.5" /> Belleza de lujo
             </span>
+            <h1 className="mt-6 text-4xl font-light leading-tight text-cream sm:text-6xl">
+              Tu salón premium,
+              <br />
+              <span className="text-gold">en la palma de tu mano</span>
+            </h1>
+            <p className="mt-6 max-w-lg text-base font-light leading-relaxed text-muted">
+              Reserva citas, compra productos exclusivos y vive una experiencia
+              de alta gama. Multi-sucursal, en tiempo real y con pagos seguros.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/reservar"
+                className="rounded-full bg-gold px-7 py-3 text-sm font-semibold text-charcoal transition-colors hover:bg-gold-soft"
+              >
+                Reservar cita
+              </Link>
+              <Link
+                href="/productos"
+                className="rounded-full border border-border px-7 py-3 text-sm font-medium text-foreground transition-colors hover:border-gold hover:text-gold"
+              >
+                Explorar productos
+              </Link>
+            </div>
           </div>
-          <p className="text-[#C0C0C0] font-light text-sm">
-            © 2026 AppSalon Pro. Todos los derechos reservados.
-          </p>
-          <p className="text-[#C0C0C0] font-light text-xs mt-3">
-            <Link
-              href="/privacidad"
-              className="text-[#D4AF37] hover:underline underline-offset-4"
-            >
-              Política de privacidad
-            </Link>
-          </p>
-          <p className="text-[#C0C0C0] font-light text-xs mt-2">
-            Powered by Supabase • Built with Next.js
-          </p>
+          <div className="relative">
+            <IphoneMockup />
+          </div>
         </div>
-      </footer>
+      </section>
+
+      {/* Features */}
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            {
+              icon: CalendarCheck,
+              title: 'Reserva inteligente',
+              desc: 'Elige sucursal y horario; el salón se entera al instante.',
+            },
+            {
+              icon: ShoppingBag,
+              title: 'Tienda premium',
+              desc: 'Productos con stock real por sucursal y envío a domicilio.',
+            },
+            {
+              icon: Star,
+              title: 'Reseñas verificadas',
+              desc: 'Opiniones reales de clientes con compra confirmada.',
+            },
+            {
+              icon: ShieldCheck,
+              title: 'Pagos seguros',
+              desc: 'Checkout cifrado con Stripe. Tu información protegida.',
+            },
+          ].map(({ icon: Icon, title, desc }) => (
+            <div
+              key={title}
+              className="rounded-2xl border border-border bg-surface p-6"
+            >
+              <Icon className="h-7 w-7 text-gold" />
+              <h3 className="mt-4 font-medium text-cream">{title}</h3>
+              <p className="mt-1 text-sm text-muted">{desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Servicios destacados */}
+      {services.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+          <div className="mb-8 flex items-end justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-gold">
+                Destacados
+              </p>
+              <h2 className="mt-2 text-3xl font-light text-cream">
+                Servicios favoritos
+              </h2>
+            </div>
+            <Link
+              href="/servicios"
+              className="text-sm text-muted hover:text-gold"
+            >
+              Ver todos →
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {services.map((s) => (
+              <ServiceCard key={s.id} service={s} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Descarga la app */}
+      <section
+        id="descargar"
+        className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"
+      >
+        <div className="grid items-center gap-12 rounded-3xl border border-border bg-surface p-8 sm:p-12 lg:grid-cols-2">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs uppercase tracking-[0.25em] text-gold">
+              <Zap className="h-3.5 w-3.5" /> App móvil
+            </span>
+            <h2 className="mt-6 text-3xl font-light leading-tight text-cream sm:text-4xl">
+              Llévate AppSalon Pro contigo
+            </h2>
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">
+              Gestiona tus citas, premios ANDREAS, pedidos y mensajes con el
+              salón. Notificaciones en tiempo real y pagos con tarjeta seguros.
+            </p>
+            <div className="mt-8">
+              <AppStoreButtons />
+            </div>
+          </div>
+          <div className="flex justify-center">
+            <IphoneMockup />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -1,48 +1,89 @@
 @import "tailwindcss";
 
 :root {
-  --background: #FDFBF7;
-  --foreground: #2C2C2C;
-  
-  /* AppSalon Pro Luxury Colors */
-  --luxury-cream: #FDFBF7;
-  --luxury-gold: #D4AF37;
-  --luxury-charcoal: #2C2C2C;
-  --luxury-silver: #C0C0C0;
+  /* AppSalon Pro — paleta de lujo (modo oscuro por defecto) */
+  --background: #0E0E0F;
+  --surface: #161617;
+  --surface-2: #1F1F21;
+  --foreground: #F5F0E6;
+  --muted: #A8A29A;
+  --border: #2A2A2C;
+
+  --gold: #D4AF37;
+  --gold-soft: #E6C97A;
+  --cream: #F5EAD2;
+  --charcoal: #0E0E0F;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-cream: var(--cream);
+  --color-charcoal: var(--charcoal);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  
-  /* Custom luxury colors for Tailwind */
-  --color-luxury-cream: var(--luxury-cream);
-  --color-luxury-gold: var(--luxury-gold);
-  --color-luxury-charcoal: var(--luxury-charcoal);
-  --color-luxury-silver: var(--luxury-silver);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #FDFBF7;
-    --foreground: #2C2C2C;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
+}
+
+::selection {
+  background: rgba(212, 175, 55, 0.25);
+}
+
+/* Skeleton shimmer (Req 10) */
+@keyframes shimmer {
+  0% {
+    background-position: -480px 0;
+  }
+  100% {
+    background-position: 480px 0;
+  }
+}
+
+.skeleton {
+  background-color: var(--surface-2);
+  background-image: linear-gradient(
+    90deg,
+    rgba(212, 175, 55, 0) 0%,
+    rgba(212, 175, 55, 0.08) 50%,
+    rgba(212, 175, 55, 0) 100%
+  );
+  background-size: 480px 100%;
+  background-repeat: no-repeat;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* Utilidades */
+.text-gradient-gold {
+  color: var(--gold);
+}
+
+.hairline {
+  border-color: var(--border);
 }

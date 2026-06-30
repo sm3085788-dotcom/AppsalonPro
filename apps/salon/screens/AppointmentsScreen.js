@@ -32,6 +32,8 @@ import {
   visitaQrImageUrl,
   parseCanjeFromNotasServicio,
   stripCanjeMarkerFromNotas,
+  getSalonSucursalScope,
+  startBranchBookingListener,
 } from '@appsalon/shared-config';
 import { CitaVisitaQrScannerModal } from '../components/CitaVisitaQrScannerModal';
 import {
@@ -138,6 +140,8 @@ export function AppointmentsScreen({ onBack }) {
   const sel = useListSelection();
   const [citasLoading, setCitasLoading] = useState(true);
   const [citasError, setCitasError] = useState(null);
+  /** Estado del canal broadcast liviano (web → APK por sucursal). */
+  const [branchRealtime, setBranchRealtime] = useState('idle');
   const [refreshing, setRefreshing] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
   const [detailCita, setDetailCita] = useState(null);
@@ -187,7 +191,47 @@ export function AppointmentsScreen({ onBack }) {
     };
   }, [loadCitas]);
 
+  const applyBroadcastCita = useCallback((detail, payload) => {
+    if (!detail?.id) {
+      void loadCitas();
+      return;
+    }
+    const estado = payload?.estado ?? detail.estado;
+    setCitas((prev) => {
+      const idx = prev.findIndex((row) => row.id === detail.id);
+      const merged = {
+        ...(idx >= 0 ? prev[idx] : {}),
+        ...detail,
+        estado,
+      };
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = merged;
+        return next;
+      }
+      return [merged, ...prev];
+    });
+  }, [loadCitas]);
+
   useEffect(() => {
+    const { isGlobal, sucursalId } = getSalonSucursalScope();
+    const branchId = !isGlobal ? sucursalId : sucursalId || null;
+
+    // Sucursal fija: broadcast liviano {booking_id, estado} (~80% menos datos que postgres_changes).
+    if (branchId) {
+      const stop = startBranchBookingListener({
+        branchId,
+        onDetail: applyBroadcastCita,
+        onStatus: setBranchRealtime,
+      });
+      return () => {
+        stop();
+        setBranchRealtime('idle');
+      };
+    }
+
+    // Admin global sin sucursal: fallback postgres_changes (todas las sucursales).
+    setBranchRealtime('idle');
     const channel = supabase
       .channel('salon-agenda-citas')
       .on(
@@ -201,7 +245,7 @@ export function AppointmentsScreen({ onBack }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadCitas]);
+  }, [loadCitas, applyBroadcastCita]);
 
   const loadCatalogServicios = useCallback(async (query = '') => {
     const { data, error } = await db.servicios.listForAgenda(query, 500);
@@ -702,7 +746,18 @@ export function AppointmentsScreen({ onBack }) {
       <SubScreenChrome onBack={onBack} disableBodyScroll rightAction={rightAction}>
         <View style={styles.listShell}>
           <View style={styles.agendaToolbar}>
-            <Text style={styles.agendaToolbarMeta}>Citas del salón</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.agendaToolbarMeta}>Citas del salón</Text>
+              {branchRealtime === 'connected' ? (
+                <Text style={[styles.agendaRealtimeLive, { color: '#2E7D32' }]}>
+                  ● En vivo (web)
+                </Text>
+              ) : branchRealtime === 'reconnecting' || branchRealtime === 'connecting' ? (
+                <Text style={[styles.agendaRealtimeLive, { color: c.foregroundMuted }]}>
+                  Conectando tiempo real…
+                </Text>
+              ) : null}
+            </View>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
               <Text style={{ color: c.foregroundSubtle, fontSize: 13 }}> · </Text>
@@ -1509,6 +1564,11 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
       color: c.foregroundMuted,
+    },
+    agendaRealtimeLive: {
+      fontFamily: typography.fontSans,
+      fontSize: 11,
+      marginTop: 2,
     },
     agendaToolbarLink: {
       fontFamily: typography.fontSansMedium,

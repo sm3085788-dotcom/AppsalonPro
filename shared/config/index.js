@@ -274,6 +274,12 @@ export {
   mergeInventarioWithSucursalStock,
 } from './clientSucursal.js';
 export {
+  startBranchBookingListener,
+  fetchBookingDetail,
+  branchChannelName,
+  BOOKING_EVENT,
+} from '../realtime/branchBookingListener.js';
+export {
   ANDREAS_ORDER_STATUSES_PENDIENTES,
   CITA_ESTADOS_PENDIENTES_PREMIO,
   parseReferidoInvitadoState,
