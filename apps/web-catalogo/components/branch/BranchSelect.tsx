@@ -15,11 +15,11 @@ export function BranchSelect({ compact = false }: { compact?: boolean }) {
 
   return (
     <label
-      className={`group flex items-center gap-2 rounded-full border border-border bg-surface px-3 ${
+      className={`group flex items-center gap-2 rounded-full border border-border bg-surface/60 px-3.5 ${
         compact ? 'py-1.5' : 'py-2'
-      } text-sm`}
+      } text-sm font-light transition-colors hover:border-border-strong`}
     >
-      <MapPin className="h-4 w-4 text-gold" aria-hidden />
+      <MapPin className="h-4 w-4 text-gold" strokeWidth={1.25} aria-hidden />
       <span className="sr-only">Sucursal</span>
       <select
         value={selectedBranchId ?? ''}

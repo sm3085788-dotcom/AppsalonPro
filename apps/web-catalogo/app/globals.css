@@ -1,18 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  /* AppSalon Pro — paleta de lujo (modo oscuro por defecto) */
-  --background: #0E0E0F;
+  /* AppSalon Pro — paleta editorial de lujo (dark mode) */
+  --background: #0e0e0f;
   --surface: #161617;
-  --surface-2: #1F1F21;
-  --foreground: #F5F0E6;
-  --muted: #A8A29A;
-  --border: #2A2A2C;
+  --surface-2: #1c1c1e;
+  --foreground: #f5ead2;
+  --muted: #a8a29a;
 
-  --gold: #D4AF37;
-  --gold-soft: #E6C97A;
-  --cream: #F5EAD2;
-  --charcoal: #0E0E0F;
+  /* Bordes hairline: blanco al 5% para un look editorial sin cajas pesadas */
+  --border: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.1);
+
+  --gold: #d4af37;
+  --gold-soft: #e6c97a;
+  --cream: #f5ead2;
+  --charcoal: #0e0e0f;
+
+  --radius: 1rem;
 }
 
 @theme inline {
@@ -22,20 +27,19 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
 
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
   --color-cream: var(--cream);
   --color-charcoal: var(--charcoal);
 
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
-}
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 8px);
 }
 
 html,
@@ -49,13 +53,16 @@ body {
 body {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
+  font-weight: 300;
+  letter-spacing: 0.01em;
 }
 
 ::selection {
-  background: rgba(212, 175, 55, 0.25);
+  background: rgba(212, 175, 55, 0.22);
+  color: var(--cream);
 }
 
-/* Skeleton shimmer (Req 10) */
+/* Skeleton shimmer */
 @keyframes shimmer {
   0% {
     background-position: -480px 0;
@@ -79,11 +86,84 @@ body {
   border-radius: 8px;
 }
 
-/* Utilidades */
-.text-gradient-gold {
+/* ── Utilidades editoriales ─────────────────────────────── */
+
+/* Línea hairline reutilizable */
+.hairline {
+  border-color: var(--border);
+}
+
+/* Glass navbar / paneles translúcidos */
+.glass {
+  background: color-mix(in srgb, var(--background) 65%, transparent);
+  backdrop-filter: saturate(160%) blur(18px);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+}
+
+/* Glows de fondo dorado / cream */
+.glow-gold {
+  background: radial-gradient(
+    circle at center,
+    rgba(212, 175, 55, 0.16) 0%,
+    rgba(212, 175, 55, 0) 70%
+  );
+}
+
+.glow-cream {
+  background: radial-gradient(
+    circle at center,
+    rgba(245, 234, 210, 0.08) 0%,
+    rgba(245, 234, 210, 0) 70%
+  );
+}
+
+/* Eyebrow / kicker editorial */
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  font-size: 0.6875rem;
   color: var(--gold);
 }
 
-.hairline {
-  border-color: var(--border);
+/* Encuadre 3:4 para imágenes editoriales con zoom suave */
+.media-3-4 {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+}
+
+.media-3-4 img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.group:hover .media-3-4 img {
+  transform: scale(1.05);
+}
+
+/* Subrayado dorado animado para enlaces editoriales */
+.link-underline {
+  position: relative;
+}
+
+.link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  height: 1px;
+  width: 0;
+  background: var(--gold);
+  transition: width 0.4s ease;
+}
+
+.link-underline:hover::after {
+  width: 100%;
+}
+
+.text-gradient-gold {
+  color: var(--gold);
 }
