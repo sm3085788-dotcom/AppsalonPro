@@ -29,8 +29,12 @@ import {
   fetchBranchStock,
   validateTarjetaForm,
   isStripeConfigured,
+  listStripeSavedCards,
+  formatSavedCardLabel,
+  formatSavedCardSub,
 } from '@appsalon/shared-config';
 import { TiendaDomicilioStripePay } from '../stripe/TiendaDomicilioStripePay';
+import { ProductReviewsSection } from './ProductReviewsSection';
 import {
   buildTiendaCanjeCatalogSummary,
   buildTiendaCanjeSuccessNote,
@@ -108,6 +112,7 @@ export function TiendaFlow({
   clienteId,
   clienteNombre,
   clienteTelefono,
+  clienteDireccion,
   clientUserId,
   initialProductId = null,
   initialPhase = null,
@@ -121,15 +126,11 @@ export function TiendaFlow({
   const { colors: tc, isDark } = useTheme();
   const styles = useTiendaStyles();
   const subStyles = useMemo(() => createSubStyles(tc), [tc]);
-  const reviewStarEmpty = isDark ? '#525252' : STAR_EMPTY;
   const { cartItems, setCartItems } = useTiendaCart();
   const [phase, setPhase] = useState(initialPhase || 'catalog');
   const [selected, setSelected] = useState(null);
   const [qty, setQty] = useState(0);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewRating, setReviewRating] = useState(5);
-  const [reviewType, setReviewType] = useState('compra_verificada');
-  const [reviewPublished, setReviewPublished] = useState(false);
+  const [savedCards, setSavedCards] = useState([]);
   const [specsExpanded, setSpecsExpanded] = useState(false);
   const [shipId, setShipId] = useState('ship-home');
   const [homeAddressType, setHomeAddressType] = useState('casa');
@@ -139,7 +140,7 @@ export function TiendaFlow({
   const [homeSaved, setHomeSaved] = useState(false);
   const [pickupQrIssued, setPickupQrIssued] = useState(false);
   const [payId, setPayId] = useState('pay-card');
-  const [selectedCardId, setSelectedCardId] = useState('card-4242');
+  const [selectedCardId, setSelectedCardId] = useState(null);
   const [showAddCardForm, setShowAddCardForm] = useState(false);
   const [cardSavedToast, setCardSavedToast] = useState(false);
   const [cardHolder, setCardHolder] = useState('');
@@ -312,6 +313,8 @@ export function TiendaFlow({
             .replace(/—/g, '')
             .trim();
           if (tel.length >= 6) setHomePhone((p) => p || tel);
+          const dirPerfil = String(clienteDireccion || '').trim();
+          if (dirPerfil.length >= 10) setHomeAddressFull((p) => p || dirPerfil);
           return;
         }
         setHomeAddressType(n.tipo);
@@ -334,7 +337,7 @@ export function TiendaFlow({
     return () => {
       cancelled = true;
     };
-  }, [phase, shipId, clienteId, clienteNombre, clienteTelefono]);
+  }, [phase, shipId, clienteId, clienteNombre, clienteTelefono, clienteDireccion]);
 
   useEffect(
     () => () => {
@@ -396,10 +399,6 @@ export function TiendaFlow({
     const inCart = cartItems.find((i) => i.id === product.id);
     setSelected(product);
     setQty(inCart ? Math.min(9, inCart.qty) : 0);
-    setReviewOpen(false);
-    setReviewPublished(false);
-    setReviewRating(5);
-    setReviewType('compra_verificada');
     setSpecsExpanded(!!(product?.inventarioId || product?.articuloTipo));
     setPhase('detail');
   };
@@ -634,11 +633,35 @@ export function TiendaFlow({
     ],
     [shipId],
   );
-  const savedCards = [
-    { id: 'card-4242', label: 'Visa ··· 4242', sub: 'Predeterminada · vence 08/29' },
-    { id: 'card-1189', label: 'Mastercard ··· 1189', sub: 'Personal · vence 11/28' },
-  ];
-  const selectedCard = savedCards.find((c) => c.id === selectedCardId) ?? savedCards[0];
+  useEffect(() => {
+    if (phase !== 'pay' || !isStripeConfigured() || !clientUserId) return;
+    let cancelled = false;
+    void listStripeSavedCards().then((res) => {
+      if (cancelled) return;
+      const cards = (res.ok ? res.cards : []).map((c) => ({
+        ...c,
+        label: formatSavedCardLabel(c),
+        sub: formatSavedCardSub(c),
+      }));
+      setSavedCards(cards);
+      if (cards.length && !selectedCardId) setSelectedCardId(cards[0].id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, clientUserId, selectedCardId]);
+
+  const savedCardsUi = useMemo(
+    () =>
+      savedCards.map((c) => ({
+        id: c.id,
+        label: c.label || formatSavedCardLabel(c),
+        sub: c.sub || formatSavedCardSub(c),
+        last4: c.last4,
+      })),
+    [savedCards],
+  );
+  const selectedCard = savedCardsUi.find((c) => c.id === selectedCardId) ?? savedCardsUi[0];
   const homeShipFieldsOk =
     String(homeContactName).trim().length > 0 &&
     String(homePhone).trim().length >= 6 &&
@@ -656,6 +679,7 @@ export function TiendaFlow({
   };
 
   const cardLast4FromSelection = () => {
+    if (selectedCard?.last4) return String(selectedCard.last4);
     const m = String(selectedCardId || '').match(/(\d{4})$/);
     return m ? m[1] : null;
   };
@@ -737,100 +761,12 @@ export function TiendaFlow({
           ) : null}
 
           <View style={styles.ratingBlock}>
-            <TouchableOpacity
-              style={styles.ratingAction}
-              onPress={() => setReviewOpen(true)}
-              activeOpacity={0.86}
-              accessibilityRole="button"
-              accessibilityLabel="Calificar con estrellas"
-            >
+            <View style={styles.ratingAction}>
               <RatingStars rating={selected.rating} />
               <Text style={styles.ratingNum}>{selected.rating.toFixed(1)}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setReviewOpen(true)}
-              activeOpacity={0.86}
-              accessibilityRole="button"
-              accessibilityLabel="Ver y escribir opiniones"
-            >
-              <Text style={styles.ratingCount}>({selected.reviewCount} opiniones)</Text>
-            </TouchableOpacity>
-          </View>
-
-          {reviewOpen ? (
-            <View style={[subStyles.card, styles.reviewCard]}>
-              <Text style={subStyles.rowLabel}>Dejar reseña</Text>
-              <Text style={styles.reviewLead}>
-                Flujo sugerido: compras verificadas primero, luego reseña libre. Aquí solo UI.
-              </Text>
-
-              <Text style={styles.reviewStep}>1) Tu calificación</Text>
-              <View style={styles.ratePickerRow}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <TouchableOpacity
-                    key={star}
-                    onPress={() => setReviewRating(star)}
-                    activeOpacity={0.85}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${star} estrellas`}
-                  >
-                    <Star
-                      size={20}
-                      color={star <= reviewRating ? STAR_GOLD : reviewStarEmpty}
-                      fill={star <= reviewRating ? STAR_GOLD : reviewStarEmpty}
-                      strokeWidth={0}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.reviewStep}>2) Tipo de reseña</Text>
-              <View style={styles.reviewTypeRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.reviewTypeChip,
-                    reviewType === 'compra_verificada' && styles.reviewTypeChipOn,
-                  ]}
-                  onPress={() => setReviewType('compra_verificada')}
-                  activeOpacity={0.86}
-                >
-                  <Text style={styles.reviewTypeText}>Compra verificada</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.reviewTypeChip,
-                    reviewType === 'opinion_general' && styles.reviewTypeChipOn,
-                  ]}
-                  onPress={() => setReviewType('opinion_general')}
-                  activeOpacity={0.86}
-                >
-                  <Text style={styles.reviewTypeText}>Opinión general</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.reviewStep}>3) Comentario y fotos</Text>
-              <View style={subStyles.fauxInput} />
-              <View style={[subStyles.fauxInput, { height: 90 }]} />
-
-              {reviewPublished ? (
-                <Text style={styles.reviewOk}>Reseña enviada. Gracias por tu opinión.</Text>
-              ) : null}
-
-              <SalonButton
-                title="Publicar reseña"
-                variant="heroGold"
-                fullWidth
-                onPress={() => setReviewPublished(true)}
-              />
-              <SalonButton
-                title="Cerrar reseñas"
-                variant="outlineGray"
-                fullWidth
-                style={{ marginTop: spacing.sm }}
-                onPress={() => setReviewOpen(false)}
-              />
             </View>
-          ) : null}
+            <Text style={styles.ratingCount}>({selected.reviewCount} opiniones)</Text>
+          </View>
 
           <View style={styles.priceBlock}>
             {selected.compareAtLabel ? (
@@ -942,6 +878,25 @@ export function TiendaFlow({
               )}
             </>
           )}
+
+          {(selected.inventarioId || selected.id) ? (
+            <ProductReviewsSection
+              inventarioId={selected.inventarioId || selected.id}
+              clienteId={clienteId}
+              clientUserId={clientUserId}
+              ratingSummary={selected.rating}
+              reviewCount={selected.reviewCount}
+              onMetaUpdated={async () => {
+                const invId = selected.inventarioId || selected.id;
+                if (!invId) return;
+                const { data } = await db.inventario.getById(invId, { sucursalId });
+                if (data) {
+                  const mapped = mapInventarioToTiendaProduct(data);
+                  if (mapped) setSelected((prev) => (prev ? { ...prev, ...mapped } : prev));
+                }
+              }}
+            />
+          ) : null}
         </View>
       ) : null}
 
@@ -1333,7 +1288,7 @@ export function TiendaFlow({
               <Text style={subStyles.rowLabel}>Tus tarjetas guardadas</Text>
               <Text style={styles.choiceSub}>Selecciona una o agrega una nueva.</Text>
 
-              {savedCards.map((card) => (
+              {savedCardsUi.map((card) => (
                 <TouchableOpacity
                   key={card.id}
                   style={[styles.savedCardRow, selectedCardId === card.id && styles.savedCardRowOn]}

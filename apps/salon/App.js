@@ -32,6 +32,8 @@ import { GlobalSearchResults } from './components/GlobalSearchResults';
 import { runSalonGlobalSearch, SALON_SEARCH_MIN_LEN } from './services/salonGlobalSearch';
 import { spacing, typography } from '@appsalon/design-tokens';
 import { ThemeProvider, useTheme } from './theme/ThemeProvider';
+import { OtaLauncher } from '../../shared/components/OtaLauncher';
+import { OtaStatusPanel } from '../../shared/components/OtaStatusPanel';
 import {
   SALON_MODULES,
   getModuleById,
@@ -58,6 +60,7 @@ import {
 } from './utils/salonPush';
 import { IncidentesScreen } from './screens/IncidentesScreen';
 import { InventarioScreen } from './screens/InventarioScreen';
+import { EventosProfesionalesScreen } from './screens/EventosProfesionalesScreen';
 import { PapeleriaScreen } from './screens/PapeleriaScreen';
 import { ProveedoresScreen } from './screens/ProveedoresScreen';
 import { PedidosScreen } from './screens/PedidosScreen';
@@ -456,6 +459,10 @@ function SalonAdminShell({ onSignOut, profile }) {
     );
   }
 
+  if (openedModuleId === 'eventos') {
+    return <EventosProfesionalesScreen onBack={closeModule} />;
+  }
+
   if (openedModuleId === 'mensajes') {
     return <MensajesScreen onBack={closeModule} />;
   }
@@ -613,6 +620,8 @@ function SalonAdminShell({ onSignOut, profile }) {
           {modules.length === 0 ? (
             <Text style={styles.noResults}>No hay resultados para tu busqueda.</Text>
           ) : null}
+
+          <OtaStatusPanel theme={{ colors: c, isDark }} appLabel="App Salón" />
         </View>
       </ScrollView>
     </View>
@@ -876,11 +885,13 @@ export default function App() {
   }
 
   return (
-    <ThemeProvider>
-      <SafeAreaProvider>
-        <SalonThemedRoot />
-      </SafeAreaProvider>
-    </ThemeProvider>
+    <OtaLauncher>
+      <ThemeProvider>
+        <SafeAreaProvider>
+          <SalonThemedRoot />
+        </SafeAreaProvider>
+      </ThemeProvider>
+    </OtaLauncher>
   );
 }
 

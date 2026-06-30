@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
-import { Search, ShoppingCart } from 'lucide-react-native';
+import { Search, ShoppingBag } from 'lucide-react-native';
 import { typography, spacing, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
@@ -138,11 +138,11 @@ export function ScreenHeader({
               onPress={onCartPress ?? (() => {})}
               accessibilityRole="button"
               accessibilityLabel={
-                cartLabel ? `Carrito, ${cartLabel} productos` : 'Carrito'
+                cartLabel ? `Tienda, ${cartLabel} productos` : 'Tienda'
               }
               hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
             >
-              <ShoppingCart size={23} color={c.foreground} strokeWidth={1.85} />
+              <ShoppingBag size={23} color={c.foreground} strokeWidth={1.85} />
               {cartLabel ? (
                 <View style={[styles.cartBadge, { backgroundColor: CLIENT_ALERT_BELL_RED }]}>
                   <Text style={styles.cartBadgeTxt}>{cartLabel}</Text>

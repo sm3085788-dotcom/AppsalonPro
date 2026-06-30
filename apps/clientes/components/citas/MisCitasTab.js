@@ -312,7 +312,10 @@ export function MisCitasTab({
         ]}
       >
         <View style={styles.titleRow}>
-          <Text style={styles.pageDisplay}>Servicios</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pageDisplay}>Servicios</Text>
+            <Text style={styles.pageSub}>Elegir servicios y agendar</Text>
+          </View>
           <TouchableOpacity
             style={styles.cartBtn}
             onPress={onOpenServiciosCart}
@@ -522,11 +525,15 @@ function createStyles(c) {
       marginBottom: spacing.md,
     },
     pageDisplay: {
-      flex: 1,
-      minWidth: 0,
       fontFamily: typography.fontDisplay,
       fontSize: 27,
       color: c.foreground,
+    },
+    pageSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      color: c.foregroundMuted,
+      marginTop: 2,
     },
     cartBtn: {
       width: 44,

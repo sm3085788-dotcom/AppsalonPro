@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  Linking as SysLinking,
 } from 'react-native';
 import {
   SafeAreaProvider,
@@ -18,7 +19,7 @@ import {
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { TiendaCartProvider, useTiendaCart } from './context/TiendaCartContext';
-import { ServiciosCartProvider } from './context/ServiciosCartContext';
+import { ServiciosCartProvider, useServiciosCart } from './context/ServiciosCartContext';
 import { StripeRoot } from './components/stripe/StripeRoot';
 import { TiendaCartButton } from './components/tienda/TiendaCartButton';
 import { countActivePedidos } from './utils/pedidosBadge';
@@ -146,6 +147,7 @@ import {
   notifyClientFromMdmId,
 } from '@appsalon/shared-config';
 import { partitionCitasCliente } from './utils/citasLabels';
+import { InstagramBrandIcon, FacebookBrandIcon } from './components/social/SocialBrandIcons';
 import * as Linking from 'expo-linking';
 import { PostLoginIntroScreen } from './onboarding/PostLoginIntroScreen';
 import { AppTourScreen } from './onboarding/AppTourScreen';
@@ -195,7 +197,7 @@ function paddingForTabBar(insets) {
   return tabBarOverlayHeight(insets) + spacing.md;
 }
 
-function ProfileMenuRow({ icon: Icon, label, onPress, showAlert }) {
+function ProfileMenuRow({ icon: Icon, label, onPress, showAlert, trailing }) {
   const { colors: c } = useTheme();
   const rowStyles = useMemo(
     () =>
@@ -219,21 +221,29 @@ function ProfileMenuRow({ icon: Icon, label, onPress, showAlert }) {
           borderRadius: 5,
           backgroundColor: CLIENT_ALERT_BELL_RED,
         },
+        trailing: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+        },
       }),
     [c],
   );
 
   return (
-    <TouchableOpacity
-      style={rowStyles.row}
-      onPress={onPress ?? (() => {})}
-      activeOpacity={0.75}
-      accessibilityRole="button"
-    >
-      <Icon size={20} color={c.foreground} strokeWidth={1.75} />
-      <Text style={rowStyles.label}>{label}</Text>
-      {showAlert ? <View style={rowStyles.alertDot} /> : null}
-    </TouchableOpacity>
+    <View style={rowStyles.row}>
+      <TouchableOpacity
+        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}
+        onPress={onPress ?? (() => {})}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+      >
+        <Icon size={20} color={c.foreground} strokeWidth={1.75} />
+        <Text style={rowStyles.label}>{label}</Text>
+        {showAlert ? <View style={rowStyles.alertDot} /> : null}
+      </TouchableOpacity>
+      {trailing ? <View style={rowStyles.trailing}>{trailing}</View> : null}
+    </View>
   );
 }
 
@@ -291,6 +301,7 @@ function AppMain({ onLogout }) {
   const premiosSnapshotRef = useRef(null);
   const openedSubRef = useRef(null);
   const { cartCount } = useTiendaCart();
+  const { count: serviciosCartCount } = useServiciosCart();
   const [openedSub, setOpenedSub] = useState(null);
   const [subPayload, setSubPayload] = useState(null);
   const openSub = useCallback((id, payload = null) => {
@@ -1244,13 +1255,24 @@ function AppMain({ onLogout }) {
     () => (profileIncomplete ? getClienteProfileMissing(clienteRow) : []),
     [profileIncomplete, clienteRow],
   );
+  const citasActivasCount = useMemo(() => {
+    const n = (proximaCita ? 1 : 0) + (otrasProximas?.length ?? 0);
+    return n;
+  }, [proximaCita, otrasProximas]);
+
   const tabItemsWithAlerts = useMemo(
     () =>
       TAB_ITEMS.map((item) => ({
         ...item,
         alert: item.id === TABS.PERFIL ? profileIncomplete : false,
+        badgeCount:
+          item.id === TABS.CITAS
+            ? serviciosCartCount
+            : item.id === TABS.HISTORIAL
+              ? citasActivasCount
+              : 0,
       })),
-    [profileIncomplete],
+    [profileIncomplete, serviciosCartCount, citasActivasCount],
   );
 
   const openEditarPerfil = useCallback(() => {
@@ -1294,8 +1316,8 @@ function AppMain({ onLogout }) {
                 { id: 'tienda',     label: 'Tienda',     iconName: 'ShoppingBag',   sub: 'Productos y kits profesionales', onPress: () => openSub(CLIENT_SUB.TIENDA) },
                 { id: 'tendencias', label: 'Tendencias', iconName: 'Sparkles',      sub: 'Looks de temporada',             onPress: () => openSub(CLIENT_SUB.TENDENCIAS) },
                 { id: 'premios',    label: 'Premios',    iconName: 'Award',         sub: 'Puntos, canjes y referidos',     onPress: () => { setPremiosBadge(false); setPremiosCanjeReady(false); void AsyncStorage.setItem(MEMBRESIA_SEEN_KEY, clienteRow?.membresia_nivel ?? ''); openSub(CLIENT_SUB.PREMIOS); void acknowledgePremiosProgress(); }, bellBadge: premiosBadge, prizeBadge: premiosCanjeReady },
-                { id: 'pedidos',    label: 'Pedidos',    iconName: 'Package',       sub: 'Mis compras y estado',           onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
-                { id: 'citas',      label: 'Servicios',  iconName: 'Scissors',      sub: 'Elegí servicios y agendá',       onPress: () => setTab(TABS.CITAS) },
+                { id: 'pedidos',    label: 'Pedidos',    iconName: 'Package',       sub: 'Mis compras en tienda y estado', onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
+                { id: 'citas',      label: 'Servicios',  iconName: 'Scissors',      sub: 'Elegir servicios y agendar',    onPress: () => setTab(TABS.CITAS), badge: true, badgeCount: serviciosCartCount },
               ]}
           />
         </View>
@@ -1403,6 +1425,32 @@ function AppMain({ onLogout }) {
           icon={Phone}
           label="Servicio al cliente"
           onPress={() => openSub(CLIENT_SUB.CONTACTO)}
+          trailing={
+            <>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  void SysLinking.openURL('https://instagram.com/appsalonpro');
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Instagram"
+              >
+                <InstagramBrandIcon size={22} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  void SysLinking.openURL('https://facebook.com/appsalonpro');
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Facebook"
+              >
+                <FacebookBrandIcon size={22} />
+              </TouchableOpacity>
+            </>
+          }
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow

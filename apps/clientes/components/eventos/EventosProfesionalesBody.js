@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,16 @@ import {
   Image,
   FlatList,
   useWindowDimensions,
+  ActivityIndicator,
+  Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Star } from 'lucide-react-native';
 import { spacing, typography } from '@appsalon/design-tokens';
+import { db } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
-import { EVENTOS_PROFESIONALES_POSTS } from '../../data/eventosProfesionalesPosts';
+import { SalonButton } from '../luxury/SalonButton';
 import {
   formatServicioDuracion,
   formatServicioPrecio,
@@ -20,6 +24,7 @@ import {
   formatCategoriaLabel,
   resolveServicioImageUris,
 } from '../../data/servicioCategoryArt';
+import { EVENTOS_PROFESIONALES_POSTS } from '../../data/eventosProfesionalesPosts';
 
 const IMAGE_ASPECT = 16 / 9;
 const STAR_GOLD = '#FFB800';
@@ -43,7 +48,7 @@ function RatingStars({ rating }) {
   );
 }
 
-function EventoPostRow({ post, cardWidth, cardHeight, styles }) {
+function EventoPostRow({ post, cardWidth, cardHeight, styles, onSolicitar }) {
   const imageUris = resolveServicioImageUris(post);
   const catLabel = formatCategoriaLabel(post.categoria);
   const rating = Number(post.rating) || 0;
@@ -136,6 +141,17 @@ function EventoPostRow({ post, cardWidth, cardHeight, styles }) {
             <Text style={styles.stackDesc} numberOfLines={2}>
               {desc}
             </Text>
+          ) : null}
+          {onSolicitar ? (
+            <TouchableOpacity
+              style={styles.solicitarBtn}
+              onPress={() => onSolicitar(post)}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Solicitar participación"
+            >
+              <Text style={styles.solicitarBtnTxt}>Solicitar participación</Text>
+            </TouchableOpacity>
           ) : null}
         </View>
       </View>
@@ -261,26 +277,121 @@ function createStyles(c) {
       lineHeight: 17,
       color: 'rgba(255,255,255,0.88)',
     },
+    solicitarBtn: {
+      marginTop: spacing.sm,
+      alignSelf: 'flex-start',
+      backgroundColor: 'rgba(197,163,104,0.95)',
+      paddingHorizontal: spacing.md,
+      paddingVertical: 8,
+      borderRadius: 6,
+    },
+    solicitarBtnTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      color: '#1A1510',
+    },
   });
 }
 
-export function EventosProfesionalesBody() {
+function mapEventoRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    nombre: row.titulo,
+    categoria: row.categoria || 'Evento',
+    descripcion: row.descripcion || '',
+    precio: 0,
+    priceLabel: row.precio_label || 'Consultar',
+    duracion_agenda: row.stock_hint || '',
+    stockHint: row.stock_hint || '',
+    badge: row.badge || '',
+    rating: Number(row.rating) || 4.5,
+    reviewCount: Number(row.review_count) || 0,
+    compareAtLabel: row.compare_at_label || '',
+    imageUri: row.imagen_url || null,
+  };
+}
+
+export function EventosProfesionalesBody({ clienteRow, sessionUser }) {
   const { colors: c } = useTheme();
   const { width: winW } = useWindowDimensions();
   const bleed = spacing.lg;
   const cardWidth = winW;
   const cardHeight = Math.round(cardWidth / IMAGE_ASPECT);
   const styles = useMemo(() => createStyles(c), [c]);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await db.eventosProfesionales.listActivos();
+    if (!error && Array.isArray(data) && data.length) {
+      setPosts(data.map(mapEventoRow).filter(Boolean));
+    } else {
+      setPosts(EVENTOS_PROFESIONALES_POSTS);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const solicitar = (post) => {
+    if (!sessionUser?.id) {
+      Alert.alert('Iniciá sesión', 'Necesitás una cuenta para enviar solicitudes.');
+      return;
+    }
+    Alert.alert(
+      'Solicitar participación',
+      `¿Enviar solicitud para «${post.nombre}»? El salón te contactará pronto.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Enviar',
+          onPress: () => {
+            void (async () => {
+              const { error } = await db.eventosProfesionales.submitSolicitud({
+                eventoId: post.id,
+                clienteId: clienteRow?.id,
+                mensaje: `Interés en ${post.nombre}`,
+              });
+              if (error) {
+                Alert.alert('Solicitud', error.message || 'No se pudo enviar.');
+                return;
+              }
+              Alert.alert('Enviado', 'Tu solicitud llegó al salón. Te contactaremos pronto.');
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  if (loading) {
+    return <ActivityIndicator color={c.primary} style={{ marginVertical: spacing.lg }} />;
+  }
+
+  if (!posts.length) {
+    return (
+      <View style={{ padding: spacing.lg }}>
+        <Text style={{ color: c.foregroundMuted, fontFamily: typography.fontSans }}>
+          Pronto habrá eventos profesionales disponibles.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.stackList, { marginHorizontal: -bleed, width: cardWidth }]}>
-      {EVENTOS_PROFESIONALES_POSTS.map((post) => (
+      {posts.map((post) => (
         <EventoPostRow
           key={post.id}
           post={post}
           cardWidth={cardWidth}
           cardHeight={cardHeight}
           styles={styles}
+          onSolicitar={String(post.id).startsWith('evt-') ? null : solicitar}
         />
       ))}
     </View>

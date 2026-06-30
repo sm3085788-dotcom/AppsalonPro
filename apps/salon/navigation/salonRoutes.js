@@ -14,6 +14,7 @@ import {
   Truck,
   ClipboardList,
   Building2,
+  CalendarHeart,
 } from 'lucide-react-native';
 
 /**
@@ -67,6 +68,12 @@ export const SALON_MODULES = [
     title: 'Marketing',
     subtitle: 'Fotos y videos para Tendencias (App Clientes)',
     Icon: Megaphone,
+  },
+  {
+    id: 'eventos',
+    title: 'Eventos Profesionales',
+    subtitle: 'Paquetes especiales y solicitudes de clientes',
+    Icon: CalendarHeart,
   },
   {
     id: 'mensajes',
@@ -131,6 +138,7 @@ const MODULE_KEYWORDS = {
   goals: ['meta', 'metas', 'objetivo', 'bono'],
   reportes: ['reporte', 'reportes', 'indicador', 'exportar', 'pdf'],
   marketing: ['marketing', 'tendencias', 'carrusel', 'publicacion', 'post'],
+  eventos: ['evento', 'eventos', 'boda', 'fiesta', 'profesional', 'solicitud'],
   mensajes: ['mensaje', 'mensajes', 'chat', 'andreas', 'promo'],
   panel: ['panel', 'kpi', 'control', 'resumen', 'basurero', 'eliminado', 'papelera', 'recuperar', 'borrado'],
   incidentes: ['incidente', 'accidente', 'reporte', 'folio', 'pdf'],

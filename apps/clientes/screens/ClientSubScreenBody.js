@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import Constants from 'expo-constants';
 import { ProfileEditForm } from './ProfileEditForm';
 import { AgendarCitaForm } from './AgendarCitaForm';
 import { ServiciosCarritoBody } from '../components/citas/ServiciosCarritoBody';
@@ -16,11 +17,15 @@ import { MisFacturasBody } from './MisFacturasBody';
 import { MisPedidosBody } from '../components/pedidos/MisPedidosBody';
 import { AuraLineInbox } from '../components/mensajes/AuraLineInbox';
 import { EventosProfesionalesBody } from '../components/eventos/EventosProfesionalesBody';
+import { MetodosPagoBody } from '../components/pagos/MetodosPagoBody';
 import { BROADCAST_PROMO_ACTIONS } from '@appsalon/shared-config';
 import { labelEstadoCita, estadoCitaTone } from '../utils/citasLabels';
 import { CLIENT_SUB } from '../navigation/clientSubScreens';
 import { CLIENT_ALERT_BELL_RED } from '../constants/clientAlertColors';
 import { useTheme } from '../theme/ThemeProvider';
+import { useClientLocale } from '../hooks/useClientLocale';
+import { InstagramBrandIcon, FacebookBrandIcon } from '../components/social/SocialBrandIcons';
+import { LocationOnIcon } from '../components/social/LocationOnIcon';
 
 function formatGtq(n) {
   const x = Number(n);
@@ -51,6 +56,7 @@ const WEB_APP_URL = 'https://appsalon-pro-web-catalogo.vercel.app';
 
 function ContactoBody() {
   const subStyles = useSubStyles();
+  const { colors: tc } = useTheme();
   const chipText = useAccentChipStyle();
   const openUrl = (url) => Linking.openURL(url).catch(() => {});
 
@@ -85,7 +91,8 @@ function ContactoBody() {
           style={subStyles.rowTouch}
           onPress={() => openUrl(getSalonGoogleMapsUrl())}
         >
-          <View style={{ flex: 1 }}>
+          <LocationOnIcon size={24} color={tc.primary} />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
             <Text style={subStyles.rowLabel}>Ubicación GPS</Text>
             <Text style={subStyles.rowSub}>Abrir en mapas y navegar</Text>
           </View>
@@ -100,7 +107,11 @@ function ContactoBody() {
           style={subStyles.rowTouch}
           onPress={() => openUrl('https://instagram.com/appsalonpro')}
         >
-          <Text style={subStyles.rowLabel}>Instagram</Text>
+          <InstagramBrandIcon size={28} />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
+            <Text style={subStyles.rowLabel}>Instagram</Text>
+            <Text style={subStyles.rowSub}>@appsalonpro</Text>
+          </View>
           <Text style={chipText}>Abrir</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
@@ -108,7 +119,11 @@ function ContactoBody() {
           style={subStyles.rowTouch}
           onPress={() => openUrl('https://facebook.com/appsalonpro')}
         >
-          <Text style={subStyles.rowLabel}>Facebook</Text>
+          <FacebookBrandIcon size={28} />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
+            <Text style={subStyles.rowLabel}>Facebook</Text>
+            <Text style={subStyles.rowSub}>AppSalon Pro</Text>
+          </View>
           <Text style={chipText}>Abrir</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
@@ -172,7 +187,12 @@ const padTop = { paddingTop: 2 };
 function ConfiguracionBody({ onClose, onLogout, sessionUser }) {
   const subStyles = useSubStyles();
   const { isDark, setScheme, colors: tc } = useTheme();
+  const { locale, toggleLocale, configStrings, localeMeta } = useClientLocale();
   const [deleting, setDeleting] = useState(false);
+  const appVersion =
+    Constants.expoConfig?.version ??
+    Constants.manifest2?.extra?.expoClient?.version ??
+    '—';
 
   const confirmDeleteAccount = () => {
     if (!sessionUser?.id || deleting) return;
@@ -225,14 +245,22 @@ function ConfiguracionBody({ onClose, onLogout, sessionUser }) {
       <View style={[subStyles.card, padTop]}>
         <View style={configStyles.splitRow}>
           <View style={configStyles.col}>
-            <Text style={subStyles.rowLabel}>Idioma</Text>
-            <Text style={subStyles.rowSub}>Español (Latinoamérica)</Text>
+            <Text style={subStyles.rowLabel}>{configStrings.language}</Text>
+            <TouchableOpacity
+              onPress={() => void toggleLocale()}
+              accessibilityRole="button"
+              accessibilityLabel={`${configStrings.language}: ${localeMeta.regionLabel}`}
+            >
+              <Text style={[subStyles.rowSub, { color: tc.primary }]}>
+                {localeMeta.regionLabel} · {locale === 'es' ? 'EN' : 'ES'}
+              </Text>
+            </TouchableOpacity>
           </View>
           <View style={[configStyles.vDivider, { backgroundColor: tc.cardBorder }]} />
           <View style={configStyles.col}>
-            <Text style={subStyles.rowLabel}>Modo oscuro</Text>
+            <Text style={subStyles.rowLabel}>{configStrings.darkMode}</Text>
             <View style={configStyles.switchRow}>
-              <Text style={subStyles.rowSub}>{isDark ? 'Activado' : 'Desactivado'}</Text>
+              <Text style={subStyles.rowSub}>{isDark ? configStrings.on : configStrings.off}</Text>
               <Switch
                 value={isDark}
                 onValueChange={(on) => setScheme(on ? 'dark' : 'light')}
@@ -247,9 +275,9 @@ function ConfiguracionBody({ onClose, onLogout, sessionUser }) {
           </View>
         </View>
         <View style={subStyles.divider} />
-        <RowStatic label="Zona horaria" value="Ciudad de México (GMT−6)" />
+        <RowStatic label={configStrings.timezone} value={configStrings.timezoneValue} />
         <View style={subStyles.divider} />
-        <RowStatic label="Versión cliente" value="Aura Clientes" />
+        <RowStatic label={configStrings.clientVersion} value={`Aura Clientes ${appVersion}`} />
       </View>
 
       <View style={[subStyles.card, { marginTop: spacing.md }]}>
@@ -521,7 +549,7 @@ export function ClientSubScreenBody({
     case CLIENT_SUB.CONTACTO:
       return <ContactoBody />;
     case CLIENT_SUB.NOTIFICACIONES:
-      return <EventosProfesionalesBody />;
+      return <EventosProfesionalesBody clienteRow={clienteRow} sessionUser={sessionUser} />;
 
     case CLIENT_SUB.MENSAJES:
       return (
@@ -534,18 +562,7 @@ export function ClientSubScreenBody({
       );
 
     case CLIENT_SUB.METODOS_PAGO:
-      return (
-        <>
-          <View style={subStyles.card}>
-            <Text style={subStyles.rowLabel}>Visa ··· 4242</Text>
-            <Text style={subStyles.rowSub}>Predeterminada · expira 08/29</Text>
-            <View style={subStyles.divider} />
-            <Text style={subStyles.rowLabel}>Efectivo en salón</Text>
-            <Text style={subStyles.rowSub}>Sin cargos guardados.</Text>
-          </View>
-          <SalonButton variant="outlineGold" title="Agregar método" fullWidth onPress={onClose} />
-        </>
-      );
+      return <MetodosPagoBody onClose={onClose} />;
 
     case CLIENT_SUB.TIENDA:
       return (
@@ -554,6 +571,7 @@ export function ClientSubScreenBody({
           clienteId={clienteRow?.id}
           clienteNombre={clienteRow?.nombre}
           clienteTelefono={clienteRow?.telefono}
+          clienteDireccion={clienteRow?.direccion}
           clientUserId={sessionUser?.id}
           initialProductId={subPayload?.tiendaProductId || null}
           initialPhase={subPayload?.tiendaPhase || null}

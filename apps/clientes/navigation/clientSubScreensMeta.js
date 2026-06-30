@@ -52,7 +52,7 @@ export function getSubScreenTitles(id) {
         subtitle: 'Elije fecha y hora para los servicios y sigue con el proceso.',
       };
     case CLIENT_SUB.MIS_PEDIDOS:
-      return { title: 'Mis pedidos', subtitle: null };
+      return { title: 'Mis pedidos', subtitle: 'Mis compras en tienda y estado' };
     case CLIENT_SUB.MEMBRESIAS:
       return { title: 'Membresías', subtitle: 'Bronce, Plata y VIP · beneficios por nivel.' };
     case CLIENT_SUB.MENSAJES:

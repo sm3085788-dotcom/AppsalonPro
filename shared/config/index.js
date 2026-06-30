@@ -48,6 +48,15 @@ export {
   checkoutDomicilioConStripe,
 } from './stripeCheckout.js';
 export {
+  ensureStripeCustomer,
+  createStripeSetupIntent,
+  listStripeSavedCards,
+  detachStripePaymentMethod,
+  saveCardWithStripeSetup,
+  formatSavedCardLabel,
+  formatSavedCardSub,
+} from './stripeSavedCards.js';
+export {
   validateTarjetaForm,
   detectCardBrand,
   formatCardNumberDisplay,

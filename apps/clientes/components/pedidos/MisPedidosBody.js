@@ -10,7 +10,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { Package, QrCode, Truck } from 'lucide-react-native';
+import { Package } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, needsPickupQr, isHomeDeliveryOrder, isCardPayment, isPedidoTarjetaDomicilioCapturado } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -69,46 +69,6 @@ function LegendChip({ color, label, textColor }) {
     <View style={styles.legendChip}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
       <Text style={[styles.legendLabel, { color: textColor }]}>{label}</Text>
-    </View>
-  );
-}
-
-function PedidosIntroPanel({ c }) {
-  return (
-    <View
-      style={[
-        styles.introCard,
-        { backgroundColor: c.card, borderColor: c.cardBorder },
-      ]}
-    >
-      <View style={[styles.introAccent, { backgroundColor: c.primary }]} />
-      <Text style={[styles.introKicker, { color: c.primary }]}>Tu bandeja de compras</Text>
-      <Text style={[styles.introHeadline, { color: c.foreground }]}>
-        Retiro, envío a domicilio y seguimiento
-      </Text>
-      <Text style={[styles.introBody, { color: c.foregroundMuted }]}>
-        Pedidos de la tienda. Retiro en efectivo incluye código QR para el salón. Envío con tarjeta se confirma al pagar
-        y no requiere QR. Los completados se marcan en verde; podés cancelar mientras no estén entregados.
-      </Text>
-      <View style={styles.introIcons}>
-        <View style={[styles.introIconCell, { backgroundColor: c.surfaceMuted }]}>
-          <QrCode size={16} color={c.primary} strokeWidth={2} />
-          <Text style={[styles.introIconTxt, { color: c.foregroundMuted }]}>QR retiro</Text>
-        </View>
-        <View style={[styles.introIconCell, { backgroundColor: c.surfaceMuted }]}>
-          <Package size={16} color={c.primary} strokeWidth={2} />
-          <Text style={[styles.introIconTxt, { color: c.foregroundMuted }]}>Tienda</Text>
-        </View>
-        <View style={[styles.introIconCell, { backgroundColor: c.surfaceMuted }]}>
-          <Truck size={16} color={c.primary} strokeWidth={2} />
-          <Text style={[styles.introIconTxt, { color: c.foregroundMuted }]}>Delivery</Text>
-        </View>
-      </View>
-      <View style={[styles.legendRow, { borderTopColor: c.cardBorder }]}>
-        <LegendChip color={GOLD} label="Pendiente" textColor={c.foregroundMuted} />
-        <LegendChip color={GREEN} label="Completado" textColor={c.foregroundMuted} />
-        <LegendChip color={CANCEL_RED} label="Cancelado" textColor={c.foregroundMuted} />
-      </View>
     </View>
   );
 }
@@ -339,7 +299,6 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
 
   const listHeader = (
     <>
-      <PedidosIntroPanel c={c} />
       {loadError ? (
         <TouchableOpacity
           style={[styles.errorBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}

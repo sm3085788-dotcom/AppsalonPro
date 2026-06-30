@@ -4125,6 +4125,133 @@ export const db = {
     },
   },
 
+  // ==================== RESEÑAS INVENTARIO (TIENDA) ====================
+  inventarioResenas: {
+    listByInventario: async (inventarioId, limit = 30) => {
+      return await supabase
+        .from('inventario_resenas')
+        .select('*')
+        .eq('inventario_id', inventarioId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+    },
+
+    canReview: async (inventarioId) => {
+      const { data, error } = await supabase.rpc('cliente_puede_resenar_inventario', {
+        p_inventario_id: inventarioId,
+      });
+      if (error) return { ok: false, allowed: false, error };
+      return { ok: true, allowed: Boolean(data) };
+    },
+
+    submit: async ({ inventarioId, clienteId, rating, comentario, fotoUrls = [] }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return { data: null, error: { message: 'Iniciá sesión para dejar una reseña.' } };
+      const fotos = (Array.isArray(fotoUrls) ? fotoUrls : []).slice(0, 2);
+      return await supabase
+        .from('inventario_resenas')
+        .upsert(
+          {
+            inventario_id: inventarioId,
+            client_user_id: user.id,
+            cliente_id: clienteId || null,
+            rating: Math.min(5, Math.max(1, Math.floor(Number(rating) || 5))),
+            comentario: String(comentario || '').trim(),
+            foto_urls: fotos,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'inventario_id,client_user_id' },
+        )
+        .select('*')
+        .single();
+    },
+  },
+
+  // ==================== TARJETAS STRIPE GUARDADAS ====================
+  stripeSavedCards: {
+    listLocal: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return { data: [], error: null };
+      return await supabase
+        .from('stripe_saved_cards')
+        .select('*')
+        .eq('client_user_id', user.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: false });
+    },
+  },
+
+  // ==================== EVENTOS PROFESIONALES ====================
+  eventosProfesionales: {
+    listActivos: async () => {
+      return await supabase
+        .from('eventos_profesionales')
+        .select('*')
+        .eq('activo', true)
+        .order('orden', { ascending: true })
+        .order('created_at', { ascending: false });
+    },
+
+    listAll: async () => {
+      return await supabase
+        .from('eventos_profesionales')
+        .select('*')
+        .order('orden', { ascending: true })
+        .order('created_at', { ascending: false });
+    },
+
+    create: async (payload) => {
+      return await supabase.from('eventos_profesionales').insert(payload).select('*').single();
+    },
+
+    update: async (id, payload) => {
+      return await supabase
+        .from('eventos_profesionales')
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('*')
+        .single();
+    },
+
+    delete: async (id) => {
+      return await supabase.from('eventos_profesionales').delete().eq('id', id);
+    },
+
+    submitSolicitud: async ({ eventoId, clienteId, mensaje }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return { data: null, error: { message: 'Iniciá sesión para solicitar.' } };
+      return await supabase
+        .from('eventos_solicitudes')
+        .insert({
+          evento_id: eventoId,
+          cliente_id: clienteId || null,
+          client_user_id: user.id,
+          mensaje: String(mensaje || '').trim(),
+          estado: 'pending',
+        })
+        .select('*')
+        .single();
+    },
+
+    listSolicitudes: async (estado = null) => {
+      let q = supabase
+        .from('eventos_solicitudes')
+        .select('*, evento:eventos_profesionales(id, titulo, imagen_url), cliente:clientes(id, nombre, telefono, email)')
+        .order('created_at', { ascending: false });
+      if (estado) q = q.eq('estado', estado);
+      return await q;
+    },
+
+    updateSolicitudEstado: async (id, estado) => {
+      return await supabase
+        .from('eventos_solicitudes')
+        .update({ estado, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('*')
+        .single();
+    },
+  },
+
   // ==================== METAS (OBJETIVOS) ====================
   metas: {
     getAll: async () => {
@@ -7557,6 +7684,48 @@ export async function uploadEmpleadoFotoFromUri(localUri, meta = {}) {
 /** Bucket Storage `clientes` — fotos de perfil de app clientes. */
 export async function uploadClientePhotoFromUri(localUri, meta = {}) {
   return uploadStorageFromLocalUri('clientes', localUri, meta);
+}
+
+/** Fotos de reseñas de producto (máx. 2 por reseña). */
+export async function uploadResenaFotoFromUri(localUri, meta = {}) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const uid = user?.id || 'anon';
+  const ext = String(meta.extension || 'jpg').replace(/^\./, '').replace(/[^a-z0-9]/gi, '') || 'jpg';
+  const path = `${uid}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  const contentType = meta.contentType || 'image/jpeg';
+
+  try {
+    let body;
+    const uri = String(localUri || '');
+    if (uri.startsWith('file://') || uri.startsWith('content://')) {
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
+      });
+      const raw = globalThis.atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+      body = bytes;
+    } else {
+      const res = await fetch(uri);
+      if (!res.ok) throw new Error('No se pudo leer el archivo');
+      body = await res.blob();
+    }
+
+    const { data, error } = await supabase.storage.from('resenas-fotos').upload(path, body, {
+      contentType,
+      upsert: false,
+    });
+    if (error) return { error, publicUrl: null };
+    const { data: pub } = supabase.storage.from('resenas-fotos').getPublicUrl(data.path);
+    return { error: null, publicUrl: pub.publicUrl };
+  } catch (e) {
+    return { error: { message: e?.message || String(e) }, publicUrl: null };
+  }
+}
+
+/** Bucket Storage `eventos-profesionales` — hero 626×417. */
+export async function uploadEventoProfesionalMediaFromUri(localUri, meta = {}) {
+  return uploadStorageFromLocalUri('eventos-profesionales', localUri, meta);
 }
 
 export {

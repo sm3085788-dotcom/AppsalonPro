@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { ShoppingCart } from 'lucide-react-native';
+import { ShoppingBag } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { typography } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -11,7 +11,7 @@ const GOLD = '#C5A368';
 /** paddingTop + ítem (icono + etiqueta); debe coincidir con tabBarOverlayHeight en App.js */
 const TAB_BAR_CORE_HEIGHT = 8 + 4 + 40 + 4 + 14;
 
-/** @param {{ id: string, label: string, icon: import('react').ComponentType, alert?: boolean }[]} items */
+/** @param {{ id: string, label: string, icon: import('react').ComponentType, alert?: boolean, badgeCount?: number }[]} items */
 export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPress }) {
   const { colors: c, isDark } = useTheme();
   const inactiveLabelColor = isDark ? c.foreground : CHARCOAL;
@@ -121,17 +121,17 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
                 onPress={onCartPress}
                 activeOpacity={0.82}
                 accessibilityRole="button"
-                accessibilityLabel={cartCount > 0 ? `Carrito, ${cartCount} productos` : 'Carrito'}
+                accessibilityLabel={cartCount > 0 ? `Tienda, ${cartCount} productos` : 'Tienda'}
               >
                 <View style={styles.iconShell}>
-                  <ShoppingCart size={22} color={inactiveIconColor} strokeWidth={1.6} />
+                  <ShoppingBag size={22} color={inactiveIconColor} strokeWidth={1.6} />
                   {cartCount > 0 ? (
                     <View style={[styles.cartBadge, { backgroundColor: CLIENT_ALERT_BELL_RED }]}>
                       <Text style={styles.cartBadgeTxt}>{cartCount > 99 ? '99+' : String(cartCount)}</Text>
                     </View>
                   ) : null}
                 </View>
-                <Text style={[styles.label, { color: inactiveLabelColor }]}>Carrito</Text>
+                <Text style={[styles.label, { color: inactiveLabelColor }]}>Tienda</Text>
               </TouchableOpacity>
             ) : null}
 
@@ -145,7 +145,15 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
             >
               <View style={styles.iconShell}>
                 <Icon size={22} color={iconColor} strokeWidth={active ? 2.1 : 1.6} />
-                {item.alert ? <View style={styles.alertDot} /> : null}
+                {item.badgeCount > 0 ? (
+                  <View style={[styles.cartBadge, { backgroundColor: CLIENT_ALERT_BELL_RED }]}>
+                    <Text style={styles.cartBadgeTxt}>
+                      {item.badgeCount > 99 ? '99+' : String(item.badgeCount)}
+                    </Text>
+                  </View>
+                ) : item.alert ? (
+                  <View style={styles.alertDot} />
+                ) : null}
               </View>
               <Text
                 style={[
