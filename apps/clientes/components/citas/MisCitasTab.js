@@ -30,6 +30,7 @@ import { normalizeServicioCategoria } from '@appsalon/shared-config';
 import { ClientSucursalPicker } from '../sucursal/ClientSucursalPicker';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
+import { useClientLocale } from '../../hooks/useClientLocale';
 import { useServiciosCart } from '../../context/ServiciosCartContext';
 import {
   formatServicioDuracion,
@@ -210,6 +211,7 @@ export function MisCitasTab({
   highlightInventarioId = null,
   onHighlightConsumed,
 }) {
+  const { t } = useClientLocale();
   const { colors: c } = useTheme();
   const { width: winW } = useWindowDimensions();
   const bleed = spacing.lg;
@@ -313,8 +315,8 @@ export function MisCitasTab({
       >
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.pageDisplay}>Servicios</Text>
-            <Text style={styles.pageSub}>Elegir servicios y agendar</Text>
+            <Text style={styles.pageDisplay}>{t('citas.title')}</Text>
+            <Text style={styles.pageSub}>{t('citas.subtitle')}</Text>
           </View>
           <TouchableOpacity
             style={styles.cartBtn}
@@ -322,7 +324,7 @@ export function MisCitasTab({
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel={
-              cartLabel ? `Servicios por agendar, ${cartLabel}` : 'Servicios por agendar'
+              cartLabel ? t('citas.cartA11yCount', { count: cartLabel }) : t('citas.cartA11y')
             }
             hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
           >
@@ -348,7 +350,7 @@ export function MisCitasTab({
               <Search size={18} color={c.foregroundSubtle} strokeWidth={2} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Buscar servicio…"
+                placeholder={t('citas.searchPlaceholder')}
                 placeholderTextColor={c.foregroundSubtle}
                 value={busqueda}
                 onChangeText={setBusqueda}
@@ -360,7 +362,7 @@ export function MisCitasTab({
             style={styles.filterBtn}
             onPress={() => setFiltersOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel="Ordenar y filtrar servicios"
+            accessibilityLabel={t('citas.filterA11y')}
           >
             <SlidersHorizontal size={20} color={c.foreground} strokeWidth={2} />
           </TouchableOpacity>
@@ -368,7 +370,7 @@ export function MisCitasTab({
 
         {categoriaSel ? (
           <Text style={styles.activeFilters}>
-            Filtro: {categoriaSel}
+            {t('citas.filterActive', { cat: categoriaSel })}
           </Text>
         ) : null}
       </View>

@@ -4144,10 +4144,23 @@ export const db = {
       return { ok: true, allowed: Boolean(data) };
     },
 
-    submit: async ({ inventarioId, clienteId, rating, comentario, fotoUrls = [] }) => {
+    submit: async ({ inventarioId, clienteId, rating, comentario, fotoUrls = [], autorNombre }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) return { data: null, error: { message: 'Iniciá sesión para dejar una reseña.' } };
       const fotos = (Array.isArray(fotoUrls) ? fotoUrls : []).slice(0, 2);
+      let nombre = String(autorNombre || '').trim();
+      if (!nombre && clienteId) {
+        const { data: cl } = await supabase.from('clientes').select('nombre').eq('id', clienteId).maybeSingle();
+        nombre = String(cl?.nombre || '').trim();
+      }
+      if (!nombre) {
+        const md = user.user_metadata || {};
+        nombre =
+          [md.first_name, md.last_name].filter(Boolean).join(' ').trim() ||
+          String(md.full_name || '').trim() ||
+          user.email?.split('@')[0] ||
+          'Cliente';
+      }
       return await supabase
         .from('inventario_resenas')
         .upsert(
@@ -4155,6 +4168,7 @@ export const db = {
             inventario_id: inventarioId,
             client_user_id: user.id,
             cliente_id: clienteId || null,
+            autor_nombre: nombre,
             rating: Math.min(5, Math.max(1, Math.floor(Number(rating) || 5))),
             comentario: String(comentario || '').trim(),
             foto_urls: fotos,

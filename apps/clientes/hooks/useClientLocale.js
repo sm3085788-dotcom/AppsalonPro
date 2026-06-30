@@ -1,43 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getStrings, t as translate, localeTag as toLocaleTag } from '../i18n';
 
 const LOCALE_KEY = '@appsalon/clientes/locale';
 
 export const CLIENT_LOCALES = {
-  es: {
-    id: 'es',
-    label: 'Español',
-    regionLabel: 'Español (Latinoamérica)',
-  },
-  en: {
-    id: 'en',
-    label: 'English',
-    regionLabel: 'English (US)',
-  },
+  es: { id: 'es', label: 'Español', regionLabel: 'Español (Latinoamérica)' },
+  en: { id: 'en', label: 'English', regionLabel: 'English (US)' },
 };
 
-const CONFIG_STRINGS = {
-  es: {
-    language: 'Idioma',
-    timezone: 'Zona horaria',
-    timezoneValue: 'Guatemala (GMT−6)',
-    clientVersion: 'Versión cliente',
-    darkMode: 'Modo oscuro',
-    on: 'Activado',
-    off: 'Desactivado',
-  },
-  en: {
-    language: 'Language',
-    timezone: 'Time zone',
-    timezoneValue: 'Guatemala (GMT−6)',
-    clientVersion: 'Client version',
-    darkMode: 'Dark mode',
-    on: 'On',
-    off: 'Off',
-  },
-};
+const ClientLocaleContext = createContext(null);
 
-export function useClientLocale() {
+export function ClientLocaleProvider({ children }) {
   const [locale, setLocaleState] = useState('es');
   const [ready, setReady] = useState(false);
 
@@ -66,8 +40,47 @@ export function useClientLocale() {
     await setLocale(locale === 'es' ? 'en' : 'es');
   }, [locale, setLocale]);
 
-  const configStrings = CONFIG_STRINGS[locale] ?? CONFIG_STRINGS.es;
-  const localeMeta = CLIENT_LOCALES[locale] ?? CLIENT_LOCALES.es;
+  const strings = useMemo(() => getStrings(locale), [locale]);
+  const localeMeta = useMemo(
+    () => ({
+      ...CLIENT_LOCALES[locale],
+      regionLabel: strings.localeMeta?.[locale] ?? CLIENT_LOCALES[locale].regionLabel,
+    }),
+    [locale, strings],
+  );
 
-  return { locale, setLocale, toggleLocale, configStrings, localeMeta, ready };
+  const t = useCallback((key, vars) => translate(strings, key, vars), [strings]);
+
+  const value = useMemo(
+    () => ({
+      locale,
+      setLocale,
+      toggleLocale,
+      strings,
+      t,
+      localeMeta,
+      localeTag: toLocaleTag(locale),
+      ready,
+      configStrings: {
+        language: strings.config.language,
+        timezone: strings.config.timezone,
+        timezoneValue: strings.config.timezoneValue,
+        clientVersion: strings.config.clientVersion,
+        darkMode: strings.config.darkMode,
+        on: strings.config.on,
+        off: strings.config.off,
+      },
+    }),
+    [locale, setLocale, toggleLocale, strings, t, localeMeta, ready],
+  );
+
+  return <ClientLocaleContext.Provider value={value}>{children}</ClientLocaleContext.Provider>;
+}
+
+export function useClientLocale() {
+  const ctx = useContext(ClientLocaleContext);
+  if (!ctx) {
+    throw new Error('useClientLocale must be used within ClientLocaleProvider');
+  }
+  return ctx;
 }

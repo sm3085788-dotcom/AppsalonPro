@@ -1,11 +1,12 @@
 -- Reseñas de productos · App Clientes (tienda)
--- Ejecutar en Supabase → SQL Editor.
+-- Ejecutar en Supabase → SQL Editor (todo el archivo de una vez).
 
 CREATE TABLE IF NOT EXISTS public.inventario_resenas (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   inventario_id uuid NOT NULL REFERENCES public.inventario(id) ON DELETE CASCADE,
   client_user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   cliente_id uuid REFERENCES public.clientes(id) ON DELETE SET NULL,
+  autor_nombre text NOT NULL DEFAULT '',
   rating smallint NOT NULL CHECK (rating >= 1 AND rating <= 5),
   comentario text NOT NULL DEFAULT '',
   foto_urls text[] NOT NULL DEFAULT '{}',
@@ -21,6 +22,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS inventario_resenas_one_per_user
   ON public.inventario_resenas (inventario_id, client_user_id);
 
 ALTER TABLE public.inventario_resenas ENABLE ROW LEVEL SECURITY;
+
+-- Funciones ANTES de policies que las referencian
+-- (product_id en ecommerce_order_items es uuid, FK a inventario.id)
+CREATE OR REPLACE FUNCTION public.cliente_puede_resenar_inventario(p_inventario_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.ecommerce_orders o
+    JOIN public.ecommerce_order_items oi ON oi.order_id = o.id
+    WHERE o.client_user_id = auth.uid()
+      AND o.status = 'delivered'
+      AND oi.product_id = p_inventario_id
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.cliente_puede_resenar_inventario(uuid) TO authenticated;
 
 DROP POLICY IF EXISTS inventario_resenas_select ON public.inventario_resenas;
 CREATE POLICY inventario_resenas_select
@@ -51,26 +73,6 @@ TO authenticated
 USING (client_user_id = auth.uid());
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.inventario_resenas TO authenticated;
-
--- Solo clientes con pedido entregado que incluya el producto
-CREATE OR REPLACE FUNCTION public.cliente_puede_resenar_inventario(p_inventario_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.ecommerce_orders o
-    JOIN public.ecommerce_order_items oi ON oi.order_id = o.id
-    WHERE o.client_user_id = auth.uid()
-      AND o.status = 'delivered'
-      AND oi.product_id = p_inventario_id::text::text
-  );
-$$;
-
-GRANT EXECUTE ON FUNCTION public.cliente_puede_resenar_inventario(uuid) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.refresh_inventario_resena_meta(p_inventario_id uuid)
 RETURNS void
@@ -158,3 +160,25 @@ CREATE POLICY resenas_fotos_auth_delete
 ON storage.objects FOR DELETE
 TO authenticated
 USING (bucket_id = 'resenas-fotos' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Migración: nombre visible en reseñas (ejecutar si la tabla ya existía)
+ALTER TABLE public.inventario_resenas
+  ADD COLUMN IF NOT EXISTS autor_nombre text NOT NULL DEFAULT '';
+
+UPDATE public.inventario_resenas r
+SET autor_nombre = trim(c.nombre)
+FROM public.clientes c
+WHERE r.cliente_id = c.id
+  AND trim(COALESCE(r.autor_nombre, '')) = ''
+  AND trim(COALESCE(c.nombre, '')) <> '';
+
+-- Migración: nombre visible en reseñas (ejecutar si la tabla ya existía)
+ALTER TABLE public.inventario_resenas
+  ADD COLUMN IF NOT EXISTS autor_nombre text NOT NULL DEFAULT '';
+
+UPDATE public.inventario_resenas r
+SET autor_nombre = trim(c.nombre)
+FROM public.clientes c
+WHERE r.cliente_id = c.id
+  AND trim(COALESCE(r.autor_nombre, '')) = ''
+  AND trim(COALESCE(c.nombre, '')) <> '';

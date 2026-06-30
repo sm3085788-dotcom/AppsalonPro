@@ -12,11 +12,11 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Calendar } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { VerticalDatePickerSheet } from '../components/VerticalDatePicker';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   getMetaGlobal,
@@ -344,20 +344,20 @@ export function MetasScreen({ onBack }) {
                   </View>
                 </TouchableOpacity>
               </View>
-              {pickerTarget ? (
-                <>
-                  <DateTimePicker
-                    mode="date"
-                    value={pickerTarget === 'from' ? fechaInicio || new Date() : fechaFin || fechaInicio || new Date()}
-                    minimumDate={pickerTarget === 'to' && fechaInicio ? fechaInicio : undefined}
-                    maximumDate={pickerTarget === 'from' && fechaFin ? fechaFin : undefined}
-                    onChange={onDateChange}
-                  />
-                  {Platform.OS === 'ios' ? (
-                    <SalonButton title="Listo" variant="outlineGray" fullWidth onPress={() => setPickerTarget(null)} style={{ marginBottom: spacing.sm }} />
-                  ) : null}
-                </>
-              ) : null}
+              <VerticalDatePickerSheet
+                visible={Boolean(pickerTarget)}
+                value={
+                  pickerTarget === 'from' ? fechaInicio || new Date() : fechaFin || fechaInicio || new Date()
+                }
+                minimumDate={pickerTarget === 'to' && fechaInicio ? fechaInicio : undefined}
+                maximumDate={pickerTarget === 'from' && fechaFin ? fechaFin : undefined}
+                colors={c}
+                onChange={(selectedDate) => {
+                  if (pickerTarget === 'from') setFechaInicio(selectedDate);
+                  if (pickerTarget === 'to') setFechaFin(selectedDate);
+                }}
+                onClose={() => setPickerTarget(null)}
+              />
 
               <Text style={[styles.fieldLbl, { color: c.foreground }]}>Monto objetivo (Q)</Text>
               <View style={[styles.inputRow, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>

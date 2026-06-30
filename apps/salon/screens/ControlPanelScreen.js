@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { VerticalDatePickerSheet } from '../components/VerticalDatePicker';
 import { Trash2, Calendar, ArrowUpDown, ListOrdered, ChevronDown, ChevronUp, Search } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
@@ -541,21 +541,20 @@ export function ControlPanelScreen({ onBack }) {
             />
           ) : null}
 
-          {pickerTarget ? (
-            <>
-              <DateTimePicker
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                value={pickerTarget === 'from' ? dateFrom || new Date() : dateTo || dateFrom || new Date()}
-                maximumDate={pickerTarget === 'from' && dateTo ? dateTo : undefined}
-                minimumDate={pickerTarget === 'to' && dateFrom ? dateFrom : undefined}
-                onChange={onDateChange}
-              />
-              {Platform.OS === 'ios' ? (
-                <SalonButton title="Listo" variant="outlineGold" fullWidth onPress={() => setPickerTarget(null)} style={{ marginTop: spacing.sm }} />
-              ) : null}
-            </>
-          ) : null}
+          <VerticalDatePickerSheet
+            visible={Boolean(pickerTarget)}
+            value={
+              pickerTarget === 'from' ? dateFrom || new Date() : dateTo || dateFrom || new Date()
+            }
+            minimumDate={pickerTarget === 'to' && dateFrom ? dateFrom : undefined}
+            maximumDate={pickerTarget === 'from' && dateTo ? dateTo : undefined}
+            colors={c}
+            onChange={(selectedDate) => {
+              if (pickerTarget === 'from') setDateFrom(selectedDate);
+              if (pickerTarget === 'to') setDateTo(selectedDate);
+            }}
+            onClose={() => setPickerTarget(null)}
+          />
         </View>
 
         <Text style={[styles.sectionTitle, { color: c.error }]}>Zona destructiva</Text>

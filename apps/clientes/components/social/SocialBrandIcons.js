@@ -67,6 +67,33 @@ export function FacebookBrandIcon({ size = 24 }) {
   );
 }
 
+/** WhatsApp — verde marca #25D366. */
+export function WhatsAppBrandIcon({ size = 24 }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size * 0.24,
+        backgroundColor: '#25D366',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <View
+        style={{
+          width: size * 0.46,
+          height: size * 0.46,
+          borderRadius: size * 0.23,
+          borderWidth: Math.max(1.5, size * 0.06),
+          borderColor: '#FFF',
+          transform: [{ rotate: '-12deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   instagramOuter: {
     backgroundColor: '#E1306C',

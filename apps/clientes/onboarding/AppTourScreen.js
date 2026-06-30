@@ -16,43 +16,43 @@ import { AppTourSlidePreview } from './AppTourSlidePreview';
 const SLIDES = [
   {
     id: 'inicio',
-    title: 'Inicio y accesos rápidos',
-    body: 'Mensajes con Andreas Pro, tienda, tendencias, premios, pedidos y servicios desde un solo lugar.',
+    title: 'Inicio',
+    body: 'Mensajes, tienda, tendencias, premios, pedidos y servicios. El acceso rápido a todo desde una sola pantalla.',
   },
   {
-    id: 'sucursal',
-    title: 'Tu sucursal de preferencia',
-    body: 'Elegí la más cercana o la que más uses. Tienda, citas y pedidos piden sucursal en cada acción: el stock y las solicitudes van a ese local y esa sucursal ve tus pedidos y citas.',
+    id: 'tienda',
+    title: 'Tienda, pedidos y reseñas',
+    body: 'Comprá con stock de tu sucursal, seguí tus pedidos y leé opiniones con nombre de cliente para mayor confianza.',
+  },
+  {
+    id: 'pagos',
+    title: 'Pagos con tarjeta',
+    body: 'Pagá en la tienda con tarjeta de crédito o débito. El cobro es seguro con Stripe; también podés guardar tarjetas en Perfil → Métodos de pago. Efectivo al retirar sigue disponible.',
   },
   {
     id: 'citas',
     title: 'Servicios y citas',
-    body: 'Elegí sucursal, servicios y horario. Revisá próximas citas e historial; la sucursal elegida recibe tu solicitud.',
+    body: 'Elegí sucursal, servicios y horario. Tus solicitudes llegan al local que elijas; revisá citas activas e historial.',
   },
   {
-    id: 'tienda',
-    title: 'Tienda y pedidos',
-    body: 'Comprá productos con stock de tu sucursal, seguí el estado de tus pedidos y retirá en salón con QR.',
+    id: 'eventos',
+    title: 'Eventos profesionales',
+    body: 'Bodas, fiestas y sesiones especiales. Mirá paquetes del salón y enviá tu solicitud de participación.',
   },
   {
-    id: 'premios',
-    title: 'Premios y referidos',
-    body: 'Sumá puntos, canjeá beneficios e invitá amigos con tu código ANDREAS.',
-  },
-  {
-    id: 'soporte',
+    id: 'contacto',
     title: 'Servicio al cliente',
-    body: 'WhatsApp, llamada y ubicación en Perfil → Servicio al cliente. El equipo del salón te atiende para dudas, cambios o ayuda con tus solicitudes.',
+    body: 'WhatsApp, llamada, ubicación GPS e Instagram y Facebook con logos oficiales. Perfil → Servicio al cliente.',
   },
   {
     id: 'perfil',
-    title: 'Tu perfil',
-    body: 'Completá teléfono, dirección y cumpleaños para citas y entregas. Membresías, configuración y servicio al cliente.',
+    title: 'Perfil y configuración',
+    body: 'Completá tus datos, membresías y tarjetas guardadas. En Configuración elegí español o inglés y modo claro u oscuro.',
   },
 ];
 
 /**
- * Recorrido horizontal por las áreas de la app (sin video).
+ * Recorrido breve tras el login (sin video).
  */
 export function AppTourScreen({ onDone }) {
   const { colors: c } = useTheme();

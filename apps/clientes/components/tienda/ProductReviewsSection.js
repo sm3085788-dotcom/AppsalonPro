@@ -8,6 +8,9 @@ import {
   ActivityIndicator,
   Alert,
   StyleSheet,
+  Modal,
+  Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Star, Camera, X } from 'lucide-react-native';
@@ -52,10 +55,16 @@ function formatWhen(iso) {
   }
 }
 
+function reviewAuthorLabel(review) {
+  const name = String(review?.autor_nombre || '').trim();
+  return name || 'Cliente verificado';
+}
+
 export function ProductReviewsSection({
   inventarioId,
   clienteId,
   clientUserId,
+  autorNombre,
   ratingSummary = 0,
   reviewCount = 0,
   onMetaUpdated,
@@ -73,6 +82,8 @@ export function ProductReviewsSection({
   const [comentario, setComentario] = useState('');
   const [fotos, setFotos] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [lightboxUri, setLightboxUri] = useState(null);
+  const { width: winW, height: winH } = useWindowDimensions();
 
   const load = useCallback(async () => {
     if (!inventarioId) {
@@ -156,6 +167,7 @@ export function ProductReviewsSection({
         rating,
         comentario,
         fotoUrls: uploaded,
+        autorNombre,
       });
       if (error) {
         Alert.alert('Reseña', error.message || 'No se pudo publicar.');
@@ -189,11 +201,16 @@ export function ProductReviewsSection({
         <>
           {reviews.map((r) => (
             <View key={r.id} style={[styles.reviewItem, { borderTopColor: c.cardBorder }]}>
-              <View style={styles.reviewHead}>
-                <RatingStars rating={r.rating} emptyColor={starEmpty} />
+              <View style={styles.reviewAuthorRow}>
+                <Text style={[styles.reviewAuthor, { color: c.foreground }]} numberOfLines={1}>
+                  {reviewAuthorLabel(r)}
+                </Text>
                 <Text style={[styles.reviewDate, { color: c.foregroundMuted }]}>
                   {formatWhen(r.created_at)}
                 </Text>
+              </View>
+              <View style={styles.reviewHead}>
+                <RatingStars rating={r.rating} emptyColor={starEmpty} />
               </View>
               {r.comentario ? (
                 <Text style={[styles.reviewBody, { color: c.foreground }]}>{r.comentario}</Text>
@@ -201,7 +218,15 @@ export function ProductReviewsSection({
               {Array.isArray(r.foto_urls) && r.foto_urls.length > 0 ? (
                 <View style={styles.photoRow}>
                   {r.foto_urls.map((uri) => (
-                    <Image key={uri} source={{ uri }} style={styles.reviewPhoto} />
+                    <TouchableOpacity
+                      key={uri}
+                      onPress={() => setLightboxUri(uri)}
+                      activeOpacity={0.88}
+                      accessibilityRole="button"
+                      accessibilityLabel="Ampliar foto de reseña"
+                    >
+                      <Image source={{ uri }} style={styles.reviewPhoto} />
+                    </TouchableOpacity>
                   ))}
                 </View>
               ) : null}
@@ -271,6 +296,33 @@ export function ProductReviewsSection({
           ) : null}
         </>
       )}
+      <Modal
+        visible={Boolean(lightboxUri)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxUri(null)}
+      >
+        <Pressable style={styles.lightboxBackdrop} onPress={() => setLightboxUri(null)}>
+          <TouchableOpacity
+            style={styles.lightboxClose}
+            onPress={() => setLightboxUri(null)}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar imagen"
+          >
+            <X size={28} color="#FFF" strokeWidth={2} />
+          </TouchableOpacity>
+          {lightboxUri ? (
+            <Pressable onPress={(e) => e.stopPropagation?.()}>
+              <Image
+                source={{ uri: lightboxUri }}
+                style={{ width: winW - spacing.lg * 2, height: winH * 0.72 }}
+                resizeMode="contain"
+              />
+            </Pressable>
+          ) : null}
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -295,10 +347,21 @@ function createStyles(c) {
       marginTop: spacing.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
     },
-    reviewHead: {
+    reviewAuthorRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    reviewAuthor: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+    },
+    reviewHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
       gap: spacing.sm,
     },
     reviewDate: { fontFamily: typography.fontSans, fontSize: 12 },
@@ -350,6 +413,19 @@ function createStyles(c) {
       borderStyle: 'dashed',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    lightboxBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.92)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: spacing.lg,
+    },
+    lightboxClose: {
+      position: 'absolute',
+      top: spacing.xl + 8,
+      right: spacing.lg,
+      zIndex: 2,
     },
   });
 }

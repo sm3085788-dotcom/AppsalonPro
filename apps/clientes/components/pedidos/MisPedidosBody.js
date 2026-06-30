@@ -10,13 +10,14 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { Package } from 'lucide-react-native';
+import { Package, QrCode, Truck } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, needsPickupQr, isHomeDeliveryOrder, isCardPayment, isPedidoTarjetaDomicilioCapturado } from '@appsalon/shared-config';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSubStyles } from '../luxury/SubScreenChrome';
 import { SalonButton } from '../luxury/SalonButton';
 import { PickupQrDisplay } from '../tienda/PickupQrDisplay';
+import { useClientLocale } from '../../hooks/useClientLocale';
 
 const GREEN = '#2E7D32';
 const GOLD = '#D4AF37';
@@ -73,6 +74,42 @@ function LegendChip({ color, label, textColor }) {
   );
 }
 
+function PedidosIntroPanel({ c }) {
+  const { t } = useClientLocale();
+  return (
+    <View
+      style={[
+        styles.introCard,
+        { backgroundColor: c.card, borderColor: c.cardBorder },
+      ]}
+    >
+      <View style={[styles.introAccent, { backgroundColor: c.primary }]} />
+      <Text style={[styles.introKicker, { color: c.primary }]}>{t('pedidos.introKicker')}</Text>
+      <Text style={[styles.introHeadline, { color: c.foreground }]}>{t('pedidos.introHeadline')}</Text>
+      <Text style={[styles.introBody, { color: c.foregroundMuted }]}>{t('pedidos.introBody')}</Text>
+      <View style={styles.introIcons}>
+        <View style={[styles.introIconCell, { backgroundColor: c.surfaceMuted }]}>
+          <QrCode size={14} color={c.primary} strokeWidth={2} />
+          <Text style={[styles.introIconTxt, { color: c.foregroundMuted }]}>{t('pedidos.qrPickup')}</Text>
+        </View>
+        <View style={[styles.introIconCell, { backgroundColor: c.surfaceMuted }]}>
+          <Package size={14} color={c.primary} strokeWidth={2} />
+          <Text style={[styles.introIconTxt, { color: c.foregroundMuted }]}>{t('pedidos.store')}</Text>
+        </View>
+        <View style={[styles.introIconCell, { backgroundColor: c.surfaceMuted }]}>
+          <Truck size={14} color={c.primary} strokeWidth={2} />
+          <Text style={[styles.introIconTxt, { color: c.foregroundMuted }]}>{t('pedidos.delivery')}</Text>
+        </View>
+      </View>
+      <View style={[styles.legendRow, { borderTopColor: c.cardBorder }]}>
+        <LegendChip color={GOLD} label={t('pedidos.pending')} textColor={c.foregroundMuted} />
+        <LegendChip color={GREEN} label={t('pedidos.completed')} textColor={c.foregroundMuted} />
+        <LegendChip color={CANCEL_RED} label={t('pedidos.cancelled')} textColor={c.foregroundMuted} />
+      </View>
+    </View>
+  );
+}
+
 function orderCardAccent(order, isDark) {
   const st = String(order?.status || '');
   if (st === 'delivered') {
@@ -101,6 +138,7 @@ function orderCardAccent(order, isDark) {
 
 export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) {
   const { colors: c, isDark } = useTheme();
+  const { t } = useClientLocale();
   const subStyles = useSubStyles();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -243,12 +281,12 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
             {isPedidoTarjetaDomicilioCapturado(o) && isCardPayment(o) ? ' · tarjeta confirmada' : ''}
           </Text>
           {isHomeDeliveryOrder(o) && o.delivery_address ? (
-            <Text style={[styles.notes, { color: c.foregroundMuted }]} numberOfLines={expanded ? 8 : 2}>
+            <Text style={[styles.notes, { color: c.foregroundMuted }]} numberOfLines={expanded ? 6 : 1}>
               {o.delivery_address}
             </Text>
           ) : null}
           {!isHomeDeliveryOrder(o) && o.notes ? (
-            <Text style={[styles.notes, { color: c.foregroundMuted }]} numberOfLines={expanded ? 6 : 2}>
+            <Text style={[styles.notes, { color: c.foregroundMuted }]} numberOfLines={expanded ? 4 : 1}>
               {o.notes}
             </Text>
           ) : null}
@@ -290,8 +328,8 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
     return (
       <>
         <View style={subStyles.card}>
-          <Text style={subStyles.rowLabel}>Iniciá sesión</Text>
-          <Text style={subStyles.bullets}>Necesitás una cuenta para ver tus pedidos de tienda.</Text>
+          <Text style={subStyles.rowLabel}>{t('pedidos.loginTitle')}</Text>
+          <Text style={subStyles.bullets}>{t('pedidos.loginBody')}</Text>
         </View>
       </>
     );
@@ -299,6 +337,7 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
 
   const listHeader = (
     <>
+      <PedidosIntroPanel c={c} />
       {loadError ? (
         <TouchableOpacity
           style={[styles.errorBar, { borderColor: c.cardBorder, backgroundColor: c.card }]}
@@ -306,7 +345,7 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
           activeOpacity={0.85}
         >
           <Text style={[styles.errorTxt, { color: c.foregroundMuted }]}>{loadError}</Text>
-          <Text style={[styles.errorRetry, { color: c.primary }]}>Tocá para reintentar</Text>
+          <Text style={[styles.errorRetry, { color: c.primary }]}>{t('common.retry')}</Text>
         </TouchableOpacity>
       ) : null}
     </>
@@ -314,13 +353,11 @@ export function MisPedidosBody({ sessionUser, onOpenTienda, onPedidosChanged }) 
 
   const listEmpty = (
     <View style={[subStyles.card, { marginTop: spacing.sm }]}>
-      <Text style={subStyles.rowLabel}>Sin pedidos todavía</Text>
-      <Text style={subStyles.bullets}>
-        Cuando compres en la tienda, aparecerán aquí con su código de seguimiento. Envío con tarjeta no usa QR.
-      </Text>
+      <Text style={subStyles.rowLabel}>{t('pedidos.emptyTitle')}</Text>
+      <Text style={subStyles.bullets}>{t('pedidos.emptyBody')}</Text>
       {onOpenTienda ? (
         <SalonButton
-          title="Ir a la tienda"
+          title={t('pedidos.goStore')}
           variant="heroGold"
           fullWidth
           style={{ marginTop: spacing.md }}
@@ -386,9 +423,10 @@ const styles = StyleSheet.create({
   },
   introCard: {
     borderWidth: 1,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    marginBottom: spacing.sm,
     overflow: 'hidden',
     ...Platform.select({
       ios: { shadowOpacity: 0 },
@@ -404,74 +442,75 @@ const styles = StyleSheet.create({
   },
   introKicker: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 11,
-    letterSpacing: 0.8,
+    fontSize: 10,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
-    marginBottom: 6,
-    paddingLeft: spacing.sm,
+    marginBottom: 3,
+    paddingLeft: spacing.xs,
   },
   introHeadline: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 15,
-    lineHeight: 21,
-    marginBottom: spacing.sm,
-    paddingLeft: spacing.sm,
+    fontSize: 13,
+    lineHeight: 17,
+    marginBottom: spacing.xs,
+    paddingLeft: spacing.xs,
   },
   introBody: {
     fontFamily: typography.fontSans,
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: spacing.md,
-    paddingLeft: spacing.sm,
+    fontSize: 11,
+    lineHeight: 15,
+    marginBottom: spacing.sm,
+    paddingLeft: spacing.xs,
   },
   introIcons: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-    paddingLeft: spacing.sm,
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+    paddingLeft: spacing.xs,
   },
   introIconCell: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
     borderRadius: radii.sm,
   },
   introIconTxt: {
     fontFamily: typography.fontSans,
-    fontSize: 11,
+    fontSize: 10,
   },
   legendRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
-    marginTop: spacing.xs,
+    gap: spacing.xs,
+    paddingTop: spacing.xs,
+    marginTop: 0,
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingLeft: spacing.sm,
+    paddingLeft: spacing.xs,
   },
   legendChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   legendLabel: {
     fontFamily: typography.fontSans,
-    fontSize: 11,
+    fontSize: 10,
   },
   card: {
     borderWidth: 1,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    marginBottom: spacing.xs,
     overflow: 'hidden',
     ...Platform.select({
       ios: { shadowOpacity: 0 },
@@ -479,73 +518,74 @@ const styles = StyleSheet.create({
     }),
   },
   cancelBanner: {
-    marginHorizontal: -spacing.md,
-    marginTop: -spacing.md,
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    marginHorizontal: -(spacing.sm + 2),
+    marginTop: -spacing.sm,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
     backgroundColor: 'rgba(176, 0, 32, 0.12)',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(176, 0, 32, 0.25)',
   },
   cancelBannerTitle: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 13,
+    fontSize: 12,
     color: CANCEL_RED,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   cancelBannerReason: {
     fontFamily: typography.fontSans,
-    fontSize: 12,
+    fontSize: 11,
     color: CANCEL_RED,
-    marginTop: 4,
-    lineHeight: 17,
+    marginTop: 2,
+    lineHeight: 15,
     opacity: 0.95,
   },
   rowTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   code: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 16,
-    letterSpacing: 1,
+    fontSize: 14,
+    letterSpacing: 0.8,
   },
   amount: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 15,
+    fontSize: 13,
   },
   meta: {
     fontFamily: typography.fontSans,
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
   },
   notes: {
     fontFamily: typography.fontSans,
-    fontSize: 13,
-    marginTop: spacing.xs,
-    lineHeight: 18,
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
   },
   warn: {
     fontFamily: typography.fontSans,
-    fontSize: 12,
-    marginTop: spacing.sm,
-    lineHeight: 17,
+    fontSize: 11,
+    marginTop: spacing.xs,
+    lineHeight: 15,
   },
   cancelBtn: {
-    marginTop: spacing.sm,
-    paddingVertical: 10,
+    marginTop: spacing.xs,
+    paddingVertical: 7,
     borderRadius: radii.sm,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 42,
+    minHeight: 36,
   },
   cancelBtnTxt: {
     fontFamily: typography.fontSansMedium,
-    fontSize: 14,
+    fontSize: 13,
     color: CANCEL_RED,
   },
 });

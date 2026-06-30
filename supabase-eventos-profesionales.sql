@@ -1,5 +1,26 @@
 -- Eventos profesionales · App Clientes + App Salón
 -- Imagen recomendada: 626 × 417 px (mismo hero marketing).
+-- Ejecutar en Supabase → SQL Editor (todo el archivo de una vez).
+
+-- Helper staff ANTES de policies que lo referencian
+CREATE OR REPLACE FUNCTION public.is_salon_staff()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id = auth.uid()
+      AND COALESCE(p.role, '') IN (
+        'admin', 'staff', 'owner', 'salon_admin',
+        'branch_admin', 'admin_sucursal'
+      )
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_salon_staff() TO authenticated;
 
 CREATE TABLE IF NOT EXISTS public.eventos_profesionales (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -77,22 +98,9 @@ WITH CHECK (public.is_salon_staff());
 GRANT SELECT ON public.eventos_profesionales TO authenticated;
 GRANT SELECT, INSERT ON public.eventos_solicitudes TO authenticated;
 
--- Helper staff (crear si no existe en tu proyecto)
-CREATE OR REPLACE FUNCTION public.is_salon_staff()
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.profiles p
-    WHERE p.id = auth.uid()
-      AND COALESCE(p.role, '') IN ('admin', 'staff', 'owner', 'salon_admin', 'branch_admin', 'admin_sucursal')
-  );
-$$;
-
-GRANT EXECUTE ON FUNCTION public.is_salon_staff() TO authenticated;
+-- Staff también necesita INSERT/UPDATE/DELETE en tablas (RLS is_salon_staff)
+GRANT INSERT, UPDATE, DELETE ON public.eventos_profesionales TO authenticated;
+GRANT UPDATE, DELETE ON public.eventos_solicitudes TO authenticated;
 
 -- Storage bucket eventos (626×417)
 INSERT INTO storage.buckets (id, name, public)

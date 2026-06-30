@@ -82,9 +82,8 @@ export function PostLoginIntroScreen({ profile, onContinue }) {
         <Text style={styles.welcome}>¡Bienvenida a Salón Andreas!</Text>
         <Text style={styles.name}>{firstName}</Text>
         <Text style={styles.lead}>
-          Te damos la bienvenida a tu espacio en el salón: tienda, citas, premios ANDREAS y mensajes con
-          Andreas Pro. Elegí tu sucursal de preferencia (la más cercana o la que más uses): cada acción usa
-          ese local y esa sucursal verá tus solicitudes. A continuación, un recorrido corto por la app.
+          Tu espacio en el salón: tienda, citas, premios ANDREAS, eventos profesionales y mensajes con Andreas Pro.
+          Pagos con tarjeta seguros (Stripe). Elegí sucursal, idioma y tema en Configuración. Recorrido breve por lo esencial.
         </Text>
         {profile?.referralCode ? (
           <Text style={styles.refNote}>

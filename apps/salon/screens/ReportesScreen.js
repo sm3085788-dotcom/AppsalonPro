@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { VerticalDatePickerSheet } from '../components/VerticalDatePicker';
 import { Calendar, FileText, Printer, Search, X, ChevronRight } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -1468,28 +1468,22 @@ export function ReportesScreen({ onBack }) {
                 </TouchableOpacity>
               </View>
 
-              {showFromPicker ? (
-                <DateTimePicker
-                  mode="date"
-                  value={fromDate}
-                  maximumDate={new Date()}
-                  onChange={(_, date) => {
-                    if (Platform.OS !== 'ios') setShowFromPicker(false);
-                    if (date) setFromDate(date);
-                  }}
-                />
-              ) : null}
-              {showToPicker ? (
-                <DateTimePicker
-                  mode="date"
-                  value={toDate}
-                  maximumDate={new Date()}
-                  onChange={(_, date) => {
-                    if (Platform.OS !== 'ios') setShowToPicker(false);
-                    if (date) setToDate(date);
-                  }}
-                />
-              ) : null}
+              <VerticalDatePickerSheet
+                visible={showFromPicker}
+                value={fromDate}
+                maximumDate={new Date()}
+                colors={c}
+                onChange={setFromDate}
+                onClose={() => setShowFromPicker(false)}
+              />
+              <VerticalDatePickerSheet
+                visible={showToPicker}
+                value={toDate}
+                maximumDate={new Date()}
+                colors={c}
+                onChange={setToDate}
+                onClose={() => setShowToPicker(false)}
+              />
 
               {isGlobalAdmin ? (
                 <>

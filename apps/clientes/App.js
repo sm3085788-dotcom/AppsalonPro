@@ -121,6 +121,7 @@ import {
   consumePendingOnboardingEmail,
 } from './onboarding/onboardingStorage';
 import { useClientOtaUpdate } from './hooks/useClientOtaUpdate';
+import { ClientLocaleProvider, useClientLocale } from './hooks/useClientLocale';
 import { ClientAuthScreen } from './onboarding/ClientAuthScreen';
 import { SupabaseConfigScreen } from './onboarding/SupabaseConfigScreen';
 import { completeAuthFromRedirectUrl } from './utils/clientAuthEmail';
@@ -147,7 +148,6 @@ import {
   notifyClientFromMdmId,
 } from '@appsalon/shared-config';
 import { partitionCitasCliente } from './utils/citasLabels';
-import { InstagramBrandIcon, FacebookBrandIcon } from './components/social/SocialBrandIcons';
 import * as Linking from 'expo-linking';
 import { PostLoginIntroScreen } from './onboarding/PostLoginIntroScreen';
 import { AppTourScreen } from './onboarding/AppTourScreen';
@@ -180,10 +180,10 @@ const TABS = {
 };
 
 const TAB_ITEMS = [
-  { id: TABS.INICIO, label: 'Inicio', icon: Sparkles },
-  { id: TABS.CITAS, label: 'Servicios', icon: Calendar },
-  { id: TABS.HISTORIAL, label: 'Citas', icon: Clock },
-  { id: TABS.PERFIL, label: 'Perfil', icon: User },
+  { id: TABS.INICIO, icon: Sparkles },
+  { id: TABS.CITAS, icon: Calendar },
+  { id: TABS.HISTORIAL, icon: Clock },
+  { id: TABS.PERFIL, icon: User },
 ];
 
 /** Altura real del tab bar (sincronizado con BottomTabs.js). */
@@ -265,6 +265,7 @@ function labelEstadoCita(estado) {
 }
 
 function AppMain({ onLogout }) {
+  const { t, strings } = useClientLocale();
   const insets = useSafeAreaInsets();
   const { height: windowH, width: windowW } = useWindowDimensions();
   const scrollBottom = paddingForTabBar(insets);
@@ -1264,6 +1265,14 @@ function AppMain({ onLogout }) {
     () =>
       TAB_ITEMS.map((item) => ({
         ...item,
+        label:
+          item.id === TABS.INICIO
+            ? t('tabs.inicio')
+            : item.id === TABS.CITAS
+              ? t('tabs.servicios')
+              : item.id === TABS.HISTORIAL
+                ? t('tabs.citas')
+                : t('tabs.perfil'),
         alert: item.id === TABS.PERFIL ? profileIncomplete : false,
         badgeCount:
           item.id === TABS.CITAS
@@ -1272,7 +1281,7 @@ function AppMain({ onLogout }) {
               ? citasActivasCount
               : 0,
       })),
-    [profileIncomplete, serviciosCartCount, citasActivasCount],
+    [profileIncomplete, serviciosCartCount, citasActivasCount, t],
   );
 
   const openEditarPerfil = useCallback(() => {
@@ -1286,9 +1295,11 @@ function AppMain({ onLogout }) {
       onSearchChange={setHeaderSearch}
       onCartPress={openTiendaCart}
       cartBadgeCount={cartCount}
+      placeholder={t('inicio.searchPlaceholder')}
       profileFirstName={
         tab === TABS.PERFIL ? profileGreetingFirst : undefined
       }
+      welcomeLabel={t('inicio.welcome')}
     />
   );
 
@@ -1312,12 +1323,12 @@ function AppMain({ onLogout }) {
           <QuickPosterGrid
             fillHeight
             items={[
-                { id: 'mensajes',   label: 'Mensajes',   iconName: 'MessageCircle', sub: 'Andreas Pro · en vivo',         onPress: openAuraLine,                   bellBadge: auraUnread > 0 },
-                { id: 'tienda',     label: 'Tienda',     iconName: 'ShoppingBag',   sub: 'Productos y kits profesionales', onPress: () => openSub(CLIENT_SUB.TIENDA) },
-                { id: 'tendencias', label: 'Tendencias', iconName: 'Sparkles',      sub: 'Looks de temporada',             onPress: () => openSub(CLIENT_SUB.TENDENCIAS) },
-                { id: 'premios',    label: 'Premios',    iconName: 'Award',         sub: 'Puntos, canjes y referidos',     onPress: () => { setPremiosBadge(false); setPremiosCanjeReady(false); void AsyncStorage.setItem(MEMBRESIA_SEEN_KEY, clienteRow?.membresia_nivel ?? ''); openSub(CLIENT_SUB.PREMIOS); void acknowledgePremiosProgress(); }, bellBadge: premiosBadge, prizeBadge: premiosCanjeReady },
-                { id: 'pedidos',    label: 'Pedidos',    iconName: 'Package',       sub: 'Mis compras en tienda y estado', onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
-                { id: 'citas',      label: 'Servicios',  iconName: 'Scissors',      sub: 'Elegir servicios y agendar',    onPress: () => setTab(TABS.CITAS), badge: true, badgeCount: serviciosCartCount },
+                { id: 'mensajes',   label: t('inicio.mensajes'),   iconName: 'MessageCircle', sub: t('inicio.mensajesSub'),         onPress: openAuraLine,                   bellBadge: auraUnread > 0 },
+                { id: 'tienda',     label: t('inicio.tienda'),     iconName: 'ShoppingBag',   sub: t('inicio.tiendaSub'), onPress: () => openSub(CLIENT_SUB.TIENDA) },
+                { id: 'tendencias', label: t('inicio.tendencias'), iconName: 'Sparkles',      sub: t('inicio.tendenciasSub'),             onPress: () => openSub(CLIENT_SUB.TENDENCIAS) },
+                { id: 'premios',    label: t('inicio.premios'),    iconName: 'Award',         sub: t('inicio.premiosSub'),     onPress: () => { setPremiosBadge(false); setPremiosCanjeReady(false); void AsyncStorage.setItem(MEMBRESIA_SEEN_KEY, clienteRow?.membresia_nivel ?? ''); openSub(CLIENT_SUB.PREMIOS); void acknowledgePremiosProgress(); }, bellBadge: premiosBadge, prizeBadge: premiosCanjeReady },
+                { id: 'pedidos',    label: t('inicio.pedidos'),    iconName: 'Package',       sub: t('inicio.pedidosSub'), onPress: openMisPedidosSub, badge: true, badgeCount: pedidosActivos },
+                { id: 'citas',      label: t('inicio.servicios'),  iconName: 'Scissors',      sub: t('inicio.serviciosSub'),    onPress: () => setTab(TABS.CITAS) },
               ]}
           />
         </View>
@@ -1398,70 +1409,44 @@ function AppMain({ onLogout }) {
       <View style={[styles.profileMenuShell, styles.featureCard]}>
         <ProfileMenuRow
           icon={User}
-          label="Editar perfil"
+          label={t('perfil.editProfile')}
           showAlert={profileIncomplete}
           onPress={openEditarPerfil}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={Bell}
-          label="Eventos Profesionales"
+          label={t('perfil.eventos')}
           onPress={() => openSub(CLIENT_SUB.NOTIFICACIONES)}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={Gem}
-          label="Membresías"
+          label={t('perfil.membresias')}
           onPress={() => openSub(CLIENT_SUB.MEMBRESIAS)}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={FileText}
-          label="Mis facturas"
+          label={t('perfil.facturas')}
           onPress={() => openSub(CLIENT_SUB.MIS_FACTURAS)}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={Phone}
-          label="Servicio al cliente"
+          label={t('perfil.contacto')}
           onPress={() => openSub(CLIENT_SUB.CONTACTO)}
-          trailing={
-            <>
-              <TouchableOpacity
-                onPress={(e) => {
-                  e?.stopPropagation?.();
-                  void SysLinking.openURL('https://instagram.com/appsalonpro');
-                }}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Instagram"
-              >
-                <InstagramBrandIcon size={22} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={(e) => {
-                  e?.stopPropagation?.();
-                  void SysLinking.openURL('https://facebook.com/appsalonpro');
-                }}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Facebook"
-              >
-                <FacebookBrandIcon size={22} />
-              </TouchableOpacity>
-            </>
-          }
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={CreditCard}
-          label="Métodos de pago"
+          label={t('perfil.metodosPago')}
           onPress={() => openSub(CLIENT_SUB.METODOS_PAGO)}
         />
         <View style={styles.menuHairline} />
         <ProfileMenuRow
           icon={Settings}
-          label="Configuración"
+          label={t('perfil.config')}
           onPress={() => openSub(CLIENT_SUB.CONFIGURACION)}
         />
       </View>
@@ -1472,7 +1457,7 @@ function AppMain({ onLogout }) {
         activeOpacity={0.85}
       >
         <LogOut size={18} color={c.foreground} strokeWidth={1.75} />
-        <Text style={styles.logoutText}>Cerrar sesión</Text>
+        <Text style={styles.logoutText}>{t('perfil.logout')}</Text>
       </TouchableOpacity>
 
       <ProfileConnectionCard
@@ -1510,7 +1495,7 @@ function AppMain({ onLogout }) {
       body = renderInicio();
   }
 
-  const subTitles = openedSub ? getSubScreenTitles(openedSub) : null;
+  const subTitles = openedSub ? getSubScreenTitles(openedSub, strings) : null;
 
   return (
     <View style={styles.container}>
@@ -1906,11 +1891,13 @@ export default function App() {
             <AppTourScreen onDone={handleTourDone} />
           ) : (
             <StripeRoot>
-              <TiendaCartProvider>
-                <ServiciosCartProvider>
-                  <AppMain onLogout={handleLogout} />
-                </ServiciosCartProvider>
-              </TiendaCartProvider>
+              <ClientLocaleProvider>
+                <TiendaCartProvider>
+                  <ServiciosCartProvider>
+                    <AppMain onLogout={handleLogout} />
+                  </ServiciosCartProvider>
+                </TiendaCartProvider>
+              </ClientLocaleProvider>
             </StripeRoot>
           )}
         </ClientThemedRoot>

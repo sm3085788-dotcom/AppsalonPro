@@ -82,7 +82,8 @@ export function LuxuryImageCarousel({
   const scrollIdleTimer = useRef(null);
   const lastOffsetRef = useRef(0);
   const [settledIndex, setSettledIndex] = useState(0);
-  const slideBoundCta = buttonOnly && perSlideOverlay;
+  /** CTA fijo sobre el carrusel (como la flecha), no dentro del slide. */
+  const slideBoundCta = false;
 
   const commitSettledIndex = useCallback(
     (rawIndex) => {

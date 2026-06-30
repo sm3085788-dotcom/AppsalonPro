@@ -1,68 +1,64 @@
-import { FEATURED_SERVICE } from '../data/luxuryUiMocks';
 import { CLIENT_SUB } from './clientSubScreens';
+import { FEATURED_SERVICE } from '../data/luxuryUiMocks';
 
-function subReprogramar() {
-  return 'Tu cita · fecha y hora al enlazar la agenda';
+function subReprogramar(strings) {
+  return strings?.subScreens?.reprogramarSub ?? 'Tu cita · fecha y hora al enlazar la agenda';
 }
 
 /** Título y línea ayuda del encabezado de cada subpantalla */
-export function getSubScreenTitles(id) {
+export function getSubScreenTitles(id, strings) {
+  const s = strings?.subScreens ?? {};
+  const c = strings?.contacto ?? {};
+  const p = strings?.pedidos ?? {};
+  const cfg = strings?.config ?? {};
+
   switch (id) {
     case CLIENT_SUB.DETALLE_SERVICIO:
       return { title: FEATURED_SERVICE.titulo, subtitle: 'Detalle del servicio' };
     case CLIENT_SUB.AGENDAR_FLUJO:
-      return {
-        title: 'Agendar cita',
-        subtitle: 'Elegí fecha y hora para cada servicio de tu lista.',
-      };
+      return { title: s.agendar ?? 'Agendar cita', subtitle: s.agendarSub ?? '' };
     case CLIENT_SUB.HISTORIAL_COMPLETO:
-      return { title: 'Historial completo', subtitle: 'Todas tus visitas registradas.' };
+      return { title: s.historial ?? 'Historial completo', subtitle: s.historialSub ?? '' };
     case CLIENT_SUB.REPROGRAMAR_CITA:
-      return { title: 'Reprogramar', subtitle: subReprogramar() };
+      return { title: 'Reprogramar', subtitle: subReprogramar(strings) };
     case CLIENT_SUB.CONFIRMAR_CITA:
-      return { title: 'Confirmación', subtitle: subReprogramar() };
+      return { title: 'Confirmación', subtitle: subReprogramar(strings) };
     case CLIENT_SUB.EDITAR_PERFIL:
-      return { title: 'Editar perfil', subtitle: 'Tus datos (solo vista previa).' };
+      return { title: s.editProfile ?? 'Editar perfil', subtitle: s.editProfileSub ?? '' };
     case CLIENT_SUB.CONTACTO:
-      return { title: 'Servicio al cliente', subtitle: 'WhatsApp, llamada y ubicación del salón.' };
+      return { title: c.title ?? 'Servicio al cliente', subtitle: c.subtitle ?? '' };
     case CLIENT_SUB.NOTIFICACIONES:
-      return {
-        title: 'Eventos Profesionales',
-        subtitle: 'Paquetes para bodas, fiestas y sesiones fotográficas.',
-      };
+      return { title: s.eventos ?? 'Eventos Profesionales', subtitle: s.eventosSub ?? '' };
     case CLIENT_SUB.METODOS_PAGO:
-      return { title: 'Métodos de pago', subtitle: 'Formas de pago guardadas.' };
+      return { title: s.metodosPago ?? 'Métodos de pago', subtitle: s.metodosPagoSub ?? '' };
     case CLIENT_SUB.CONFIGURACION:
-      return { title: 'Configuración', subtitle: 'Ajustes generales de la app.' };
+      return { title: cfg.title ?? 'Configuración', subtitle: cfg.subtitle ?? '' };
     case CLIENT_SUB.CERRAR_SESION:
-      return { title: 'Cerrar sesión', subtitle: 'Confirma si deseas salir de la cuenta.' };
+      return { title: s.cerrarSesion ?? 'Cerrar sesión', subtitle: s.cerrarSesionSub ?? '' };
     case CLIENT_SUB.PRIVACIDAD:
       return { title: 'Privacidad', subtitle: 'Información sobre el tratamiento de datos.' };
     case CLIENT_SUB.TIENDA:
-      return { title: 'Tienda', subtitle: 'Catálogo del salón · rejilla de productos' };
+      return { title: s.tienda ?? 'Tienda', subtitle: s.tiendaSub ?? '' };
     case CLIENT_SUB.TENDENCIAS:
-      return { title: 'Tendencias', subtitle: 'Looks e inspiración del salón.' };
+      return { title: s.tendencias ?? 'Tendencias', subtitle: s.tendenciasSub ?? '' };
     case CLIENT_SUB.PREMIOS:
-      return { title: 'Premios', subtitle: 'Puntos ANDREAS, referidos y canjes en Salon Andreas.' };
+      return { title: s.premios ?? 'Premios', subtitle: s.premiosSub ?? '' };
     case CLIENT_SUB.CARRITO:
       return { title: 'Carrito', subtitle: 'Productos seleccionados.' };
     case CLIENT_SUB.SERVICIOS_CARRITO:
       return {
-        title: 'Servicios por agendar',
-        subtitle: 'Elije fecha y hora para los servicios y sigue con el proceso.',
+        title: s.serviciosCarrito ?? 'Servicios por agendar',
+        subtitle: s.serviciosCarritoSub ?? '',
       };
     case CLIENT_SUB.MIS_PEDIDOS:
-      return { title: 'Mis pedidos', subtitle: 'Mis compras en tienda y estado' };
+      return { title: p.title ?? 'Mis pedidos', subtitle: p.subtitle ?? '' };
     case CLIENT_SUB.MEMBRESIAS:
-      return { title: 'Membresías', subtitle: 'Bronce, Plata y VIP · beneficios por nivel.' };
+      return { title: s.membresias ?? 'Membresías', subtitle: s.membresiasSub ?? '' };
     case CLIENT_SUB.MENSAJES:
-      return { title: 'Andreas Pro', subtitle: 'Mensajes y promos del salón.' };
+      return { title: s.mensajes ?? 'Andreas Pro', subtitle: s.mensajesSub ?? '' };
     case CLIENT_SUB.MIS_FACTURAS:
-      return {
-        title: 'Mis facturas',
-        subtitle: 'Compras y servicios completados a tu nombre (mismo registro que en salón).',
-      };
+      return { title: s.facturas ?? 'Mis facturas', subtitle: s.facturasSub ?? '' };
     default:
-      return { title: 'Pantalla', subtitle: '' };
+      return { title: s.default ?? 'Pantalla', subtitle: '' };
   }
 }

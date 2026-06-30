@@ -4,6 +4,7 @@ import { Search, ShoppingBag } from 'lucide-react-native';
 import { typography, spacing, radii } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
+import { useClientLocale } from '../../hooks/useClientLocale';
 
 /**
  * - Inicio: búsqueda + carrito.
@@ -28,9 +29,11 @@ export function ScreenHeader({
   showCartButton = true,
   /** Solo pestaña Perfil: primer nombre para saludo */
   profileFirstName,
-  /** Estilo extra del contenedor (p. ej. menos margen cuando va fijo arriba). */
   wrapStyle,
+  /** Etiqueta de bienvenida en Perfil */
+  welcomeLabel = 'Bienvenida',
 }) {
+  const { t } = useClientLocale();
   const { colors: c } = useTheme();
   const styles = useMemo(
     () =>
@@ -138,7 +141,7 @@ export function ScreenHeader({
               onPress={onCartPress ?? (() => {})}
               accessibilityRole="button"
               accessibilityLabel={
-                cartLabel ? `Tienda, ${cartLabel} productos` : 'Tienda'
+                cartLabel ? t('inicio.cartA11yCount', { count: cartLabel }) : t('inicio.cartA11y')
               }
               hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
             >
@@ -159,7 +162,7 @@ export function ScreenHeader({
     return (
       <View style={[styles.wrap, wrapStyle]}>
         <View style={styles.profileCopy}>
-          <Text style={styles.kicker}>Bienvenida</Text>
+          <Text style={styles.kicker}>{welcomeLabel}</Text>
         </View>
       </View>
     );

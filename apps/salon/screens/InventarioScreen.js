@@ -18,7 +18,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { VerticalDatePicker } from '../components/VerticalDatePicker';
 import { Plus, Star, Truck, X, Image as ImageIcon, Check, ChevronRight, Minus } from 'lucide-react-native';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
@@ -1687,29 +1687,11 @@ export function InventarioScreen({ onBack }) {
                       />
                     </Field>
                     <Field label="Fecha de ingreso *" c={c}>
-                      <TouchableOpacity
-                        style={[styles.inp, styles.inpCompact, styles.dateTouch, { borderColor: c.cardBorder, backgroundColor: c.background }]}
-                        onPress={() => setShowLoteDatePicker(true)}
-                      >
-                        <Text style={{ color: c.foreground, fontFamily: typography.fontSans }}>
-                          {stockBatchMeta.fecha_ingreso.toLocaleDateString('es-GT', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric',
-                          })}
-                        </Text>
-                      </TouchableOpacity>
-                      {showLoteDatePicker ? (
-                        <DateTimePicker
-                          value={stockBatchMeta.fecha_ingreso}
-                          mode="date"
-                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                          onChange={(_, d) => {
-                            setShowLoteDatePicker(Platform.OS === 'ios');
-                            if (d) setStockBatchMeta((f) => ({ ...f, fecha_ingreso: d }));
-                          }}
-                        />
-                      ) : null}
+                      <VerticalDatePicker
+                        value={stockBatchMeta.fecha_ingreso}
+                        onChange={(d) => setStockBatchMeta((f) => ({ ...f, fecha_ingreso: d }))}
+                        colors={c}
+                      />
                     </Field>
                   </View>
                 ) : null}

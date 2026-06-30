@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { typography } from '@appsalon/design-tokens';
 import { useTheme } from '../../theme/ThemeProvider';
 import { CLIENT_ALERT_BELL_RED } from '../../constants/clientAlertColors';
+import { useClientLocale } from '../../hooks/useClientLocale';
 
 const CHARCOAL = '#1A1510';
 const GOLD = '#C5A368';
@@ -13,6 +14,7 @@ const TAB_BAR_CORE_HEIGHT = 8 + 4 + 40 + 4 + 14;
 
 /** @param {{ id: string, label: string, icon: import('react').ComponentType, alert?: boolean, badgeCount?: number }[]} items */
 export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPress }) {
+  const { t } = useClientLocale();
   const { colors: c, isDark } = useTheme();
   const inactiveLabelColor = isDark ? c.foreground : CHARCOAL;
   const inactiveIconColor = isDark ? c.foregroundMuted : CHARCOAL;
@@ -121,7 +123,9 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
                 onPress={onCartPress}
                 activeOpacity={0.82}
                 accessibilityRole="button"
-                accessibilityLabel={cartCount > 0 ? `Tienda, ${cartCount} productos` : 'Tienda'}
+                accessibilityLabel={
+                  cartCount > 0 ? t('inicio.cartA11yCount', { count: cartCount }) : t('inicio.cartA11y')
+                }
               >
                 <View style={styles.iconShell}>
                   <ShoppingBag size={22} color={inactiveIconColor} strokeWidth={1.6} />
@@ -131,7 +135,7 @@ export function BottomTabs({ items, activeId, onChange, cartCount = 0, onCartPre
                     </View>
                   ) : null}
                 </View>
-                <Text style={[styles.label, { color: inactiveLabelColor }]}>Tienda</Text>
+                <Text style={[styles.label, { color: inactiveLabelColor }]}>{t('tabs.tienda')}</Text>
               </TouchableOpacity>
             ) : null}
 

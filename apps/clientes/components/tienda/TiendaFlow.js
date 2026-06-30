@@ -884,6 +884,7 @@ export function TiendaFlow({
               inventarioId={selected.inventarioId || selected.id}
               clienteId={clienteId}
               clientUserId={clientUserId}
+              autorNombre={clienteNombre}
               ratingSummary={selected.rating}
               reviewCount={selected.reviewCount}
               onMetaUpdated={async () => {

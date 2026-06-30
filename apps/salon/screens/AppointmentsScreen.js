@@ -21,7 +21,7 @@ import { Calendar, ChevronLeft, Clock, Minus, Plus, UserPlus, X, Check } from 'l
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
 import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { VerticalDatePicker, VerticalDatePickerSheet } from '../components/VerticalDatePicker';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
@@ -911,21 +911,13 @@ export function AppointmentsScreen({ onBack }) {
                   <Text style={[styles.filterChipTxt, { color: c.foreground }]}>Todas</Text>
                 </TouchableOpacity>
               </View>
-              {showAgendaDatePicker ? (
-                <DateTimePicker
-                  value={agendaFecha ?? new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, d) => {
-                    if (Platform.OS !== 'ios') setShowAgendaDatePicker(false);
-                    if (event?.type === 'dismissed') {
-                      setShowAgendaDatePicker(false);
-                      return;
-                    }
-                    if (d) setAgendaFecha(d);
-                  }}
-                />
-              ) : null}
+              <VerticalDatePickerSheet
+                visible={showAgendaDatePicker}
+                value={agendaFecha ?? new Date()}
+                colors={c}
+                onChange={setAgendaFecha}
+                onClose={() => setShowAgendaDatePicker(false)}
+              />
             <Text style={styles.filterSectionLbl}>Orden</Text>
             <View style={styles.chipRow}>
               {[
@@ -1363,38 +1355,19 @@ export function AppointmentsScreen({ onBack }) {
               ) : null}
 
               <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Fecha de cita</Text>
-              <TouchableOpacity style={styles.selectRow} onPress={() => setShowDatePicker(true)}>
-                <Text style={styles.selectTxt}>{appointmentDate.toLocaleDateString('es-GT')}</Text>
-                <Calendar size={18} color={c.foregroundSubtle} strokeWidth={1.8} />
-              </TouchableOpacity>
-              {showDatePicker ? (
-                <DateTimePicker
-                  mode="date"
-                  value={appointmentDate}
-                  onChange={(_, date) => {
-                    if (Platform.OS !== 'ios') setShowDatePicker(false);
-                    if (date) setAppointmentDate(date);
-                  }}
-                />
-              ) : null}
+              <VerticalDatePicker
+                value={appointmentDate}
+                onChange={setAppointmentDate}
+                colors={c}
+              />
 
               <Text style={styles.formLabel}>Horario</Text>
-              <TouchableOpacity style={styles.selectRow} onPress={() => setShowTimePicker(true)}>
-                <Text style={styles.selectTxt}>
-                  {appointmentTime.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-                <Clock size={18} color={c.foregroundSubtle} strokeWidth={1.8} />
-              </TouchableOpacity>
-              {showTimePicker ? (
-                <DateTimePicker
-                  mode="time"
-                  value={appointmentTime}
-                  onChange={(_, date) => {
-                    if (Platform.OS !== 'ios') setShowTimePicker(false);
-                    if (date) setAppointmentTime(date);
-                  }}
-                />
-              ) : null}
+              <VerticalDatePicker
+                mode="time"
+                value={appointmentTime}
+                onChange={setAppointmentTime}
+                colors={c}
+              />
 
               <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Asignar profesional</Text>
               {selectedEmployee && staffSearch.trim().length < 2 ? (

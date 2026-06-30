@@ -24,7 +24,7 @@ import { CLIENT_SUB } from '../navigation/clientSubScreens';
 import { CLIENT_ALERT_BELL_RED } from '../constants/clientAlertColors';
 import { useTheme } from '../theme/ThemeProvider';
 import { useClientLocale } from '../hooks/useClientLocale';
-import { InstagramBrandIcon, FacebookBrandIcon } from '../components/social/SocialBrandIcons';
+import { InstagramLogo, FacebookLogo, WhatsAppLogo } from '../components/social/SocialLogoImage';
 import { LocationOnIcon } from '../components/social/LocationOnIcon';
 
 function formatGtq(n) {
@@ -57,33 +57,33 @@ const WEB_APP_URL = 'https://appsalon-pro-web-catalogo.vercel.app';
 function ContactoBody() {
   const subStyles = useSubStyles();
   const { colors: tc } = useTheme();
+  const { t } = useClientLocale();
   const chipText = useAccentChipStyle();
   const openUrl = (url) => Linking.openURL(url).catch(() => {});
 
   return (
     <>
       <View style={[subStyles.card, padTop]}>
-        <Text style={subStyles.rowLabel}>Servicio al cliente</Text>
-        <Text style={subStyles.rowSub}>
-          Canales directos del salón para consultas, cambios o ayuda con tus pedidos y citas.
-        </Text>
+        <Text style={subStyles.rowLabel}>{t('contacto.cardTitle')}</Text>
+        <Text style={subStyles.rowSub}>{t('contacto.cardSub')}</Text>
         <View style={subStyles.divider} />
 
         <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('https://wa.me/50247132123')}>
-          <View style={{ flex: 1 }}>
-            <Text style={subStyles.rowLabel}>WhatsApp</Text>
-            <Text style={subStyles.rowSub}>Chat directo con recepción</Text>
+          <WhatsAppLogo size={28} />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
+            <Text style={subStyles.rowLabel}>{t('contacto.whatsapp')}</Text>
+            <Text style={subStyles.rowSub}>{t('contacto.whatsappSub')}</Text>
           </View>
-          <Text style={chipText}>Abrir</Text>
+          <Text style={chipText}>{t('contacto.open')}</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
 
         <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('tel:+50247132123')}>
           <View style={{ flex: 1 }}>
-            <Text style={subStyles.rowLabel}>Servicio al cliente</Text>
-            <Text style={subStyles.rowSub}>+502 4713-2123</Text>
+            <Text style={subStyles.rowLabel}>{t('contacto.phone')}</Text>
+            <Text style={subStyles.rowSub}>{t('contacto.phoneSub')}</Text>
           </View>
-          <Text style={chipText}>Llamar</Text>
+          <Text style={chipText}>{t('contacto.call')}</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
 
@@ -91,40 +91,40 @@ function ContactoBody() {
           style={subStyles.rowTouch}
           onPress={() => openUrl(getSalonGoogleMapsUrl())}
         >
-          <LocationOnIcon size={24} color={tc.primary} />
+          <LocationOnIcon size={28} color={tc.primary} />
           <View style={{ flex: 1, marginLeft: spacing.sm }}>
-            <Text style={subStyles.rowLabel}>Ubicación GPS</Text>
-            <Text style={subStyles.rowSub}>Abrir en mapas y navegar</Text>
+            <Text style={subStyles.rowLabel}>{t('contacto.gps')}</Text>
+            <Text style={subStyles.rowSub}>{t('contacto.gpsSub')}</Text>
           </View>
-          <Text style={chipText}>Ir</Text>
+          <Text style={chipText}>{t('contacto.go')}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={subStyles.card}>
-        <Text style={subStyles.rowLabel}>Redes sociales</Text>
+        <Text style={subStyles.rowLabel}>{t('contacto.social')}</Text>
         <View style={subStyles.divider} />
         <TouchableOpacity
           style={subStyles.rowTouch}
           onPress={() => openUrl('https://instagram.com/appsalonpro')}
         >
-          <InstagramBrandIcon size={28} />
+          <InstagramLogo size={28} />
           <View style={{ flex: 1, marginLeft: spacing.sm }}>
-            <Text style={subStyles.rowLabel}>Instagram</Text>
+            <Text style={subStyles.rowLabel}>{t('contacto.instagram')}</Text>
             <Text style={subStyles.rowSub}>@appsalonpro</Text>
           </View>
-          <Text style={chipText}>Abrir</Text>
+          <Text style={chipText}>{t('contacto.open')}</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
         <TouchableOpacity
           style={subStyles.rowTouch}
           onPress={() => openUrl('https://facebook.com/appsalonpro')}
         >
-          <FacebookBrandIcon size={28} />
+          <FacebookLogo size={28} />
           <View style={{ flex: 1, marginLeft: spacing.sm }}>
-            <Text style={subStyles.rowLabel}>Facebook</Text>
+            <Text style={subStyles.rowLabel}>{t('contacto.facebook')}</Text>
             <Text style={subStyles.rowSub}>AppSalon Pro</Text>
           </View>
-          <Text style={chipText}>Abrir</Text>
+          <Text style={chipText}>{t('contacto.open')}</Text>
         </TouchableOpacity>
         <View style={subStyles.divider} />
         <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl(WEB_APP_URL)}>
@@ -135,13 +135,6 @@ function ContactoBody() {
           <Text style={chipText}>Abrir</Text>
         </TouchableOpacity>
       </View>
-
-      <SalonButton
-        title="Visitar página web"
-        variant="heroGold"
-        fullWidth
-        onPress={() => openUrl(WEB_APP_URL)}
-      />
     </>
   );
 }
