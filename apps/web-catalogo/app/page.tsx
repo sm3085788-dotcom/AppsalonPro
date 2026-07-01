@@ -402,7 +402,7 @@ export default async function HomePage() {
                 src="/images/app-servicios.png"
                 alt="Pantalla de servicios de la app AppSalon Pro"
                 size="sm"
-                className="hidden -mr-16 translate-y-8 -rotate-6 opacity-90 lg:block"
+                className="-mr-28 translate-y-8 -rotate-6 opacity-90 sm:-mr-20 lg:-mr-16"
               />
               <IphoneMockup
                 src="/images/app-home.png"
@@ -414,7 +414,7 @@ export default async function HomePage() {
                 src="/images/app-producto.png"
                 alt="Pantalla de producto de la app AppSalon Pro"
                 size="sm"
-                className="hidden -ml-16 translate-y-8 rotate-6 opacity-90 lg:block"
+                className="-ml-28 translate-y-8 rotate-6 opacity-90 sm:-ml-20 lg:-ml-16"
               />
             </div>
           </div>
