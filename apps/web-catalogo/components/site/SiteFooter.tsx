@@ -314,7 +314,7 @@ export function SiteFooter({ branches = [] }: { branches?: Branch[] }) {
 
       <div className="border-t border-border py-8 text-center text-xs font-light tracking-wide text-muted">
 
-        © {new Date().getFullYear()} AppSalon Pro · Hecho con Next.js y Supabase
+        © {new Date().getFullYear()} AppSalon Pro
 
       </div>
 

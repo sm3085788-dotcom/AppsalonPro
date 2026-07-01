@@ -21,7 +21,7 @@ const SLIDES = [
   {
     src: '/images/service-lifting.png',
     alt: 'Tratamiento de mirada y pestañas',
-    badge: 'Boutique',
+    badge: 'Premium',
     caption: 'Mirada & pestañas',
     location: 'Tratamiento elite',
   },

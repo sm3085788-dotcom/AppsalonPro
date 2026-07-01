@@ -20,7 +20,7 @@ export default async function HomePage() {
       {/* ── Hero editorial ─────────────────────────────── */}
       <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-12 lg:gap-8 lg:px-8 lg:pb-28 lg:pt-24">
         <div className="lg:col-span-6">
-          <p className="eyebrow">Salón boutique · Belleza de autor</p>
+          <p className="eyebrow">Salón premium · Belleza de autor</p>
           <div className="mt-5 flex items-center gap-4">
             <span className="rule-gold hidden w-12 sm:block" />
             <span className="font-serif text-3xl font-medium uppercase tracking-[0.22em] text-gradient-gold sm:text-4xl">
@@ -110,10 +110,10 @@ export default async function HomePage() {
       <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
           {[
-            { k: '12+', v: 'Años de oficio' },
-            { k: '40k', v: 'Clientes consentidos' },
+            { k: '19+', v: 'Años de oficio' },
+            { k: '25k', v: 'Clientes consentidos' },
             { k: '4.9', v: 'Reseñas verificadas' },
-            { k: '8', v: 'Sucursales boutique' },
+            { k: '1', v: 'Sucursal · 3 en proceso' },
           ].map(({ k, v }) => (
             <div
               key={v}
@@ -154,7 +154,7 @@ export default async function HomePage() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/images/salon-1.png"
-                alt="Interior del salón boutique con estaciones de estilismo"
+                alt="Interior del salón premium con estaciones de estilismo"
                 className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
               />
             </div>
@@ -214,7 +214,7 @@ export default async function HomePage() {
             {
               icon: Eye,
               tag: 'Visión',
-              title: 'El salón boutique de referencia',
+              title: 'El salón premium de referencia',
               desc: 'Ser el estándar de la belleza de autor en la región: un espacio donde tradición y modernidad conviven, reconocido por su calidez, su detalle y la confianza de cada cliente.',
             },
           ].map(({ icon: Icon, tag, title, desc }) => (
@@ -245,7 +245,7 @@ export default async function HomePage() {
           <figure className="group relative order-2 overflow-hidden rounded-[28px] border border-border lg:order-1 lg:col-span-5">
             <div className="media-3-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/ambiance.png" alt="Interior boutique del salón" />
+              <img src="/images/ambiance.png" alt="Interior premium del salón" />
             </div>
           </figure>
           <div className="order-1 lg:order-2 lg:col-span-7">
