@@ -4,6 +4,7 @@ import { getStripe } from '@/lib/stripe/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { computeProductOrder } from '@/lib/data/orderAmounts';
 import { env } from '@/lib/env';
+import { mergeBookingNotas } from '@/lib/bookingPolicy';
 
 /**
  * Req 5: webhook de Stripe. Confirma el pago y crea la cita o el pedido con el
@@ -118,17 +119,24 @@ async function handleSucceeded(pi: Stripe.PaymentIntent) {
       clienteId = cliente?.id ?? null;
     }
 
+    const deposit = pi.amount / 100;
     const { error } = await admin.from('citas').insert({
       sucursal_id: sucursalId,
       cliente_id: clienteId,
       servicio: meta.servicio || 'Servicio',
       estado: 'confirmada',
       fecha_hora: meta.fecha_hora || new Date().toISOString(),
-      precio: pi.amount / 100,
+      precio: deposit,
       duracion_minutos: 60,
       latitud: meta.latitud ? Number(meta.latitud) : null,
       longitud: meta.longitud ? Number(meta.longitud) : null,
       direccion_domicilio: meta.direccion || null,
+      notas_servicio: mergeBookingNotas('Reserva web · anticipo con tarjeta (Stripe)', {
+        payment_intent_id: pi.id,
+        deposit_gtq: deposit,
+        servicio_id: meta.servicio_id || null,
+        refunded: false,
+      }),
     });
     if (error) console.error('[webhook] crear cita', error);
   }

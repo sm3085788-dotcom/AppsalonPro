@@ -3,9 +3,11 @@ import { redirect } from 'next/navigation';
 import { CalendarClock, ShoppingBag } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { BookingCancelButton } from '@/components/booking/BookingCancelButton';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/env';
+import { parseBookingNotas } from '@/lib/bookingPolicy';
 import { formatFechaHora, formatQ } from '@/lib/format';
 
 export const metadata = { title: 'Mi cuenta | AppSalon Pro' };
@@ -16,6 +18,7 @@ interface CitaRow {
   estado: string;
   fecha_hora: string;
   precio: number | null;
+  notas_servicio: string | null;
 }
 
 export default async function CuentaPage() {
@@ -34,7 +37,7 @@ export default async function CuentaPage() {
       if (cliente?.id) {
         const { data } = await supabase
           .from('citas')
-          .select('id,servicio,estado,fecha_hora,precio')
+          .select('id,servicio,estado,fecha_hora,precio,notas_servicio')
           .eq('cliente_id', cliente.id)
           .order('fecha_hora', { ascending: false })
           .limit(10);
@@ -76,29 +79,46 @@ export default async function CuentaPage() {
         />
       ) : (
         <ul className="space-y-3">
-          {citas.map((c) => (
-            <li
-              key={c.id}
-              className="flex items-center justify-between rounded-2xl border border-border bg-surface p-4"
-            >
-              <div>
-                <p className="font-medium text-cream">{c.servicio}</p>
-                <p className="text-xs text-muted">
-                  {formatFechaHora(c.fecha_hora)}
-                </p>
-              </div>
-              <div className="text-right">
-                <span className="rounded-full bg-surface-2 px-3 py-1 text-xs capitalize text-gold">
-                  {c.estado}
-                </span>
-                {c.precio != null && (
-                  <p className="mt-1 text-sm text-foreground">
-                    {formatQ(c.precio)}
+          {citas.map((c) => {
+            const { meta } = parseBookingNotas(c.notas_servicio);
+            const hasDeposit = Boolean(meta.payment_intent_id);
+            const refunded = Boolean(meta.refunded);
+
+            return (
+              <li
+                key={c.id}
+                className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-surface p-4"
+              >
+                <div>
+                  <p className="font-medium text-cream">{c.servicio}</p>
+                  <p className="text-xs text-muted">
+                    {formatFechaHora(c.fecha_hora)}
                   </p>
-                )}
-              </div>
-            </li>
-          ))}
+                  <BookingCancelButton
+                    citaId={c.id}
+                    fechaHora={c.fecha_hora}
+                    estado={c.estado}
+                    hasDeposit={hasDeposit && !refunded}
+                  />
+                </div>
+                <div className="shrink-0 text-right">
+                  <span className="rounded-full bg-surface-2 px-3 py-1 text-xs capitalize text-gold">
+                    {c.estado}
+                  </span>
+                  {c.precio != null && hasDeposit && (
+                    <p className="mt-1 text-sm text-foreground">
+                      Anticipo {formatQ(c.precio)}
+                      {refunded && (
+                        <span className="block text-[11px] text-emerald-400">
+                          Reembolsado
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

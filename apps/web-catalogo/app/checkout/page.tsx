@@ -23,8 +23,12 @@ export default async function CheckoutPage({
   const branchId = sp.branch || (await getSelectedBranchId());
 
   let input: CreatePaymentIntentInput | null = null;
-  let summary: { lines: { label: string; qty?: number; amount: number }[]; total: number } | null =
-    null;
+  let summary: {
+    lines: { label: string; qty?: number; amount: number }[];
+    total: number;
+    bookingPolicy?: boolean;
+    precioVariable?: boolean;
+  } | null = null;
   let errorMsg: string | null = null;
 
   // Sin Supabase configurado no hay inventario real que cobrar: degradamos con gracia.
@@ -62,12 +66,13 @@ export default async function CheckoutPage({
   } else if (sp.type === 'booking' && sp.servicio) {
     const res = await computeBookingAmount(supabase, sp.servicio);
     if (res.ok) {
+      const { booking } = res;
       input = {
         kind: 'booking',
         sucursalId: branchId ?? '',
         booking: {
           servicioId: sp.servicio,
-          servicio: res.nombre,
+          servicio: booking.nombre,
           fechaHora: sp.fecha || new Date().toISOString(),
           fulfillment: sp.fulfillment === 'domicilio' ? 'domicilio' : 'salon',
           latitud: sp.lat ? Number(sp.lat) : null,
@@ -76,8 +81,15 @@ export default async function CheckoutPage({
         },
       };
       summary = {
-        lines: [{ label: res.nombre, amount: res.total }],
-        total: res.total,
+        lines: [
+          {
+            label: `Anticipo · ${booking.nombre}`,
+            amount: booking.deposit,
+          },
+        ],
+        total: booking.total,
+        bookingPolicy: true,
+        precioVariable: booking.precioVariable,
       };
     } else {
       errorMsg = res.error;

@@ -41,7 +41,10 @@ export interface Service {
   id: UUID;
   nombre: string;
   categoria: string | null;
+  /** Precio referencia (columna inventario); no es el total si precioVariable. */
   precio: number;
+  /** Servicio con tabla por volumen: no mostrar precio fijo en catálogo. */
+  precioVariable: boolean;
   descripcion: string | null;
   imagenUrl: string | null;
   duracionMin: number | null;

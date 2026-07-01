@@ -57,7 +57,7 @@ export default async function RootLayout({
           <ConfigStatusBanner />
           <SiteHeader userEmail={user?.email ?? null} />
           <main className="flex-1">{children}</main>
-          <SiteFooter />
+          <SiteFooter branches={branches} />
         </BranchProvider>
       </body>
     </html>

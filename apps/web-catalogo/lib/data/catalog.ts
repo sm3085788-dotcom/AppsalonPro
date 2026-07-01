@@ -19,6 +19,7 @@ const DEMO_SERVICES: Service[] = [
     nombre: 'Lifting de Pestañas Premium',
     categoria: 'Mirada',
     precio: 350,
+    precioVariable: false,
     descripcion:
       'Realza la curvatura natural de tus pestañas con un tratamiento de larga duración. Incluye tinte y nutrición con queratina.',
     imagenUrl: '/images/service-lifting.png',

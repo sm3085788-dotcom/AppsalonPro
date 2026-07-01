@@ -58,11 +58,12 @@ export async function POST(request: NextRequest) {
       if (!res.ok) {
         return NextResponse.json({ error: res.error }, { status: 400 });
       }
-      amount = res.total;
+      amount = res.booking.total;
       metadata.servicio = body.booking.servicio.slice(0, 200);
       metadata.servicio_id = body.booking.servicioId;
       metadata.fecha_hora = body.booking.fechaHora;
       metadata.fulfillment = body.booking.fulfillment;
+      metadata.deposit_gtq = String(res.booking.deposit);
       if (body.booking.latitud != null)
         metadata.latitud = String(body.booking.latitud);
       if (body.booking.longitud != null)

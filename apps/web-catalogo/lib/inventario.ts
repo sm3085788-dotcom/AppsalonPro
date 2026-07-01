@@ -1,4 +1,5 @@
 import type { InventarioRow, Product, Service } from '@/lib/types/db';
+import { servicioUsaPreciosPorVolumen } from '../../../shared/config/inventarioMeta.js';
 
 /** Marca que el salon usa dentro de `inventario.notas` para anexar metadatos JSON de tienda. */
 const TIENDA_JSON_MARK = '__TIENDA_UI_JSON__';
@@ -69,11 +70,13 @@ function firstImage(row: InventarioRow, metaImage: string | null): string | null
 
 export function mapToService(row: InventarioRow): Service {
   const meta = parseInventarioMeta(row.notas);
+  const precioVariable = servicioUsaPreciosPorVolumen(row);
   return {
     id: row.id,
     nombre: row.nombre,
     categoria: row.categoria,
     precio: Number(row.precio_venta ?? 0),
+    precioVariable,
     descripcion: row.descripcion_tienda ?? meta.descripcion,
     imagenUrl: firstImage(row, meta.image),
     duracionMin: meta.duracionMin,

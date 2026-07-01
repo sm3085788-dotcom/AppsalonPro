@@ -20,6 +20,19 @@ export {
 } from './metaGlobal.js';
 export { confirmarCompraConTarjeta, mapInventarioToTiendaProduct, buildTiendaProductFicha } from './tiendaCheckout.js';
 export {
+  BOOKING_DEPOSIT_PERCENT,
+  BOOKING_DEPOSIT_MIN_GTQ,
+  BOOKING_REFUND_HOURS_BEFORE,
+  PRECIO_A_TU_MEDIDA_LABEL,
+  PRECIO_A_TU_MEDIDA_HINT,
+  BOOKING_DEPOSIT_LABEL,
+  BOOKING_DEPOSIT_POLICY,
+  computeBookingDepositGtq,
+  bookingRefundEligible,
+  splitBookingNotas,
+  mergeBookingNotas,
+} from './reservaCheckout.js';
+export {
   fetchBranchStock,
   isProductAvailableAtBranch,
   productStockFromRow,

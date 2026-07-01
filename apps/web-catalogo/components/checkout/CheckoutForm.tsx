@@ -11,6 +11,7 @@ import {
 import { Loader2, Lock, ShieldCheck } from 'lucide-react';
 import { getStripePromise } from '@/lib/stripe/client';
 import { formatQ } from '@/lib/format';
+import { BOOKING_DEPOSIT_POLICY } from '@/lib/bookingPolicy';
 import type { CreatePaymentIntentInput } from '@/lib/types/db';
 
 interface SummaryLine {
@@ -21,7 +22,12 @@ interface SummaryLine {
 
 interface Props {
   input: CreatePaymentIntentInput;
-  summary: { lines: SummaryLine[]; total: number };
+  summary: {
+    lines: SummaryLine[];
+    total: number;
+    bookingPolicy?: boolean;
+    precioVariable?: boolean;
+  };
 }
 
 export function CheckoutForm({ input, summary }: Props) {
@@ -29,6 +35,7 @@ export function CheckoutForm({ input, summary }: Props) {
   const [demo, setDemo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const isBooking = input.kind === 'booking';
 
   const stripePromise = useMemo(() => getStripePromise(), []);
 
@@ -64,6 +71,10 @@ export function CheckoutForm({ input, summary }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const payLabel = isBooking
+    ? `Pagar anticipo ${formatQ(summary.total)}`
+    : `Pagar ${formatQ(summary.total)}`;
+
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
       <div className="order-2 lg:order-1">
@@ -78,7 +89,9 @@ export function CheckoutForm({ input, summary }: Props) {
             {error}
           </p>
         )}
-        {demo && !error && <DemoCheckout total={summary.total} />}
+        {demo && !error && (
+          <DemoCheckout total={summary.total} isBooking={isBooking} />
+        )}
         {clientSecret && stripePromise && !error && (
           <Elements
             stripe={stripePromise}
@@ -95,17 +108,22 @@ export function CheckoutForm({ input, summary }: Props) {
               },
             }}
           >
-            <PaymentInner total={summary.total} />
+            <PaymentInner payLabel={payLabel} />
           </Elements>
+        )}
+        {isBooking && !error && (
+          <p className="mt-4 text-xs leading-relaxed text-muted">
+            {BOOKING_DEPOSIT_POLICY}
+          </p>
         )}
       </div>
 
-      <OrderSummary summary={summary} />
+      <OrderSummary summary={summary} isBooking={isBooking} />
     </div>
   );
 }
 
-function PaymentInner({ total }: { total: number }) {
+function PaymentInner({ payLabel }: { payLabel: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -145,7 +163,7 @@ function PaymentInner({ total }: { total: number }) {
         ) : (
           <Lock className="h-4 w-4" />
         )}
-        Pagar {formatQ(total)}
+        {payLabel}
       </button>
       <p className="flex items-center justify-center gap-1.5 text-xs text-muted">
         <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" /> Pago cifrado
@@ -155,14 +173,21 @@ function PaymentInner({ total }: { total: number }) {
   );
 }
 
-function DemoCheckout({ total }: { total: number }) {
+function DemoCheckout({
+  total,
+  isBooking,
+}: {
+  total: number;
+  isBooking: boolean;
+}) {
   const router = useRouter();
   return (
     <div className="space-y-4 rounded-2xl border border-gold/30 bg-gold/5 p-6">
       <h3 className="font-medium text-cream">Checkout en modo demo</h3>
       <p className="text-sm text-muted">
         Stripe no está configurado. En producción aquí se mostraría el Payment
-        Element para pagar {formatQ(total)} con tarjeta de forma segura.
+        Element para pagar {isBooking ? 'el anticipo de ' : ''}
+        {formatQ(total)} con tarjeta de forma segura.
       </p>
       <button
         onClick={() => router.push('/checkout/exito')}
@@ -174,7 +199,13 @@ function DemoCheckout({ total }: { total: number }) {
   );
 }
 
-function OrderSummary({ summary }: { summary: Props['summary'] }) {
+function OrderSummary({
+  summary,
+  isBooking,
+}: {
+  summary: Props['summary'];
+  isBooking: boolean;
+}) {
   return (
     <aside className="order-1 h-fit rounded-2xl border border-border bg-surface p-6 lg:order-2">
       <h3 className="mb-4 text-lg font-light text-cream">Resumen</h3>
@@ -189,8 +220,16 @@ function OrderSummary({ summary }: { summary: Props['summary'] }) {
           </li>
         ))}
       </ul>
+      {isBooking && summary.precioVariable && (
+        <p className="mt-3 text-xs text-muted">
+          El valor final del servicio se confirma en el salón según volumen y
+          estilo.
+        </p>
+      )}
       <div className="mt-4 flex justify-between border-t border-border pt-4">
-        <span className="text-cream">Total</span>
+        <span className="text-cream">
+          {isBooking ? 'Anticipo a pagar' : 'Total'}
+        </span>
         <span className="text-lg font-medium text-gold">
           {formatQ(summary.total)}
         </span>

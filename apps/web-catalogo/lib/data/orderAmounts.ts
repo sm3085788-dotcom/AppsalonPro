@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UUID } from '@/lib/types/db';
+import { computeBookingDepositGtq } from '@/lib/bookingPolicy';
+import { servicioUsaPreciosPorVolumen } from '../../../../shared/config/inventarioMeta.js';
 
 export interface ComputedLine {
   product_id: UUID;
@@ -12,6 +14,15 @@ export interface ComputedLine {
 export interface ComputedOrder {
   lines: ComputedLine[];
   total: number;
+}
+
+export interface ComputedBooking {
+  /** Monto a cobrar online (anticipo). */
+  total: number;
+  deposit: number;
+  precioReferencia: number;
+  precioVariable: boolean;
+  nombre: string;
 }
 
 /**
@@ -84,20 +95,34 @@ export async function computeProductOrder(
   return { ok: true, order: { lines, total } };
 }
 
-/** Precio de un servicio (cita) leido desde inventario. */
+/** Anticipo de reserva (15 % mín. Q 35) — no el precio total del servicio. */
 export async function computeBookingAmount(
   supabase: SupabaseClient,
   servicioId: UUID,
-): Promise<{ ok: true; total: number; nombre: string } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; booking: ComputedBooking } | { ok: false; error: string }
+> {
   const { data, error } = await supabase
     .from('inventario')
-    .select('nombre,precio_venta')
+    .select('nombre,precio_venta,notas')
     .eq('id', servicioId)
     .maybeSingle();
   if (error || !data) return { ok: false, error: 'Servicio no encontrado.' };
+
+  const precioReferencia = Number(data.precio_venta ?? 0);
+  const deposit = computeBookingDepositGtq(precioReferencia);
+  if (deposit <= 0) {
+    return { ok: false, error: 'No se pudo calcular el anticipo de reserva.' };
+  }
+
   return {
     ok: true,
-    total: Number(data.precio_venta ?? 0),
-    nombre: data.nombre as string,
+    booking: {
+      total: deposit,
+      deposit,
+      precioReferencia,
+      precioVariable: servicioUsaPreciosPorVolumen(data),
+      nombre: data.nombre as string,
+    },
   };
 }

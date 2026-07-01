@@ -1,25 +1,19 @@
 import Link from 'next/link';
 import {
-  CalendarCheck,
-  ShoppingBag,
-  Star,
-  ShieldCheck,
   ArrowUpRight,
   Zap,
   Target,
   Eye,
-  Gem,
-  HeartHandshake,
-  Sparkles,
-  Leaf,
 } from 'lucide-react';
 import { IphoneMockup } from '@/components/ui/IphoneMockup';
 import { AppStoreButtons } from '@/components/site/AppStoreButtons';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
+import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
+import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
 import { getServices } from '@/lib/data/catalog';
 
 export default async function HomePage() {
-  const services = (await getServices()).slice(0, 3);
+  const services = (await getServices()).slice(0, 4);
 
   return (
     <div>
@@ -34,14 +28,14 @@ export default async function HomePage() {
             </span>
           </div>
           <h1 className="mt-6 text-balance text-5xl font-light leading-[1.05] tracking-tight text-shine sm:text-6xl lg:text-7xl">
-            El ritual de
+            El arte de
             <br />
             verse{' '}
             <span className="text-gradient-gold italic">extraordinario</span>
           </h1>
           <p className="mt-8 max-w-md text-pretty text-base font-light leading-relaxed text-muted">
             Un espacio donde el detalle es lujo. Reserva con maestros del estilo,
-            descubre productos de culto y vive una experiencia hecha a tu medida.
+            descubre productos premium y vive una experiencia hecha a tu medida.
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-6">
             <Link
@@ -58,26 +52,31 @@ export default async function HomePage() {
               Explorar la tienda
             </Link>
           </div>
+
+          {services.length > 0 && (
+            <div className="mt-10">
+              <div className="mb-4 flex items-end justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-muted">
+                  Servicios
+                </p>
+                <Link
+                  href="/servicios"
+                  className="link-underline text-[11px] font-light uppercase tracking-[0.16em] text-gold"
+                >
+                  Ver todos
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:max-w-xl sm:gap-4">
+                {services.map((s) => (
+                  <ServiceCard key={s.id} service={s} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="relative lg:col-span-6">
-          <div className="glow-gold pointer-events-none absolute -inset-10 -z-10" />
-          <figure className="grain group relative mx-auto max-w-md overflow-hidden rounded-[28px] border border-border-strong">
-            <div className="media-3-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/hero-salon.png" alt="Salón de belleza editorial AppSalon Pro" />
-            </div>
-            {/* Sello editorial superior */}
-            <span className="absolute left-5 top-5 z-10 inline-flex items-center gap-2 rounded-full border border-border-strong glass px-3.5 py-1.5 text-[10px] font-light uppercase tracking-[0.24em] text-pearl">
-              <Star className="h-3 w-3 text-gold" strokeWidth={1.5} /> 4.9 · Élite
-            </span>
-            <figcaption className="absolute bottom-5 left-5 right-5 z-10 flex items-center justify-between rounded-2xl border border-border-strong glass px-5 py-3">
-              <span className="text-xs font-light uppercase tracking-[0.2em] text-muted">
-                Estudio insignia
-              </span>
-              <span className="text-xs font-light text-gold">Cdad. Matriz</span>
-            </figcaption>
-          </figure>
+          <HeroEliteCarousel />
         </div>
       </section>
 
@@ -89,9 +88,9 @@ export default async function HomePage() {
               {[
                 'Color de autor',
                 'Cortes de precisión',
-                'Rituales de spa',
+                'Tratamientos de spa',
                 'Barbería premium',
-                'Productos de culto',
+                'Productos premium',
                 'Novias & eventos',
               ].map((word) => (
                 <span
@@ -196,7 +195,7 @@ export default async function HomePage() {
               />
             </div>
             <figcaption className="absolute bottom-4 left-4 rounded-full border border-border-strong glass px-4 py-1.5 text-[11px] font-light uppercase tracking-[0.2em] text-pearl">
-              Ritual de spa
+              Tratamiento de spa
             </figcaption>
           </figure>
         </div>
@@ -238,94 +237,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Valores & Principios ───────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
-        <div className="grid gap-16 lg:grid-cols-12">
-          <div className="lg:col-span-4">
-            <p className="eyebrow">Lo que nos mueve</p>
-            <h2 className="mt-5 text-balance text-3xl font-light leading-snug text-cream sm:text-4xl">
-              Valores &amp;
-              <br />
-              principios
-            </h2>
-            <p className="mt-5 max-w-sm text-sm font-light leading-relaxed text-muted">
-              La brújula detrás de cada corte, cada color y cada conversación en
-              nuestras sucursales.
-            </p>
-          </div>
-
-          <div className="grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:col-span-8">
-            {[
-              {
-                icon: Gem,
-                title: 'Excelencia',
-                desc: 'Perseguimos el detalle impecable en cada servicio, sin atajos ni concesiones.',
-              },
-              {
-                icon: HeartHandshake,
-                title: 'Cercanía',
-                desc: 'Escuchamos primero. Cada cliente es recibido con respeto, calidez y honestidad.',
-              },
-              {
-                icon: Sparkles,
-                title: 'Creatividad',
-                desc: 'Fusionamos técnica y arte para diseñar looks únicos, fieles a tu esencia.',
-              },
-              {
-                icon: Leaf,
-                title: 'Cuidado consciente',
-                desc: 'Productos de calidad y prácticas responsables con las personas y el entorno.',
-              },
-              {
-                icon: ShieldCheck,
-                title: 'Confianza',
-                desc: 'Transparencia en precios, pagos protegidos y reseñas siempre verificadas.',
-              },
-              {
-                icon: CalendarCheck,
-                title: 'Compromiso',
-                desc: 'Puntualidad y palabra cumplida: tu tiempo es tan valioso como el resultado.',
-              },
-            ].map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="border-t border-border pt-6">
-                <Icon className="h-6 w-6 text-gold" strokeWidth={1.25} />
-                <h3 className="mt-5 text-lg font-light text-cream">{title}</h3>
-                <p className="mt-2 text-sm font-light leading-relaxed text-muted">
-                  {desc}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Servicios destacados ───────────────────────── */}
-      {services.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
-          <div className="mb-12 flex items-end justify-between border-b border-border pb-6">
-            <div>
-              <p className="eyebrow">Destacados</p>
-              <h2 className="mt-3 text-3xl font-light text-cream sm:text-4xl">
-                Servicios favoritos
-              </h2>
-            </div>
-            <Link
-              href="/servicios"
-              className="link-underline hidden text-[13px] font-light uppercase tracking-[0.18em] text-muted hover:text-cream sm:inline"
-            >
-              Ver todos
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {services.map((s) => (
-              <ServiceCard key={s.id} service={s} />
-            ))}
-          </div>
-        </section>
-      )}
+      <ValuesOrbitSection />
 
       {/* ── Ambiente editorial ─────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
+      <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-16">
           <figure className="group relative order-2 overflow-hidden rounded-[28px] border border-border lg:order-1 lg:col-span-5">
             <div className="media-3-4">
@@ -357,13 +272,13 @@ export default async function HomePage() {
       {/* ── Descarga la app ────────────────────────────── */}
       <section
         id="descargar"
-        className="mx-auto max-w-7xl px-4 pb-28 pt-28 sm:px-6 lg:px-8"
+        className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 lg:px-8"
       >
-        <div className="relative overflow-hidden rounded-[32px] border border-border bg-surface p-8 sm:p-14">
+        <div className="relative overflow-hidden rounded-[32px] border border-border bg-surface p-6 sm:p-10">
           <div className="glow-cream pointer-events-none absolute -right-20 -top-20 h-80 w-80" />
           <div className="glow-gold pointer-events-none absolute -left-20 bottom-0 h-72 w-72 opacity-60" />
 
-          <div className="relative grid items-center gap-14 lg:grid-cols-2">
+          <div className="relative grid items-center gap-8 lg:grid-cols-2 lg:gap-10">
             <div className="relative">
               <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs uppercase tracking-[0.25em] text-gold">
                 <Zap className="h-3.5 w-3.5" strokeWidth={1.5} /> App móvil
@@ -373,8 +288,9 @@ export default async function HomePage() {
               </h2>
               <p className="mt-5 max-w-md text-sm font-light leading-relaxed text-muted">
                 Gestiona tus citas, premios ANDREAS, pedidos y mensajes con el
-                salón. Explora servicios y tienda, todo con notificaciones en
-                tiempo real y pagos con tarjeta seguros.
+                salón. Explora servicios y tienda, descubre Tendencias con looks
+                e inspiración del salón en video, y recibe notificaciones en
+                tiempo real con pagos con tarjeta seguros.
               </p>
               <ul className="mt-7 space-y-3">
                 {[

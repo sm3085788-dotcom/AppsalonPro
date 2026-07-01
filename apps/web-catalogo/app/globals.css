@@ -248,6 +248,25 @@ body {
   }
 }
 
+/* Anillo de valores con profundidad */
+.values-orbit {
+  perspective: 900px;
+}
+
+.values-orbit-node {
+  transform-style: preserve-3d;
+}
+
+.values-orbit-ring {
+  animation: values-orbit-spin 24s linear infinite;
+}
+
+@keyframes values-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Divisor hairline con degradado dorado central */
 .rule-gold {
   height: 1px;

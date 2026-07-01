@@ -25,15 +25,19 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
 
   return (
     <header className="glass sticky top-0 z-50 border-b border-border">
-      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex shrink-0 items-center gap-2 sm:gap-3">
+      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <Link
+          href="/"
+          className="flex shrink-0 items-center gap-3"
+          aria-label="Inicio AppSalon Pro"
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/images/logo-andreas-transparent.png"
             alt="Andreas · AppSalon Pro"
-            className="h-9 w-9 object-contain sm:h-11 sm:w-11"
+            className="h-11 w-11 object-contain sm:h-12 sm:w-12"
           />
-          <span className="hidden text-[15px] font-light tracking-[0.32em] text-cream min-[420px]:inline">
+          <span className="hidden text-[15px] font-light tracking-[0.32em] text-cream min-[520px]:inline">
             APPSALON <span className="text-gold">PRO</span>
           </span>
         </Link>
@@ -50,8 +54,10 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
           ))}
         </nav>
 
-        <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-3">
-          <BranchSelect compact />
+        <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+          <div className="min-w-0 max-w-[11rem] sm:max-w-none">
+            <BranchSelect compact />
+          </div>
           {userEmail ? (
             <div className="flex shrink-0 items-center gap-2">
               <Link
@@ -72,7 +78,7 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
           ) : (
             <Link
               href="/login"
-              className="shrink-0 rounded-full border border-gold/40 bg-gold/5 px-3.5 py-1.5 text-[11px] font-light uppercase tracking-[0.14em] text-gold transition-colors hover:bg-gold hover:text-charcoal sm:px-6 sm:py-2 sm:text-[13px] sm:tracking-[0.18em]"
+              className="shrink-0 rounded-full border border-gold/40 bg-gold/5 px-4 py-2 text-[12px] font-light uppercase tracking-[0.16em] text-gold transition-colors hover:bg-gold hover:text-charcoal sm:px-6 sm:text-[13px] sm:tracking-[0.18em]"
             >
               Ingresar
             </Link>
