@@ -27,7 +27,13 @@ export default async function HomePage() {
       <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-12 lg:gap-8 lg:px-8 lg:pb-28 lg:pt-24">
         <div className="lg:col-span-6">
           <p className="eyebrow">Salón boutique · Belleza de autor</p>
-          <h1 className="mt-7 text-balance text-5xl font-light leading-[1.05] tracking-tight text-shine sm:text-6xl lg:text-7xl">
+          <div className="mt-5 flex items-center gap-4">
+            <span className="rule-gold hidden w-12 sm:block" />
+            <span className="font-serif text-2xl font-light italic tracking-wide text-gradient-gold sm:text-3xl">
+              Salón Andreas
+            </span>
+          </div>
+          <h1 className="mt-6 text-balance text-5xl font-light leading-[1.05] tracking-tight text-shine sm:text-6xl lg:text-7xl">
             El ritual de
             <br />
             verse{' '}
