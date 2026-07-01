@@ -27,7 +27,13 @@ export default async function HomePage() {
       <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-12 lg:gap-8 lg:px-8 lg:pb-28 lg:pt-24">
         <div className="lg:col-span-6">
           <p className="eyebrow">Salón boutique · Belleza de autor</p>
-          <h1 className="mt-7 text-balance text-5xl font-light leading-[1.05] tracking-tight text-shine sm:text-6xl lg:text-7xl">
+          <div className="mt-5 flex items-center gap-4">
+            <span className="rule-gold hidden w-12 sm:block" />
+            <span className="font-serif text-3xl font-medium uppercase tracking-[0.22em] text-gradient-gold sm:text-4xl">
+              Salón Andreas
+            </span>
+          </div>
+          <h1 className="mt-6 text-balance text-5xl font-light leading-[1.05] tracking-tight text-shine sm:text-6xl lg:text-7xl">
             El ritual de
             <br />
             verse{' '}
@@ -390,25 +396,25 @@ export default async function HomePage() {
               </div>
             </div>
 
-            {/* Trío de teléfonos con distintas pantallas */}
-            <div className="relative flex items-end justify-center gap-4 sm:gap-6">
+            {/* Trío de teléfonos con distintas pantallas (abanico contenido) */}
+            <div className="relative flex items-center justify-center py-4">
               <IphoneMockup
                 src="/images/app-servicios.png"
                 alt="Pantalla de servicios de la app AppSalon Pro"
                 size="sm"
-                className="hidden translate-y-6 sm:block"
+                className="hidden -mr-16 translate-y-8 -rotate-6 opacity-90 lg:block"
               />
               <IphoneMockup
                 src="/images/app-home.png"
                 alt="Pantalla principal de la app AppSalon Pro"
                 size="lg"
-                className="z-10"
+                className="relative z-10"
               />
               <IphoneMockup
                 src="/images/app-producto.png"
                 alt="Pantalla de producto de la app AppSalon Pro"
                 size="sm"
-                className="hidden translate-y-6 sm:block"
+                className="hidden -ml-16 translate-y-8 rotate-6 opacity-90 lg:block"
               />
             </div>
           </div>

@@ -19,8 +19,8 @@ export function IphoneMockup({
 }: IphoneMockupProps) {
   const dims =
     size === 'lg'
-      ? 'h-[560px] w-[280px] rounded-[44px]'
-      : 'h-[440px] w-[220px] rounded-[36px]';
+      ? 'h-[480px] w-[236px] rounded-[40px]'
+      : 'h-[380px] w-[186px] rounded-[32px]';
   const screenRadius = size === 'lg' ? 'rounded-[34px]' : 'rounded-[28px]';
   const notch =
     size === 'lg' ? 'top-3 h-6 w-32' : 'top-2.5 h-5 w-24';

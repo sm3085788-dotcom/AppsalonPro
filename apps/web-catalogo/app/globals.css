@@ -43,6 +43,7 @@
   --color-pearl-dim: var(--pearl-dim);
 
   --font-sans: var(--font-inter);
+  --font-serif: var(--font-cormorant);
   --font-mono: var(--font-geist-mono);
 
   --radius-sm: calc(var(--radius) - 4px);
@@ -56,6 +57,9 @@ body {
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Evita scroll horizontal por glows/marquee que sangran fuera del viewport */
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {

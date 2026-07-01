@@ -2,13 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, Home, Store, Loader2, Radio } from 'lucide-react';
+import { CalendarClock, Store, Loader2, Radio } from 'lucide-react';
 import { useBranch } from '@/components/branch/BranchContext';
 import { useBranchBookingsRealtime } from '@/lib/realtime/useBranchBookingsRealtime';
-import { AddressAutocomplete } from '@/components/geo/AddressAutocomplete';
 import { createBooking } from '@/app/reservar/actions';
 import { formatQ } from '@/lib/format';
-import type { DeliveryAddress, FulfillmentType, Service } from '@/lib/types/db';
+import type { Service } from '@/lib/types/db';
 
 export function BookingForm({
   services,
@@ -26,8 +25,6 @@ export function BookingForm({
       : (services[0]?.id ?? ''),
   );
   const [fecha, setFecha] = useState('');
-  const [fulfillment, setFulfillment] = useState<FulfillmentType>('salon');
-  const [address, setAddress] = useState<DeliveryAddress | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -46,8 +43,6 @@ export function BookingForm({
     if (!serviceId) return 'Selecciona un servicio.';
     if (!selectedBranchId) return 'Selecciona una sucursal.';
     if (!fecha) return 'Elige fecha y hora.';
-    if (fulfillment === 'domicilio' && !address)
-      return 'Ingresa la dirección del servicio a domicilio.';
     return null;
   }
 
@@ -66,10 +61,10 @@ export function BookingForm({
         servicio: selectedService?.nombre ?? 'Servicio',
         fechaHora: new Date(fecha).toISOString(),
         sucursalId: selectedBranchId!,
-        fulfillment,
-        latitud: address?.latitud ?? null,
-        longitud: address?.longitud ?? null,
-        direccion: address?.direccion ?? null,
+        fulfillment: 'salon',
+        latitud: null,
+        longitud: null,
+        direccion: null,
       });
       if (!res.ok) {
         setError(res.error);
@@ -96,14 +91,9 @@ export function BookingForm({
       type: 'booking',
       servicio: serviceId,
       fecha: new Date(fecha).toISOString(),
-      fulfillment,
+      fulfillment: 'salon',
     });
     if (selectedBranchId) params.set('branch', selectedBranchId);
-    if (fulfillment === 'domicilio' && address) {
-      params.set('lat', String(address.latitud));
-      params.set('lng', String(address.longitud));
-      params.set('direccion', address.direccion);
-    }
     router.push(`/checkout?${params.toString()}`);
   }
 
@@ -139,32 +129,15 @@ export function BookingForm({
           </div>
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm text-muted">Modalidad</label>
-          <div className="grid grid-cols-2 gap-3">
-            <FulfillmentOption
-              active={fulfillment === 'salon'}
-              icon={Store}
-              label="En el salón"
-              onClick={() => setFulfillment('salon')}
-            />
-            <FulfillmentOption
-              active={fulfillment === 'domicilio'}
-              icon={Home}
-              label="A domicilio"
-              onClick={() => setFulfillment('domicilio')}
-            />
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-2 px-4 py-3">
+          <Store className="h-4 w-4 text-gold" />
+          <div>
+            <p className="text-sm text-foreground">Atención en el salón</p>
+            <p className="text-xs text-muted">
+              Te esperamos en la sucursal seleccionada.
+            </p>
           </div>
         </div>
-
-        {fulfillment === 'domicilio' && (
-          <div>
-            <label className="mb-2 block text-sm text-muted">
-              Dirección del servicio
-            </label>
-            <AddressAutocomplete onSelect={setAddress} />
-          </div>
-        )}
 
         {error && <p className="text-sm text-red-400">{error}</p>}
         {success && <p className="text-sm text-emerald-300">{success}</p>}
@@ -214,33 +187,6 @@ export function BookingForm({
         </div>
       </aside>
     </div>
-  );
-}
-
-function FulfillmentOption({
-  active,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center justify-center gap-2 rounded-xl border py-3 text-sm transition-colors ${
-        active
-          ? 'border-gold bg-gold/10 text-gold'
-          : 'border-border text-muted hover:border-gold/40'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      {label}
-    </button>
   );
 }
 
