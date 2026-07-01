@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CalendarClock, ShoppingBag } from 'lucide-react';
+import { CalendarClock, ShoppingBag, UserPen, AlertCircle } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { BookingCancelButton } from '@/components/booking/BookingCancelButton';
@@ -8,6 +8,12 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/env';
 import { parseBookingNotas } from '@/lib/bookingPolicy';
+import { displayNameFromUser } from '@/lib/clientDisplayName';
+import {
+  ensureClienteFromAuth,
+  isProfileComplete,
+  profileMissingLabels,
+} from '@/lib/data/cliente';
 import { formatFechaHora, formatQ } from '@/lib/format';
 
 export const metadata = { title: 'Mi cuenta | AppSalon Pro' };
@@ -26,19 +32,23 @@ export default async function CuentaPage() {
   if (!user) redirect('/login?redirect=/cuenta');
 
   let citas: CitaRow[] = [];
+  let clienteNombre = displayNameFromUser(user);
+  let profileComplete = false;
+  let missing: string[] = [];
+
   if (isSupabaseConfigured) {
     try {
       const supabase = await createSupabaseServerClient();
-      const { data: cliente } = await supabase
-        .from('clientes')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (cliente?.id) {
+      const { row } = await ensureClienteFromAuth(supabase, user);
+      if (row?.nombre?.trim()) clienteNombre = row.nombre.trim();
+      profileComplete = isProfileComplete(row);
+      missing = profileMissingLabels(row);
+
+      if (row?.id) {
         const { data } = await supabase
           .from('citas')
           .select('id,servicio,estado,fecha_hora,precio,notas_servicio')
-          .eq('cliente_id', cliente.id)
+          .eq('cliente_id', row.id)
           .order('fecha_hora', { ascending: false })
           .limit(10);
         citas = (data ?? []) as CitaRow[];
@@ -48,13 +58,35 @@ export default async function CuentaPage() {
     }
   }
 
+  const firstName = clienteNombre.split(/\s+/)[0] ?? 'cliente';
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
       <SectionHeader
         eyebrow="Mi cuenta"
-        title={`Hola, ${user.email?.split('@')[0] ?? 'cliente'}`}
-        subtitle="Gestiona tus citas y descubre nuevos productos."
+        title={`Hola, ${firstName}`}
+        subtitle={
+          profileComplete
+            ? 'Gestiona tus citas y descubre nuevos productos.'
+            : 'Completa tu perfil para que el salón te reconozca en citas y pedidos.'
+        }
       />
+
+      {!profileComplete && (
+        <Link
+          href="/cuenta/perfil?from=/cuenta"
+          className="mb-8 flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 transition-colors hover:border-amber-500/50"
+        >
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+          <div>
+            <p className="font-medium text-cream">Completá tu perfil</p>
+            <p className="mt-1 text-sm text-muted">
+              Falta: {missing.slice(0, 3).join(', ')}. Es la misma ficha que usa
+              la app Clientes en el salón.
+            </p>
+          </div>
+        </Link>
+      )}
 
       <div className="mb-8 flex flex-wrap gap-3">
         <Link
@@ -68,6 +100,12 @@ export default async function CuentaPage() {
           className="flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:border-gold hover:text-gold"
         >
           <ShoppingBag className="h-4 w-4" /> Ir a la tienda
+        </Link>
+        <Link
+          href="/cuenta/perfil"
+          className="flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:border-gold hover:text-gold"
+        >
+          <UserPen className="h-4 w-4" /> Editar perfil
         </Link>
       </div>
 

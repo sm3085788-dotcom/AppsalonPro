@@ -1,6 +1,11 @@
+import type { User } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/env';
-import type { User } from '@supabase/supabase-js';
+import { displayNameFromUser } from '@/lib/clientDisplayName';
+import {
+  ensureClienteFromAuth,
+  getClienteByUserId,
+} from '@/lib/data/cliente';
 
 /** Usuario actual (o null). Seguro en modo demo y ante errores. */
 export async function getCurrentUser(): Promise<User | null> {
@@ -13,6 +18,29 @@ export async function getCurrentUser(): Promise<User | null> {
     return user ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Nombre visible del cliente (clientes.nombre o metadata Auth). */
+export async function getClienteDisplayName(
+  userId: string,
+  user?: User | null,
+): Promise<string> {
+  if (!isSupabaseConfigured) {
+    return user ? displayNameFromUser(user) : '';
+  }
+  try {
+    const supabase = await createSupabaseServerClient();
+    let row = await getClienteByUserId(supabase, userId);
+    if (!row && user) {
+      const ensured = await ensureClienteFromAuth(supabase, user);
+      row = ensured.row;
+    }
+    if (row?.nombre?.trim()) return row.nombre.trim();
+    if (user) return displayNameFromUser(user);
+    return '';
+  } catch {
+    return user ? displayNameFromUser(user) : '';
   }
 }
 

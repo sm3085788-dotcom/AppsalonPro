@@ -10,6 +10,7 @@ import {
   computeBookingAmount,
 } from '@/lib/data/orderAmounts';
 import { getSelectedBranchId } from '@/lib/data/selectedBranch';
+import { redirectIfProfileIncomplete } from '@/app/cuenta/actions';
 import type { CreatePaymentIntentInput } from '@/lib/types/db';
 
 export const metadata = { title: 'Checkout | AppSalon Pro' };
@@ -20,6 +21,9 @@ export default async function CheckoutPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const sp = await searchParams;
+  if (sp.type === 'booking') {
+    await redirectIfProfileIncomplete('/checkout?' + new URLSearchParams(sp as Record<string, string>).toString());
+  }
   const branchId = sp.branch || (await getSelectedBranchId());
 
   let input: CreatePaymentIntentInput | null = null;

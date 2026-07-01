@@ -7,6 +7,8 @@ import { Loader2, Mail, Lock, User2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isSupabaseConfigured } from '@/lib/env';
 import { DemoBanner } from '@/components/ui/DemoBanner';
+import { syncClienteFichaAction } from '@/app/cuenta/actions';
+import { splitFullName } from '@/lib/clientDisplayName';
 
 function Field({
   icon: Icon,
@@ -23,6 +25,16 @@ function Field({
       />
     </div>
   );
+}
+
+async function afterAuth(router: ReturnType<typeof useRouter>, redirectTo: string) {
+  const synced = await syncClienteFichaAction();
+  if (!synced.complete) {
+    router.push(`/cuenta/perfil?from=${encodeURIComponent(redirectTo)}`);
+  } else {
+    router.push(redirectTo);
+  }
+  router.refresh();
 }
 
 export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
@@ -50,8 +62,7 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
         setError(traducirError(error.message));
         return;
       }
-      router.push(redirectTo);
-      router.refresh();
+      await afterAuth(router, redirectTo);
     } catch {
       setError('No pudimos conectar. Revisa tu red e intenta de nuevo.');
     } finally {
@@ -101,9 +112,10 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
 
 export function RegisterForm() {
   const router = useRouter();
-  const [nombre, setNombre] = useState('');
+  const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -116,27 +128,53 @@ export function RegisterForm() {
       setError('Registro no disponible en modo demo.');
       return;
     }
+
+    const fullName = nombreCompleto.trim().replace(/\s+/g, ' ');
+    const { nombre: nom, apellido: ape } = splitFullName(fullName);
+    if (nom.length < 2) {
+      setError('Ingresa tu nombre (mínimo 2 caracteres).');
+      return;
+    }
+    if (ape.length < 2) {
+      setError('Ingresa nombre y apellido separados por un espacio.');
+      return;
+    }
     if (password.length < 8) {
       setError('La contraseña debe tener al menos 8 caracteres.');
       return;
     }
+    if (password !== password2) {
+      setError('Las contraseñas no coinciden.');
+      return;
+    }
+
     setLoading(true);
     try {
       const supabase = createClient();
+      const em = email.trim();
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: em,
         password,
-        options: { data: { nombre: nombre.trim() } },
+        options: {
+          data: {
+            full_name: fullName,
+            first_name: nom,
+            last_name: ape,
+            nombre: fullName,
+            signup_source: 'web_catalogo',
+          },
+        },
       });
       if (error) {
         setError(traducirError(error.message));
         return;
       }
       if (data.session) {
-        router.push('/');
-        router.refresh();
+        await afterAuth(router, '/cuenta/perfil');
       } else {
-        setInfo('Cuenta creada. Revisa tu correo para confirmar el acceso.');
+        setInfo(
+          'Cuenta creada. Revisa tu correo para confirmar el acceso; luego completa tu perfil al ingresar.',
+        );
       }
     } catch {
       setError('No pudimos conectar. Revisa tu red e intenta de nuevo.');
@@ -148,7 +186,7 @@ export function RegisterForm() {
   return (
     <AuthCard
       title="Crea tu cuenta"
-      subtitle="Únete a la experiencia AppSalon Pro."
+      subtitle="Regístrate con tu nombre real para que el salón te identifique."
     >
       {!isSupabaseConfigured && (
         <DemoBanner message="Supabase no está configurado: el registro está deshabilitado en modo demo." />
@@ -158,9 +196,9 @@ export function RegisterForm() {
           icon={User2}
           type="text"
           required
-          placeholder="Nombre completo"
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Nombre y apellido"
+          value={nombreCompleto}
+          onChange={(e) => setNombreCompleto(e.target.value)}
           autoComplete="name"
         />
         <Field
@@ -181,10 +219,23 @@ export function RegisterForm() {
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
         />
+        <Field
+          icon={Lock}
+          type="password"
+          required
+          placeholder="Confirmar contraseña"
+          value={password2}
+          onChange={(e) => setPassword2(e.target.value)}
+          autoComplete="new-password"
+        />
         {error && <p className="text-sm text-red-400">{error}</p>}
         {info && <p className="text-sm text-gold-soft">{info}</p>}
         <SubmitButton loading={loading}>Crear cuenta</SubmitButton>
       </form>
+      <p className="mt-4 text-xs leading-relaxed text-muted">
+        Después del registro completarás teléfono, dirección y fecha de
+        nacimiento, igual que en la app Clientes.
+      </p>
       <p className="mt-5 text-center text-sm text-muted">
         ¿Ya tienes cuenta?{' '}
         <Link href="/login" className="text-gold hover:underline">

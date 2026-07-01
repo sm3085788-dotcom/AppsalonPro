@@ -200,6 +200,7 @@ export function ClientAuthScreen({ onAuthSuccess, onAuthHandoffStart }) {
   };
 
   const finishAuth = async (user, displayName, em, ref, { isNewAccount = false } = {}) => {
+    void supabase.auth.updateUser({ data: { signup_source: 'app_clientes' } });
     const link = await linkClienteFicha(user, displayName, ref);
     if (!link.ok) {
       Alert.alert('Cuenta', link.message);
@@ -323,6 +324,7 @@ export function ClientAuthScreen({ onAuthSuccess, onAuthHandoffStart }) {
             full_name: fullName,
             first_name: nom,
             last_name: ape,
+            signup_source: 'app_clientes',
             ...(ref ? { referral_code: ref } : {}),
           },
         },

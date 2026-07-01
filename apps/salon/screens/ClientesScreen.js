@@ -23,6 +23,10 @@ import {
   membresiaLabel,
   isClienteAppVerificado,
   isClienteManual,
+  isClienteWeb,
+  clienteOrigenLabel,
+  CLIENTE_MANUAL_AURA,
+  CLIENTE_WEB_AURA,
   computeMembresiaStatusFromRow,
   getSalonSessionProfile,
   isSalonSucursalAdmin,
@@ -36,7 +40,7 @@ import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { MembresiaBadge } from '../components/MembresiaBadge';
 import { useTheme } from '../theme/ThemeProvider';
 
-const MINT = { border: '#2E7D32', bg: '#E8F5E9', chip: '#C8E6C9' };
+const MINT = CLIENTE_MANUAL_AURA;
 
 function ageFromBirthdate(isoOrDate) {
   if (!isoOrDate) return null;
@@ -49,9 +53,14 @@ function ageFromBirthdate(isoOrDate) {
   return age >= 0 && age < 130 ? age : null;
 }
 
-function isManualProfile(row) {
-  const t = String(row?.tipo_registro || '').toLowerCase();
-  return t.includes('manual');
+function origenChipStyle(row, c) {
+  if (isClienteManual(row)) {
+    return { bg: MINT.chip, text: MINT.chipText };
+  }
+  if (isClienteWeb(row)) {
+    return { bg: CLIENTE_WEB_AURA.chip, text: CLIENTE_WEB_AURA.chipText };
+  }
+  return { bg: c.surfaceMuted, text: c.foregroundMuted };
 }
 
 const CLIENTE_FICHA_FIELDS = [
@@ -173,8 +182,9 @@ export function ClientesScreen({ onBack }) {
         return blob.includes(q);
       });
     }
-    if (filterTipo === 'manual') rows = rows.filter((row) => isManualProfile(row));
-    if (filterTipo === 'app') rows = rows.filter((row) => !isManualProfile(row));
+    if (filterTipo === 'manual') rows = rows.filter((row) => isClienteManual(row));
+    if (filterTipo === 'web') rows = rows.filter((row) => isClienteWeb(row));
+    if (filterTipo === 'app') rows = rows.filter((row) => isClienteAppVerificado(row));
 
     const sorted = [...rows];
     if (sortMode === 'nombre_asc') {
@@ -195,7 +205,13 @@ export function ClientesScreen({ onBack }) {
     const orden =
       sortMode === 'nombre_desc' ? 'Nombre Z → A' : sortMode === 'reciente' ? 'Más recientes' : 'Nombre A → Z';
     const tipo =
-      filterTipo === 'manual' ? 'Solo manual' : filterTipo === 'app' ? 'Solo app clientes' : 'Todos los orígenes';
+      filterTipo === 'manual'
+        ? 'Solo manual'
+        : filterTipo === 'web'
+          ? 'Solo web'
+          : filterTipo === 'app'
+            ? 'Solo app clientes'
+            : 'Todos los orígenes';
     return `${orden} · ${tipo}`;
   }, [sortMode, filterTipo]);
 
@@ -466,7 +482,8 @@ export function ClientesScreen({ onBack }) {
 
   const renderItem = useCallback(
     ({ item }) => {
-      const manual = isManualProfile(item);
+      const origen = clienteOrigenLabel(item);
+      const origenStyle = origenChipStyle(item, c);
       const edad = ageFromBirthdate(item.cumpleanos);
       const subParts = [
         item.telefono,
@@ -521,10 +538,8 @@ export function ClientesScreen({ onBack }) {
               </Text>
               <View style={styles.rowChips}>
                 {item.membresia_nivel ? <MembresiaBadge nivel={item.membresia_nivel} compact /> : null}
-                <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
-                  <Text style={[styles.chipTxt, { color: manual ? '#1B5E20' : c.foregroundMuted }]}>
-                    {manual ? 'Manual' : 'App'}
-                  </Text>
+                <View style={[styles.chip, { backgroundColor: origenStyle.bg }]}>
+                  <Text style={[styles.chipTxt, { color: origenStyle.text }]}>{origen}</Text>
                 </View>
               </View>
             </View>
@@ -865,6 +880,7 @@ export function ClientesScreen({ onBack }) {
               {[
                 { id: 'todos', label: 'Todos' },
                 { id: 'manual', label: 'Solo manual' },
+                { id: 'web', label: 'Solo web' },
                 { id: 'app', label: 'Solo app clientes' },
               ].map((opt) => {
                 const on = filterTipo === opt.id;

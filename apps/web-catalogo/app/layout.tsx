@@ -6,7 +6,7 @@ import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { ConfigStatusBanner } from "@/components/site/ConfigStatusBanner";
 import { listBranches } from "@/lib/data/branches";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, getClienteDisplayName } from "@/lib/auth";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -36,7 +36,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [branches, user] = await Promise.all([listBranches(), getCurrentUser()]);
+  const [branches, user, displayName] = await Promise.all([
+    listBranches(),
+    getCurrentUser(),
+    getCurrentUser().then((u) =>
+      u ? getClienteDisplayName(u.id, u) : Promise.resolve(null),
+    ),
+  ]);
 
   return (
     <html
@@ -55,7 +61,10 @@ export default async function RootLayout({
         </div>
         <BranchProvider branches={branches}>
           <ConfigStatusBanner />
-          <SiteHeader userEmail={user?.email ?? null} />
+          <SiteHeader
+            userEmail={user?.email ?? null}
+            userDisplayName={displayName}
+          />
           <main className="flex-1">{children}</main>
           <SiteFooter branches={branches} />
         </BranchProvider>

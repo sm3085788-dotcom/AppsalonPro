@@ -202,7 +202,14 @@ export {
   sendIncidentReportToClient,
   INCIDENT_REPORT_CONTENT_TYPE,
 } from './incidentAuraLine.js';
-export { isClienteManual, isClienteAppVerificado, CLIENTE_MANUAL_AURA } from './clienteAppMeta.js';
+export {
+  isClienteManual,
+  isClienteWeb,
+  isClienteAppVerificado,
+  clienteOrigenLabel,
+  CLIENTE_MANUAL_AURA,
+  CLIENTE_WEB_AURA,
+} from './clienteAppMeta.js';
 export {
   MEMBRESIA_TIERS,
   getMembresiaTier,

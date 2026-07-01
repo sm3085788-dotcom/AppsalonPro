@@ -12,6 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { isSalonAdminRole } from './salonRoles.js';
+import { isClienteWeb } from './clienteAppMeta.js';
 import { getSalonSucursalScope } from './salonSession.js';
 import { localCalendarDateString } from './localDate.js';
 import { getClientSucursalId, mergeInventarioWithSucursalStock, ensureClientSucursalId } from './clientSucursal.js';
@@ -666,6 +667,7 @@ export const db = {
         const nom = String(nombre || '').trim();
         const em = String(email || '').trim();
         if (em && !String(existing.email || '').trim()) patch.email = em;
+        if (isClienteWeb(existing)) patch.tipo_registro = 'app_clientes';
         let nextRow = existing;
         if (Object.keys(patch).length > 0) {
           const { data, error } = await supabase

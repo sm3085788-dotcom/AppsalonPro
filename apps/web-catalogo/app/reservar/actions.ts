@@ -42,7 +42,7 @@ export async function createBooking(
       return {
         ok: false,
         error:
-          'Completa tu perfil de cliente en la app antes de reservar desde la web.',
+          'Completa tu perfil en Mi cuenta antes de reservar desde la web.',
       };
     }
 

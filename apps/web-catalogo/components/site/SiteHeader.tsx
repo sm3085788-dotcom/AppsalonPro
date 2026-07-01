@@ -14,7 +14,13 @@ const NAV = [
   { href: '/#descargar', label: 'App' },
 ];
 
-export function SiteHeader({ userEmail }: { userEmail: string | null }) {
+export function SiteHeader({
+  userEmail,
+  userDisplayName,
+}: {
+  userEmail: string | null;
+  userDisplayName?: string | null;
+}) {
   const router = useRouter();
 
   const onLogout = async () => {
@@ -62,10 +68,12 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
             <div className="flex shrink-0 items-center gap-2">
               <Link
                 href="/cuenta"
-                className="hidden items-center gap-1.5 text-sm font-light text-muted hover:text-gold sm:flex"
+                className="hidden max-w-[10rem] items-center gap-1.5 truncate text-sm font-light text-muted hover:text-gold sm:flex"
+                title={userDisplayName || userEmail}
               >
-                <User2 className="h-4 w-4" />
-                {userEmail.split('@')[0]}
+                <User2 className="h-4 w-4 shrink-0" />
+                {userDisplayName?.split(/\s+/)[0] ||
+                  userEmail.split('@')[0]}
               </Link>
               <button
                 onClick={onLogout}
