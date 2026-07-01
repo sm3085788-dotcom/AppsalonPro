@@ -13,6 +13,18 @@ export const SALON_CONTACTO = {
   appleUrl: 'https://maps.apple/p/SErM5cbbv_5Puj',
 };
 
+/** Catálogo web público (Next.js en Vercel). Accesible desde cualquier red con internet. */
+export const WEB_CATALOG_URL =
+  (typeof process !== 'undefined' &&
+    process.env?.EXPO_PUBLIC_WEB_CATALOG_URL?.trim()) ||
+  'https://appsalon-pro-web-catalogo.vercel.app';
+
+export function getWebCatalogUrl(path = '') {
+  const base = WEB_CATALOG_URL.replace(/\/$/, '');
+  if (!path) return base;
+  return `${base}/${String(path).replace(/^\//, '')}`;
+}
+
 export function getSalonMapLinks() {
   const { latitude: lat, longitude: lng, wazeUrl, appleUrl } = SALON_CONTACTO;
   const coords = encodeURIComponent(`${lat},${lng}`);

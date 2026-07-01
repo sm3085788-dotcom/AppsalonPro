@@ -165,6 +165,8 @@ export {
 } from './citaConfirmacionMessage.js';
 export {
   SALON_CONTACTO,
+  WEB_CATALOG_URL,
+  getWebCatalogUrl,
   getSalonMapLinks,
   getSalonGoogleMapsUrl,
 } from './salonContacto.js';

@@ -8,7 +8,7 @@ import { SalonButton } from '../components/luxury/SalonButton';
 import { useSubStyles } from '../components/luxury/SubScreenChrome';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { FEATURED_SERVICE } from '../data/luxuryUiMocks';
-import { db, getSalonGoogleMapsUrl } from '@appsalon/shared-config';
+import { db, getSalonGoogleMapsUrl, getWebCatalogUrl } from '@appsalon/shared-config';
 import { TiendaFlow } from '../components/tienda/TiendaFlow';
 import { TendenciasFeed } from '../components/tendencias/TendenciasFeed';
 import { PremiosDashboard } from '../components/premios/PremiosDashboard';
@@ -52,7 +52,7 @@ function useAccentChipStyle() {
   );
 }
 
-const WEB_APP_URL = 'https://appsalon-pro-web-catalogo.vercel.app';
+const WEB_APP_URL = getWebCatalogUrl();
 
 function ContactoBody() {
   const subStyles = useSubStyles();
@@ -130,7 +130,7 @@ function ContactoBody() {
         <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl(WEB_APP_URL)}>
           <View style={{ flex: 1 }}>
             <Text style={subStyles.rowLabel}>App web</Text>
-            <Text style={subStyles.rowSub}>{WEB_APP_URL.replace(/^https?:\/\//, '')}</Text>
+            <Text style={subStyles.rowSub}>Catálogo en línea · reservas y productos</Text>
           </View>
           <Text style={chipText}>Abrir</Text>
         </TouchableOpacity>

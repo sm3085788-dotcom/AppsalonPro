@@ -131,6 +131,7 @@ import {
   isAuthRedirectUrl,
   resolveReferralCodeForAuth,
   consumePendingReferralCode,
+  getWebCatalogUrl,
 } from '@appsalon/shared-config';
 import {
   tryShowCitaConfirmacionAlert,
@@ -164,8 +165,7 @@ import {
   QUICK_ACCESS,
 } from './data/luxuryUiMocks';
 const PRIVACY_URL =
-  process.env.EXPO_PUBLIC_PRIVACY_URL ??
-  'https://appsalon-pro-web-catalogo.vercel.app/privacidad';
+  process.env.EXPO_PUBLIC_PRIVACY_URL ?? getWebCatalogUrl('privacidad');
 
 const hasSupabaseEnv = Boolean(
   process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
