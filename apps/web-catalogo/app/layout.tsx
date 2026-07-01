@@ -4,6 +4,7 @@ import "./globals.css";
 import { BranchProvider } from "@/components/branch/BranchContext";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
+import { ConfigStatusBanner } from "@/components/site/ConfigStatusBanner";
 import { listBranches } from "@/lib/data/branches";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -53,6 +54,7 @@ export default async function RootLayout({
           <div className="glow-gold absolute bottom-0 -left-40 h-[480px] w-[480px] opacity-70" />
         </div>
         <BranchProvider branches={branches}>
+          <ConfigStatusBanner />
           <SiteHeader userEmail={user?.email ?? null} />
           <main className="flex-1">{children}</main>
           <SiteFooter />

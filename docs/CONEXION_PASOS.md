@@ -42,8 +42,10 @@ cd apps/web-catalogo
 
 Copia valores a **`.env.local`** (este archivo no debe subirse a git):
 
-- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` *(solo si esa app va a llamar Supabase).*  
-  Ver modelo en `.env.example` de la carpeta.
+- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`
+- Ver modelo en `.env.example` de la carpeta.
+
+**Producción (Vercel):** las mismas variables en el dashboard. Guía paso a paso: [`docs/VERCEL_WEB_SETUP.md`](VERCEL_WEB_SETUP.md).
 
 **Comprobar en Expo:** al iniciar Metro, si falta configuración aparece aviso en consola desde `supabaseClient.js` sobre credenciales.
 
