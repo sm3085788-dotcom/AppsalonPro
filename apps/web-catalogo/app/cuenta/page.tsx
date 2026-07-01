@@ -137,6 +137,8 @@ export default async function CuentaPage() {
                     fechaHora={c.fecha_hora}
                     estado={c.estado}
                     hasDeposit={hasDeposit && !refunded}
+                    servicio={c.servicio}
+                    depositGtq={c.precio ?? meta.deposit_gtq ?? null}
                   />
                 </div>
                 <div className="shrink-0 text-right">

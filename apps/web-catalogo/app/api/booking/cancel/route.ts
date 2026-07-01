@@ -6,9 +6,10 @@ import {
   bookingRefundEligible,
   mergeBookingNotas,
   parseBookingNotas,
+  bookingRefundTooLateMessage,
 } from '@/lib/bookingPolicy';
 
-/** Cancela cita con reembolso automático del anticipo (≥ 24 h antes). */
+/** Cancela cita con reembolso automático del anticipo (plazo: BOOKING_REFUND_HOURS_BEFORE). */
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { citaId?: string };
@@ -68,10 +69,7 @@ export async function POST(request: NextRequest) {
 
     if (!bookingRefundEligible(cita.fecha_hora)) {
       return NextResponse.json(
-        {
-          error:
-            'Solo podés cancelar con reembolso automático hasta 24 horas antes de la cita. Si no asistís, pierdes el anticipo.',
-        },
+        { error: bookingRefundTooLateMessage() },
         { status: 400 },
       );
     }

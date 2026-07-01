@@ -14,8 +14,11 @@ export {
   PRECIO_A_TU_MEDIDA_HINT,
   BOOKING_DEPOSIT_LABEL,
   BOOKING_DEPOSIT_POLICY,
+  bookingDepositPolicyText,
   computeBookingDepositGtq,
   bookingRefundEligible,
+  bookingRefundTooLateMessage,
+  bookingRefundDeadlineIso,
   splitBookingNotas,
   mergeBookingNotas,
 } from '../../../shared/config/reservaCheckout.js';
