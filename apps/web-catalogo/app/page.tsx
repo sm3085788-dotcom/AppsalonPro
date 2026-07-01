@@ -390,25 +390,25 @@ export default async function HomePage() {
               </div>
             </div>
 
-            {/* Trío de teléfonos con distintas pantallas */}
-            <div className="relative flex items-end justify-center gap-4 sm:gap-6">
+            {/* Trío de teléfonos con distintas pantallas (abanico contenido) */}
+            <div className="relative flex items-center justify-center py-4">
               <IphoneMockup
                 src="/images/app-servicios.png"
                 alt="Pantalla de servicios de la app AppSalon Pro"
                 size="sm"
-                className="hidden translate-y-6 sm:block"
+                className="hidden -mr-16 translate-y-8 -rotate-6 opacity-90 lg:block"
               />
               <IphoneMockup
                 src="/images/app-home.png"
                 alt="Pantalla principal de la app AppSalon Pro"
                 size="lg"
-                className="z-10"
+                className="relative z-10"
               />
               <IphoneMockup
                 src="/images/app-producto.png"
                 alt="Pantalla de producto de la app AppSalon Pro"
                 size="sm"
-                className="hidden translate-y-6 sm:block"
+                className="hidden -ml-16 translate-y-8 rotate-6 opacity-90 lg:block"
               />
             </div>
           </div>
