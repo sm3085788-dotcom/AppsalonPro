@@ -119,9 +119,9 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Filosofía / features editoriales (tema claro) ─ */}
-      <section className="section-light relative mt-24 overflow-hidden">
-        <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
+      {/* ── Filosofía / features editoriales (panel claro sutil) ─ */}
+      <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
+        <section className="section-light relative overflow-hidden rounded-[32px] px-6 py-20 sm:px-12 lg:px-16">
           <div className="grid gap-16 lg:grid-cols-12">
             <div className="lg:col-span-4">
               <p className="eyebrow">La experiencia</p>
@@ -169,8 +169,8 @@ export default async function HomePage() {
               ))}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
       {/* ── Servicios destacados ───────────────────────── */}
       {services.length > 0 && (
