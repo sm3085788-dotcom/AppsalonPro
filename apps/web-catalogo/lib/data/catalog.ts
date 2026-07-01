@@ -88,16 +88,18 @@ async function fetchBranchStockMap(
 /** Req 4: servicios publicados (inventario marcado como servicio). */
 export async function getServices(): Promise<Service[]> {
   const rows = await fetchInventario();
-  return rows.filter(isServicio).map(mapToService);
+  const services = rows.filter(isServicio).map(mapToService);
+  return services.length > 0 ? services : DEMO_SERVICES;
 }
 
 /** Req 4: productos fisicos con validacion de stock por sucursal. */
 export async function getProducts(branchId: UUID | null): Promise<Product[]> {
   const rows = await fetchInventario();
   const stockMap = await fetchBranchStockMap(branchId);
-  return rows
+  const products = rows
     .filter((r) => !isServicio(r) && r.visible_en_tienda === true)
     .map((r) => mapToProduct(r, stockMap.get(r.id) ?? 0));
+  return products.length > 0 ? products : DEMO_PRODUCTS;
 }
 
 export async function getProductById(
@@ -106,7 +108,7 @@ export async function getProductById(
 ): Promise<Product | null> {
   const rows = await fetchInventario();
   const row = rows.find((r) => r.id === id);
-  if (!row) return null;
+  if (!row) return DEMO_PRODUCTS.find((p) => p.id === id) ?? null;
   const stockMap = await fetchBranchStockMap(branchId);
   return mapToProduct(row, stockMap.get(row.id) ?? 0);
 }
@@ -114,6 +116,6 @@ export async function getProductById(
 export async function getServiceById(id: UUID): Promise<Service | null> {
   const rows = await fetchInventario();
   const row = rows.find((r) => r.id === id);
-  if (!row) return null;
+  if (!row) return DEMO_SERVICES.find((s) => s.id === id) ?? null;
   return mapToService(row);
 }

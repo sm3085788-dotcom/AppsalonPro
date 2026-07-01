@@ -119,53 +119,55 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Filosofía / features editoriales ───────────── */}
-      <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <div className="grid gap-16 lg:grid-cols-12">
-          <div className="lg:col-span-4">
-            <p className="eyebrow">La experiencia</p>
-            <h2 className="mt-5 text-balance text-3xl font-light leading-snug text-cream sm:text-4xl">
-              Cada visita,
-              <br />
-              cuidada al detalle
-            </h2>
-            <p className="mt-5 max-w-sm text-sm font-light leading-relaxed text-muted">
-              Tecnología discreta al servicio de un trato impecable. Así
-              acompañamos cada momento de tu ritual.
-            </p>
-          </div>
+      {/* ── Filosofía / features editoriales (tema claro) ─ */}
+      <section className="section-light relative mt-24 overflow-hidden">
+        <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
+          <div className="grid gap-16 lg:grid-cols-12">
+            <div className="lg:col-span-4">
+              <p className="eyebrow">La experiencia</p>
+              <h2 className="ink mt-5 text-balance text-3xl font-light leading-snug sm:text-4xl">
+                Cada visita,
+                <br />
+                cuidada al detalle
+              </h2>
+              <p className="ink-soft mt-5 max-w-sm text-sm font-light leading-relaxed">
+                Tecnología discreta al servicio de un trato impecable. Así
+                acompañamos cada momento de tu ritual.
+              </p>
+            </div>
 
-          <div className="grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:col-span-8">
-            {[
-              {
-                icon: CalendarCheck,
-                title: 'Reserva inteligente',
-                desc: 'Eliges sucursal y horario; el salón lo recibe al instante, sin esperas.',
-              },
-              {
-                icon: ShoppingBag,
-                title: 'Tienda de culto',
-                desc: 'Productos selectos con stock real por sucursal y envío a domicilio.',
-              },
-              {
-                icon: Star,
-                title: 'Reseñas verificadas',
-                desc: 'Opiniones honestas de clientes con visita o compra confirmada.',
-              },
-              {
-                icon: ShieldCheck,
-                title: 'Pagos protegidos',
-                desc: 'Checkout cifrado con Stripe. Tu información, siempre resguardada.',
-              },
-            ].map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="border-t border-border pt-6">
-                <Icon className="h-6 w-6 text-gold" strokeWidth={1.25} />
-                <h3 className="mt-5 text-lg font-light text-cream">{title}</h3>
-                <p className="mt-2 text-sm font-light leading-relaxed text-muted">
-                  {desc}
-                </p>
-              </div>
-            ))}
+            <div className="grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:col-span-8">
+              {[
+                {
+                  icon: CalendarCheck,
+                  title: 'Reserva inteligente',
+                  desc: 'Eliges sucursal y horario; el salón lo recibe al instante, sin esperas.',
+                },
+                {
+                  icon: ShoppingBag,
+                  title: 'Tienda de culto',
+                  desc: 'Productos selectos con stock real por sucursal y envío a domicilio.',
+                },
+                {
+                  icon: Star,
+                  title: 'Reseñas verificadas',
+                  desc: 'Opiniones honestas de clientes con visita o compra confirmada.',
+                },
+                {
+                  icon: ShieldCheck,
+                  title: 'Pagos protegidos',
+                  desc: 'Checkout cifrado con Stripe. Tu información, siempre resguardada.',
+                },
+              ].map(({ icon: Icon, title, desc }) => (
+                <div key={title} className="hairline-dark border-t pt-6">
+                  <Icon className="h-6 w-6 text-gold" strokeWidth={1.25} />
+                  <h3 className="ink mt-5 text-lg font-light">{title}</h3>
+                  <p className="ink-soft mt-2 text-sm font-light leading-relaxed">
+                    {desc}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>

@@ -254,3 +254,25 @@ body {
     transparent
   );
 }
+
+/* ── Sección de tema claro (combina negro + blanco) ─────────────────────── */
+.section-light {
+  --bg-light: var(--pearl);
+  --ink: #161617;
+  --ink-soft: rgba(22, 22, 23, 0.62);
+  --hairline-dark: rgba(22, 22, 23, 0.1);
+  background: var(--bg-light);
+  color: var(--ink);
+}
+.section-light .eyebrow {
+  color: #9a7b1f;
+}
+.section-light .ink {
+  color: var(--ink);
+}
+.section-light .ink-soft {
+  color: var(--ink-soft);
+}
+.section-light .hairline-dark {
+  border-color: var(--hairline-dark);
+}
