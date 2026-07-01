@@ -65,15 +65,18 @@ export function SiteHeader({
             <BranchSelect compact />
           </div>
           {userEmail ? (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Link
                 href="/cuenta"
-                className="hidden max-w-[10rem] items-center gap-1.5 truncate text-sm font-light text-muted hover:text-gold sm:flex"
+                aria-label="Mi cuenta"
                 title={userDisplayName || userEmail}
+                className="flex shrink-0 items-center gap-1.5 rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold sm:max-w-[10rem] sm:border-0 sm:p-0"
               >
                 <User2 className="h-4 w-4 shrink-0" />
-                {userDisplayName?.split(/\s+/)[0] ||
-                  userEmail.split('@')[0]}
+                <span className="hidden truncate text-sm font-light sm:inline">
+                  {userDisplayName?.split(/\s+/)[0] ||
+                    userEmail.split('@')[0]}
+                </span>
               </Link>
               <button
                 onClick={onLogout}
