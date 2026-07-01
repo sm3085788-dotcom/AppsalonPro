@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Sparkles, Mail, MapPin } from 'lucide-react';
+import { Mail, MapPin } from 'lucide-react';
 
 const SOCIALS = [
   {
@@ -45,8 +45,15 @@ export function SiteFooter() {
     <footer className="mt-24 border-t border-border">
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-12 lg:px-8">
         <div className="lg:col-span-5">
-          <div className="flex items-center gap-2.5">
-            <Sparkles className="h-[18px] w-[18px] text-gold" />
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-pearl ring-1 ring-gold/30">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/logo-andreas.png"
+                alt="Andreas · AppSalon Pro"
+                className="h-9 w-9 object-contain"
+              />
+            </span>
             <span className="text-[15px] font-light tracking-[0.32em] text-cream">
               APPSALON <span className="text-gold">PRO</span>
             </span>
