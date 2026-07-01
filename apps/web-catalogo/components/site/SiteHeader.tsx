@@ -25,13 +25,13 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
 
   return (
     <header className="glass sticky top-0 z-50 border-b border-border">
-      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-3">
+      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
+        <Link href="/" className="flex shrink-0 items-center gap-2 sm:gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/images/logo-andreas-transparent.png"
             alt="Andreas · AppSalon Pro"
-            className="h-11 w-11 object-contain"
+            className="h-9 w-9 object-contain sm:h-11 sm:w-11"
           />
           <span className="hidden text-[15px] font-light tracking-[0.32em] text-cream min-[420px]:inline">
             APPSALON <span className="text-gold">PRO</span>
@@ -50,10 +50,10 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
           ))}
         </nav>
 
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-3">
           <BranchSelect compact />
           {userEmail ? (
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <Link
                 href="/cuenta"
                 className="hidden items-center gap-1.5 text-sm font-light text-muted hover:text-gold sm:flex"
@@ -72,7 +72,7 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
           ) : (
             <Link
               href="/login"
-              className="rounded-full border border-gold/40 bg-gold/5 px-6 py-2 text-[13px] font-light uppercase tracking-[0.18em] text-gold transition-colors hover:bg-gold hover:text-charcoal"
+              className="shrink-0 rounded-full border border-gold/40 bg-gold/5 px-3.5 py-1.5 text-[11px] font-light uppercase tracking-[0.14em] text-gold transition-colors hover:bg-gold hover:text-charcoal sm:px-6 sm:py-2 sm:text-[13px] sm:tracking-[0.18em]"
             >
               Ingresar
             </Link>
