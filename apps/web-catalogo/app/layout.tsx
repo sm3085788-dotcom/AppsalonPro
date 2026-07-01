@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { BranchProvider } from "@/components/branch/BranchContext";
 import { SiteHeader } from "@/components/site/SiteHeader";
@@ -11,6 +11,12 @@ const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600"],
+});
+
+const cormorant = Cormorant_Garamond({
+  variable: "--font-cormorant",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 const geistMono = Geist_Mono({
@@ -34,7 +40,7 @@ export default async function RootLayout({
   return (
     <html
       lang="es"
-      className={`${inter.variable} ${geistMono.variable} h-full bg-background antialiased`}
+      className={`${inter.variable} ${cormorant.variable} ${geistMono.variable} h-full bg-background antialiased`}
     >
       <body className="relative flex min-h-full flex-col bg-background text-foreground">
         {/* Glows editoriales de fondo */}

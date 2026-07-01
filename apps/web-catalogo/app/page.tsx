@@ -29,7 +29,7 @@ export default async function HomePage() {
           <p className="eyebrow">Salón boutique · Belleza de autor</p>
           <div className="mt-5 flex items-center gap-4">
             <span className="rule-gold hidden w-12 sm:block" />
-            <span className="font-serif text-2xl font-light italic tracking-wide text-gradient-gold sm:text-3xl">
+            <span className="font-serif text-3xl font-medium uppercase tracking-[0.22em] text-gradient-gold sm:text-4xl">
               Salón Andreas
             </span>
           </div>
