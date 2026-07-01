@@ -254,34 +254,3 @@ body {
     transparent
   );
 }
-
-/* ── Panel de tema claro (combina negro + blanco de forma sutil) ────────── */
-.section-light {
-  --ink: #201d17;
-  --ink-soft: rgba(32, 29, 23, 0.58);
-  --hairline-dark: rgba(32, 29, 23, 0.08);
-  color: var(--ink);
-  /* Perla cálida con degradado tenue para dar profundidad y evitar plano */
-  background: linear-gradient(
-    180deg,
-    #f8f5ee 0%,
-    #f2ede1 100%
-  );
-  border: 1px solid rgba(245, 234, 210, 0.14);
-  box-shadow:
-    0 1px 0 0 rgba(255, 255, 255, 0.5) inset,
-    0 40px 120px -60px rgba(212, 175, 55, 0.28),
-    0 30px 80px -50px rgba(0, 0, 0, 0.6);
-}
-.section-light .eyebrow {
-  color: #9a7b1f;
-}
-.section-light .ink {
-  color: var(--ink);
-}
-.section-light .ink-soft {
-  color: var(--ink-soft);
-}
-.section-light .hairline-dark {
-  border-color: var(--hairline-dark);
-}

@@ -6,6 +6,12 @@ import {
   ShieldCheck,
   ArrowUpRight,
   Zap,
+  Target,
+  Eye,
+  Gem,
+  HeartHandshake,
+  Sparkles,
+  Leaf,
 } from 'lucide-react';
 import { IphoneMockup } from '@/components/ui/IphoneMockup';
 import { AppStoreButtons } from '@/components/site/AppStoreButtons';
@@ -119,58 +125,173 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Filosofía / features editoriales (panel claro sutil) ─ */}
-      <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
-        <section className="section-light relative overflow-hidden rounded-[32px] px-6 py-20 sm:px-12 lg:px-16">
-          <div className="grid gap-16 lg:grid-cols-12">
-            <div className="lg:col-span-4">
-              <p className="eyebrow">La experiencia</p>
-              <h2 className="ink mt-5 text-balance text-3xl font-light leading-snug sm:text-4xl">
-                Cada visita,
-                <br />
-                cuidada al detalle
-              </h2>
-              <p className="ink-soft mt-5 max-w-sm text-sm font-light leading-relaxed">
-                Tecnología discreta al servicio de un trato impecable. Así
-                acompañamos cada momento de tu ritual.
-              </p>
-            </div>
-
-            <div className="grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:col-span-8">
-              {[
-                {
-                  icon: CalendarCheck,
-                  title: 'Reserva inteligente',
-                  desc: 'Eliges sucursal y horario; el salón lo recibe al instante, sin esperas.',
-                },
-                {
-                  icon: ShoppingBag,
-                  title: 'Tienda de culto',
-                  desc: 'Productos selectos con stock real por sucursal y envío a domicilio.',
-                },
-                {
-                  icon: Star,
-                  title: 'Reseñas verificadas',
-                  desc: 'Opiniones honestas de clientes con visita o compra confirmada.',
-                },
-                {
-                  icon: ShieldCheck,
-                  title: 'Pagos protegidos',
-                  desc: 'Checkout cifrado con Stripe. Tu información, siempre resguardada.',
-                },
-              ].map(({ icon: Icon, title, desc }) => (
-                <div key={title} className="hairline-dark border-t pt-6">
-                  <Icon className="h-6 w-6 text-gold" strokeWidth={1.25} />
-                  <h3 className="ink mt-5 text-lg font-light">{title}</h3>
-                  <p className="ink-soft mt-2 text-sm font-light leading-relaxed">
-                    {desc}
-                  </p>
-                </div>
-              ))}
-            </div>
+      {/* ── Galería del salón ──────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
+        <div className="mb-12 flex items-end justify-between border-b border-border pb-6">
+          <div>
+            <p className="eyebrow">El salón</p>
+            <h2 className="mt-3 text-balance text-3xl font-light text-cream sm:text-4xl">
+              Nuestro mundo en imágenes
+            </h2>
           </div>
-        </section>
-      </div>
+          <Link
+            href="/servicios"
+            className="link-underline hidden text-[13px] font-light uppercase tracking-[0.18em] text-muted hover:text-cream sm:inline"
+          >
+            Agenda tu visita
+          </Link>
+        </div>
+
+        {/* Mosaico editorial: mezcla de retrato y paisaje */}
+        <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
+          <figure className="group relative col-span-2 overflow-hidden rounded-[24px] border border-border">
+            <div className="aspect-[16/10] overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-1.png"
+                alt="Interior del salón boutique con estaciones de estilismo"
+                className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+            <figcaption className="absolute bottom-4 left-4 rounded-full border border-border-strong glass px-4 py-1.5 text-[11px] font-light uppercase tracking-[0.2em] text-pearl">
+              Estudio insignia
+            </figcaption>
+          </figure>
+
+          <figure className="group relative overflow-hidden rounded-[24px] border border-border">
+            <div className="media-3-4 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-2.png"
+                alt="Estilista trabajando en un peinado de autor"
+                className="transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+          </figure>
+
+          <figure className="group relative overflow-hidden rounded-[24px] border border-border">
+            <div className="media-3-4 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-3.png"
+                alt="Recepción del salón con productos en exhibición"
+                className="transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+          </figure>
+
+          <figure className="group relative col-span-2 overflow-hidden rounded-[24px] border border-border">
+            <div className="aspect-[16/10] overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-4.png"
+                alt="Sala de tratamientos de spa del salón"
+                className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+            <figcaption className="absolute bottom-4 left-4 rounded-full border border-border-strong glass px-4 py-1.5 text-[11px] font-light uppercase tracking-[0.2em] text-pearl">
+              Ritual de spa
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      {/* ── Misión & Visión ────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
+        <div className="grid gap-6 lg:grid-cols-2">
+          {[
+            {
+              icon: Target,
+              tag: 'Misión',
+              title: 'Elevar el arte de sentirse bien',
+              desc: 'Ofrecer experiencias de belleza excepcionales que combinan la maestría de nuestros estilistas con tecnología que hace de cada visita algo simple, cercano y memorable.',
+            },
+            {
+              icon: Eye,
+              tag: 'Visión',
+              title: 'El salón boutique de referencia',
+              desc: 'Ser el estándar de la belleza de autor en la región: un espacio donde tradición y modernidad conviven, reconocido por su calidez, su detalle y la confianza de cada cliente.',
+            },
+          ].map(({ icon: Icon, tag, title, desc }) => (
+            <article
+              key={tag}
+              className="ring-gold-hover relative overflow-hidden rounded-[28px] border border-border bg-surface p-8 sm:p-10"
+            >
+              <div className="glow-gold pointer-events-none absolute -right-16 -top-16 h-52 w-52 opacity-60" />
+              <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-[11px] uppercase tracking-[0.25em] text-gold">
+                <Icon className="h-3.5 w-3.5" strokeWidth={1.5} /> {tag}
+              </span>
+              <h3 className="mt-6 text-balance text-2xl font-light leading-snug text-cream sm:text-3xl">
+                {title}
+              </h3>
+              <p className="mt-4 max-w-md text-sm font-light leading-relaxed text-muted">
+                {desc}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Valores & Principios ───────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
+        <div className="grid gap-16 lg:grid-cols-12">
+          <div className="lg:col-span-4">
+            <p className="eyebrow">Lo que nos mueve</p>
+            <h2 className="mt-5 text-balance text-3xl font-light leading-snug text-cream sm:text-4xl">
+              Valores &amp;
+              <br />
+              principios
+            </h2>
+            <p className="mt-5 max-w-sm text-sm font-light leading-relaxed text-muted">
+              La brújula detrás de cada corte, cada color y cada conversación en
+              nuestras sucursales.
+            </p>
+          </div>
+
+          <div className="grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:col-span-8">
+            {[
+              {
+                icon: Gem,
+                title: 'Excelencia',
+                desc: 'Perseguimos el detalle impecable en cada servicio, sin atajos ni concesiones.',
+              },
+              {
+                icon: HeartHandshake,
+                title: 'Cercanía',
+                desc: 'Escuchamos primero. Cada cliente es recibido con respeto, calidez y honestidad.',
+              },
+              {
+                icon: Sparkles,
+                title: 'Creatividad',
+                desc: 'Fusionamos técnica y arte para diseñar looks únicos, fieles a tu esencia.',
+              },
+              {
+                icon: Leaf,
+                title: 'Cuidado consciente',
+                desc: 'Productos de calidad y prácticas responsables con las personas y el entorno.',
+              },
+              {
+                icon: ShieldCheck,
+                title: 'Confianza',
+                desc: 'Transparencia en precios, pagos protegidos y reseñas siempre verificadas.',
+              },
+              {
+                icon: CalendarCheck,
+                title: 'Compromiso',
+                desc: 'Puntualidad y palabra cumplida: tu tiempo es tan valioso como el resultado.',
+              },
+            ].map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="border-t border-border pt-6">
+                <Icon className="h-6 w-6 text-gold" strokeWidth={1.25} />
+                <h3 className="mt-5 text-lg font-light text-cream">{title}</h3>
+                <p className="mt-2 text-sm font-light leading-relaxed text-muted">
+                  {desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ── Servicios destacados ───────────────────────── */}
       {services.length > 0 && (
@@ -230,27 +351,66 @@ export default async function HomePage() {
       {/* ── Descarga la app ────────────────────────────── */}
       <section
         id="descargar"
-        className="mx-auto max-w-7xl px-4 pb-28 sm:px-6 lg:px-8"
+        className="mx-auto max-w-7xl px-4 pb-28 pt-28 sm:px-6 lg:px-8"
       >
-        <div className="relative grid items-center gap-12 overflow-hidden rounded-[32px] border border-border bg-surface p-8 sm:p-14 lg:grid-cols-2">
+        <div className="relative overflow-hidden rounded-[32px] border border-border bg-surface p-8 sm:p-14">
           <div className="glow-cream pointer-events-none absolute -right-20 -top-20 h-80 w-80" />
-          <div className="relative">
-            <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs uppercase tracking-[0.25em] text-gold">
-              <Zap className="h-3.5 w-3.5" strokeWidth={1.5} /> App móvil
-            </span>
-            <h2 className="mt-7 text-balance text-3xl font-light leading-tight text-cream sm:text-4xl">
-              Llévate AppSalon Pro contigo
-            </h2>
-            <p className="mt-5 max-w-md text-sm font-light leading-relaxed text-muted">
-              Gestiona tus citas, premios ANDREAS, pedidos y mensajes con el
-              salón. Notificaciones en tiempo real y pagos con tarjeta seguros.
-            </p>
-            <div className="mt-9">
-              <AppStoreButtons />
+          <div className="glow-gold pointer-events-none absolute -left-20 bottom-0 h-72 w-72 opacity-60" />
+
+          <div className="relative grid items-center gap-14 lg:grid-cols-2">
+            <div className="relative">
+              <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs uppercase tracking-[0.25em] text-gold">
+                <Zap className="h-3.5 w-3.5" strokeWidth={1.5} /> App móvil
+              </span>
+              <h2 className="mt-7 text-balance text-3xl font-light leading-tight text-cream sm:text-4xl">
+                Llévate AppSalon Pro contigo
+              </h2>
+              <p className="mt-5 max-w-md text-sm font-light leading-relaxed text-muted">
+                Gestiona tus citas, premios ANDREAS, pedidos y mensajes con el
+                salón. Explora servicios y tienda, todo con notificaciones en
+                tiempo real y pagos con tarjeta seguros.
+              </p>
+              <ul className="mt-7 space-y-3">
+                {[
+                  'Reserva y reprograma en segundos',
+                  'Tienda con stock real por sucursal',
+                  'Premios ANDREAS y seguimiento de pedidos',
+                ].map((item) => (
+                  <li
+                    key={item}
+                    className="flex items-center gap-3 text-sm font-light text-pearl-dim"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-gold" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-9">
+                <AppStoreButtons />
+              </div>
             </div>
-          </div>
-          <div className="relative flex justify-center">
-            <IphoneMockup />
+
+            {/* Trío de teléfonos con distintas pantallas */}
+            <div className="relative flex items-end justify-center gap-4 sm:gap-6">
+              <IphoneMockup
+                src="/images/app-servicios.png"
+                alt="Pantalla de servicios de la app AppSalon Pro"
+                size="sm"
+                className="hidden translate-y-6 sm:block"
+              />
+              <IphoneMockup
+                src="/images/app-home.png"
+                alt="Pantalla principal de la app AppSalon Pro"
+                size="lg"
+                className="z-10"
+              />
+              <IphoneMockup
+                src="/images/app-producto.png"
+                alt="Pantalla de producto de la app AppSalon Pro"
+                size="sm"
+                className="hidden translate-y-6 sm:block"
+              />
+            </div>
           </div>
         </div>
       </section>
