@@ -37,29 +37,23 @@ export default async function ProductoPage({
         <ArrowLeft className="h-4 w-4" /> Volver a productos
       </Link>
 
-      <div className="grid gap-10 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-3xl border border-border bg-surface-2">
+      <div className="grid gap-12 lg:grid-cols-2">
+        <div className="media-3-4 rounded-[28px] border border-border bg-surface-2">
           {product.imagenUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={product.imagenUrl}
-              alt={product.nombre}
-              className="h-full max-h-[480px] w-full object-cover"
-            />
+            <img src={product.imagenUrl} alt={product.nombre} />
           ) : (
-            <div className="flex h-[420px] items-center justify-center">
-              <ShoppingBag className="h-16 w-16 text-border" />
+            <div className="flex h-full w-full items-center justify-center">
+              <ShoppingBag className="h-16 w-16 text-border-strong" strokeWidth={1} />
             </div>
           )}
         </div>
 
-        <div>
+        <div className="lg:pt-4">
           {product.categoria && (
-            <p className="text-xs uppercase tracking-[0.3em] text-gold">
-              {product.categoria}
-            </p>
+            <p className="eyebrow">{product.categoria}</p>
           )}
-          <h1 className="mt-2 text-3xl font-light text-cream">
+          <h1 className="mt-3 text-balance text-4xl font-light tracking-tight text-cream">
             {product.nombre}
           </h1>
           <div className="mt-3">

@@ -8,6 +8,43 @@ import {
 } from '@/lib/inventario';
 import type { InventarioRow, Product, Service, UUID } from '@/lib/types/db';
 
+/* ── Datos demo de referencia ──────────────────────────────────────────────
+ * Se muestran solo cuando no hay inventario en Supabase, para poder visualizar
+ * las pantallas de servicios, productos y reserva sin datos reales cargados.
+ * No alteran la lógica: si Supabase devuelve filas, estos se ignoran.
+ */
+const DEMO_SERVICES: Service[] = [
+  {
+    id: 'demo-servicio-lifting',
+    nombre: 'Lifting de Pestañas Premium',
+    categoria: 'Mirada',
+    precio: 350,
+    descripcion:
+      'Realza la curvatura natural de tus pestañas con un tratamiento de larga duración. Incluye tinte y nutrición con queratina.',
+    imagenUrl: '/images/service-lifting.png',
+    duracionMin: 60,
+    rating: 4.9,
+    reviewCount: 128,
+  },
+];
+
+const DEMO_PRODUCTS: Product[] = [
+  {
+    id: 'demo-producto-serum',
+    nombre: 'Sérum de Crecimiento de Pestañas',
+    categoria: 'Cuidado',
+    precio: 480,
+    descripcion:
+      'Fórmula profesional con péptidos y biotina que fortalece y estimula el crecimiento de pestañas y cejas en 6 semanas.',
+    imagenUrl: '/images/product-serum.png',
+    imagenesUrls: ['/images/product-serum.png'],
+    stock: 12,
+    enStock: true,
+    rating: 4.8,
+    reviewCount: 64,
+  },
+];
+
 async function fetchInventario(): Promise<InventarioRow[]> {
   if (!isSupabaseConfigured) return [];
   try {
@@ -51,16 +88,18 @@ async function fetchBranchStockMap(
 /** Req 4: servicios publicados (inventario marcado como servicio). */
 export async function getServices(): Promise<Service[]> {
   const rows = await fetchInventario();
-  return rows.filter(isServicio).map(mapToService);
+  const services = rows.filter(isServicio).map(mapToService);
+  return services.length > 0 ? services : DEMO_SERVICES;
 }
 
 /** Req 4: productos fisicos con validacion de stock por sucursal. */
 export async function getProducts(branchId: UUID | null): Promise<Product[]> {
   const rows = await fetchInventario();
   const stockMap = await fetchBranchStockMap(branchId);
-  return rows
+  const products = rows
     .filter((r) => !isServicio(r) && r.visible_en_tienda === true)
     .map((r) => mapToProduct(r, stockMap.get(r.id) ?? 0));
+  return products.length > 0 ? products : DEMO_PRODUCTS;
 }
 
 export async function getProductById(
@@ -69,7 +108,7 @@ export async function getProductById(
 ): Promise<Product | null> {
   const rows = await fetchInventario();
   const row = rows.find((r) => r.id === id);
-  if (!row) return null;
+  if (!row) return DEMO_PRODUCTS.find((p) => p.id === id) ?? null;
   const stockMap = await fetchBranchStockMap(branchId);
   return mapToProduct(row, stockMap.get(row.id) ?? 0);
 }
@@ -77,6 +116,6 @@ export async function getProductById(
 export async function getServiceById(id: UUID): Promise<Service | null> {
   const rows = await fetchInventario();
   const row = rows.find((r) => r.id === id);
-  if (!row) return null;
+  if (!row) return DEMO_SERVICES.find((s) => s.id === id) ?? null;
   return mapToService(row);
 }

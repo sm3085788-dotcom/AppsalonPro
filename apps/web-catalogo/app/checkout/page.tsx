@@ -4,6 +4,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { CheckoutForm } from '@/components/checkout/CheckoutForm';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { isSupabaseConfigured } from '@/lib/env';
 import {
   computeProductOrder,
   computeBookingAmount,
@@ -20,14 +21,21 @@ export default async function CheckoutPage({
 }) {
   const sp = await searchParams;
   const branchId = sp.branch || (await getSelectedBranchId());
-  const supabase = await createSupabaseServerClient();
 
   let input: CreatePaymentIntentInput | null = null;
   let summary: { lines: { label: string; qty?: number; amount: number }[]; total: number } | null =
     null;
   let errorMsg: string | null = null;
 
-  if (sp.type === 'product' && sp.item) {
+  // Sin Supabase configurado no hay inventario real que cobrar: degradamos con gracia.
+  const supabase = isSupabaseConfigured
+    ? await createSupabaseServerClient()
+    : null;
+
+  if (!supabase) {
+    errorMsg =
+      'El checkout estará disponible cuando se conecte el inventario. Explora servicios y productos mientras tanto.';
+  } else if (sp.type === 'product' && sp.item) {
     const qty = Math.max(1, Number(sp.qty) || 1);
     const res = await computeProductOrder(
       supabase,
