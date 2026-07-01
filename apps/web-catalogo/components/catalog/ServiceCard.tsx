@@ -7,7 +7,7 @@ import type { Service } from '@/lib/types/db';
 export function ServiceCard({ service }: { service: Service }) {
   return (
     <article className="group flex flex-col">
-      <div className="media-3-4 rounded-2xl border border-border bg-surface-2">
+      <div className="media-3-4 ring-gold-hover rounded-2xl border border-border bg-surface-2">
         {service.imagenUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={service.imagenUrl} alt={service.nombre} />
@@ -25,7 +25,9 @@ export function ServiceCard({ service }: { service: Service }) {
 
       <div className="flex flex-1 flex-col pt-5">
         <div className="flex items-start justify-between gap-4">
-          <h3 className="text-lg font-light text-cream">{service.nombre}</h3>
+          <h3 className="text-lg font-light text-pearl transition-colors group-hover:text-gold">
+            {service.nombre}
+          </h3>
           <span className="shrink-0 text-base font-light text-gold">
             {formatQ(service.precio)}
           </span>

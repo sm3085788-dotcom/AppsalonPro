@@ -7,7 +7,7 @@ import type { Product } from '@/lib/types/db';
 export function ProductCard({ product }: { product: Product }) {
   return (
     <Link href={`/producto/${product.id}`} className="group flex flex-col">
-      <div className="media-3-4 rounded-2xl border border-border bg-surface-2">
+      <div className="media-3-4 ring-gold-hover rounded-2xl border border-border bg-surface-2">
         {product.imagenUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={product.imagenUrl} alt={product.nombre} />
@@ -34,7 +34,9 @@ export function ProductCard({ product }: { product: Product }) {
           </p>
         )}
         <div className="mt-1.5 flex items-start justify-between gap-4">
-          <h3 className="text-lg font-light text-cream">{product.nombre}</h3>
+          <h3 className="text-lg font-light text-pearl transition-colors group-hover:text-gold">
+            {product.nombre}
+          </h3>
           <span className="shrink-0 text-base font-light text-gold">
             {formatQ(product.precio)}
           </span>

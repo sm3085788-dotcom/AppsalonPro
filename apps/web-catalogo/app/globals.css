@@ -17,6 +17,11 @@
   --cream: #f5ead2;
   --charcoal: #0e0e0f;
 
+  /* Tonos blancos / perla para máximo contraste editorial */
+  --white: #ffffff;
+  --pearl: #f7f6f3;
+  --pearl-dim: rgba(255, 255, 255, 0.72);
+
   --radius: 1rem;
 }
 
@@ -33,6 +38,9 @@
   --color-gold-soft: var(--gold-soft);
   --color-cream: var(--cream);
   --color-charcoal: var(--charcoal);
+  --color-white: var(--white);
+  --color-pearl: var(--pearl);
+  --color-pearl-dim: var(--pearl-dim);
 
   --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
@@ -164,6 +172,85 @@ body {
   width: 100%;
 }
 
+/* Gradiente dorado→cream real para titulares de conquista visual */
 .text-gradient-gold {
-  color: var(--gold);
+  background: linear-gradient(
+    100deg,
+    var(--gold) 0%,
+    var(--gold-soft) 42%,
+    var(--pearl) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Titular perla con brillo de barrido sutil */
+.text-shine {
+  background: linear-gradient(
+    100deg,
+    var(--white) 0%,
+    var(--pearl-dim) 30%,
+    var(--white) 50%,
+    var(--pearl-dim) 70%,
+    var(--white) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 6s linear infinite;
+}
+
+@keyframes shine {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Textura de grano fina para profundidad editorial */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+}
+
+/* Anillo dorado sutil al pasar el cursor sobre tarjetas */
+.ring-gold-hover {
+  transition: box-shadow 0.5s ease, border-color 0.5s ease;
+}
+
+.ring-gold-hover:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.15),
+    0 24px 60px -30px rgba(212, 175, 55, 0.4);
+}
+
+/* Marquee editorial de palabras clave */
+.marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 34s linear infinite;
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Divisor hairline con degradado dorado central */
+.rule-gold {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(212, 175, 55, 0.5),
+    transparent
+  );
 }
