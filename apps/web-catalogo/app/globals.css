@@ -57,6 +57,9 @@ body {
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Evita scroll horizontal por glows/marquee que sangran fuera del viewport */
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {
