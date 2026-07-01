@@ -1,3 +1,5 @@
+import membresias from './membresias.en';
+
 export default {
   tabs: {
     inicio: 'Home',
@@ -64,6 +66,7 @@ export default {
     instagram: 'Instagram',
     facebook: 'Facebook',
     web: 'Web catalog',
+    webSub: 'Online catalog · bookings and products',
     open: 'Open',
     call: 'Call',
     go: 'Go',
@@ -140,4 +143,5 @@ export default {
     es: 'Español (Latinoamérica)',
     en: 'English (US)',
   },
+  membresias,
 };

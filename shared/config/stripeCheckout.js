@@ -16,6 +16,73 @@ function parseFunctionError(error, data) {
   return { message: 'No se pudo completar el pago con Stripe.' };
 }
 
+export async function createStripeMembershipPaymentIntent({ codigo, nivel }) {
+  const { data, error } = await supabase.functions.invoke('stripe-create-membership-intent', {
+    body: { codigo, nivel },
+  });
+  if (error) return { ok: false, error: parseFunctionError(error, data) };
+  if (data?.error) return { ok: false, error: { message: String(data.error) } };
+  if (!data?.clientSecret || !data?.paymentIntentId) {
+    return { ok: false, error: { message: 'Respuesta inválida del servidor de pagos.' } };
+  }
+  return {
+    ok: true,
+    clientSecret: data.clientSecret,
+    paymentIntentId: data.paymentIntentId,
+    amount: data.amount,
+    currency: data.currency || STRIPE_CHECKOUT_CURRENCY,
+    nivel: data.nivel,
+    label: data.label,
+  };
+}
+
+/**
+ * Membresía: PaymentIntent → Payment Sheet (sin canjear; el caller invoca canjearCodigo tras éxito).
+ */
+export async function checkoutMembresiaConStripe({
+  stripe,
+  codigo,
+  nivel,
+  merchantDisplayName = 'Aura Salón',
+}) {
+  if (!stripe?.initPaymentSheet || !stripe?.presentPaymentSheet) {
+    return { ok: false, error: { message: 'Stripe no está disponible en este dispositivo.' } };
+  }
+
+  const intentRes = await createStripeMembershipPaymentIntent({ codigo, nivel });
+  if (!intentRes.ok) return intentRes;
+
+  const { error: initErr } = await stripe.initPaymentSheet({
+    paymentIntentClientSecret: intentRes.clientSecret,
+    merchantDisplayName,
+    allowsDelayedPaymentMethods: false,
+    defaultBillingDetails: {
+      address: { country: STRIPE_CHECKOUT_COUNTRY },
+    },
+  });
+  if (initErr) {
+    return { ok: false, error: { message: initErr.message || 'No se pudo abrir el pago.' } };
+  }
+
+  const { error: presentErr } = await stripe.presentPaymentSheet();
+  if (presentErr) {
+    const cancelled = presentErr.code === 'Canceled' || /cancel/i.test(String(presentErr.message));
+    return {
+      ok: false,
+      cancelled,
+      error: { message: presentErr.message || 'Pago cancelado.' },
+    };
+  }
+
+  return {
+    ok: true,
+    paymentIntentId: intentRes.paymentIntentId,
+    amount: intentRes.amount,
+    nivel: intentRes.nivel,
+    label: intentRes.label,
+  };
+}
+
 export async function createStripePaymentIntent(payload) {
   const { data, error } = await supabase.functions.invoke('stripe-create-payment-intent', {
     body: payload,

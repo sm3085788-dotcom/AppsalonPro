@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, TextInput, Alert, ActivityIndicator, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Crown, Medal, Sparkles, Check, KeyRound, Gem } from 'lucide-react-native';
+import { useStripe } from '@stripe/stripe-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   MEMBRESIA_TIERS,
@@ -10,9 +11,17 @@ import {
   membresiaLabel,
   normalizeMembresiaCodigoInput,
   computeMembresiaStatusFromRow,
+  isStripeConfigured,
+  checkoutMembresiaConStripe,
+  getMembresiaMonthlyGtq,
 } from '@appsalon/shared-config';
 import { SalonButton } from '../luxury/SalonButton';
 import { useTheme } from '../../theme/ThemeProvider';
+import { CustomerServiceIcon } from '../social/CustomerServiceIcon';
+import { useClientLocale } from '../../hooks/useClientLocale';
+
+const SALON_PHONE_TEL = 'tel:+50247132123';
+const SALON_PHONE_DISPLAY = '+502 4713-2123';
 
 const GOLD        = '#C9A24D';
 const GOLD_LIGHT  = '#F5E6A8';
@@ -27,34 +36,27 @@ const TIER_CONFIG = {
   vip:    { gradient: ['#0a0600', '#3a2c00', '#6a5000'], headerGrad: ['#0f0900', '#7a5c00', '#C9A24D'] },
 };
 
-const TIER_BENEFITS = {
-  bronce: [
-    'Premios ANDREAS: canje con 7 puntos · 34,99% de descuento',
-    'Puntos en app (efectivo, tarjeta, citas y salón físico)',
-    'Tips de mantenimiento y recordatorios en la app',
-  ],
-  plata: [
-    'Premios ANDREAS: canje con 6 puntos · 49,99% de descuento',
-    'Más rápido alcanzás metas de productos y citas verificadas',
-    'Prioridad en lista de espera de agenda',
-    'Detalle de cumpleaños según campaña',
-  ],
-  vip: [
-    'Premios ANDREAS: canje con 5 puntos · 74,99% de descuento',
-    'Máximo beneficio en todas las reglas del programa',
-    'Canal preferente con recepción para agendar',
-    'Acceso anticipado a promociones y eventos',
-    'Coordinación de canjes en recepción Salon Andreas',
-  ],
-};
+function formatMembresiaPrice(nivel, localeTag) {
+  const q = getMembresiaMonthlyGtq(nivel);
+  if (q == null) return null;
+  return `Q ${q.toLocaleString(localeTag)}`;
+}
+
+function getTierCopy(strings, tierId) {
+  return strings.membresias?.tiers?.[tierId] || {};
+}
 
 // ─── Tarjeta poster por tier ─────────────────────────────────────────────────
 
-function TierPosterCard({ tier, isActive }) {
+function TierPosterCard({ tier, isActive, t, strings, localeTag }) {
   const [open, setOpen] = useState(isActive);
   const Icon    = TIER_ICONS[tier.id] || Medal;
   const cfg     = TIER_CONFIG[tier.id] || TIER_CONFIG.bronce;
-  const benefits = TIER_BENEFITS[tier.id] || [];
+  const tierCopy = getTierCopy(strings, tier.id);
+  const benefits = strings.membresias?.benefits?.[tier.id] || [];
+  const priceLabel = formatMembresiaPrice(tier.id, localeTag);
+  const tierLabel = tierCopy.label || tier.label;
+  const tierSubtitle = tierCopy.subtitle || tier.subtitle;
 
   return (
     <View style={[posterStyles.cardWrap, isActive && { borderColor: tier.accent + '88', borderWidth: 2 }]}>
@@ -67,6 +69,13 @@ function TierPosterCard({ tier, isActive }) {
       >
         {/* Círculo decorativo */}
         <View style={posterStyles.deco} />
+
+        {priceLabel ? (
+          <View style={[posterStyles.priceRow, { borderColor: tier.accent + '44' }]}>
+            <Text style={[posterStyles.priceAmount, { color: tier.accent }]}>{priceLabel}</Text>
+            <Text style={posterStyles.pricePeriod}>{t('membresias.pricePeriod')}</Text>
+          </View>
+        ) : null}
 
         <TouchableOpacity
           style={posterStyles.headerInner}
@@ -81,16 +90,16 @@ function TierPosterCard({ tier, isActive }) {
           {/* Nombre + subtítulo */}
           <View style={posterStyles.titleCol}>
             <Text style={[posterStyles.tierName, { color: isActive ? '#FFFFFF' : tier.accent + 'EE' }]}>
-              {tier.label}
+              {tierLabel}
             </Text>
-            <Text style={posterStyles.tierSub}>{tier.subtitle}</Text>
+            <Text style={posterStyles.tierSub}>{tierSubtitle}</Text>
           </View>
 
           {/* Badge activo o flecha */}
           {isActive ? (
             <View style={[posterStyles.activePill, { backgroundColor: tier.accent }]}>
               <Check size={10} color="#1a0f00" strokeWidth={3} />
-              <Text style={posterStyles.activePillTxt}>ACTIVO</Text>
+              <Text style={posterStyles.activePillTxt}>{t('membresias.activePill')}</Text>
             </View>
           ) : (
             <Text style={[posterStyles.chevron, { color: tier.accent + '88' }]}>
@@ -115,7 +124,7 @@ function TierPosterCard({ tier, isActive }) {
             end={{ x: 1, y: 0 }}
             style={posterStyles.divider}
           />
-          <Text style={[posterStyles.benefitsKicker, { color: tier.accent }]}>BENEFICIOS</Text>
+          <Text style={[posterStyles.benefitsKicker, { color: tier.accent }]}>{t('membresias.benefitsKicker')}</Text>
           {benefits.map((line, i) => (
             <View key={i} style={posterStyles.benefitRow}>
               <View style={[posterStyles.dot, { backgroundColor: tier.accent }]} />
@@ -130,32 +139,74 @@ function TierPosterCard({ tier, isActive }) {
 
 // ─── Card de activación de código ────────────────────────────────────────────
 
-function CodigoCard({ clienteRow, onActivated, onDone, c }) {
+function CodigoCard({ clienteRow, onActivated, onDone, c, t, strings, localeTag }) {
+  const stripe = useStripe();
   const [codigo, setCodigo] = useState('');
   const [loading, setLoading] = useState(false);
   const tier = getMembresiaTier(clienteRow?.membresia_nivel);
+  const tierCopy = tier ? getTierCopy(strings, tier.id) : null;
+  const tierLabel = tierCopy?.label || tier?.label;
+
+  const finishActivation = (data) => {
+    setCodigo('');
+    const label = data?.label || membresiaLabel(data?.nivel) || t('membresias.codigo.defaultLabel');
+    onActivated?.();
+    Alert.alert(
+      t('membresias.alerts.successTitle'),
+      t('membresias.alerts.successBody', { label }),
+      [{ text: t('membresias.alerts.successBtn'), onPress: () => onDone?.() }],
+    );
+  };
 
   const canjear = async () => {
     const normalized = normalizeMembresiaCodigoInput(codigo);
     if (!normalized) {
-      Alert.alert('Código', 'Ingresá el código que te entregó tu asesor en el salón.');
+      Alert.alert(t('membresias.alerts.codeTitle'), t('membresias.alerts.codeEmpty'));
       return;
     }
     setLoading(true);
-    const { data, error } = await db.membresias.canjearCodigo(normalized);
-    setLoading(false);
-    if (error) {
-      Alert.alert('No se activó', error.message || 'Revisá el código e intentá de nuevo.');
-      return;
+    try {
+      if (isStripeConfigured()) {
+        const preview = await db.membresias.previewCodigo(normalized);
+        if (preview.error) {
+          Alert.alert(
+            t('membresias.alerts.notActivatedTitle'),
+            preview.error.message || t('membresias.alerts.notActivatedBody'),
+          );
+          return;
+        }
+        const pay = await checkoutMembresiaConStripe({
+          stripe,
+          codigo: normalized,
+          nivel: preview.data?.nivel,
+        });
+        if (!pay.ok) {
+          if (!pay.cancelled) {
+            Alert.alert(
+              t('membresias.alerts.paymentTitle'),
+              pay.error?.message || t('membresias.alerts.paymentBody'),
+            );
+          }
+          return;
+        }
+      }
+
+      const { data, error } = await db.membresias.canjearCodigo(normalized);
+      if (error) {
+        Alert.alert(
+          t('membresias.alerts.notActivatedTitle'),
+          error.message || t('membresias.alerts.notActivatedBody'),
+        );
+        return;
+      }
+      finishActivation(data);
+    } finally {
+      setLoading(false);
     }
-    setCodigo('');
-    const label = data?.label || membresiaLabel(data?.nivel) || 'Membresía';
-    onActivated?.();
-    Alert.alert(
-      '¡Listo!',
-      `Tu membresía ${label} quedó activa por 29 días. Tres días antes del vencimiento te recordaremos renovar en el salón.`,
-      [{ text: 'Ver mi perfil', onPress: () => onDone?.() }],
-    );
+  };
+
+  const callSalon = () => {
+    Linking.openURL(SALON_PHONE_TEL).catch(() => {});
   };
 
   return (
@@ -167,17 +218,21 @@ function CodigoCard({ clienteRow, onActivated, onDone, c }) {
         </View>
         <View>
           <Text style={[codeStyles.title, { color: c.foreground }]}>
-            {tier ? `Membresía ${tier.label} activa` : 'Activar membresía'}
+            {tier
+              ? t('membresias.codigo.titleActive', { tier: tierLabel })
+              : t('membresias.codigo.titleActivate')}
           </Text>
           {tier ? (
             <Text style={[codeStyles.sub, { color: GOLD }]}>
-              Desde {clienteRow?.membresia_activada_en
-                ? new Date(clienteRow.membresia_activada_en).toLocaleDateString('es-GT')
-                : '—'}
+              {t('membresias.codigo.subSince', {
+                date: clienteRow?.membresia_activada_en
+                  ? new Date(clienteRow.membresia_activada_en).toLocaleDateString(localeTag)
+                  : '—',
+              })}
             </Text>
           ) : (
             <Text style={[codeStyles.sub, { color: c.foregroundMuted }]}>
-              Tu asesor te dará un código
+              {t('membresias.codigo.subAdvisor')}
             </Text>
           )}
         </View>
@@ -188,7 +243,7 @@ function CodigoCard({ clienteRow, onActivated, onDone, c }) {
         <KeyRound size={16} color={GOLD} strokeWidth={1.8} />
         <TextInput
           style={[codeStyles.input, { color: c.foreground }]}
-          placeholder="AURA-VIP-XXXXX"
+          placeholder={t('membresias.codigo.placeholder')}
           placeholderTextColor={c.foregroundSubtle}
           value={codigo}
           onChangeText={(v) => setCodigo(normalizeMembresiaCodigoInput(v))}
@@ -197,11 +252,26 @@ function CodigoCard({ clienteRow, onActivated, onDone, c }) {
         />
       </View>
 
+      <TouchableOpacity
+        style={[codeStyles.supportRow, { borderColor: GOLD_BORDER, backgroundColor: c.surfaceMuted }]}
+        onPress={callSalon}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={t('membresias.codigo.supportA11y')}
+      >
+        <CustomerServiceIcon size={28} color={GOLD} />
+        <View style={{ flex: 1, marginLeft: spacing.sm }}>
+          <Text style={[codeStyles.supportLabel, { color: c.foreground }]}>{t('membresias.codigo.supportLabel')}</Text>
+          <Text style={[codeStyles.supportSub, { color: c.foregroundMuted }]}>{SALON_PHONE_DISPLAY}</Text>
+        </View>
+        <Text style={[codeStyles.supportAction, { color: GOLD }]}>{t('membresias.codigo.supportAction')}</Text>
+      </TouchableOpacity>
+
       {loading ? (
         <ActivityIndicator color={GOLD} style={{ marginTop: spacing.sm }} />
       ) : (
         <SalonButton
-          title={tier ? 'Cambiar con nuevo código' : 'Activar membresía'}
+          title={tier ? t('membresias.codigo.btnChange') : t('membresias.codigo.btnActivate')}
           variant="heroGold"
           fullWidth
           onPress={canjear}
@@ -216,22 +286,33 @@ function CodigoCard({ clienteRow, onActivated, onDone, c }) {
 
 export function MembresiasBody({ clienteRow, onMembershipChanged, onClose }) {
   const { colors: c } = useTheme();
+  const { t, strings, localeTag } = useClientLocale();
   const activeTier = getMembresiaTier(clienteRow?.membresia_nivel);
+  const activeTierCopy = activeTier ? getTierCopy(strings, activeTier.id) : null;
+  const activeTierLabel = activeTierCopy?.label || activeTier?.label;
   const membresiaStatus = useMemo(() => computeMembresiaStatusFromRow(clienteRow), [clienteRow]);
+  const renewalDaysSuffix = membresiaStatus.daysLeft === 1 ? '' : 's';
 
   return (
     <>
       {membresiaStatus.showRenewalReminder && membresiaStatus.active ? (
         <View style={[heroStyles.reminderBanner, { backgroundColor: c.surfaceMuted, borderColor: c.primary }]}>
-          <Text style={[heroStyles.reminderTitle, { color: c.primary }]}>Renovación en {membresiaStatus.daysLeft} días</Text>
+          <Text style={[heroStyles.reminderTitle, { color: c.primary }]}>
+            {t('membresias.renewalTitle', { days: membresiaStatus.daysLeft })}
+          </Text>
           <Text style={[heroStyles.reminderTxt, { color: c.foregroundMuted }]}>
-            {membresiaStatus.renewalMessage}
+            {t('membresias.renewalMessage', {
+              days: membresiaStatus.daysLeft,
+              daysSuffix: renewalDaysSuffix,
+            })}
           </Text>
         </View>
       ) : null}
       {membresiaStatus.active && membresiaStatus.venceEn ? (
         <Text style={[heroStyles.vigenciaTxt, { color: c.foregroundSubtle }]}>
-          Vigencia: 29 días · vence {new Date(membresiaStatus.venceEn).toLocaleDateString('es-GT')}
+          {t('membresias.vigencia', {
+            date: new Date(membresiaStatus.venceEn).toLocaleDateString(localeTag),
+          })}
         </Text>
       ) : null}
       {/* Hero estilo Premios */}
@@ -253,25 +334,25 @@ export function MembresiasBody({ clienteRow, onMembershipChanged, onClose }) {
             {/* Badge */}
             <View style={heroStyles.badge}>
               <Crown size={13} color={GOLD} strokeWidth={2.2} />
-              <Text style={heroStyles.badgeTxt}>MEMBRESÍAS</Text>
+              <Text style={heroStyles.badgeTxt}>{t('membresias.badge')}</Text>
             </View>
 
             {/* Título */}
             <View style={heroStyles.titleRow}>
               <Gem size={15} color={GOLD} strokeWidth={2} />
-              <Text style={heroStyles.eyebrow}>Programa de beneficios</Text>
+              <Text style={heroStyles.eyebrow}>{t('membresias.eyebrow')}</Text>
             </View>
             <Text style={heroStyles.title}>
-              {activeTier ? `Nivel ${activeTier.label}` : 'Elige tu nivel'}
+              {activeTier
+                ? t('membresias.titleActive', { tier: activeTierLabel })
+                : t('membresias.titlePick')}
             </Text>
 
             {/* Línea */}
             <View style={heroStyles.divider} />
 
             <Text style={heroStyles.sub}>
-              {activeTier
-                ? 'Tus beneficios están activos. Presentate en recepción para canjearlos.'
-                : 'Tres niveles diseñados para recompensar tu fidelidad con Salon Andreas.'}
+              {activeTier ? t('membresias.subActive') : t('membresias.subPick')}
             </Text>
           </View>
         </LinearGradient>
@@ -283,10 +364,13 @@ export function MembresiasBody({ clienteRow, onMembershipChanged, onClose }) {
         onActivated={onMembershipChanged}
         onDone={onClose}
         c={c}
+        t={t}
+        strings={strings}
+        localeTag={localeTag}
       />
 
       {/* Label sección */}
-      <Text style={[sectionStyles.label, { color: c.foregroundSubtle }]}>NIVELES DISPONIBLES</Text>
+      <Text style={[sectionStyles.label, { color: c.foregroundSubtle }]}>{t('membresias.levelsLabel')}</Text>
 
       {/* Tarjetas poster */}
       {MEMBRESIA_TIERS.map((tier) => (
@@ -294,11 +378,14 @@ export function MembresiasBody({ clienteRow, onMembershipChanged, onClose }) {
           key={tier.id}
           tier={tier}
           isActive={activeTier?.id === tier.id}
+          t={t}
+          strings={strings}
+          localeTag={localeTag}
         />
       ))}
 
       <Text style={[sectionStyles.foot, { color: c.foregroundSubtle }]}>
-        Niveles definidos por el salón · canjes en recepción Salon Andreas.
+        {t('membresias.foot')}
       </Text>
     </>
   );
@@ -449,6 +536,28 @@ const codeStyles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 1.2,
   },
+  supportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  supportLabel: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 14,
+  },
+  supportSub: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  supportAction: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 12,
+  },
 });
 
 const posterStyles = StyleSheet.create({
@@ -468,6 +577,29 @@ const posterStyles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
     borderTopLeftRadius: radii.md,
     borderTopRightRadius: radii.md,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    alignSelf: 'flex-start',
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    zIndex: 1,
+  },
+  priceAmount: {
+    fontFamily: typography.fontDisplay,
+    fontSize: 22,
+    letterSpacing: -0.3,
+  },
+  pricePeriod: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    marginLeft: 4,
   },
   deco: {
     position: 'absolute',

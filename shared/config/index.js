@@ -57,8 +57,10 @@ export {
   STRIPE_CHECKOUT_COUNTRY,
   formatStripeGtqLabel,
   createStripePaymentIntent,
+  createStripeMembershipPaymentIntent,
   finalizeStripeDomicilioOrder,
   checkoutDomicilioConStripe,
+  checkoutMembresiaConStripe,
 } from './stripeCheckout.js';
 export {
   ensureStripeCustomer,
@@ -212,8 +214,10 @@ export {
 } from './clienteAppMeta.js';
 export {
   MEMBRESIA_TIERS,
+  MEMBRESIA_MONTHLY_GTQ,
   getMembresiaTier,
   membresiaLabel,
+  getMembresiaMonthlyGtq,
   isMembresiaNivelValid,
   buildMembresiaCodigo,
   normalizeMembresiaCodigoInput,

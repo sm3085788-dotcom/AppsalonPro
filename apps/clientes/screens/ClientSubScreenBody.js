@@ -26,6 +26,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useClientLocale } from '../hooks/useClientLocale';
 import { InstagramLogo, FacebookLogo, WhatsAppLogo } from '../components/social/SocialLogoImage';
 import { LocationOnIcon } from '../components/social/LocationOnIcon';
+import { CustomerServiceIcon } from '../components/social/CustomerServiceIcon';
 
 function formatGtq(n) {
   const x = Number(n);
@@ -79,7 +80,8 @@ function ContactoBody() {
         <View style={subStyles.divider} />
 
         <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl('tel:+50247132123')}>
-          <View style={{ flex: 1 }}>
+          <CustomerServiceIcon size={28} color={tc.primary} />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
             <Text style={subStyles.rowLabel}>{t('contacto.phone')}</Text>
             <Text style={subStyles.rowSub}>{t('contacto.phoneSub')}</Text>
           </View>
@@ -129,10 +131,10 @@ function ContactoBody() {
         <View style={subStyles.divider} />
         <TouchableOpacity style={subStyles.rowTouch} onPress={() => openUrl(WEB_APP_URL)}>
           <View style={{ flex: 1 }}>
-            <Text style={subStyles.rowLabel}>App web</Text>
-            <Text style={subStyles.rowSub}>Catálogo en línea · reservas y productos</Text>
+            <Text style={subStyles.rowLabel}>{t('contacto.web')}</Text>
+            <Text style={subStyles.rowSub}>{t('contacto.webSub')}</Text>
           </View>
-          <Text style={chipText}>Abrir</Text>
+          <Text style={chipText}>{t('contacto.open')}</Text>
         </TouchableOpacity>
       </View>
     </>

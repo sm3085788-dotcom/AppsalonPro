@@ -1473,6 +1473,22 @@ export const db = {
       return { data: payload, error: null };
     },
 
+    /** Valida código sin canjear (previo a pago Stripe). */
+    previewCodigo: async (codigo) => {
+      const { normalizeMembresiaCodigoInput } = await import('./membresias.js');
+      const normalized = normalizeMembresiaCodigoInput(codigo);
+      if (!normalized) {
+        return { data: null, error: { message: 'Ingresá el código que te dio el salón.' } };
+      }
+      const { data, error } = await supabase.rpc('preview_membresia_codigo', { p_codigo: normalized });
+      if (error) return { data: null, error };
+      const payload = data && typeof data === 'object' ? data : {};
+      if (payload.ok === false) {
+        return { data: null, error: { message: payload.error || 'Código no válido.' } };
+      }
+      return { data: payload, error: null };
+    },
+
     syncVigencia: async (clienteId = null) => {
       const { data, error } = await supabase.rpc('sync_membresia_cliente', {
         p_cliente_id: clienteId,
