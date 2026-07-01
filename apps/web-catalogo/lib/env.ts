@@ -16,8 +16,21 @@ export const env = {
   contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? '',
 } as const;
 
-/** Supabase listo (URL + anon key). Seguro de evaluar en cliente. */
-export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
+/** Verifica que la URL sea un endpoint HTTP/HTTPS valido (no un placeholder). */
+function isValidHttpUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Supabase listo (URL valida + anon key). Seguro de evaluar en cliente. */
+export const isSupabaseConfigured = Boolean(
+  isValidHttpUrl(env.supabaseUrl) && env.supabaseAnonKey,
+);
 
 /** Stripe en modo real (solo evaluable en servidor por la secret key). */
 export const isStripeServerConfigured = Boolean(env.stripeSecretKey);
