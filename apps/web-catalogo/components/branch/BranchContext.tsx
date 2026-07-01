@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Branch, UUID } from '@/lib/types/db';
 
 interface BranchContextValue {
@@ -33,6 +34,7 @@ export function BranchProvider({
   branches: Branch[];
   children: ReactNode;
 }) {
+  const router = useRouter();
   const [selectedBranchId, setSelected] = useState<UUID | null>(null);
 
   // Restaura la sucursal elegida o usa la matriz / primera activa.
@@ -59,6 +61,7 @@ export function BranchProvider({
       window.localStorage.setItem(STORAGE_KEY, id);
     }
     writeBranchCookie(id);
+    router.refresh();
   };
 
   const value = useMemo<BranchContextValue>(() => {

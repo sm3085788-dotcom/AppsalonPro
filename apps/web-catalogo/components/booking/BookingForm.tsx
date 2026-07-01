@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarClock, Store, Loader2, Radio } from 'lucide-react';
+import { BranchSelect } from '@/components/branch/BranchSelect';
 import { useBranch } from '@/components/branch/BranchContext';
 import { useBranchBookingsRealtime } from '@/lib/realtime/useBranchBookingsRealtime';
 import { createBooking } from '@/app/reservar/actions';
@@ -100,6 +101,11 @@ export function BookingForm({
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
       <div className="space-y-6 rounded-2xl border border-border bg-surface p-6">
+        <div>
+          <label className="mb-2 block text-sm text-muted">Sucursal</label>
+          <BranchSelect variant="field" />
+        </div>
+
         <div>
           <label className="mb-2 block text-sm text-muted">Servicio</label>
           <select

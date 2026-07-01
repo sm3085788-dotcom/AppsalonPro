@@ -1,6 +1,7 @@
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ProductCard } from '@/components/catalog/ProductCard';
+import { BranchCatalogBar } from '@/components/branch/BranchCatalogBar';
 import { getProducts } from '@/lib/data/catalog';
 import { getSelectedBranch } from '@/lib/data/selectedBranch';
 
@@ -21,6 +22,7 @@ export default async function ProductosPage() {
             : 'Selecciona una sucursal para ver disponibilidad.'
         }
       />
+      <BranchCatalogBar />
       {products.length === 0 ? (
         <EmptyState
           title="Sin productos disponibles"

@@ -33,7 +33,7 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
             alt="Andreas · AppSalon Pro"
             className="h-11 w-11 object-contain"
           />
-          <span className="text-[15px] font-light tracking-[0.32em] text-cream">
+          <span className="hidden text-[15px] font-light tracking-[0.32em] text-cream min-[420px]:inline">
             APPSALON <span className="text-gold">PRO</span>
           </span>
         </Link>
@@ -50,10 +50,8 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:block">
-            <BranchSelect compact />
-          </div>
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <BranchSelect compact />
           {userEmail ? (
             <div className="flex items-center gap-2">
               <Link

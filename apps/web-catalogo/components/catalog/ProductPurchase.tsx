@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Minus, Plus, ShoppingBag } from 'lucide-react';
+import { BranchSelect } from '@/components/branch/BranchSelect';
 import { useBranch } from '@/components/branch/BranchContext';
 import { formatQ } from '@/lib/format';
 import type { Product } from '@/lib/types/db';
 
 export function ProductPurchase({ product }: { product: Product }) {
   const router = useRouter();
-  const { selectedBranchId, selectedBranch } = useBranch();
+  const { selectedBranchId } = useBranch();
   const [qty, setQty] = useState(1);
 
   const max = Math.max(product.stock, 0);
@@ -38,11 +39,10 @@ export function ProductPurchase({ product }: { product: Product }) {
         </span>
       </div>
 
-      {selectedBranch && (
-        <p className="mt-1 text-xs text-muted">
-          Sucursal: {selectedBranch.nombre}
-        </p>
-      )}
+      <div className="mt-4">
+        <label className="mb-2 block text-xs text-muted">Sucursal</label>
+        <BranchSelect variant="field" />
+      </div>
 
       {canBuy && (
         <div className="mt-4 flex items-center gap-3">
