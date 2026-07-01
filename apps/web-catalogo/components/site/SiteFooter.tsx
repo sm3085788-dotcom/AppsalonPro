@@ -46,14 +46,12 @@ export function SiteFooter() {
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-12 lg:px-8">
         <div className="lg:col-span-5">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-pearl ring-1 ring-gold/30">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/images/logo-andreas.png"
-                alt="Andreas · AppSalon Pro"
-                className="h-9 w-9 object-contain"
-              />
-            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/logo-andreas-transparent.png"
+              alt="Andreas · AppSalon Pro"
+              className="h-11 w-11 object-contain"
+            />
             <span className="text-[15px] font-light tracking-[0.32em] text-cream">
               APPSALON <span className="text-gold">PRO</span>
             </span>

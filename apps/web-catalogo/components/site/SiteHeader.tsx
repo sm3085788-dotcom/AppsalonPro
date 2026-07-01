@@ -27,14 +27,12 @@ export function SiteHeader({ userEmail }: { userEmail: string | null }) {
     <header className="glass sticky top-0 z-50 border-b border-border">
       <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-pearl ring-1 ring-gold/30">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/images/logo-andreas.png"
-              alt="Andreas · AppSalon Pro"
-              className="h-9 w-9 object-contain"
-            />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/logo-andreas-transparent.png"
+            alt="Andreas · AppSalon Pro"
+            className="h-11 w-11 object-contain"
+          />
           <span className="text-[15px] font-light tracking-[0.32em] text-cream">
             APPSALON <span className="text-gold">PRO</span>
           </span>
