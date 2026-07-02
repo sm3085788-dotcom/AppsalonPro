@@ -46,6 +46,10 @@ import {
   uploadMensajeMediaFromUri,
   isClienteAppVerificado,
   isClienteManual,
+  isClienteWeb,
+  clienteOrigenLabel,
+  CLIENTE_MANUAL_AURA,
+  CLIENTE_WEB_AURA,
   formatBroadcastContent,
   parseBroadcastContent,
   broadcastPreviewText,
@@ -163,7 +167,17 @@ const INBOX_PREVIEW_TYPES = new Set([
 ]);
 const INBOX_OPEN_HINT = 'Tocá para abrir Andreas Pro';
 /** Mismo verde que Clientes para fichas manuales (sin App Clientes). */
-const MINT = { chip: '#C8E6C9', chipText: '#1B5E20' };
+const MINT = CLIENTE_MANUAL_AURA;
+
+function origenChipStyle(client, c) {
+  if (isClienteManual(client)) {
+    return { bg: MINT.chip, text: MINT.chipText };
+  }
+  if (isClienteWeb(client)) {
+    return { bg: CLIENTE_WEB_AURA.chip, text: CLIENTE_WEB_AURA.chipText };
+  }
+  return { bg: c.surfaceMuted, text: c.foregroundMuted };
+}
 
 function inboxPreviewTime(iso) {
   if (!iso) return 0;
@@ -577,6 +591,7 @@ export function MensajesScreen({ onBack }) {
   const inboxRows = useMemo(() => {
     let rows = inboxRowsBase;
     if (filterTipo === 'manual') rows = rows.filter((r) => isClienteManual(r.client));
+    if (filterTipo === 'web') rows = rows.filter((r) => isClienteWeb(r.client));
     if (filterTipo === 'app') rows = rows.filter((r) => isClienteAppVerificado(r.client));
 
     const q = inboxQuery.trim().toLowerCase();
@@ -608,9 +623,11 @@ export function MensajesScreen({ onBack }) {
     const tipo =
       filterTipo === 'manual'
         ? 'Solo manual'
-        : filterTipo === 'app'
-          ? 'Solo verificados'
-          : 'Todos los orígenes';
+        : filterTipo === 'web'
+          ? 'Solo web'
+          : filterTipo === 'app'
+            ? 'Solo verificados'
+            : 'Todos los orígenes';
     return `${orden} · ${tipo}`;
   }, [sortMode, filterTipo]);
 
@@ -618,9 +635,12 @@ export function MensajesScreen({ onBack }) {
     async (client) => {
       if (!client?.id) return;
       if (!isClienteAppVerificado(client)) {
+        const origen = isClienteWeb(client)
+          ? 'registrado en catálogo web'
+          : 'ficha manual';
         Alert.alert(
           'Sin App Clientes',
-          `${client.nombre || 'Este cliente'} es una ficha manual. Andreas Pro solo envía mensajes a clientes verificados en App Clientes (con cuenta vinculada).`,
+          `${client.nombre || 'Este cliente'} es ${origen}. Andreas Pro solo envía mensajes a clientes verificados en App Clientes (con cuenta vinculada).`,
         );
         return;
       }
@@ -838,7 +858,10 @@ export function MensajesScreen({ onBack }) {
   const sendChatMessage = async () => {
     if (!selectedClient) return;
     if (!isClienteAppVerificado(selectedClient)) {
-      Alert.alert('Sin App Clientes', 'No podés enviar mensajes a fichas manuales.');
+      const hint = isClienteWeb(selectedClient)
+        ? 'clientes de catálogo web'
+        : 'fichas manuales';
+      Alert.alert('Sin App Clientes', `No podés enviar mensajes a ${hint}.`);
       return;
     }
     const text = draft.trim();
@@ -1039,7 +1062,7 @@ export function MensajesScreen({ onBack }) {
       Alert.alert(
         'Selección',
         picked.length
-          ? 'Las fichas manuales no reciben mensajes. Elegí clientes verificados con App Clientes.'
+          ? 'Las fichas manuales y clientes de catálogo web no reciben mensajes. Elegí clientes verificados con App Clientes.'
           : 'Elegí al menos un cliente.',
       );
       return;
@@ -1076,12 +1099,21 @@ export function MensajesScreen({ onBack }) {
     ({ item }) => {
       const { client, preview, lastAt } = item;
       const manual = isClienteManual(client);
+      const web = isClienteWeb(client);
+      const chipStyle = origenChipStyle(client, c);
       const fechaTxt = lastAt
         ? new Date(lastAt).toLocaleDateString('es-GT', { day: 'numeric', month: 'short' })
         : null;
       const subParts = manual
         ? ['Sin cuenta en App Clientes']
-        : [
+        : web
+          ? [
+              'Catálogo web',
+              client.telefono,
+              preview !== INBOX_OPEN_HINT ? preview : null,
+              fechaTxt,
+            ].filter(Boolean)
+          : [
             client.telefono,
             preview !== INBOX_OPEN_HINT ? preview : null,
             fechaTxt,
@@ -1132,9 +1164,9 @@ export function MensajesScreen({ onBack }) {
                 {client.nombre || 'Sin nombre'}
               </Text>
               <View style={styles.rowChips}>
-                <View style={[styles.chip, { backgroundColor: manual ? MINT.chip : c.surfaceMuted }]}>
-                  <Text style={[styles.chipTxt, { color: manual ? MINT.chipText : c.foregroundMuted }]}>
-                    {manual ? 'Manual' : 'App'}
+                <View style={[styles.chip, { backgroundColor: chipStyle.bg }]}>
+                  <Text style={[styles.chipTxt, { color: chipStyle.text }]}>
+                    {clienteOrigenLabel(client)}
                   </Text>
                 </View>
                 {hasUnread ? (
@@ -1876,6 +1908,7 @@ export function MensajesScreen({ onBack }) {
             {[
               { id: 'todos', label: 'Todos' },
               { id: 'manual', label: 'Solo manual' },
+              { id: 'web', label: 'Solo web' },
               { id: 'app', label: 'Solo verificados' },
             ].map((opt) => {
               const on = filterTipo === opt.id;

@@ -26,6 +26,7 @@ import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
+import { SalonSucursalSelect } from '../components/SalonSucursalSelect';
 import {
   db,
   supabase,
@@ -33,6 +34,11 @@ import {
   parseCanjeFromNotasServicio,
   stripCanjeMarkerFromNotas,
   getSalonSucursalScope,
+  getSalonSessionProfile,
+  isSalonGlobalAdmin,
+  filterRowsBySucursal,
+  resolveCitaCanal,
+  formatCitaNotasDisplay,
   startBranchBookingListener,
 } from '@appsalon/shared-config';
 import { CitaVisitaQrScannerModal } from '../components/CitaVisitaQrScannerModal';
@@ -79,6 +85,29 @@ function estadoPillFg(_c, est) {
   const v = String(est || 'pendiente').toLowerCase();
   if (v === 'pendiente') return '#3E2E00';
   return '#FFFFFF';
+}
+
+function canalPillColors(canal) {
+  if (canal === 'web') return { bg: '#1565C0', fg: '#FFFFFF' };
+  if (canal === 'app') return { bg: '#C9A24D', fg: '#1a0f00' };
+  return null;
+}
+
+function canalLabel(canal) {
+  if (canal === 'web') return 'Web';
+  if (canal === 'app') return 'App';
+  return null;
+}
+
+function CitaCanalPill({ canal, style, textStyle }) {
+  const colors = canalPillColors(canal);
+  const label = canalLabel(canal);
+  if (!colors || !label) return null;
+  return (
+    <View style={[style, { backgroundColor: colors.bg }]}>
+      <Text style={[textStyle, { color: colors.fg }]}>{label}</Text>
+    </View>
+  );
 }
 
 function maxQtyForCatalogRow(row) {
@@ -129,6 +158,21 @@ export function AppointmentsScreen({ onBack }) {
   const [agendaSort, setAgendaSort] = useState('fecha_desc');
   const [agendaEstado, setAgendaEstado] = useState('todos');
   const [agendaFecha, setAgendaFecha] = useState(null); // Date seleccionado (día completo)
+
+  const sessionProfile = getSalonSessionProfile();
+  const isGlobalAdmin = isSalonGlobalAdmin(sessionProfile?.role);
+  const [agendaSucursales, setAgendaSucursales] = useState([]);
+  const [agendaSucursalId, setAgendaSucursalId] = useState(null);
+
+  const matrizSucursalId = useMemo(
+    () => agendaSucursales.find((s) => s.es_matriz)?.id || agendaSucursales[0]?.id || null,
+    [agendaSucursales],
+  );
+
+  const agendaSucursalNombre = useMemo(() => {
+    if (!agendaSucursalId) return null;
+    return agendaSucursales.find((s) => String(s.id) === String(agendaSucursalId))?.nombre || 'Sucursal';
+  }, [agendaSucursalId, agendaSucursales]);
 
   const closeAgendaFilters = useCallback(() => {
     setAgendaFiltersOpen(false);
@@ -279,6 +323,36 @@ export function AppointmentsScreen({ onBack }) {
     }
   }, [composerOpen, loadCatalogServicios]);
 
+  useEffect(() => {
+    if (isGlobalAdmin) {
+      let cancelled = false;
+      void db.sucursales.listActivas().then(({ data, error }) => {
+        if (cancelled || error) return;
+        const list = Array.isArray(data) ? data : [];
+        setAgendaSucursales(list);
+        const matrizId = list.find((s) => s.es_matriz)?.id || list[0]?.id || null;
+        setAgendaSucursalId((prev) => prev || matrizId);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    const sid = sessionProfile?.sucursal_id || getSalonSucursalScope().sucursalId || null;
+    if (sid) {
+      setAgendaSucursalId(sid);
+      if (sessionProfile?.sucursal_nombre) {
+        setAgendaSucursales([
+          {
+            id: sid,
+            nombre: sessionProfile.sucursal_nombre,
+            es_matriz: false,
+          },
+        ]);
+      }
+    }
+    return undefined;
+  }, [isGlobalAdmin, sessionProfile?.sucursal_id, sessionProfile?.sucursal_nombre]);
+
   const agendaFiltroResumen = useMemo(() => {
     const sortLabels = { fecha_asc: 'Fecha (próximas primero)', fecha_desc: 'Fecha (más recientes)', nombre: 'Por nombre A → Z' };
     const estLabels = {
@@ -290,8 +364,8 @@ export function AppointmentsScreen({ onBack }) {
     const dtLbl = agendaFecha
       ? agendaFecha.toLocaleDateString('es-GT', { day: 'numeric', month: 'short', year: 'numeric' })
       : null;
-    return `${sortLabels[agendaSort] || agendaSort} · ${estLabels[agendaEstado] || agendaEstado}${dtLbl ? ` · ${dtLbl}` : ''}`;
-  }, [agendaSort, agendaEstado, agendaFecha]);
+    return `${sortLabels[agendaSort] || agendaSort} · ${estLabels[agendaEstado] || agendaEstado}${dtLbl ? ` · ${dtLbl}` : ''}${!isGlobalAdmin && agendaSucursalNombre ? ` · ${agendaSucursalNombre}` : ''}`;
+  }, [agendaSort, agendaEstado, agendaFecha, agendaSucursalNombre, isGlobalAdmin]);
 
   const dateKeyLocal = (d) => {
     const x = d instanceof Date ? d : new Date(d);
@@ -304,6 +378,9 @@ export function AppointmentsScreen({ onBack }) {
 
   const citasFiltradas = useMemo(() => {
     let rows = [...citas];
+    if (agendaSucursalId) {
+      rows = filterRowsBySucursal(rows, agendaSucursalId, { matrizId: matrizSucursalId });
+    }
     if (agendaEstado !== 'todos') {
       rows = rows.filter((r) => {
         const v = String(r.estado || 'pendiente').toLowerCase();
@@ -328,7 +405,7 @@ export function AppointmentsScreen({ onBack }) {
       return agendaSort === 'fecha_asc' ? ta - tb : tb - ta;
     });
     return rows;
-  }, [citas, agendaEstado, agendaSort, agendaFecha]);
+  }, [citas, agendaEstado, agendaSort, agendaFecha, agendaSucursalId, matrizSucursalId]);
 
   const clientMatches = useMemo(() => {
     if (selectedClient) return [];
@@ -772,6 +849,18 @@ export function AppointmentsScreen({ onBack }) {
               </TouchableOpacity>
             </View>
           </View>
+          {isGlobalAdmin && agendaSucursales.length > 0 ? (
+            <SalonSucursalSelect
+              sucursales={agendaSucursales}
+              selectedId={agendaSucursalId}
+              onSelect={setAgendaSucursalId}
+              label="Sucursal"
+            />
+          ) : !isGlobalAdmin && agendaSucursalNombre ? (
+            <Text style={[subStyles.muted, styles.agendaBranchLabel]} numberOfLines={1}>
+              Sucursal: {agendaSucursalNombre}
+            </Text>
+          ) : null}
           <Text style={[subStyles.muted, styles.agendaFilterHint]} numberOfLines={2}>
             {agendaFiltroResumen}. Deslizá hacia abajo para actualizar.
           </Text>
@@ -818,6 +907,8 @@ export function AppointmentsScreen({ onBack }) {
                 const clienteNombre = item.cliente?.nombre || 'Sin ficha de cliente';
                 const busy = updatingId === item.id;
                 const picked = sel.isSelected(item.id);
+                const canal = resolveCitaCanal(item);
+                const notasDisplay = formatCitaNotasDisplay(item.notas_servicio, canal);
                 return (
                   <View
                     style={[
@@ -855,10 +946,13 @@ export function AppointmentsScreen({ onBack }) {
                         <Text style={[styles.citaServicio, { color: c.foreground }]} numberOfLines={1}>
                           {item.servicio}
                         </Text>
-                        <View style={[styles.estadoPill, { backgroundColor: estadoPillBg(c, est) }]}>
-                          <Text style={[styles.estadoPillTxt, { color: estadoPillFg(c, est) }]}>
-                            {estadoLabel(est)}
-                          </Text>
+                        <View style={styles.citaCardPills}>
+                          <CitaCanalPill canal={canal} style={styles.canalPill} textStyle={styles.canalPillTxt} />
+                          <View style={[styles.estadoPill, { backgroundColor: estadoPillBg(c, est) }]}>
+                            <Text style={[styles.estadoPillTxt, { color: estadoPillFg(c, est) }]}>
+                              {estadoLabel(est)}
+                            </Text>
+                          </View>
                         </View>
                       </View>
                       <Text style={[styles.citaCliente, { color: c.foregroundMuted }]} numberOfLines={1}>
@@ -874,9 +968,9 @@ export function AppointmentsScreen({ onBack }) {
                         })}
                         {item.empleado?.nombre ? ` · ${item.empleado.nombre}` : ''}
                       </Text>
-                      {item.notas_servicio ? (
+                      {notasDisplay ? (
                         <Text style={[styles.citaNotas, { color: c.foregroundMuted }]} numberOfLines={1}>
-                          {item.notas_servicio}
+                          {notasDisplay}
                         </Text>
                       ) : null}
                     </TouchableOpacity>
@@ -1039,6 +1133,11 @@ export function AppointmentsScreen({ onBack }) {
                   contentContainerStyle={[styles.detailScroll, { paddingBottom: modalScrollBottomPad(insets) }]}
                 >
                   <View style={styles.detailEstadoRow}>
+                    <CitaCanalPill
+                      canal={resolveCitaCanal(detailCita)}
+                      style={[styles.canalPill, styles.estadoPillDetail]}
+                      textStyle={styles.canalPillTxt}
+                    />
                     <View
                       style={[
                         styles.estadoPill,
@@ -1084,6 +1183,9 @@ export function AppointmentsScreen({ onBack }) {
                     },
                     { label: 'Profesional', value: detailCita.empleado?.nombre || 'Sin asignar' },
                     { label: 'Precio', value: formatCitaPrecio(detailCita.precio) },
+                    ...(resolveCitaCanal(detailCita)
+                      ? [{ label: 'Origen', value: canalLabel(resolveCitaCanal(detailCita)) || '—' }]
+                      : []),
                     {
                       label: 'Duración',
                       value: detailCita.duracion_minutos
@@ -1107,14 +1209,19 @@ export function AppointmentsScreen({ onBack }) {
                       </Text>
                     </View>
                   ) : null}
-                  {stripCanjeMarkerFromNotas(detailCita.notas_servicio) ? (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Notas</Text>
-                      <Text style={styles.detailValueMultiline}>
-                        {stripCanjeMarkerFromNotas(detailCita.notas_servicio)}
-                      </Text>
-                    </View>
-                  ) : null}
+                  {(() => {
+                    const canalDet = resolveCitaCanal(detailCita);
+                    const notasLimpias = formatCitaNotasDisplay(
+                      stripCanjeMarkerFromNotas(detailCita.notas_servicio),
+                      canalDet,
+                    );
+                    return notasLimpias ? (
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Notas</Text>
+                        <Text style={styles.detailValueMultiline}>{notasLimpias}</Text>
+                      </View>
+                    ) : null;
+                  })()}
                 </ScrollView>
                 {(detailCita.cliente_id || detailCita.cliente?.telefono) &&
                 !isCitaRechazada(detailCita.estado) &&
@@ -1581,6 +1688,10 @@ function createStyles(c) {
       marginBottom: spacing.sm,
       marginTop: -spacing.xs,
     },
+    agendaBranchLabel: {
+      fontSize: 12,
+      marginBottom: spacing.xs,
+    },
     filterBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
@@ -1681,6 +1792,22 @@ function createStyles(c) {
       fontSize: 14,
       letterSpacing: 0.1,
     },
+    citaCardPills: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      flexShrink: 0,
+    },
+    canalPill: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: radii.pill,
+    },
+    canalPillTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 9,
+      letterSpacing: 0.4,
+    },
     citaCliente: {
       fontFamily: typography.fontSans,
       fontSize: 12,
@@ -1751,6 +1878,9 @@ function createStyles(c) {
       paddingBottom: spacing.sm,
     },
     detailEstadoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
       marginBottom: spacing.sm,
     },
     estadoPillDetail: {

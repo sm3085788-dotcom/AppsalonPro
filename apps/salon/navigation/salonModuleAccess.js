@@ -10,12 +10,12 @@ export const SUCURSAL_ADMIN_MODULE_IDS = new Set([
   'inventory',
   'papeleria',
   'pedidos',
+  'reportes',
   'vender',
 ]);
 
 /** Solo admin global. */
 export const GLOBAL_ONLY_MODULE_IDS = new Set([
-  'reportes',
   'marketing',
   'mensajes',
   'panel',

@@ -294,6 +294,12 @@ export {
   enrichSalonSessionProfile,
 } from './salonSession.js';
 export {
+  rowSucursalId,
+  filterRowsBySucursal,
+  resolveCitaCanal,
+  formatCitaNotasDisplay,
+} from './salonSucursalHelpers.js';
+export {
   getClientSucursalId,
   setClientSucursalId,
   ensureClientSucursalId,

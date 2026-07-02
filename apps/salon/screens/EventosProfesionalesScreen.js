@@ -11,8 +11,12 @@ import {
   ActivityIndicator,
   RefreshControl,
   Switch,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Check, X } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
@@ -39,7 +43,9 @@ function emptyEvento() {
 
 export function EventosProfesionalesScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
+  const keyboardVerticalOffset = Platform.OS === 'ios' ? insets.top + 72 : 0;
   const [tab, setTab] = useState('eventos');
   const [eventos, setEventos] = useState([]);
   const [solicitudes, setSolicitudes] = useState([]);
@@ -126,7 +132,7 @@ export function EventosProfesionalesScreen({ onBack }) {
     else await load();
   };
 
-  const body = editing ? (
+  const formContent = (
     <View style={styles.formCard}>
       <Text style={styles.formTitle}>{form.id ? 'Editar evento' : 'Nuevo evento'}</Text>
       {form.imagen_url ? (
@@ -150,6 +156,24 @@ export function EventosProfesionalesScreen({ onBack }) {
       <SalonButton title={saving ? 'Guardando…' : 'Guardar'} variant="heroGold" fullWidth disabled={saving} onPress={() => void saveEvento()} />
       <SalonButton title="Cancelar" variant="outlineGray" fullWidth style={{ marginTop: spacing.sm }} onPress={() => { setEditing(false); setForm(emptyEvento()); }} />
     </View>
+  );
+
+  const body = editing ? (
+    <KeyboardAvoidingView
+      style={styles.keyboardWrap}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={keyboardVerticalOffset}
+    >
+      <ScrollView
+        style={styles.formScroll}
+        contentContainerStyle={styles.formScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+      >
+        {formContent}
+      </ScrollView>
+    </KeyboardAvoidingView>
   ) : tab === 'eventos' ? (
     <>
       <SalonButton title="Nuevo evento" variant="heroGold" fullWidth onPress={() => { setForm(emptyEvento()); setEditing(true); }} />
@@ -260,6 +284,9 @@ function createStyles(c) {
   return StyleSheet.create({
     shell: { flex: 1 },
     bodyPad: { flex: 1 },
+    keyboardWrap: { flex: 1 },
+    formScroll: { flex: 1 },
+    formScrollContent: { paddingBottom: spacing.xl * 4 },
     tabs: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
     tab: { flex: 1, paddingVertical: 10, borderRadius: radii.sm, borderWidth: 1, borderColor: c.cardBorder, alignItems: 'center' },
     tabOn: { borderColor: c.primary, backgroundColor: c.surfaceMuted },

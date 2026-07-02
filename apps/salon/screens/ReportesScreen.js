@@ -21,7 +21,7 @@ import { Calendar, FileText, Printer, Search, X, ChevronRight } from 'lucide-rea
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase, getSalonSessionProfile, isSalonGlobalAdmin } from '@appsalon/shared-config';
+import { db, supabase, getSalonSessionProfile, isSalonGlobalAdmin, filterRowsBySucursal, getSalonBranchDisplayName } from '@appsalon/shared-config';
 import { getArticuloTipo } from '../../../shared/config/inventarioMeta.js';
 import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
@@ -62,22 +62,6 @@ function filterByRange(rows, startIso, endIso) {
     if (!raw) return true;
     const t = new Date(raw).getTime();
     return t >= new Date(startIso).getTime() && t <= new Date(endIso).getTime();
-  });
-}
-
-function rowSucursalId(row) {
-  return row?.sucursal_id ?? row?.creado_en_sucursal_id ?? null;
-}
-
-/** Filtra filas con sucursal_id (o creado_en_sucursal_id). Datos legacy sin sucursal cuentan como matriz. */
-function filterBySucursal(rows, sucursalId, { matrizId = null } = {}) {
-  if (!sucursalId) return rows || [];
-  return (rows || []).filter((row) => {
-    const sid = rowSucursalId(row);
-    if (sid == null || sid === '') {
-      return matrizId != null && String(sucursalId) === String(matrizId);
-    }
-    return String(sid) === String(sucursalId);
   });
 }
 
@@ -208,7 +192,7 @@ async function fetchCajaReport(startIso, endIso, options = {}) {
     return false;
   };
 
-  const cajasFiltradas = filterBySucursal((cajas || []).filter(inRange), options.sucursalId, {
+  const cajasFiltradas = filterRowsBySucursal((cajas || []).filter(inRange), options.sucursalId, {
     matrizId: options.matrizId,
   });
   const cajaSessions = [];
@@ -373,7 +357,7 @@ async function fetchInventarioHistorialRows(inventarioId, startIso, endIso, prod
     fromDay,
     toDay,
   );
-  const lotesScoped = filterBySucursal(lotes || [], options.sucursalId, { matrizId: options.matrizId });
+  const lotesScoped = filterRowsBySucursal(lotes || [], options.sucursalId, { matrizId: options.matrizId });
   const { data: devAll, error: dErr } = await db.devoluciones.getByProducto(inventarioId);
   const devFiltered = filterByRange(devAll || [], startIso, endIso);
   let { data: current, error: cErr } = await db.inventario.getById(inventarioId);
@@ -633,7 +617,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       if (options.sucursalId) {
         metaRows = metaRows.filter((m) => {
           if (String(m?.alcance || '').toLowerCase() === 'global') return false;
-          return filterBySucursal([m], options.sucursalId, { matrizId: options.matrizId }).length > 0;
+          return filterRowsBySucursal([m], options.sucursalId, { matrizId: options.matrizId }).length > 0;
         });
       } else {
         const { data: meta } = await db.metas.getGlobalMontoActiva();
@@ -671,7 +655,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
     }
     case 'pedidos': {
       const { data, error } = await db.orders.getAll();
-      const scoped = filterBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
+      const scoped = filterRowsBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
       const filtered = filterByRange(scoped, startIso, endIso);
       const rows = filtered.map(enrichPedidoRow);
       const totalQ = filtered.reduce((s, r) => s + Number(r.total_amount || 0), 0);
@@ -713,7 +697,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       const { data, error } = await db.clientes.getAll();
       let rows = filterByRange(data || [], startIso, endIso);
       if (options.sucursalId) {
-        rows = filterBySucursal(rows, options.sucursalId, { matrizId: options.matrizId });
+        rows = filterRowsBySucursal(rows, options.sucursalId, { matrizId: options.matrizId });
       }
       if (options.clientesModo === 'nuevos') {
         rows = rows.filter((r) => String(r?.categoria || '').toLowerCase().includes('nuevo'));
@@ -729,7 +713,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
     }
     case 'agenda': {
       const { data, error } = await db.citas.getByDateRange(startIso, endIso);
-      let rows = filterBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
+      let rows = filterRowsBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
       const modo = options.agendaModo || 'general';
       const cliSel = options.agendaCliente;
 
@@ -796,7 +780,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
       if (errVen) {
         return { rows: ficha, error: errVen, summary: 'Error al cargar ventas' };
       }
-      const ventasScoped = filterBySucursal(ventasData || [], options.sucursalId, { matrizId: options.matrizId });
+      const ventasScoped = filterRowsBySucursal(ventasData || [], options.sucursalId, { matrizId: options.matrizId });
       const raw = ventasScoped.filter((r) => String(r?.cliente_id ?? '') === String(cliFresh.id));
       const totalMonto = raw.reduce((s, r) => s + montoVenta(r), 0);
       const ventasRows = raw.map(enrichVentaRow);
@@ -827,7 +811,7 @@ async function fetchRowsByType(typeId, startIso, endIso, options = {}) {
         return { rows: [], error: null, summary: 'Sin empleado seleccionado' };
       }
       const { data, error } = await db.ventas.getByRangoFechas(startIso, endIso);
-      const scoped = filterBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
+      const scoped = filterRowsBySucursal(data || [], options.sucursalId, { matrizId: options.matrizId });
       const raw = scoped.filter((r) => String(r?.vendedor_id ?? '') === String(emp.id));
       const totalMonto = raw.reduce((s, r) => s + montoVenta(r), 0);
       const rows = raw.map(enrichVentaRow);
@@ -1093,6 +1077,15 @@ export function ReportesScreen({ onBack }) {
 
   const sessionProfile = getSalonSessionProfile();
   const isGlobalAdmin = isSalonGlobalAdmin(sessionProfile?.role);
+  const branchReportSucursalId = sessionProfile?.sucursal_id || null;
+  const branchReportSucursalNombre =
+    sessionProfile?.sucursal_nombre || getSalonBranchDisplayName(sessionProfile) || 'Sucursal';
+
+  const reportTypesVisible = useMemo(
+    () => REPORT_TYPES.filter((t) => isGlobalAdmin || !REPORT_TYPES_GLOBAL_ONLY.has(t.id)),
+    [isGlobalAdmin],
+  );
+
   const matrizSucursalId = useMemo(
     () => reportSucursales.find((s) => s.es_matriz)?.id || reportSucursales[0]?.id || null,
     [reportSucursales],
@@ -1101,6 +1094,9 @@ export function ReportesScreen({ onBack }) {
     if (!reportSucursalId) return null;
     return reportSucursales.find((s) => String(s.id) === String(reportSucursalId))?.nombre || 'Sucursal';
   }, [reportSucursalId, reportSucursales]);
+
+  const effectiveReportSucursalId = isGlobalAdmin ? reportSucursalId : branchReportSucursalId;
+  const effectiveReportSucursalNombre = isGlobalAdmin ? reportSucursalNombre : branchReportSucursalNombre;
 
   const refreshReportList = useCallback(async () => {
     const list = await loadReportes();
@@ -1220,7 +1216,7 @@ export function ReportesScreen({ onBack }) {
   }, [typeId, agendaModo, agendaClienteSearch]);
 
   useEffect(() => {
-    if (!modalOpen || !isGlobalAdmin) return;
+    if (!modalOpen) return;
     let cancelled = false;
     void db.sucursales.listActivas().then(({ data, error }) => {
       if (cancelled || error) return;
@@ -1229,7 +1225,14 @@ export function ReportesScreen({ onBack }) {
     return () => {
       cancelled = true;
     };
-  }, [modalOpen, isGlobalAdmin]);
+  }, [modalOpen]);
+
+  useEffect(() => {
+    if (isGlobalAdmin) return;
+    if (REPORT_TYPES_GLOBAL_ONLY.has(typeId)) {
+      setTypeId('caja');
+    }
+  }, [isGlobalAdmin, typeId]);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
   const selected = REPORT_TYPES.find((x) => x.id === typeId);
@@ -1284,8 +1287,8 @@ export function ReportesScreen({ onBack }) {
       clienteVentas: clienteVentasSelected,
       agendaModo,
       agendaCliente: agendaClienteSelected,
-      sucursalId: isGlobalAdmin ? reportSucursalId : null,
-      sucursalNombre: isGlobalAdmin ? reportSucursalNombre : null,
+      sucursalId: effectiveReportSucursalId,
+      sucursalNombre: effectiveReportSucursalNombre,
       matrizId: matrizSucursalId,
     };
     const { rows, error, summary, cajaSessions } = await fetchRowsByType(typeId, startIso, endIso, options);
@@ -1306,8 +1309,10 @@ export function ReportesScreen({ onBack }) {
       rows,
       cajaSessions: cajaSessions || null,
       summary,
-      sucursalId: reportSucursalId || null,
-      sucursalLabel: reportSucursalId ? reportSucursalNombre : 'Todas (consolidado)',
+      sucursalId: effectiveReportSucursalId || null,
+      sucursalLabel: effectiveReportSucursalId
+        ? effectiveReportSucursalNombre
+        : 'Todas (consolidado)',
       inventarioModo: typeId === 'inventario' ? inventarioModo : undefined,
       inventarioProductoId:
         typeId === 'inventario' && inventarioModo === 'historial_producto'
@@ -1330,7 +1335,11 @@ export function ReportesScreen({ onBack }) {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Reportes"
-        subtitle="Generá reportes por rango de fechas y luego imprimilos."
+        subtitle={
+          isGlobalAdmin
+            ? 'Generá reportes por rango de fechas y luego imprimilos.'
+            : `Reportes · ${branchReportSucursalNombre}`
+        }
         onBack={onBack}
         disableBodyScroll
         bottomPadding={0}
@@ -1430,7 +1439,7 @@ export function ReportesScreen({ onBack }) {
             >
               <Text style={styles.fieldLbl}>Tipo de reporte</Text>
               <View style={styles.typeGrid}>
-                {REPORT_TYPES.map((t) => {
+                {reportTypesVisible.map((t) => {
                   const on = t.id === typeId;
                   return (
                     <TouchableOpacity
@@ -1449,6 +1458,13 @@ export function ReportesScreen({ onBack }) {
                   );
                 })}
               </View>
+
+              {!isGlobalAdmin ? (
+                <Text style={[subStyles.muted, { marginBottom: spacing.md, fontSize: 12 }]}>
+                  Los datos incluyen solo {branchReportSucursalNombre}: caja, ventas, pedidos, agenda, inventario
+                  local y clientes de esta sucursal.
+                </Text>
+              ) : null}
 
               <Text style={styles.fieldLbl}>Rango de fecha</Text>
               <View style={styles.dateRow}>
