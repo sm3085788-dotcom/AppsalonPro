@@ -1,12 +1,13 @@
 'use client';
 
 import { createBrowserClient } from '@supabase/ssr';
-import { env } from '@/lib/env';
+import { getBrowserSupabaseCredentials } from '@/lib/supabase/browser-config';
 
 /**
  * Cliente Supabase para componentes de cliente (browser).
- * Reutiliza la sesion SSR via cookies gestionadas por @supabase/ssr.
+ * Usa config inyectada desde el servidor (runtime) cuando el build no trae NEXT_PUBLIC_*.
  */
 export function createClient() {
-  return createBrowserClient(env.supabaseUrl, env.supabaseAnonKey);
+  const { url, anonKey } = getBrowserSupabaseCredentials();
+  return createBrowserClient(url, anonKey);
 }

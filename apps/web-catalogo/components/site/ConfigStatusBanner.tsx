@@ -1,11 +1,12 @@
-import { isSupabaseConfigured } from '@/lib/env';
-
 /**
  * Aviso global cuando la web está desplegada sin Supabase (modo demo).
- * Desaparece automáticamente al configurar variables en Vercel.
  */
-export function ConfigStatusBanner() {
-  if (isSupabaseConfigured) return null;
+export function ConfigStatusBanner({
+  configured,
+}: {
+  configured: boolean;
+}) {
+  if (configured) return null;
 
   return (
     <div

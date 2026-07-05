@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { User2, LogOut } from 'lucide-react';
 import { BranchSelect } from '@/components/branch/BranchSelect';
 import { createClient } from '@/lib/supabase/client';
-import { isSupabaseConfigured } from '@/lib/env';
+import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { useRouter } from 'next/navigation';
 
 const NAV = [
@@ -22,9 +22,10 @@ export function SiteHeader({
   userDisplayName?: string | null;
 }) {
   const router = useRouter();
+  const { configured: supabaseConfigured } = useSupabaseConfig();
 
   const onLogout = async () => {
-    if (!isSupabaseConfigured) return;
+    if (!supabaseConfigured) return;
     await createClient().auth.signOut();
     router.refresh();
   };

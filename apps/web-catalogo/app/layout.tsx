@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { BranchProvider } from "@/components/branch/BranchContext";
+import { SupabaseConfigProvider } from "@/components/supabase/SupabaseConfigProvider";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { ConfigStatusBanner } from "@/components/site/ConfigStatusBanner";
 import { listBranches } from "@/lib/data/branches";
 import { getCurrentUser, getClienteDisplayName } from "@/lib/auth";
+import { getPublicSupabaseConfig } from "@/lib/supabase/public-config";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -36,12 +38,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [branches, user, displayName] = await Promise.all([
+  const [branches, user, displayName, supabaseConfig] = await Promise.all([
     listBranches(),
     getCurrentUser(),
     getCurrentUser().then((u) =>
       u ? getClienteDisplayName(u.id, u) : Promise.resolve(null),
     ),
+    Promise.resolve(getPublicSupabaseConfig()),
   ]);
 
   return (
@@ -59,15 +62,17 @@ export default async function RootLayout({
           <div className="glow-cream absolute top-1/3 -right-40 h-[520px] w-[520px]" />
           <div className="glow-gold absolute bottom-0 -left-40 h-[480px] w-[480px] opacity-70" />
         </div>
-        <BranchProvider branches={branches}>
-          <ConfigStatusBanner />
-          <SiteHeader
-            userEmail={user?.email ?? null}
-            userDisplayName={displayName}
-          />
-          <main className="flex-1">{children}</main>
-          <SiteFooter branches={branches} />
-        </BranchProvider>
+        <SupabaseConfigProvider config={supabaseConfig}>
+          <BranchProvider branches={branches}>
+            <ConfigStatusBanner configured={supabaseConfig.configured} />
+            <SiteHeader
+              userEmail={user?.email ?? null}
+              userDisplayName={displayName}
+            />
+            <main className="flex-1">{children}</main>
+            <SiteFooter branches={branches} />
+          </BranchProvider>
+        </SupabaseConfigProvider>
       </body>
     </html>
   );

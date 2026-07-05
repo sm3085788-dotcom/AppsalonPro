@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2, Mail, Lock, User2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { isSupabaseConfigured } from '@/lib/env';
+import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { DemoBanner } from '@/components/ui/DemoBanner';
 import { syncClienteFichaAction } from '@/app/cuenta/actions';
 import { splitFullName } from '@/lib/clientDisplayName';
@@ -39,6 +39,7 @@ async function afterAuth(router: ReturnType<typeof useRouter>, redirectTo: strin
 
 export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
   const router = useRouter();
+  const { configured: supabaseConfigured } = useSupabaseConfig();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!isSupabaseConfigured) {
+    if (!supabaseConfigured) {
       setError('Autenticación no disponible en modo demo.');
       return;
     }
@@ -75,7 +76,7 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
       title="Bienvenida de vuelta"
       subtitle="Ingresa para gestionar tus citas y pedidos."
     >
-      {!isSupabaseConfigured && (
+      {!supabaseConfigured && (
         <DemoBanner message="Supabase no está configurado: el login está deshabilitado en modo demo." />
       )}
       <form onSubmit={onSubmit} className="space-y-3">
@@ -112,6 +113,7 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
 
 export function RegisterForm() {
   const router = useRouter();
+  const { configured: supabaseConfigured } = useSupabaseConfig();
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -124,7 +126,7 @@ export function RegisterForm() {
     e.preventDefault();
     setError(null);
     setInfo(null);
-    if (!isSupabaseConfigured) {
+    if (!supabaseConfigured) {
       setError('Registro no disponible en modo demo.');
       return;
     }
@@ -188,7 +190,7 @@ export function RegisterForm() {
       title="Crea tu cuenta"
       subtitle="Regístrate con tu nombre real para que el salón te identifique."
     >
-      {!isSupabaseConfigured && (
+      {!supabaseConfigured && (
         <DemoBanner message="Supabase no está configurado: el registro está deshabilitado en modo demo." />
       )}
       <form onSubmit={onSubmit} className="space-y-3">

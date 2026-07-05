@@ -14,7 +14,9 @@ Tienes dos URLs que responden hoy:
 | URL | Uso recomendado |
 |-----|-----------------|
 | `https://appsalon-pro-web-catalogo.vercel.app` | **Usar esta** (la app Clientes ya apunta aquí) |
-| `https://web-catalogo.vercel.app` | Proyecto alterno (v0); no uses dos a la vez |
+| `https://web-catalogo.vercel.app` | Proyecto alterno (v0); **mismas 3 variables Supabase** si lo sigues usando |
+
+Si abres `web-catalogo.vercel.app` y el login dice "modo demo", ese proyecto Vercel necesita sus propias variables (no hereda las del otro dominio).
 
 En Vercel Dashboard confirma que el proyecto ligado a GitHub tiene:
 
