@@ -10,6 +10,7 @@ import { AppStoreButtons } from '@/components/site/AppStoreButtons';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
 import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
 import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
+import { GiftCardSection } from '@/components/home/GiftCardSection';
 import { getServices } from '@/lib/data/catalog';
 
 export default async function HomePage() {
@@ -132,20 +133,20 @@ export default async function HomePage() {
 
       {/* ── Galería del salón ──────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
-        <div className="mb-12 flex items-end justify-between border-b border-border pb-6">
-          <div>
-            <p className="eyebrow">El salón</p>
-            <h2 className="mt-3 text-balance text-3xl font-light text-cream sm:text-4xl">
-              Nuestro mundo en imágenes
-            </h2>
+          <div className="mb-12 flex items-end justify-between border-b border-border pb-6">
+            <div>
+              <p className="eyebrow">El salón</p>
+              <h2 className="mt-3 text-balance text-3xl font-light text-cream sm:text-4xl">
+                Nuestro mundo en imágenes
+              </h2>
+            </div>
+            <Link
+              href="/servicios"
+              className="link-underline hidden text-[13px] font-light uppercase tracking-[0.18em] text-muted hover:text-cream sm:inline"
+            >
+              Agenda tu visita
+            </Link>
           </div>
-          <Link
-            href="/servicios"
-            className="link-underline hidden text-[13px] font-light uppercase tracking-[0.18em] text-muted hover:text-cream sm:inline"
-          >
-            Agenda tu visita
-          </Link>
-        </div>
 
         {/* Mosaico editorial: mezcla de retrato y paisaje */}
         <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
@@ -198,6 +199,28 @@ export default async function HomePage() {
               Tratamiento de spa
             </figcaption>
           </figure>
+
+          <figure className="group relative overflow-hidden rounded-[24px] border border-border">
+            <div className="media-3-4 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-5.png"
+                alt="Detalle de productos premium del salón"
+                className="transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+          </figure>
+
+          <figure className="group relative overflow-hidden rounded-[24px] border border-border">
+            <div className="media-3-4 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-6.png"
+                alt="Cabina privada de tratamiento especializado"
+                className="transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+          </figure>
         </div>
       </section>
 
@@ -238,6 +261,9 @@ export default async function HomePage() {
       </section>
 
       <ValuesOrbitSection />
+
+      {/* ── Tarjeta de regalo recargable ─────────────── */}
+      <GiftCardSection />
 
       {/* ── Ambiente editorial ─────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
