@@ -39,6 +39,15 @@ Copia los valores desde tu `apps/web-catalogo/.env.local` (los mismos `NEXT_PUBL
 
 Deben ser **el mismo proyecto Supabase** que `EXPO_PUBLIC_SUPABASE_URL` en Salón y Clientes.
 
+**Integración Vercel ↔ Supabase:** si instalaste el marketplace, puede inyectar nombres distintos. El código web también acepta:
+
+| Integración Vercel | Equivalente manual |
+|--------------------|--------------------|
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| `SUPABASE_SECRET_KEY` | `SUPABASE_SERVICE_ROLE_KEY` |
+
+Confirma que la URL apunte a **tu** proyecto (no uno vacío creado por la integración). Tras cualquier cambio: **Redeploy**.
+
 ### Recomendadas (pagos y reservas completas)
 
 | Variable | Notas |
