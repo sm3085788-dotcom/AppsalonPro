@@ -11,7 +11,6 @@ import { ServiceCard } from '@/components/catalog/ServiceCard';
 import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
 import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
 import { GiftCardSection } from '@/components/home/GiftCardSection';
-import { PromotionCard } from '@/components/home/PromotionCard';
 import { getServices } from '@/lib/data/catalog';
 
 export default async function HomePage() {
@@ -78,21 +77,7 @@ export default async function HomePage() {
         </div>
 
         <div className="relative lg:col-span-6">
-          <div className="space-y-6">
-            <HeroEliteCarousel />
-            <PromotionCard
-              variant="hero"
-              badge="Producto Exclusivo"
-              title="Colección Premium"
-              description="Descubre nuestros productos premium de autor. Fórmulas exclusivas para resultados extraordinarios."
-              imageSrc="/images/promotion-product.png"
-              imageAlt="Colección premium de productos Andreas"
-              cta={{
-                label: "Explorar colección",
-                href: "/productos",
-              }}
-            />
-          </div>
+          <HeroEliteCarousel />
         </div>
       </section>
 
@@ -236,23 +221,6 @@ export default async function HomePage() {
               />
             </div>
           </figure>
-        </div>
-
-        {/* Promoción de servicios */}
-        <div className="mt-12">
-          <PromotionCard
-            variant="gallery"
-            badge="Experiencia Premium"
-            title="Servicios de Autor"
-            subtitle="Transformación garantizada"
-            description="Cada servicio es personalizado. Nuestros maestros estilistas adaptan cada tratamiento a tu cabello y estilo de vida para resultados excepcionales que duran."
-            imageSrc="/images/promotion-services.png"
-            imageAlt="Servicios premium de diseño y transformación"
-            cta={{
-              label: "Reservar servicio",
-              href: "/reservar",
-            }}
-          />
         </div>
       </section>
 
