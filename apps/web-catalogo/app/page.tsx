@@ -17,8 +17,8 @@ export default async function HomePage() {
   const services = (await getServices()).slice(0, 4);
 
   return (
-    <div className="bg-white">
-      {/* ── Hero editorial (Fondo blanco) ─────────────────────────────── */}
+    <div>
+      {/* ── Hero editorial ─────────────────────────────── */}
       <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-12 lg:gap-8 lg:px-8 lg:pb-28 lg:pt-24">
         <div className="lg:col-span-6">
           <p className="eyebrow">Salón premium · Belleza de autor</p>
@@ -81,8 +81,8 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Marquee editorial (Fondo negro) ──────────────────────────── */}
-      <section className="relative overflow-hidden border-y border-gold/10 bg-black py-5">
+      {/* ── Marquee editorial ──────────────────────────── */}
+      <section className="relative overflow-hidden border-y border-border py-5">
         <div className="marquee gap-10">
           {Array.from({ length: 2 }).map((_, i) => (
             <div key={i} className="flex shrink-0 items-center gap-10 pr-10">
@@ -96,7 +96,7 @@ export default async function HomePage() {
               ].map((word) => (
                 <span
                   key={word}
-                  className="flex items-center gap-10 text-lg font-light uppercase tracking-[0.22em] text-white"
+                  className="flex items-center gap-10 text-lg font-light uppercase tracking-[0.22em] text-pearl-dim"
                 >
                   {word}
                   <span className="h-1 w-1 rounded-full bg-gold" />
@@ -107,8 +107,8 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Cifras / confianza (Fondo blanco) ─────────────────────────── */}
-      <section className="bg-white mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
+      {/* ── Cifras / confianza ─────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
           {[
             { k: '19+', v: 'Años de oficio' },
@@ -131,18 +131,18 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Galería del salón (Fondo negro) ──────────────────────────── */}
-      <section className="bg-black mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
-          <div className="mb-12 flex items-end justify-between border-b border-gold/10 pb-6">
+      {/* ── Galería del salón ──────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
+          <div className="mb-12 flex items-end justify-between border-b border-border pb-6">
             <div>
-              <p className="eyebrow text-gold">El salón</p>
-              <h2 className="mt-3 text-balance text-3xl font-light text-white sm:text-4xl">
+              <p className="eyebrow">El salón</p>
+              <h2 className="mt-3 text-balance text-3xl font-light text-cream sm:text-4xl">
                 Nuestro mundo en imágenes
               </h2>
             </div>
             <Link
               href="/servicios"
-              className="link-underline hidden text-[13px] font-light uppercase tracking-[0.18em] text-gold hover:text-gold-soft sm:inline"
+              className="link-underline hidden text-[13px] font-light uppercase tracking-[0.18em] text-muted hover:text-cream sm:inline"
             >
               Agenda tu visita
             </Link>
@@ -202,8 +202,8 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Misión & Visión (Fondo blanco) ────────────────────────────── */}
-      <section className="bg-white mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
+      {/* ── Misión & Visión ────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
         <div className="grid gap-6 lg:grid-cols-2">
           {[
             {
@@ -238,17 +238,13 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <div className="bg-black pt-28">
-        <ValuesOrbitSection />
-      </div>
+      <ValuesOrbitSection />
 
-      {/* ── Tarjeta de regalo recargable (Fondo blanco) ─────────────── */}
-      <div className="bg-white pt-12">
-        <GiftCardSection />
-      </div>
+      {/* ── Tarjeta de regalo recargable ─────────────── */}
+      <GiftCardSection />
 
-      {/* ── Ambiente editorial (Fondo negro) ─────────────────────────── */}
-      <section className="bg-black mx-auto max-w-7xl px-4 pb-12 pt-12 sm:px-6 lg:px-8">
+      {/* ── Ambiente editorial ─────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-16">
           <figure className="group relative order-2 overflow-hidden rounded-[28px] border border-border lg:order-1 lg:col-span-5">
             <div className="media-3-4">
@@ -257,19 +253,19 @@ export default async function HomePage() {
             </div>
           </figure>
           <div className="order-1 lg:order-2 lg:col-span-7">
-            <p className="eyebrow text-gold">El espacio</p>
-            <h2 className="mt-5 text-balance text-3xl font-light leading-snug text-white sm:text-4xl lg:text-5xl">
+            <p className="eyebrow">El espacio</p>
+            <h2 className="mt-5 text-balance text-3xl font-light leading-snug text-cream sm:text-4xl lg:text-5xl">
               Un refugio diseñado para
               <span className="text-gold"> sentirte en casa</span>
             </h2>
-            <p className="mt-6 max-w-lg text-base font-light leading-relaxed text-white/70">
+            <p className="mt-6 max-w-lg text-base font-light leading-relaxed text-muted">
               Latón cálido, mármol crema y luz tenue. Cada sucursal comparte un
               mismo lenguaje de calma y precisión, para que el único protagonista
               seas tú.
             </p>
             <Link
               href="/servicios"
-              className="link-underline mt-8 inline-block text-[13px] font-light uppercase tracking-[0.18em] text-gold hover:text-gold-soft"
+              className="link-underline mt-8 inline-block text-[13px] font-light uppercase tracking-[0.18em] text-cream"
             >
               Descubre el catálogo
             </Link>
@@ -277,24 +273,24 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Descarga la app (Fondo blanco) ────────────────────────────── */}
+      {/* ── Descarga la app ────────────────────────────── */}
       <section
         id="descargar"
-        className="bg-white mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 lg:px-8"
+        className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 lg:px-8"
       >
-        <div className="relative overflow-hidden rounded-[32px] border border-gold/10 bg-white p-6 sm:p-10">
-          <div className="glow-gold pointer-events-none absolute -right-20 -top-20 h-80 w-80 opacity-30" />
-          <div className="glow-gold pointer-events-none absolute -left-20 bottom-0 h-72 w-72 opacity-30" />
+        <div className="relative overflow-hidden rounded-[32px] border border-border bg-surface p-6 sm:p-10">
+          <div className="glow-cream pointer-events-none absolute -right-20 -top-20 h-80 w-80" />
+          <div className="glow-gold pointer-events-none absolute -left-20 bottom-0 h-72 w-72 opacity-60" />
 
           <div className="relative grid items-center gap-8 lg:grid-cols-2 lg:gap-10">
             <div className="relative">
               <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs uppercase tracking-[0.25em] text-gold">
                 <Zap className="h-3.5 w-3.5" strokeWidth={1.5} /> App móvil
               </span>
-              <h2 className="mt-7 text-balance text-3xl font-light leading-tight text-black sm:text-4xl">
+              <h2 className="mt-7 text-balance text-3xl font-light leading-tight text-cream sm:text-4xl">
                 Llévate AppSalon Pro contigo
               </h2>
-              <p className="mt-5 max-w-md text-sm font-light leading-relaxed text-black/70">
+              <p className="mt-5 max-w-md text-sm font-light leading-relaxed text-muted">
                 Gestiona tus citas, premios ANDREAS, pedidos y mensajes con el
                 salón. Explora servicios y tienda, descubre Tendencias con looks
                 e inspiración del salón en video, y recibe notificaciones en
@@ -308,7 +304,7 @@ export default async function HomePage() {
                 ].map((item) => (
                   <li
                     key={item}
-                    className="flex items-center gap-3 text-sm font-light text-black/70"
+                    className="flex items-center gap-3 text-sm font-light text-pearl-dim"
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-gold" />
                     {item}

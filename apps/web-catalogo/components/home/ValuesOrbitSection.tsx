@@ -45,13 +45,13 @@ const VALUES: ValueItem[] = [
 
 export function ValuesOrbitSection() {
   return (
-    <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6 lg:px-8">
       <div className="grid items-center gap-8 lg:grid-cols-[1fr_1.1fr] lg:gap-12">
         <div className="order-2 lg:order-1">
-          <h2 className="text-balance text-2xl font-light text-white sm:text-3xl">
+          <h2 className="text-balance text-2xl font-light text-cream sm:text-3xl">
             Valores &amp; principios
           </h2>
-          <p className="mt-3 max-w-sm text-sm font-light leading-relaxed text-white/70">
+          <p className="mt-3 max-w-sm text-sm font-light leading-relaxed text-muted">
             Un círculo virtuoso: cada valor refuerza al siguiente en cada visita,
             en cada conversación y en cada detalle de nuestro oficio.
           </p>
