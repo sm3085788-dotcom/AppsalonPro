@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  /* AppSalon Pro — paleta editorial de lujo (dark mode) */
-  --background: #0e0e0f;
-  --surface: #161617;
-  --surface-2: #1c1c1e;
-  --foreground: #f5ead2;
-  --muted: #a8a29a;
+  /* AppSalon Pro — paleta editorial de lujo (light mode) */
+  --background: #ffffff;
+  --surface: #f9f8f6;
+  --surface-2: #f3f1ee;
+  --foreground: #1a1a1a;
+  --muted: #757570;
 
-  /* Bordes hairline: blanco al 5% para un look editorial sin cajas pesadas */
-  --border: rgba(255, 255, 255, 0.05);
-  --border-strong: rgba(255, 255, 255, 0.1);
+  /* Bordes hairline: negro al 5% para un look editorial sin cajas pesadas */
+  --border: rgba(0, 0, 0, 0.05);
+  --border-strong: rgba(0, 0, 0, 0.1);
 
   --gold: #d4af37;
   --gold-soft: #e6c97a;
@@ -19,8 +19,8 @@
 
   /* Tonos blancos / perla para máximo contraste editorial */
   --white: #ffffff;
-  --pearl: #f7f6f3;
-  --pearl-dim: rgba(255, 255, 255, 0.72);
+  --pearl: #1a1a1a;
+  --pearl-dim: rgba(0, 0, 0, 0.72);
 
   --radius: 1rem;
 }

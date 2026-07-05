@@ -10,6 +10,7 @@ import { AppStoreButtons } from '@/components/site/AppStoreButtons';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
 import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
 import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
+import { GiftCardSection } from '@/components/home/GiftCardSection';
 import { getServices } from '@/lib/data/catalog';
 
 export default async function HomePage() {
@@ -238,6 +239,9 @@ export default async function HomePage() {
       </section>
 
       <ValuesOrbitSection />
+
+      {/* ── Tarjeta de regalo recargable ─────────────── */}
+      <GiftCardSection />
 
       {/* ── Ambiente editorial ─────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
