@@ -199,6 +199,28 @@ export default async function HomePage() {
               Tratamiento de spa
             </figcaption>
           </figure>
+
+          <figure className="group relative overflow-hidden rounded-[24px] border border-border">
+            <div className="media-3-4 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-5.png"
+                alt="Detalle de productos premium del salón"
+                className="transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+          </figure>
+
+          <figure className="group relative overflow-hidden rounded-[24px] border border-border">
+            <div className="media-3-4 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/salon-6.png"
+                alt="Cabina privada de tratamiento especializado"
+                className="transition-transform duration-700 ease-out group-hover:scale-105"
+              />
+            </div>
+          </figure>
         </div>
       </section>
 
