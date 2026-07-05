@@ -6,7 +6,7 @@ export function HeroCover({ children }: { children: ReactNode }) {
     <section className="relative overflow-hidden border-b border-border/60">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[url('/images/hero-salon.png')] bg-cover bg-center opacity-[0.14]"
+        className="pointer-events-none absolute inset-0 bg-[url('/images/hero-salon.png')] bg-cover bg-center opacity-[0.44]"
       />
       <div
         aria-hidden

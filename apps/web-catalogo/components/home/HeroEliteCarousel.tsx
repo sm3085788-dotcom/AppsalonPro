@@ -42,10 +42,10 @@ export function HeroEliteCarousel() {
   }, [n]);
 
   return (
-    <div className="relative mx-auto w-full max-w-md">
-      <div className="glow-gold pointer-events-none absolute -inset-10 -z-10" />
+    <div className="relative mx-auto w-full max-w-[20.125rem] sm:max-w-[23rem] md:max-w-[27.625rem] lg:max-w-[32.2rem]">
+      <div className="glow-gold pointer-events-none absolute -inset-7 -z-10 sm:-inset-10" />
 
-      <div className="relative aspect-[3/4] w-full">
+      <div className="relative aspect-[3/4] w-full max-h-[min(83vw,23rem)] sm:max-h-none">
         {SLIDES.map((slide, i) => {
           const pos = (i - active + n) % n;
           const isFront = pos === 0;
@@ -54,7 +54,7 @@ export function HeroEliteCarousel() {
           return (
             <figure
               key={slide.src}
-              className="grain group absolute inset-0 overflow-hidden rounded-[28px] border border-border-strong transition-all duration-700 ease-out"
+              className="grain group absolute inset-0 overflow-hidden rounded-[20px] border border-border-strong transition-all duration-700 ease-out sm:rounded-[28px]"
               style={{
                 zIndex: isFront ? 30 : isNext ? 20 : 10,
                 opacity: isFront ? 1 : isNext ? 0.72 : 0.45,
@@ -74,24 +74,24 @@ export function HeroEliteCarousel() {
                   className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                 />
               </div>
-              <span className="absolute left-5 top-5 z-10 inline-flex items-center gap-2 rounded-full border border-border-strong glass px-3.5 py-1.5 text-[10px] font-light uppercase tracking-[0.24em] text-pearl">
+              <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-border-strong glass px-2.5 py-1 text-[9px] font-light uppercase tracking-[0.2em] text-pearl sm:left-5 sm:top-5 sm:gap-2 sm:px-3.5 sm:py-1.5 sm:text-[10px] sm:tracking-[0.24em]">
                 {slide.badge.includes('Élite') && (
                   <Star className="h-3 w-3 text-gold" strokeWidth={1.5} />
                 )}
                 {slide.badge}
               </span>
-              <figcaption className="absolute bottom-5 left-5 right-5 z-10 flex items-center justify-between rounded-2xl border border-border-strong glass px-5 py-3">
-                <span className="text-xs font-light uppercase tracking-[0.2em] text-muted">
+              <figcaption className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between rounded-xl border border-border-strong glass px-3 py-2 sm:bottom-5 sm:left-5 sm:right-5 sm:rounded-2xl sm:px-5 sm:py-3">
+                <span className="text-[10px] font-light uppercase tracking-[0.16em] text-muted sm:text-xs sm:tracking-[0.2em]">
                   {slide.caption}
                 </span>
-                <span className="text-xs font-light text-gold">{slide.location}</span>
+                <span className="text-[10px] font-light text-gold sm:text-xs">{slide.location}</span>
               </figcaption>
             </figure>
           );
         })}
       </div>
 
-      <div className="mt-5 flex justify-center gap-2">
+      <div className="mt-3 flex justify-center gap-2 sm:mt-5">
         {SLIDES.map((slide, i) => (
           <button
             key={slide.src}

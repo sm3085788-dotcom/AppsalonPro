@@ -231,8 +231,8 @@ export default async function HomePage() {
       </section>
 
       {/* ── Misión & Visión ────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
-        <div className="grid gap-6 lg:grid-cols-2">
+      <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24 lg:px-8">
+        <div className="mx-auto grid max-w-4xl gap-5 lg:max-w-none lg:grid-cols-2 lg:gap-6">
           {[
             {
               icon: Target,
@@ -249,16 +249,16 @@ export default async function HomePage() {
           ].map(({ icon: Icon, tag, title, desc }) => (
             <article
               key={tag}
-              className="ring-gold-hover relative overflow-hidden rounded-[28px] border border-border bg-surface p-8 sm:p-10"
+              className="ring-gold-hover relative overflow-hidden rounded-[24px] border border-border bg-surface p-6 sm:p-8"
             >
-              <div className="glow-gold pointer-events-none absolute -right-16 -top-16 h-52 w-52 opacity-60" />
-              <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-[11px] uppercase tracking-[0.25em] text-gold">
-                <Icon className="h-3.5 w-3.5" strokeWidth={1.5} /> {tag}
+              <div className="glow-gold pointer-events-none absolute -right-14 -top-14 h-44 w-44 opacity-60" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-gold sm:px-3.5 sm:py-1.5 sm:text-[11px] sm:tracking-[0.25em]">
+                <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" strokeWidth={1.5} /> {tag}
               </span>
-              <h3 className="mt-6 text-balance text-2xl font-light leading-snug text-cream sm:text-3xl">
+              <h3 className="mt-5 text-balance text-xl font-light leading-snug text-cream sm:mt-6 sm:text-2xl">
                 {title}
               </h3>
-              <p className="mt-4 max-w-md text-sm font-light leading-relaxed text-muted">
+              <p className="mt-3 max-w-sm text-xs font-light leading-relaxed text-muted sm:mt-4 sm:max-w-md sm:text-sm">
                 {desc}
               </p>
             </article>
@@ -274,7 +274,7 @@ export default async function HomePage() {
       {/* ── Ambiente editorial ─────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-16">
-          <figure className="group relative order-2 overflow-hidden rounded-[28px] border border-border lg:order-1 lg:col-span-5">
+          <figure className="group relative order-2 mx-auto w-[85%] overflow-hidden rounded-[24px] border border-border lg:order-1 lg:col-span-5 lg:max-w-[85%]">
             <div className="media-3-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/ambiance.png" alt="Interior premium del salón" />
@@ -306,25 +306,25 @@ export default async function HomePage() {
         id="descargar"
         className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 lg:px-8"
       >
-        <div className="relative overflow-hidden rounded-[32px] border border-border bg-surface p-6 sm:p-10">
-          <div className="glow-cream pointer-events-none absolute -right-20 -top-20 h-80 w-80" />
-          <div className="glow-gold pointer-events-none absolute -left-20 bottom-0 h-72 w-72 opacity-60" />
+        <div className="relative mx-auto w-[90%] overflow-hidden rounded-[29px] border border-border bg-surface p-[1.35rem] sm:p-9">
+          <div className="glow-cream pointer-events-none absolute -right-[4.5rem] -top-[4.5rem] h-72 w-72" />
+          <div className="glow-gold pointer-events-none absolute -left-[4.5rem] bottom-0 h-64 w-64 opacity-60" />
 
-          <div className="relative grid items-center gap-8 lg:grid-cols-2 lg:gap-10">
+          <div className="relative grid items-center gap-7 lg:grid-cols-2 lg:gap-9">
             <div className="relative">
-              <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs uppercase tracking-[0.25em] text-gold">
-                <Zap className="h-3.5 w-3.5" strokeWidth={1.5} /> App móvil
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold/5 px-3.5 py-1 text-[11px] uppercase tracking-[0.23em] text-gold">
+                <Zap className="h-3 w-3" strokeWidth={1.5} /> App móvil
               </span>
-              <h2 className="mt-7 text-balance text-3xl font-light leading-tight text-cream sm:text-4xl">
+              <h2 className="mt-6 text-balance text-[1.6875rem] font-light leading-tight text-cream sm:text-[2.025rem]">
                 Llévate AppSalon Pro contigo
               </h2>
-              <p className="mt-5 max-w-md text-sm font-light leading-relaxed text-muted">
+              <p className="mt-4 max-w-md text-[13px] font-light leading-relaxed text-muted">
                 Gestiona tus citas, premios ANDREAS, pedidos y mensajes con el
                 salón. Explora servicios y tienda, descubre Tendencias con looks
                 e inspiración del salón en video, y recibe notificaciones en
                 tiempo real con pagos con tarjeta seguros.
               </p>
-              <ul className="mt-7 space-y-3">
+              <ul className="mt-6 space-y-2.5">
                 {[
                   'Reserva y reprograma en segundos',
                   'Tienda con stock real por sucursal',
@@ -332,25 +332,25 @@ export default async function HomePage() {
                 ].map((item) => (
                   <li
                     key={item}
-                    className="flex items-center gap-3 text-sm font-light text-pearl-dim"
+                    className="flex items-center gap-2.5 text-[13px] font-light text-pearl-dim"
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-gold" />
                     {item}
                   </li>
                 ))}
               </ul>
-              <div className="mt-9">
+              <div className="mt-8 scale-90 origin-left">
                 <AppStoreButtons />
               </div>
             </div>
 
             {/* Trío de teléfonos con distintas pantallas (abanico contenido) */}
-            <div className="relative flex items-center justify-center py-4">
+            <div className="relative flex scale-90 items-center justify-center py-3.5">
               <IphoneMockup
                 src="/images/app-servicios.png"
                 alt="Pantalla de servicios de la app AppSalon Pro"
                 size="sm"
-                className="hidden -mr-16 translate-y-8 -rotate-6 opacity-90 lg:block"
+                className="hidden -mr-14 translate-y-7 -rotate-6 opacity-90 lg:block"
               />
               <IphoneMockup
                 src="/images/app-home.png"
@@ -362,7 +362,7 @@ export default async function HomePage() {
                 src="/images/app-producto.png"
                 alt="Pantalla de producto de la app AppSalon Pro"
                 size="sm"
-                className="hidden -ml-16 translate-y-8 rotate-6 opacity-90 lg:block"
+                className="hidden -ml-14 translate-y-7 rotate-6 opacity-90 lg:block"
               />
             </div>
           </div>
