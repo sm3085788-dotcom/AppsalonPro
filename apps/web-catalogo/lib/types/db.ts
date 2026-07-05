@@ -127,11 +127,19 @@ export interface BookingBroadcast {
 }
 
 /* ── Stripe (checkout) ──────────────────────────────────────────────────── */
-export type CheckoutKind = 'booking' | 'product';
+export type CheckoutKind = 'booking' | 'product' | 'gift_card';
+
+export interface GiftCardPaymentIntentInput {
+  monto: number;
+  paraNombre: string;
+  deNombre: string;
+  mensaje?: string;
+  compradorEmail: string;
+}
 
 export interface CreatePaymentIntentInput {
   kind: CheckoutKind;
-  sucursalId: UUID;
+  sucursalId?: UUID;
   /** Lineas para productos. */
   items?: Array<{ inventarioId: UUID; cantidad: number }>;
   /** Datos de la cita cuando kind === 'booking'. */
@@ -144,6 +152,12 @@ export interface CreatePaymentIntentInput {
     longitud?: number | null;
     direccion?: string | null;
   };
+  /** Tarjeta regalo VIP (guest checkout). */
+  giftCard?: GiftCardPaymentIntentInput;
+}
+
+export interface GiftCardPaymentIntentResult extends PaymentIntentResult {
+  draftId: string | null;
 }
 
 export interface PaymentIntentResult {

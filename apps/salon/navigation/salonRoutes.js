@@ -15,6 +15,7 @@ import {
   ClipboardList,
   Building2,
   CalendarHeart,
+  Gift,
 } from 'lucide-react-native';
 
 /**
@@ -118,6 +119,12 @@ export const SALON_MODULES = [
     Icon: ClipboardList,
   },
   {
+    id: 'tarjetas_regalo',
+    title: 'Tarjetas regalo',
+    subtitle: 'VIP · QR · activación y saldo en sucursal',
+    Icon: Gift,
+  },
+  {
     id: 'sucursales',
     title: 'Sucursales',
     subtitle: 'Crear locales y ver matriz (solo admin global)',
@@ -146,6 +153,7 @@ const MODULE_KEYWORDS = {
   papeleria: ['papeleria', 'factura', 'folio', 'venta', 'ticket'],
   proveedores: ['proveedor', 'compania', 'nit', 'agente'],
   pedidos: ['pedido', 'pedidos', 'tracking', 'compra', 'envio'],
+  tarjetas_regalo: ['tarjeta', 'regalo', 'gift', 'vip', 'qr'],
   sucursales: ['sucursal', 'sucursales', 'local', 'matriz', 'branch'],
 };
 

@@ -139,5 +139,19 @@ async function handleSucceeded(pi: Stripe.PaymentIntent) {
       }),
     });
     if (error) console.error('[webhook] crear cita', error);
+    return;
+  }
+
+  if (meta.kind === 'gift_card') {
+    const { data, error } = await admin.rpc('finalize_gift_card_payment', {
+      p_payment_intent_id: pi.id,
+    });
+    if (error) {
+      console.error('[webhook] gift_card finalize', error);
+      return;
+    }
+    if (!data?.ok) {
+      console.error('[webhook] gift_card finalize', data?.error);
+    }
   }
 }

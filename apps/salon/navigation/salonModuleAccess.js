@@ -10,6 +10,7 @@ export const SUCURSAL_ADMIN_MODULE_IDS = new Set([
   'inventory',
   'papeleria',
   'pedidos',
+  'tarjetas_regalo',
   'reportes',
   'vender',
 ]);

@@ -17,6 +17,7 @@ const hasSupabaseEnv = Boolean(
   process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() &&
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim(),
 );
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
@@ -64,6 +65,7 @@ import { EventosProfesionalesScreen } from './screens/EventosProfesionalesScreen
 import { PapeleriaScreen } from './screens/PapeleriaScreen';
 import { ProveedoresScreen } from './screens/ProveedoresScreen';
 import { PedidosScreen } from './screens/PedidosScreen';
+import { TarjetasRegaloScreen } from './screens/TarjetasRegaloScreen';
 import { SalonModulePlaceholder } from './screens/SalonModulePlaceholder';
 import { ControlPanelScreen } from './screens/ControlPanelScreen';
 import { SucursalesScreen } from './screens/SucursalesScreen';
@@ -114,6 +116,7 @@ const TITLE_ONLY_MODULE_IDS = new Set(['panel']);
 const BADGE_MODULE_IDS = ['agenda', 'cajas', 'clients', 'mensajes', 'inventory'];
 const SALON_MESSAGES_LAST_SEEN_KEY = '@appsalon/salon/mensajes_last_seen_at';
 const SALON_PEDIDOS_LAST_SEEN_KEY = '@appsalon/salon/pedidos_last_seen_at';
+const SALON_GIFT_CARDS_LAST_SEEN_KEY = '@appsalon/salon/gift_cards_last_seen_at';
 const SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY = '@appsalon/salon/marketing_engagement_last_seen_at';
 
 function isPendingCashOrder(order) {
@@ -134,6 +137,7 @@ function SalonAdminShell({ onSignOut, profile }) {
   const [hasNewMensajes, setHasNewMensajes] = useState(false);
   const [mensajesAlertReady, setMensajesAlertReady] = useState(false);
   const [hasNewPedidos, setHasNewPedidos] = useState(false);
+  const [hasNewGiftCards, setHasNewGiftCards] = useState(false);
   const [hasNewMarketing, setHasNewMarketing] = useState(false);
   const [agendaPendientes, setAgendaPendientes] = useState(0);
   const [homeRefreshing, setHomeRefreshing] = useState(false);
@@ -219,6 +223,26 @@ function SalonAdminShell({ onSignOut, profile }) {
     }
   }, []);
 
+  const refreshGiftCardsAlert = useCallback(async () => {
+    try {
+      const lastSeenAt = await AsyncStorage.getItem(SALON_GIFT_CARDS_LAST_SEEN_KEY);
+      const lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+      const { data, error } = await supabase
+        .from('gift_cards')
+        .select('id, emitida_en')
+        .order('emitida_en', { ascending: false })
+        .limit(20);
+      if (error) return;
+      const hasNew = (data || []).some((row) => {
+        const ms = new Date(row.emitida_en).getTime();
+        return Number.isFinite(ms) && ms > lastSeenMs;
+      });
+      setHasNewGiftCards(hasNew);
+    } catch {
+      setHasNewGiftCards(false);
+    }
+  }, []);
+
   const refreshAgendaAlert = useCallback(async () => {
     try {
       const { data, error } = await db.citas.getByEstado('pendiente');
@@ -232,9 +256,10 @@ function SalonAdminShell({ onSignOut, profile }) {
   useEffect(() => {
     refreshMensajesAlert();
     refreshPedidosAlert();
+    refreshGiftCardsAlert();
     refreshAgendaAlert();
     refreshMarketingAlert();
-  }, [refreshMensajesAlert, refreshPedidosAlert, refreshAgendaAlert, refreshMarketingAlert]);
+  }, [refreshMensajesAlert, refreshPedidosAlert, refreshGiftCardsAlert, refreshAgendaAlert, refreshMarketingAlert]);
 
   useEffect(() => {
     configureSalonPushHandler();
@@ -354,6 +379,28 @@ function SalonAdminShell({ onSignOut, profile }) {
     };
   }, [refreshPedidosAlert]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel('salon-home-gift-cards-alert')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'gift_cards' },
+        (payload) => {
+          const row = payload?.new;
+          void showLocalSalonNotification({
+            title: 'Nueva tarjeta regalo',
+            body: `${row?.codigo || 'VIP'} · Q${row?.monto_inicial || ''} para ${row?.para_nombre || 'cliente'}`,
+            data: { module: 'tarjetas_regalo' },
+          });
+          void refreshGiftCardsAlert();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshGiftCardsAlert]);
+
   const openModule = useCallback(async (id) => {
     if (!canOpenSalonModule(id, profile)) {
       Alert.alert('Sin acceso', 'Tu sucursal no tiene permiso para abrir este módulo.');
@@ -368,6 +415,10 @@ function SalonAdminShell({ onSignOut, profile }) {
       setHasNewPedidos(false);
       void AsyncStorage.setItem(SALON_PEDIDOS_LAST_SEEN_KEY, new Date().toISOString());
     }
+    if (id === 'tarjetas_regalo') {
+      setHasNewGiftCards(false);
+      void AsyncStorage.setItem(SALON_GIFT_CARDS_LAST_SEEN_KEY, new Date().toISOString());
+    }
   }, [profile]);
   const onHomeRefresh = useCallback(async () => {
     setHomeRefreshing(true);
@@ -376,6 +427,7 @@ function SalonAdminShell({ onSignOut, profile }) {
       await Promise.all([
         refreshMensajesAlert(),
         refreshPedidosAlert(),
+        refreshGiftCardsAlert(),
         refreshAgendaAlert(),
         refreshMarketingAlert(),
       ]);
@@ -388,7 +440,7 @@ function SalonAdminShell({ onSignOut, profile }) {
     } finally {
       setHomeRefreshing(false);
     }
-  }, [search, refreshMensajesAlert, refreshPedidosAlert, refreshAgendaAlert]);
+  }, [search, refreshMensajesAlert, refreshPedidosAlert, refreshGiftCardsAlert, refreshAgendaAlert]);
 
   const closeModule = useCallback(() => {
     setOpenedModuleId(null);
@@ -485,6 +537,10 @@ function SalonAdminShell({ onSignOut, profile }) {
 
   if (openedModuleId === 'pedidos') {
     return <PedidosScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'tarjetas_regalo') {
+    return <TarjetasRegaloScreen onBack={closeModule} />;
   }
 
   if (openedModuleId === 'panel') {
@@ -609,6 +665,7 @@ function SalonAdminShell({ onSignOut, profile }) {
                   showAlertBell={
                     (m.id === 'mensajes' && mensajesAlertReady && hasNewMensajes) ||
                     (m.id === 'pedidos' && hasNewPedidos) ||
+                    (m.id === 'tarjetas_regalo' && hasNewGiftCards) ||
                     (m.id === 'marketing' && hasNewMarketing)
                   }
                   onPress={() => openModule(m.id)}

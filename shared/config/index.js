@@ -358,3 +358,21 @@ export {
   resolveInventarioCarouselMediaUrl,
   servicioCarouselFallbackUri,
 } from './servicioCarouselFallback.js';
+export {
+  GIFT_CARD_QR_PREFIX,
+  GIFT_CARD_WEB_BASE,
+  normalizeGiftCardCode,
+  buildGiftCardQrPayload,
+  parseGiftCardQrPayload,
+  giftCardPublicUrl,
+  giftCardQrImageUrl,
+  giftCardCodesMatch,
+} from './giftCardQr.js';
+export {
+  lookupGiftCardStaff,
+  listGiftCardsStaff,
+  activateGiftCardAtSalon,
+  verifyGiftCardBirthday,
+  registerGiftCardUse,
+  lookupGiftCardPublic,
+} from './giftCardSalon.js';
