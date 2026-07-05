@@ -19,7 +19,7 @@ export function GiftCardSection() {
   };
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
+    <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8 pb-28">
       <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
         {/* Columna izquierda: Imagen/Visual */}
         <div className="relative flex items-center justify-center">

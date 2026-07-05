@@ -30,7 +30,7 @@ export function SiteHeader({
   };
 
   return (
-    <header className="glass sticky top-0 z-50 border-b border-border">
+    <header className="sticky top-0 z-50 border-b border-gold/10 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
       <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
@@ -43,7 +43,7 @@ export function SiteHeader({
             alt="Andreas · AppSalon Pro"
             className="h-11 w-11 object-contain sm:h-12 sm:w-12"
           />
-          <span className="hidden text-[15px] font-light tracking-[0.32em] text-cream min-[520px]:inline">
+          <span className="hidden text-[15px] font-light tracking-[0.32em] text-black min-[520px]:inline">
             APPSALON <span className="text-gold">PRO</span>
           </span>
         </Link>
@@ -53,7 +53,7 @@ export function SiteHeader({
             <Link
               key={item.href}
               href={item.href}
-              className="link-underline text-[13px] font-light uppercase tracking-[0.18em] text-muted transition-colors hover:text-cream"
+              className="link-underline text-[13px] font-light uppercase tracking-[0.18em] text-black/70 transition-colors hover:text-gold"
             >
               {item.label}
             </Link>
