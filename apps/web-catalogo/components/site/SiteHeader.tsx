@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { User2, LogOut } from 'lucide-react';
+import { User2, LogOut, Menu } from 'lucide-react';
 import { BranchSelect } from '@/components/branch/BranchSelect';
+import { MobileNavDrawer } from '@/components/site/MobileNavDrawer';
 import { createClient } from '@/lib/supabase/client';
 import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { useRouter } from 'next/navigation';
@@ -14,6 +16,17 @@ const NAV = [
   { href: '/#descargar', label: 'App' },
 ];
 
+function LoginButton({ className = '' }: { className?: string }) {
+  return (
+    <Link
+      href="/login"
+      className={`rounded-full border border-gold/40 bg-gold/5 px-4 py-1.5 text-[11px] font-light uppercase tracking-[0.14em] text-gold transition-colors hover:bg-gold hover:text-charcoal sm:px-6 sm:py-2 sm:text-[13px] sm:tracking-[0.18em] ${className}`}
+    >
+      Ingresar
+    </Link>
+  );
+}
+
 export function SiteHeader({
   userEmail,
   userDisplayName,
@@ -23,6 +36,7 @@ export function SiteHeader({
 }) {
   const router = useRouter();
   const { configured: supabaseConfigured } = useSupabaseConfig();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const onLogout = async () => {
     if (!supabaseConfigured) return;
@@ -32,7 +46,50 @@ export function SiteHeader({
 
   return (
     <header className="glass sticky top-0 z-50 border-b border-border">
-      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+      {/* Móvil: logo | ingresar | menú */}
+      <div className="mx-auto grid h-14 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 md:hidden">
+        <Link
+          href="/"
+          className="flex shrink-0 items-center justify-self-start"
+          aria-label="Inicio AppSalon Pro"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/logo-andreas-transparent.png"
+            alt=""
+            className="h-9 w-9 object-contain"
+          />
+        </Link>
+
+        <div className="justify-self-center">
+          {userEmail ? (
+            <Link
+              href="/cuenta"
+              aria-label="Mi cuenta"
+              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-light text-muted"
+            >
+              <User2 className="h-3.5 w-3.5 shrink-0 text-gold" />
+              <span className="max-w-[5.5rem] truncate">
+                {userDisplayName?.split(/\s+/)[0] || userEmail.split('@')[0]}
+              </span>
+            </Link>
+          ) : (
+            <LoginButton />
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Abrir menú"
+          className="justify-self-end rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Desktop */}
+      <div className="mx-auto hidden h-[72px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 md:flex">
         <Link
           href="/"
           className="flex shrink-0 items-center gap-3"
@@ -49,7 +106,7 @@ export function SiteHeader({
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-9 md:flex">
+        <nav className="flex items-center gap-9">
           {NAV.map((item) => (
             <Link
               key={item.href}
@@ -62,18 +119,16 @@ export function SiteHeader({
         </nav>
 
         <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
-          <div className="min-w-0 max-w-[11rem] sm:max-w-none">
-            <BranchSelect compact />
-          </div>
+          <BranchSelect compact />
           {userEmail ? (
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Link
                 href="/cuenta"
                 aria-label="Mi cuenta"
                 title={userDisplayName || userEmail}
-                className="flex shrink-0 items-center gap-1.5 rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold sm:max-w-[10rem] sm:border-0 sm:p-0"
+                className="flex shrink-0 items-center gap-1.5 sm:max-w-[10rem]"
               >
-                <User2 className="h-4 w-4 shrink-0" />
+                <User2 className="h-4 w-4 shrink-0 text-muted" />
                 <span className="hidden truncate text-sm font-light sm:inline">
                   {userDisplayName?.split(/\s+/)[0] ||
                     userEmail.split('@')[0]}
@@ -88,15 +143,17 @@ export function SiteHeader({
               </button>
             </div>
           ) : (
-            <Link
-              href="/login"
-              className="shrink-0 rounded-full border border-gold/40 bg-gold/5 px-4 py-2 text-[12px] font-light uppercase tracking-[0.16em] text-gold transition-colors hover:bg-gold hover:text-charcoal sm:px-6 sm:text-[13px] sm:tracking-[0.18em]"
-            >
-              Ingresar
-            </Link>
+            <LoginButton />
           )}
         </div>
       </div>
+
+      <MobileNavDrawer
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        userEmail={userEmail}
+        userDisplayName={userDisplayName}
+      />
     </header>
   );
 }

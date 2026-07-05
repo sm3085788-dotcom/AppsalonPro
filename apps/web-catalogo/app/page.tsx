@@ -8,6 +8,7 @@ import {
 import { IphoneMockup } from '@/components/ui/IphoneMockup';
 import { AppStoreButtons } from '@/components/site/AppStoreButtons';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
+import { HeroCover } from '@/components/home/HeroCover';
 import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
 import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
 import { GiftCardSection } from '@/components/home/GiftCardSection';
@@ -18,56 +19,61 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* ── Hero editorial ─────────────────────────────── */}
-      <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-12 lg:gap-8 lg:px-8 lg:pb-28 lg:pt-24">
+      {/* ── Portada + hero ─────────────────────────────── */}
+      <HeroCover>
+        <p className="eyebrow text-[10px] tracking-[0.18em] sm:text-[11px]">
+          Salón premium · Belleza de autor
+        </p>
+        <div className="mt-3 flex items-center justify-center gap-3 md:mt-5 md:justify-start md:gap-4">
+          <span className="rule-gold hidden w-10 sm:block md:w-12" />
+          <span className="font-serif text-xl font-medium uppercase tracking-[0.18em] text-gradient-gold sm:text-3xl md:text-4xl">
+            Salón Andreas
+          </span>
+        </div>
+        <h1 className="mt-4 text-balance text-3xl font-light leading-[1.08] tracking-tight text-shine sm:mt-6 sm:text-5xl md:text-6xl lg:text-7xl">
+          El arte de
+          <br />
+          verse{' '}
+          <span className="text-gradient-gold italic">extraordinario</span>
+        </h1>
+        <p className="mt-4 max-w-md text-pretty text-sm font-light leading-relaxed text-muted sm:mt-6 sm:text-base">
+          Un espacio donde el detalle es lujo. Reserva con maestros del estilo,
+          descubre productos premium y vive una experiencia hecha a tu medida.
+        </p>
+      </HeroCover>
+
+      <section className="mx-auto grid max-w-7xl items-start gap-8 px-4 pb-14 pt-8 sm:px-6 sm:pb-20 sm:pt-12 lg:grid-cols-12 lg:gap-8 lg:px-8 lg:pb-28 lg:pt-16">
         <div className="lg:col-span-6">
-          <p className="eyebrow">Salón premium · Belleza de autor</p>
-          <div className="mt-5 flex items-center gap-4">
-            <span className="rule-gold hidden w-12 sm:block" />
-            <span className="font-serif text-3xl font-medium uppercase tracking-[0.22em] text-gradient-gold sm:text-4xl">
-              Salón Andreas
-            </span>
-          </div>
-          <h1 className="mt-6 text-balance text-5xl font-light leading-[1.05] tracking-tight text-shine sm:text-6xl lg:text-7xl">
-            El arte de
-            <br />
-            verse{' '}
-            <span className="text-gradient-gold italic">extraordinario</span>
-          </h1>
-          <p className="mt-8 max-w-md text-pretty text-base font-light leading-relaxed text-muted">
-            Un espacio donde el detalle es lujo. Reserva con maestros del estilo,
-            descubre productos premium y vive una experiencia hecha a tu medida.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center gap-6">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
             <Link
               href="/reservar"
-              className="group inline-flex items-center gap-2 rounded-full bg-gold px-8 py-3.5 text-[13px] font-medium uppercase tracking-[0.18em] text-charcoal transition-colors hover:bg-gold-soft"
+              className="group inline-flex items-center gap-2 rounded-full bg-gold px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.16em] text-charcoal transition-colors hover:bg-gold-soft sm:px-8 sm:py-3.5 sm:text-[13px] sm:tracking-[0.18em]"
             >
               Reservar cita
-              <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              <ArrowUpRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </Link>
             <Link
               href="/productos"
-              className="link-underline text-[13px] font-light uppercase tracking-[0.18em] text-cream"
+              className="link-underline text-[11px] font-light uppercase tracking-[0.16em] text-cream sm:text-[13px] sm:tracking-[0.18em]"
             >
               Explorar la tienda
             </Link>
           </div>
 
           {services.length > 0 && (
-            <div className="mt-10">
-              <div className="mb-4 flex items-end justify-between gap-3">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-muted">
+            <div className="mt-6 sm:mt-10">
+              <div className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-muted sm:text-[11px] sm:tracking-[0.2em]">
                   Servicios
                 </p>
                 <Link
                   href="/servicios"
-                  className="link-underline text-[11px] font-light uppercase tracking-[0.16em] text-gold"
+                  className="link-underline text-[10px] font-light uppercase tracking-[0.14em] text-gold sm:text-[11px] sm:tracking-[0.16em]"
                 >
                   Ver todos
                 </Link>
               </div>
-              <div className="grid grid-cols-2 gap-3 sm:max-w-xl sm:gap-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:max-w-xl sm:gap-4">
                 {services.map((s) => (
                   <ServiceCard key={s.id} service={s} />
                 ))}
@@ -82,7 +88,7 @@ export default async function HomePage() {
       </section>
 
       {/* ── Marquee editorial ──────────────────────────── */}
-      <section className="relative overflow-hidden border-y border-border py-5">
+      <section className="relative overflow-hidden border-y border-border py-3 sm:py-5">
         <div className="marquee gap-10">
           {Array.from({ length: 2 }).map((_, i) => (
             <div key={i} className="flex shrink-0 items-center gap-10 pr-10">
@@ -108,8 +114,8 @@ export default async function HomePage() {
       </section>
 
       {/* ── Cifras / confianza ─────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
+      <section className="mx-auto max-w-7xl px-4 pt-14 sm:px-6 sm:pt-24 lg:px-8">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:rounded-2xl lg:grid-cols-4">
           {[
             { k: '19+', v: 'Años de oficio' },
             { k: '25k', v: 'Clientes consentidos' },
@@ -118,9 +124,9 @@ export default async function HomePage() {
           ].map(({ k, v }) => (
             <div
               key={v}
-              className="group bg-background px-6 py-9 text-center transition-colors hover:bg-surface"
+              className="group bg-background px-4 py-6 text-center transition-colors hover:bg-surface sm:px-6 sm:py-9"
             >
-              <p className="text-4xl font-light text-pearl transition-colors group-hover:text-gold">
+              <p className="text-2xl font-light text-pearl transition-colors group-hover:text-gold sm:text-4xl">
                 {k}
               </p>
               <p className="mt-2 text-xs font-light uppercase tracking-[0.2em] text-muted">
