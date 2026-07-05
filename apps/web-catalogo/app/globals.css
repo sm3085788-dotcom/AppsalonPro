@@ -1,17 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  /* AppSalon Pro — paleta editorial de lujo (light mode) */
+  /* AppSalon Pro — paleta editorial de lujo (blanco y negro) */
   --background: #ffffff;
-  --surface: #f9f8f6;
-  --surface-2: #f3f1ee;
+  --surface: #f5f5f5;
+  --surface-2: #ececec;
   --foreground: #1a1a1a;
-  --muted: #757570;
+  --muted: #6b6b6b;
 
-  /* Bordes hairline: negro al 5% para un look editorial sin cajas pesadas */
-  --border: rgba(0, 0, 0, 0.05);
-  --border-strong: rgba(0, 0, 0, 0.1);
+  /* Bordes: negro alternando transparencias para contraste editorial */
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.15);
 
+  /* Negro puro para secciones de impacto */
+  --black: #000000;
+  --black-soft: #1a1a1a;
+  
   --gold: #d4af37;
   --gold-soft: #e6c97a;
   --cream: #f5ead2;
@@ -19,8 +23,8 @@
 
   /* Tonos blancos / perla para máximo contraste editorial */
   --white: #ffffff;
-  --pearl: #1a1a1a;
-  --pearl-dim: rgba(0, 0, 0, 0.72);
+  --pearl: #000000;
+  --pearl-dim: rgba(0, 0, 0, 0.85);
 
   --radius: 1rem;
 }
@@ -39,6 +43,8 @@
   --color-cream: var(--cream);
   --color-charcoal: var(--charcoal);
   --color-white: var(--white);
+  --color-black: var(--black);
+  --color-black-soft: var(--black-soft);
   --color-pearl: var(--pearl);
   --color-pearl-dim: var(--pearl-dim);
 

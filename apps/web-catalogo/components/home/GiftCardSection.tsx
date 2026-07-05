@@ -23,9 +23,10 @@ export function GiftCardSection() {
       <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
         {/* Columna izquierda: Imagen/Visual */}
         <div className="relative flex items-center justify-center">
-          <div className="relative h-96 w-full max-w-sm overflow-hidden rounded-3xl border-2 border-gold/30 bg-gradient-to-br from-gold/10 to-cream/20 p-8 shadow-lg">
-            {/* Decoración de tarjeta */}
-            <div className="absolute inset-0 opacity-5">
+          {/* Fondo negro con detalles dorados */}
+          <div className="relative h-96 w-full max-w-sm overflow-hidden rounded-3xl border border-gold/20 bg-black p-8 shadow-2xl">
+            {/* Decoración de tarjeta con patrón geométrico sutil */}
+            <div className="absolute inset-0 opacity-10">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,#d4af37,transparent)]" />
             </div>
             
@@ -41,25 +42,34 @@ export function GiftCardSection() {
                 <div className="text-xl font-serif text-gold">ANDREAS</div>
               </div>
 
+              {/* Línea divisoria dorada */}
+              <div className="h-px bg-gradient-to-r from-transparent via-gold to-transparent" />
+
               {/* Contenido central */}
               <div className="text-center">
-                <p className="text-sm font-light text-muted">Monto de la tarjeta</p>
+                <p className="text-sm font-light text-gold/60">Monto de la tarjeta</p>
                 <p className="mt-2 text-4xl font-serif text-gold">
                   {formData.amount ? `$${formData.amount}` : '—'}
                 </p>
               </div>
 
+              {/* Línea divisoria dorada */}
+              <div className="h-px bg-gradient-to-r from-transparent via-gold to-transparent" />
+
               {/* Info inferior */}
-              <div className="space-y-2 text-xs font-light text-muted">
+              <div className="space-y-2 text-xs font-light text-white/70">
                 {formData.forName && (
                   <p>
-                    <span className="font-medium text-foreground">Para:</span> {formData.forName}
+                    <span className="font-medium text-gold">Para:</span> {formData.forName}
                   </p>
                 )}
                 {formData.fromName && (
                   <p>
-                    <span className="font-medium text-foreground">De:</span> {formData.fromName}
+                    <span className="font-medium text-gold">De:</span> {formData.fromName}
                   </p>
+                )}
+                {formData.message && (
+                  <p className="mt-3 italic text-white/50">"{formData.message}"</p>
                 )}
               </div>
             </div>
