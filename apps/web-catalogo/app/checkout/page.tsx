@@ -2,123 +2,38 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { CheckoutForm } from '@/components/checkout/CheckoutForm';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { isSupabaseConfigured } from '@/lib/env';
-import {
-  computeProductOrder,
-  computeBookingAmount,
-} from '@/lib/data/orderAmounts';
-import { getSelectedBranchId } from '@/lib/data/selectedBranch';
-import { redirectIfProfileIncomplete } from '@/app/cuenta/actions';
-import type { CreatePaymentIntentInput } from '@/lib/types/db';
 
 export const metadata = { title: 'Checkout | AppSalon Pro' };
 
-export default async function CheckoutPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | undefined>>;
-}) {
-  const sp = await searchParams;
-  if (sp.type === 'booking') {
-    await redirectIfProfileIncomplete('/checkout?' + new URLSearchParams(sp as Record<string, string>).toString());
-  }
-  const branchId = sp.branch || (await getSelectedBranchId());
-
-  let input: CreatePaymentIntentInput | null = null;
-  let summary: {
-    lines: { label: string; qty?: number; amount: number }[];
-    total: number;
-    bookingPolicy?: boolean;
-    precioVariable?: boolean;
-  } | null = null;
-  let errorMsg: string | null = null;
-
-  // Sin Supabase configurado no hay inventario real que cobrar: degradamos con gracia.
-  const supabase = isSupabaseConfigured
-    ? await createSupabaseServerClient()
-    : null;
-
-  if (!supabase) {
-    errorMsg =
-      'El checkout estará disponible cuando se conecte el inventario. Explora servicios y productos mientras tanto.';
-  } else if (sp.type === 'product' && sp.item) {
-    const qty = Math.max(1, Number(sp.qty) || 1);
-    const res = await computeProductOrder(
-      supabase,
-      [{ inventarioId: sp.item, cantidad: qty }],
-      branchId ?? null,
-    );
-    if (res.ok) {
-      input = {
-        kind: 'product',
-        sucursalId: branchId ?? '',
-        items: [{ inventarioId: sp.item, cantidad: qty }],
-      };
-      summary = {
-        lines: res.order.lines.map((l) => ({
-          label: l.product_name,
-          qty: l.qty,
-          amount: l.line_total,
-        })),
-        total: res.order.total,
-      };
-    } else {
-      errorMsg = res.error;
-    }
-  } else if (sp.type === 'booking' && sp.servicio) {
-    const res = await computeBookingAmount(supabase, sp.servicio);
-    if (res.ok) {
-      const { booking } = res;
-      input = {
-        kind: 'booking',
-        sucursalId: branchId ?? '',
-        booking: {
-          servicioId: sp.servicio,
-          servicio: booking.nombre,
-          fechaHora: sp.fecha || new Date().toISOString(),
-          fulfillment: sp.fulfillment === 'domicilio' ? 'domicilio' : 'salon',
-          latitud: sp.lat ? Number(sp.lat) : null,
-          longitud: sp.lng ? Number(sp.lng) : null,
-          direccion: sp.direccion || null,
-        },
-      };
-      summary = {
-        lines: [
-          {
-            label: `Anticipo · ${booking.nombre}`,
-            amount: booking.deposit,
-          },
-        ],
-        total: booking.total,
-        bookingPolicy: true,
-        precioVariable: booking.precioVariable,
-      };
-    } else {
-      errorMsg = res.error;
-    }
-  }
-
+export default function CheckoutPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
       <Link
         href="/productos"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted hover:text-gold"
       >
-        <ArrowLeft className="h-4 w-4" /> Seguir explorando
+        <ArrowLeft className="h-4 w-4" /> Volver a productos
       </Link>
-      <SectionHeader eyebrow="Pago seguro" title="Finaliza tu compra" />
-      {input && summary ? (
-        <CheckoutForm input={input} summary={summary} />
-      ) : (
-        <EmptyState
-          title="No hay nada para pagar"
-          description={
-            errorMsg ?? 'Agrega un producto o reserva un servicio para continuar.'
-          }
-        />
-      )}
+      <SectionHeader
+        eyebrow="Tienda web"
+        title="Compra en línea no disponible"
+        subtitle="Por ahora puedes ver nuestro catálogo y adquirir productos directamente en el salón."
+      />
+      <EmptyState
+        title="Catálogo informativo"
+        description="La compra online de productos estará habilitada próximamente. Visítanos en recepción o reserva un servicio desde la web."
+      />
+      <div className="mt-8 flex flex-wrap gap-4">
+        <Link
+          href="/productos"
+          className="rounded-xl bg-gold px-6 py-3 text-sm font-semibold text-charcoal"
+        >
+          Ver productos
+        </Link>
+        <Link href="/servicios" className="text-sm text-muted hover:text-gold">
+          Reservar un servicio
+        </Link>
+      </div>
     </div>
   );
 }

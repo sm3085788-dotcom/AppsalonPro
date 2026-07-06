@@ -126,10 +126,12 @@ export interface BookingBroadcast {
   estado: BookingStatus;
 }
 
-/* ── Stripe (checkout) ──────────────────────────────────────────────────── */
-export type CheckoutKind = 'booking' | 'product' | 'gift_card';
+/* ── Pagos (QPayPro) ───────────────────────────────────────────────────── */
+export type CheckoutKind = 'product' | 'gift_card' | 'membership';
 
-export interface GiftCardPaymentIntentInput {
+export type ProductFulfillmentChoice = 'retiro_salon' | 'domicilio';
+
+export interface GiftCardPaymentInput {
   monto: number;
   paraNombre: string;
   deNombre: string;
@@ -137,35 +139,46 @@ export interface GiftCardPaymentIntentInput {
   compradorEmail: string;
 }
 
-export interface CreatePaymentIntentInput {
+export interface ProductCheckoutCustomer {
+  nombre: string;
+  telefono: string;
+  direccion?: string | null;
+  latitud?: number | null;
+  longitud?: number | null;
+}
+
+export interface CreatePaymentSessionInput {
   kind: CheckoutKind;
   sucursalId?: UUID;
-  /** Lineas para productos. */
   items?: Array<{ inventarioId: UUID; cantidad: number }>;
-  /** Datos de la cita cuando kind === 'booking'. */
-  booking?: {
-    servicioId: UUID;
-    servicio: string;
-    fechaHora: ISODateString;
-    fulfillment: FulfillmentType;
-    latitud?: number | null;
-    longitud?: number | null;
-    direccion?: string | null;
-  };
-  /** Tarjeta regalo VIP (guest checkout). */
-  giftCard?: GiftCardPaymentIntentInput;
+  fulfillment?: ProductFulfillmentChoice;
+  customer?: ProductCheckoutCustomer;
+  giftCard?: GiftCardPaymentInput;
+  membership?: { codigo: string; nivel?: string };
 }
 
-export interface GiftCardPaymentIntentResult extends PaymentIntentResult {
-  draftId: string | null;
+export interface PaymentSessionResult {
+  mode: 'redirect' | 'direct' | 'demo';
+  sessionId: string;
+  redirectUrl?: string | null;
+  paymentToken?: string | null;
+  amount: number;
+  currency: string;
+  demo: boolean;
+  draftId?: string | null;
 }
 
+/** @deprecated Stripe legacy */
+export type CreatePaymentIntentInput = CreatePaymentSessionInput & { kind: CheckoutKind | 'booking' };
 export interface PaymentIntentResult {
   clientSecret: string | null;
   amount: number;
   currency: string;
   demo: boolean;
   paymentIntentId: string | null;
+}
+export interface GiftCardPaymentIntentResult extends PaymentIntentResult {
+  draftId: string | null;
 }
 
 /* ── Delivery (Req 6) ───────────────────────────────────────────────────── */

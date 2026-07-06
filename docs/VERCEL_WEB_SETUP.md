@@ -50,14 +50,19 @@ Deben ser **el mismo proyecto Supabase** que `EXPO_PUBLIC_SUPABASE_URL` en Saló
 
 Confirma que la URL apunte a **tu** proyecto (no uno vacío creado por la integración). Tras cualquier cambio: **Redeploy**.
 
-### Recomendadas (pagos y reservas completas)
+### Recomendadas (pagos QPayPro y tienda web)
 
 | Variable | Notas |
 |----------|--------|
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Misma que en app Clientes |
-| `STRIPE_SECRET_KEY` | Solo servidor |
-| `STRIPE_WEBHOOK_SECRET` | Endpoint: `https://TU-DOMINIO/api/stripe/webhook` |
-| `NEXT_PUBLIC_STRIPE_CURRENCY` | `gtq` |
+| `PAYMENT_MODE` | `redirect` (default) o `direct` |
+| `QPAYPRO_MERCHANT_ID` / `QPAYPRO_API_KEY` / `QPAYPRO_API_SECRET` | Credenciales QPayPro |
+| `QPAYPRO_CHECKOUT_BASE_URL` | URL checkout redirect |
+| `QPAYPRO_WEBHOOK_SECRET` | Endpoint: `https://TU-DOMINIO/api/payments/webhook` |
+| `NEXT_PUBLIC_PAYMENT_CURRENCY` | `gtq` |
+| `WEB_PRODUCT_SHIPPING_FEE_GTQ` | Envío domicilio web (`0` = gratis) |
+| `NEXT_PUBLIC_SITE_URL` | URL pública del sitio (redirects post-pago) |
+
+Ver [`docs/QPAYPRO-CHECKOUT.md`](QPAYPRO-CHECKOUT.md).
 
 ### Opcionales
 
@@ -109,12 +114,13 @@ Publicar OTA después de cambiar: `npm run update:production` en `apps/clientes`
 
 ---
 
-## 6. Stripe webhook en producción
+## 6. QPayPro webhook en producción
 
-1. Stripe Dashboard → Webhooks → Add endpoint  
-2. URL: `https://appsalon-pro-web-catalogo.vercel.app/api/stripe/webhook`  
-3. Eventos: `payment_intent.succeeded` (y los que ya uses)  
-4. Copia `whsec_...` → `STRIPE_WEBHOOK_SECRET` en Vercel → Redeploy
+1. Portal QPayPro → Webhooks → Add endpoint  
+2. URL: `https://appsalon-pro-web-catalogo.vercel.app/api/payments/webhook`  
+3. Copia el secret → `QPAYPRO_WEBHOOK_SECRET` en Vercel → Redeploy  
+
+Para App Clientes (tienda domicilio / membresías): configurar también el webhook en Supabase Edge (`qpaypro-webhook`). Ver [`QPAYPRO-CHECKOUT.md`](QPAYPRO-CHECKOUT.md).
 
 ---
 

@@ -127,6 +127,25 @@ function isPendingCashOrder(order) {
   );
 }
 
+function isWebCardOrder(order) {
+  const source = String(order?.source || '').toLowerCase();
+  const pay = String(order?.payment_method || '').toLowerCase();
+  const isWeb = source === 'web' || String(order?.notes || '').includes('Pedido web');
+  const isCard = pay === 'tarjeta' || pay === 'card';
+  return isWeb && isCard;
+}
+
+function webCardOrderNotificationBody(order) {
+  const code = order?.tracking_code || `#${String(order?.id || '').slice(0, 8)}`;
+  const domicilio =
+    String(order?.fulfillment_type || '').includes('domicilio') ||
+    Boolean(String(order?.delivery_address || '').trim());
+  const modalidad = domicilio ? 'domicilio' : 'retiro en salón';
+  const total = Number(order?.total_amount || 0);
+  const totalLabel = Number.isFinite(total) && total > 0 ? ` · Q${total.toFixed(2)}` : '';
+  return `Pedido web ${code} · tarjeta · ${modalidad}${totalLabel}`;
+}
+
 function SalonAdminShell({ onSignOut, profile }) {
   const insets = useSafeAreaInsets();
   const { width: winW } = useWindowDimensions();
@@ -207,13 +226,15 @@ function SalonAdminShell({ onSignOut, profile }) {
 
   const refreshPedidosAlert = useCallback(async () => {
     try {
-      const [{ data: pendingRes, error }, lastSeenAt] = await Promise.all([
-        db.orders.getByStatus('pending'),
+      const [{ data: orders, error }, lastSeenAt] = await Promise.all([
+        db.orders.getAll(),
         AsyncStorage.getItem(SALON_PEDIDOS_LAST_SEEN_KEY),
       ]);
       if (error) return;
       const lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
-      const hasNew = (pendingRes || []).filter(isPendingCashOrder).some((o) => {
+      const hasNew = (orders || []).filter(
+        (o) => isPendingCashOrder(o) || isWebCardOrder(o),
+      ).some((o) => {
         const createdMs = new Date(o.created_at).getTime();
         return Number.isFinite(createdMs) && createdMs > lastSeenMs;
       });
@@ -360,6 +381,12 @@ function SalonAdminShell({ onSignOut, profile }) {
             void showLocalSalonNotification({
               title: 'Nuevo pedido',
               body: `Pedido ${row.tracking_code || '#' + row.id} · efectivo`,
+              data: { module: 'pedidos' },
+            });
+          } else if (row && isWebCardOrder(row)) {
+            void showLocalSalonNotification({
+              title: 'Nuevo pedido web',
+              body: webCardOrderNotificationBody(row),
               data: { module: 'pedidos' },
             });
           }

@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity, TextInput, Alert, ActivityIndicator, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Crown, Medal, Sparkles, Check, KeyRound, Gem } from 'lucide-react-native';
-import { useStripe } from '@stripe/stripe-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   MEMBRESIA_TIERS,
@@ -11,8 +10,10 @@ import {
   membresiaLabel,
   normalizeMembresiaCodigoInput,
   computeMembresiaStatusFromRow,
-  isStripeConfigured,
-  checkoutMembresiaConStripe,
+  isPaymentGatewayConfigured,
+  isPaymentGatewayConfigured as isStripeConfigured,
+  checkoutMembresiaConQPayPro,
+  checkoutMembresiaConQPayPro as checkoutMembresiaConStripe,
   getMembresiaMonthlyGtq,
 } from '@appsalon/shared-config';
 import { SalonButton } from '../luxury/SalonButton';
@@ -140,7 +141,6 @@ function TierPosterCard({ tier, isActive, t, strings, localeTag }) {
 // ─── Card de activación de código ────────────────────────────────────────────
 
 function CodigoCard({ clienteRow, onActivated, onDone, c, t, strings, localeTag }) {
-  const stripe = useStripe();
   const [codigo, setCodigo] = useState('');
   const [loading, setLoading] = useState(false);
   const tier = getMembresiaTier(clienteRow?.membresia_nivel);
@@ -175,10 +175,10 @@ function CodigoCard({ clienteRow, onActivated, onDone, c, t, strings, localeTag 
           );
           return;
         }
-        const pay = await checkoutMembresiaConStripe({
-          stripe,
+        const pay = await checkoutMembresiaConQPayPro({
           codigo: normalized,
           nivel: preview.data?.nivel,
+          openUrl: (url) => Linking.openURL(url),
         });
         if (!pay.ok) {
           if (!pay.cancelled) {
@@ -187,6 +187,13 @@ function CodigoCard({ clienteRow, onActivated, onDone, c, t, strings, localeTag 
               pay.error?.message || t('membresias.alerts.paymentBody'),
             );
           }
+          return;
+        }
+        if (pay.pendingRedirect) {
+          Alert.alert(
+            t('membresias.alerts.paymentTitle'),
+            'Completa el pago en QPayPro y vuelve a activar el código.',
+          );
           return;
         }
       }

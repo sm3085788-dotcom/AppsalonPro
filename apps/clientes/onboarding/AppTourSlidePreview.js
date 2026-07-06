@@ -445,7 +445,7 @@ function PreviewPagos() {
         <View style={{ flex: 1 }}>
           <Text style={styles.trustTitle}>Pago seguro y confiable</Text>
           <Text style={styles.trustBody}>
-            Cobro protegido con Stripe. No almacenamos el número completo de tu tarjeta en la app.
+            Cobro protegido con QPayPro. No almacenamos el número completo de tu tarjeta en la app.
           </Text>
         </View>
       </View>
@@ -604,7 +604,7 @@ function PreviewPerfil() {
         <Gem size={13} color={GOLD} />
       </View>
       <MockRow icon={Gem} label="Membresías" sub="Bronce · Plata · VIP" />
-      <MockRow icon={CreditCard} label="Métodos de pago" sub="Tarjetas guardadas · Stripe" />
+      <MockRow icon={CreditCard} label="Métodos de pago" sub="Tarjetas guardadas · QPayPro" />
       <MockRow icon={Phone} label="Servicio al cliente" sub="Sin iconos en menú" />
       <View style={styles.configRow}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

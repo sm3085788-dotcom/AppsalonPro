@@ -45,8 +45,8 @@ export function validateGiftCardPayload(input: GiftCardFormInput): {
 
   if (!paraNombre) return { ok: false, error: 'Indica el nombre del destinatario.' };
   if (!deNombre) return { ok: false, error: 'Indica tu nombre.' };
-  if (!compradorEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(compradorEmail)) {
-    return { ok: false, error: 'Ingresa un correo válido para el recibo.' };
+  if (compradorEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(compradorEmail)) {
+    return { ok: false, error: 'Ingresa un correo válido.' };
   }
 
   return {

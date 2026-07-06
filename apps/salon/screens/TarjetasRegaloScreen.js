@@ -10,9 +10,11 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  Linking,
+  Modal,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Gift } from 'lucide-react-native';
+import { Gift, KeyRound } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   listGiftCardsStaff,
@@ -20,6 +22,10 @@ import {
   activateGiftCardAtSalon,
   verifyGiftCardBirthday,
   registerGiftCardUse,
+  createGiftCardActivationCode,
+  listGiftCardActivationCodesStaff,
+  normalizeGtWhatsappPhone,
+  SALON_CONTACTO,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
@@ -40,9 +46,12 @@ function formatQ(n) {
   return `Q${v.toFixed(2)}`;
 }
 
+const WEB_ACTIVATE_URL = 'https://appsalon-pro-web-catalogo.vercel.app/tarjeta-regalo/activar';
+
 export function TarjetasRegaloScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
   const [cards, setCards] = useState([]);
+  const [pendingCodes, setPendingCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -50,10 +59,23 @@ export function TarjetasRegaloScreen({ onBack }) {
   const [useAmount, setUseAmount] = useState('');
   const [useNotes, setUseNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const [emitOpen, setEmitOpen] = useState(true);
+  const [generatedCode, setGeneratedCode] = useState(null);
+  const [emitForm, setEmitForm] = useState({
+    monto: '',
+    paraNombre: '',
+    deNombre: '',
+    mensaje: '',
+    compradorTelefono: '',
+  });
 
   const loadList = useCallback(async () => {
-    const res = await listGiftCardsStaff(40);
-    if (res.ok) setCards(res.cards || []);
+    const [cardsRes, codesRes] = await Promise.all([
+      listGiftCardsStaff(40),
+      listGiftCardActivationCodesStaff(15),
+    ]);
+    if (cardsRes.ok) setCards(cardsRes.cards || []);
+    if (codesRes.ok) setPendingCodes(codesRes.codes || []);
   }, []);
 
   useEffect(() => {
@@ -85,6 +107,58 @@ export function TarjetasRegaloScreen({ onBack }) {
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  const runEmitCode = useCallback(async () => {
+    const monto = Number(String(emitForm.monto).replace(',', '.'));
+    if (!Number.isFinite(monto) || monto < 50 || monto > 2000) {
+      Alert.alert('Monto', 'El monto debe estar entre Q50 y Q2000.');
+      return;
+    }
+    if (!emitForm.paraNombre.trim() || !emitForm.deNombre.trim() || !emitForm.compradorTelefono.trim()) {
+      Alert.alert('Datos', 'Completa para, de y teléfono del comprador.');
+      return;
+    }
+    const phone = normalizeGtWhatsappPhone(emitForm.compradorTelefono);
+    if (!phone) {
+      Alert.alert('Teléfono', 'Ingresá un número válido (8 dígitos o 502 + 8).');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await createGiftCardActivationCode({
+        monto,
+        paraNombre: emitForm.paraNombre.trim(),
+        deNombre: emitForm.deNombre.trim(),
+        mensaje: emitForm.mensaje.trim(),
+        compradorTelefono: phone,
+      });
+      if (!res.ok) {
+        Alert.alert('Código de activación', res.error || 'No se pudo generar.');
+        return;
+      }
+      setGeneratedCode(res);
+      await loadList();
+      setEmitForm({ monto: '', paraNombre: '', deNombre: '', mensaje: '', compradorTelefono: '' });
+    } finally {
+      setBusy(false);
+    }
+  }, [emitForm, loadList]);
+
+  const shareActivationCode = useCallback((codeRow) => {
+    const code = codeRow?.codigo_activacion || codeRow?.codigoActivacion;
+    if (!code) return;
+    const phone =
+      normalizeGtWhatsappPhone(codeRow?.comprador_telefono || codeRow?.compradorTelefono) ||
+      SALON_CONTACTO.whatsapp;
+    const msg = [
+      `Tarjeta VIP ANDREAS · código de activación: ${code}`,
+      `Monto: ${formatQ(codeRow.monto)}`,
+      `Actívala en: ${WEB_ACTIVATE_URL}`,
+      `Servicio al cliente: ${SALON_CONTACTO.telefonoLabel}`,
+    ].join('\n');
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    void Linking.openURL(url);
   }, []);
 
   const runActivate = useCallback(async () => {
@@ -170,26 +244,106 @@ export function TarjetasRegaloScreen({ onBack }) {
     }
   }, [selected, useAmount, useNotes, loadList]);
 
+  const inputStyle = [
+    styles.input,
+    { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
+  ];
+
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
         title="Tarjetas regalo"
-        subtitle="VIP · QR · activación y saldo"
+        subtitle="VIP · código · activación y saldo"
         onBack={onBack}
         refreshing={refreshing}
         onRefresh={onRefresh}
       >
-        <SalonButton
-          title="Escanear QR"
-          variant="heroGold"
-          fullWidth
-          onPress={() => setScannerOpen(true)}
-          disabled={busy}
-          style={{ marginBottom: spacing.md }}
-        />
+        {!selected ? (
+          <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+            <TouchableOpacity
+              style={[styles.emitHeader, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+              onPress={() => setEmitOpen((v) => !v)}
+            >
+              <KeyRound size={18} color={c.primary} />
+              <Text style={[styles.emitHeaderTxt, { color: c.foreground }]}>
+                Emitir código de activación
+              </Text>
+            </TouchableOpacity>
 
-        {selected ? (
+            {emitOpen ? (
+              <View style={[styles.emitBox, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                <Text style={[styles.emitHint, { color: c.foregroundMuted }]}>
+                  Tras validar monto y pago con tarjeta, generá un código para que el comprador lo
+                  ingrese en la web y obtenga la tarjeta compartible.
+                </Text>
+                <TextInput style={inputStyle} placeholder="Monto Q (50–2000)" placeholderTextColor={c.foregroundSubtle} keyboardType="decimal-pad" value={emitForm.monto} onChangeText={(v) => setEmitForm((f) => ({ ...f, monto: v }))} />
+                <TextInput style={inputStyle} placeholder="Para (destinatario)" placeholderTextColor={c.foregroundSubtle} value={emitForm.paraNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, paraNombre: v }))} />
+                <TextInput style={inputStyle} placeholder="De (comprador)" placeholderTextColor={c.foregroundSubtle} value={emitForm.deNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, deNombre: v }))} />
+                <TextInput style={inputStyle} placeholder="Teléfono comprador (WhatsApp)" placeholderTextColor={c.foregroundSubtle} keyboardType="phone-pad" value={emitForm.compradorTelefono} onChangeText={(v) => setEmitForm((f) => ({ ...f, compradorTelefono: v }))} />
+                <TextInput style={inputStyle} placeholder="Mensaje (opcional)" placeholderTextColor={c.foregroundSubtle} value={emitForm.mensaje} onChangeText={(v) => setEmitForm((f) => ({ ...f, mensaje: v }))} />
+                <SalonButton title="Generar código ACT-" variant="heroGold" fullWidth onPress={() => void runEmitCode()} disabled={busy} />
+              </View>
+            ) : null}
+
+            {pendingCodes.length > 0 ? (
+              <View style={{ marginTop: spacing.md }}>
+                <Text style={[styles.sectionLbl, { color: c.foreground }]}>Códigos pendientes</Text>
+                {pendingCodes.map((row) => (
+                  <View key={row.id} style={[styles.row, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.rowTitle, { color: c.foreground }]}>{row.codigo_activacion}</Text>
+                      <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
+                        {row.para_nombre} · {formatQ(row.monto)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => shareActivationCode(row)}>
+                      <Text style={{ color: c.primary, fontFamily: typography.fontSansMedium, fontSize: 13 }}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            <SalonButton
+              title="Escanear QR tarjeta"
+              variant="outlineGold"
+              fullWidth
+              onPress={() => setScannerOpen(true)}
+              disabled={busy}
+              style={{ marginTop: spacing.lg, marginBottom: spacing.md }}
+            />
+
+            {loading ? (
+              <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
+            ) : (
+              <FlatList
+                data={cards}
+                scrollEnabled={false}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.row, { backgroundColor: c.card, borderColor: c.cardBorder }]}
+                    onPress={() => void openCode(item.codigo)}
+                  >
+                    <Gift size={18} color={c.primary} />
+                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                      <Text style={[styles.rowTitle, { color: c.foreground }]}>{item.codigo}</Text>
+                      <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
+                        {item.para_nombre} · {formatQ(item.saldo)} · {item.estado}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <Text style={[styles.empty, { color: c.foregroundMuted }]}>
+                    Las tarjetas activadas aparecerán aquí cuando el comprador use su código en la web.
+                  </Text>
+                }
+              />
+            )}
+          </ScrollView>
+        ) : (
           <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
             <Text style={[styles.detailTitle, { color: c.foreground }]}>{selected.codigo}</Text>
             <Text style={[styles.detailMeta, { color: c.foregroundMuted }]}>
@@ -220,21 +374,8 @@ export function TarjetasRegaloScreen({ onBack }) {
                   style={{ marginTop: spacing.lg }}
                 />
                 <Text style={[styles.fieldLbl, { color: c.foreground }]}>Registrar uso de saldo</Text>
-                <TextInput
-                  style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                  placeholder="Monto Q"
-                  placeholderTextColor={c.foregroundSubtle}
-                  keyboardType="decimal-pad"
-                  value={useAmount}
-                  onChangeText={setUseAmount}
-                />
-                <TextInput
-                  style={[styles.input, { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card }]}
-                  placeholder="Notas (opcional)"
-                  placeholderTextColor={c.foregroundSubtle}
-                  value={useNotes}
-                  onChangeText={setUseNotes}
-                />
+                <TextInput style={inputStyle} placeholder="Monto Q" placeholderTextColor={c.foregroundSubtle} keyboardType="decimal-pad" value={useAmount} onChangeText={setUseAmount} />
+                <TextInput style={inputStyle} placeholder="Notas (opcional)" placeholderTextColor={c.foregroundSubtle} value={useNotes} onChangeText={setUseNotes} />
                 <SalonButton title="Registrar descuento" variant="heroGold" fullWidth onPress={() => void runUse()} disabled={busy} />
               </>
             ) : null}
@@ -247,35 +388,25 @@ export function TarjetasRegaloScreen({ onBack }) {
 
             <SalonButton title="Cerrar ficha" variant="outlineGray" fullWidth onPress={() => setSelected(null)} style={{ marginTop: spacing.lg }} />
           </ScrollView>
-        ) : loading ? (
-          <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
-        ) : (
-          <FlatList
-            data={cards}
-            scrollEnabled={false}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.row, { backgroundColor: c.card, borderColor: c.cardBorder }]}
-                onPress={() => void openCode(item.codigo)}
-              >
-                <Gift size={18} color={c.primary} />
-                <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                  <Text style={[styles.rowTitle, { color: c.foreground }]}>{item.codigo}</Text>
-                  <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
-                    {item.para_nombre} · {formatQ(item.saldo)} · {item.estado}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <Text style={[styles.empty, { color: c.foregroundMuted }]}>
-                Aún no hay tarjetas. Las nuevas aparecerán al pagarse en la web.
-              </Text>
-            }
-          />
         )}
       </SubScreenChrome>
+
+      <Modal visible={Boolean(generatedCode)} transparent animationType="fade" onRequestClose={() => setGeneratedCode(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
+            <Text style={[styles.modalTitle, { color: c.foreground }]}>Código generado</Text>
+            <Text style={[styles.modalCode, { color: c.primary }]}>{generatedCode?.codigo_activacion}</Text>
+            <Text style={[styles.modalMeta, { color: c.foregroundMuted }]}>
+              {generatedCode?.para_nombre} · {formatQ(generatedCode?.monto)}
+            </Text>
+            <Text style={[styles.modalHint, { color: c.foregroundMuted }]}>
+              Dictá este código al comprador. Debe ingresarlo en la web para obtener la tarjeta PNG.
+            </Text>
+            <SalonButton title="Enviar por WhatsApp" variant="heroGold" fullWidth onPress={() => shareActivationCode(generatedCode)} style={{ marginTop: spacing.md }} />
+            <SalonButton title="Cerrar" variant="outlineGray" fullWidth onPress={() => setGeneratedCode(null)} style={{ marginTop: spacing.sm }} />
+          </View>
+        </View>
+      </Modal>
 
       <GiftCardQrScannerModal
         visible={scannerOpen}
@@ -288,6 +419,19 @@ export function TarjetasRegaloScreen({ onBack }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  emitHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+  },
+  emitHeaderTxt: { fontFamily: typography.fontSansMedium, fontSize: 15, flex: 1 },
+  emitBox: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.sm },
+  emitHint: { fontFamily: typography.fontSans, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },
+  sectionLbl: { fontFamily: typography.fontSansMedium, fontSize: 14, marginBottom: spacing.sm },
   detailTitle: { fontFamily: typography.fontDisplay, fontSize: 22 },
   detailMeta: { fontFamily: typography.fontSans, fontSize: 14, marginTop: spacing.xs, lineHeight: 20 },
   detailQuote: { fontFamily: typography.fontSans, fontSize: 14, fontStyle: 'italic', marginTop: spacing.md },
@@ -313,4 +457,15 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontFamily: typography.fontSansMedium, fontSize: 15 },
   rowSub: { fontFamily: typography.fontSans, fontSize: 13, marginTop: 2 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: { borderRadius: radii.lg, borderWidth: 1, padding: spacing.lg },
+  modalTitle: { fontFamily: typography.fontSansMedium, fontSize: 16 },
+  modalCode: { fontFamily: typography.fontDisplay, fontSize: 28, marginTop: spacing.md, letterSpacing: 2 },
+  modalMeta: { fontFamily: typography.fontSans, fontSize: 14, marginTop: spacing.xs },
+  modalHint: { fontFamily: typography.fontSans, fontSize: 13, marginTop: spacing.md, lineHeight: 19 },
 });

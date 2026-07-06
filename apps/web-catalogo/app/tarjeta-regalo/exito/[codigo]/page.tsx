@@ -79,11 +79,16 @@ export default function GiftCardSuccessByCodePage({
   }
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-16 sm:px-6">
-      <p className="eyebrow text-gold">Tarjeta verificada</p>
-      <h1 className="mt-3 text-3xl font-light text-cream">¡Lista para regalar!</h1>
-      <div className="mt-10">
-        <GiftCardShareCard
+    <div className="mx-auto max-w-2xl space-y-8 px-4 py-16 sm:px-6 lg:px-8">
+      <div>
+        <p className="eyebrow text-gold">Tarjeta verificada</p>
+        <h1 className="mt-3 text-3xl font-light text-cream">¡Lista para regalar!</h1>
+        <p className="mt-2 text-sm text-muted">
+          Canjeable en cualquier sucursal ANDREAS dentro de 30 días. Escaneá el QR en la app del
+          salón.
+        </p>
+      </div>
+      <GiftCardShareCard
           data={{
             codigo: card.codigo,
             monto: Number(card.monto_inicial),
@@ -93,8 +98,7 @@ export default function GiftCardSuccessByCodePage({
             emitidaEn: card.emitida_en,
             venceEn: card.vence_en,
           }}
-        />
-      </div>
+      />
     </div>
   );
 }

@@ -178,6 +178,9 @@ body {
 
 /* Gradiente dorado→cream real para titulares de conquista visual */
 .text-gradient-gold {
+  display: inline-block;
+  padding-right: 0.12em;
+  padding-bottom: 0.04em;
   background: linear-gradient(
     100deg,
     var(--gold) 0%,
@@ -187,10 +190,15 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 /* Titular perla con brillo de barrido sutil */
 .text-shine {
+  display: inline-block;
+  padding-right: 0.06em;
+  padding-bottom: 0.04em;
   background: linear-gradient(
     100deg,
     var(--white) 0%,
@@ -204,6 +212,8 @@ body {
   background-clip: text;
   color: transparent;
   animation: shine 6s linear infinite;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 @keyframes shine {

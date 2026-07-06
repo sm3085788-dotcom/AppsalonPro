@@ -9,7 +9,7 @@ import {
   formatPromocionHastaLabel,
 } from './inventarioMeta.js';
 import { crearPedidoTarjetaDomicilioCapturada, crearPedidoTarjetaPendiente } from './pedidoSalon.js';
-import { isStripeConfigured } from './stripeCheckout.js';
+import { isPaymentGatewayConfigured as isStripeConfigured } from './paymentCheckout.js';
 
 /** Texto en catálogo App Clientes para servicios con precios por volumen (solo salón). */
 export const PRECIO_VARIABLE_LABEL = 'Precio variable';
@@ -23,7 +23,7 @@ function formatQ(n) {
 
 /**
  * Tarjeta desde app clientes.
- * Domicilio + Stripe: usar checkoutDomicilioConStripe() antes de llamar con stripePaymentIntentId.
+ * Domicilio + QPayPro: usar checkoutDomicilioConQPayPro() antes de finalizar el pedido.
  * Domicilio sin Stripe (dev): cardPayment validado localmente.
  * Retiro → pedido pendiente; el salón confirma cobro con su pasarela.
  */
@@ -34,7 +34,7 @@ export async function confirmarCompraConTarjeta(params) {
     return {
       ok: false,
       error: {
-        message: 'Usá finalizeStripeDomicilioOrder() tras confirmar el Payment Sheet.',
+        message: 'Usá finalizeQPayProDomicilioOrder() tras confirmar el pago.',
       },
     };
   }
@@ -53,7 +53,7 @@ export async function confirmarCompraConTarjeta(params) {
     return {
       ok: false,
       error: {
-        message: 'Completá el pago con Stripe antes de confirmar el pedido.',
+        message: 'Completá el pago con QPayPro antes de confirmar el pedido.',
       },
     };
   }

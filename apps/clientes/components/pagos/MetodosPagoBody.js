@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
-import { CreditCard, Trash2 } from 'lucide-react-native';
-import { useStripe } from '@stripe/stripe-react-native';
-import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { View, Text, StyleSheet, Alert } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  isStripeConfigured,
+  isPaymentGatewayConfigured,
+  isPaymentGatewayConfigured as isStripeConfigured,
   listStripeSavedCards,
   detachStripePaymentMethod,
   saveCardWithStripeSetup,
@@ -12,149 +10,79 @@ import {
   formatSavedCardSub,
 } from '@appsalon/shared-config';
 import { SalonButton } from '../luxury/SalonButton';
-import { useSubStyles } from '../luxury/SubScreenChrome';
 import { useTheme } from '../../theme/ThemeProvider';
 
-export function MetodosPagoBody({ onClose }) {
-  const subStyles = useSubStyles();
+export function MetodosPagoBody() {
   const { colors: c } = useTheme();
-  const stripe = useStripe();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  const reload = useCallback(async () => {
+    setLoading(true);
     if (!isStripeConfigured()) {
       setCards([]);
       setLoading(false);
       return;
     }
-    setLoading(true);
     const res = await listStripeSavedCards();
-    setCards(res.ok ? res.cards : []);
+    setCards(res.cards || []);
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void reload();
+  }, [reload]);
 
-  const addCard = async () => {
+  async function onAddCard() {
     if (!isStripeConfigured()) {
-      Alert.alert('Pagos', 'Stripe no está configurado en esta build.');
+      Alert.alert('Pagos', 'Tarjetas guardadas disponibles con QPayPro en modo direct (próximamente).');
       return;
     }
-    setBusy(true);
-    try {
-      const res = await saveCardWithStripeSetup({ stripe });
-      if (!res.ok) {
-        if (!res.cancelled) Alert.alert('Tarjeta', res.error?.message || 'No se pudo guardar.');
-        return;
-      }
-      setCards(res.cards || []);
-      Alert.alert('Listo', 'Tu tarjeta quedó guardada de forma segura.');
-    } finally {
-      setBusy(false);
-    }
-  };
+    const res = await saveCardWithStripeSetup({});
+    if (!res.ok) Alert.alert('Pagos', res.error?.message || 'No se pudo guardar la tarjeta.');
+    else void reload();
+  }
 
-  const removeCard = (card) => {
-    Alert.alert('Eliminar tarjeta', `¿Quitar ${formatSavedCardLabel(card)}?`, [
+  async function onRemove(card) {
+    Alert.alert('Eliminar tarjeta', '¿Quitar esta tarjeta guardada?', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar',
         style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            setBusy(true);
-            const res = await detachStripePaymentMethod(card.id);
-            setBusy(false);
-            if (!res.ok) {
-              Alert.alert('Error', res.error?.message || 'No se pudo eliminar.');
-              return;
-            }
-            await load();
-          })();
+        onPress: async () => {
+          const res = await detachStripePaymentMethod(card.id);
+          if (!res.ok) Alert.alert('Pagos', res.error?.message || 'No se pudo eliminar.');
+          else void reload();
         },
       },
     ]);
-  };
-
-  if (!isStripeConfigured()) {
-    return (
-      <>
-        <View style={subStyles.card}>
-          <Text style={subStyles.rowLabel}>Pagos con tarjeta</Text>
-          <Text style={subStyles.rowSub}>
-            Los pagos con tarjeta se habilitan al publicar la app con Stripe configurado.
-          </Text>
-          <View style={subStyles.divider} />
-          <Text style={subStyles.rowLabel}>Efectivo en salón</Text>
-          <Text style={subStyles.rowSub}>Sin cargos guardados · pagás al retirar.</Text>
-        </View>
-        <SalonButton variant="outlineGray" title="Listo" fullWidth onPress={onClose} />
-      </>
-    );
   }
 
   return (
-    <>
-      <View style={subStyles.card}>
-        <Text style={subStyles.rowLabel}>Tarjetas guardadas</Text>
-        <Text style={[subStyles.rowSub, { marginBottom: spacing.sm }]}>
-          Tus datos se procesan con Stripe. No guardamos el número completo ni el CVV.
-        </Text>
-        {loading ? (
-          <ActivityIndicator color={c.primary} />
-        ) : cards.length === 0 ? (
-          <Text style={subStyles.rowSub}>Aún no tenés tarjetas guardadas.</Text>
-        ) : (
-          cards.map((card, idx) => (
-            <View key={card.id}>
-              {idx > 0 ? <View style={subStyles.divider} /> : null}
-              <View style={styles.cardRow}>
-                <CreditCard size={20} color={c.primary} strokeWidth={1.75} />
-                <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                  <Text style={subStyles.rowLabel}>{formatSavedCardLabel(card)}</Text>
-                  <Text style={subStyles.rowSub}>{formatSavedCardSub(card)}</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => removeCard(card)}
-                  disabled={busy}
-                  accessibilityRole="button"
-                  accessibilityLabel="Eliminar tarjeta"
-                >
-                  <Trash2 size={18} color={c.foregroundMuted} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
-        )}
-        <View style={subStyles.divider} />
-        <Text style={subStyles.rowLabel}>Efectivo en salón</Text>
-        <Text style={subStyles.rowSub}>Disponible al retirar en recepción (sin guardar).</Text>
-      </View>
-
-      <SalonButton
-        variant="heroGold"
-        title={busy ? 'Procesando…' : 'Agregar tarjeta'}
-        fullWidth
-        disabled={busy}
-        onPress={() => void addCard()}
-      />
-      <SalonButton variant="outlineGray" title="Listo" fullWidth style={{ marginTop: spacing.sm }} onPress={onClose} />
-    </>
+    <View style={styles.wrap}>
+      <Text style={[styles.lead, { color: c.muted }]}>
+        Pagos procesados por QPayPro. Tokenización de tarjetas guardadas pendiente (PAYMENT_MODE=direct).
+      </Text>
+      {loading ? (
+        <Text style={{ color: c.muted }}>Cargando…</Text>
+      ) : cards.length === 0 ? (
+        <Text style={{ color: c.muted }}>No hay tarjetas guardadas.</Text>
+      ) : (
+        cards.map((card) => (
+          <View key={card.id} style={[styles.card, { borderColor: c.border }]}>
+            <Text style={{ color: c.text }}>{formatSavedCardLabel(card)}</Text>
+            <Text style={{ color: c.muted, fontSize: 12 }}>{formatSavedCardSub(card)}</Text>
+            <SalonButton label="Eliminar" variant="ghost" onPress={() => onRemove(card)} />
+          </View>
+        ))
+      )}
+      <SalonButton label="Agregar tarjeta" onPress={() => void onAddCard()} />
+    </View>
   );
 }
 
-function createStyles(c) {
-  return StyleSheet.create({
-    cardRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: spacing.sm,
-    },
-  });
-}
+const styles = StyleSheet.create({
+  wrap: { gap: 16, paddingVertical: 8 },
+  lead: { fontSize: 13, lineHeight: 20 },
+  card: { borderWidth: 1, borderRadius: 12, padding: 14, gap: 6 },
+});

@@ -1,11 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 
-/** Consulta estado post-pago y finaliza vía webhook si aún no existe tarjeta. */
+/** @deprecated Usa GET /api/payments/status?sessionId=... */
 export async function GET(request: NextRequest) {
-  const pi = request.nextUrl.searchParams.get('payment_intent_id')?.trim();
-  if (!pi) {
-    return NextResponse.json({ error: 'Falta payment_intent_id.' }, { status: 400 });
+  const sessionId = request.nextUrl.searchParams.get('sessionId')?.trim();
+  const legacyPi = request.nextUrl.searchParams.get('payment_intent_id')?.trim();
+  const paymentRef = sessionId || legacyPi;
+
+  if (!paymentRef) {
+    return NextResponse.json({ error: 'Falta sessionId o payment_intent_id.' }, { status: 400 });
   }
 
   try {
@@ -14,7 +17,7 @@ export async function GET(request: NextRequest) {
     const { data: existing } = await admin
       .from('gift_cards')
       .select('codigo, vence_en, monto_inicial, para_nombre, de_nombre, mensaje, emitida_en, estado')
-      .eq('stripe_payment_intent_id', pi)
+      .or(`payment_session_id.eq.${paymentRef},stripe_payment_intent_id.eq.${paymentRef}`)
       .maybeSingle();
 
     if (existing) {
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: finalized, error } = await admin.rpc('finalize_gift_card_payment', {
-      p_payment_intent_id: pi,
+      p_payment_intent_id: paymentRef,
     });
 
     if (error) {
@@ -36,7 +39,7 @@ export async function GET(request: NextRequest) {
     const { data: card } = await admin
       .from('gift_cards')
       .select('codigo, vence_en, monto_inicial, para_nombre, de_nombre, mensaje, emitida_en, estado')
-      .eq('stripe_payment_intent_id', pi)
+      .or(`payment_session_id.eq.${paymentRef},stripe_payment_intent_id.eq.${paymentRef}`)
       .maybeSingle();
 
     return NextResponse.json({ ok: true, ready: true, card });

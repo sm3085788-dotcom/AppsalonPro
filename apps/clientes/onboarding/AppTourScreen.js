@@ -27,7 +27,7 @@ const SLIDES = [
   {
     id: 'pagos',
     title: 'Pagos con tarjeta',
-    body: 'Pagá en la tienda con tarjeta de crédito o débito. El cobro es seguro con Stripe; también podés guardar tarjetas en Perfil → Métodos de pago. Efectivo al retirar sigue disponible.',
+    body: 'Pagá en la tienda con tarjeta de crédito o débito. El cobro es seguro con QPayPro; también podés guardar tarjetas en Perfil → Métodos de pago (próximamente). Efectivo al retirar sigue disponible.',
   },
   {
     id: 'citas',

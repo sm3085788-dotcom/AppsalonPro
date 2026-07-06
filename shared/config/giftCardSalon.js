@@ -52,3 +52,37 @@ export async function lookupGiftCardPublic(codigo) {
   if (error) return { ok: false, error: error.message };
   return data ?? { ok: false, error: 'Sin respuesta.' };
 }
+
+export function normalizeGtWhatsappPhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length === 8) return `502${digits}`;
+  if (digits.startsWith('502') && digits.length === 11) return digits;
+  return null;
+}
+
+export async function createGiftCardActivationCode({
+  monto,
+  paraNombre,
+  deNombre,
+  mensaje = '',
+  compradorTelefono,
+}) {
+  const { data, error } = await supabase.rpc('create_gift_card_activation_code', {
+    p_monto: monto,
+    p_para_nombre: paraNombre,
+    p_de_nombre: deNombre,
+    p_mensaje: mensaje || null,
+    p_comprador_telefono: compradorTelefono,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function listGiftCardActivationCodesStaff(limit = 20) {
+  const { data, error } = await supabase.rpc('list_gift_card_activation_codes_staff', {
+    p_limit: limit,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}

@@ -33,6 +33,7 @@ export async function computeProductOrder(
   supabase: SupabaseClient,
   items: Array<{ inventarioId: UUID; cantidad: number }>,
   branchId: UUID | null,
+  options?: { fulfillment?: 'retiro_salon' | 'domicilio'; shippingFeeGtq?: number },
 ): Promise<{ ok: true; order: ComputedOrder } | { ok: false; error: string }> {
   const clean = items.filter((i) => i.inventarioId && i.cantidad > 0);
   if (clean.length === 0) return { ok: false, error: 'Carrito vacío.' };
@@ -90,8 +91,26 @@ export async function computeProductOrder(
     });
   }
 
-  const total =
+  const subtotal =
     Math.round(lines.reduce((s, l) => s + l.line_total, 0) * 100) / 100;
+
+  const fulfillment = options?.fulfillment ?? 'retiro_salon';
+  const shippingFee =
+    fulfillment === 'domicilio'
+      ? Number(options?.shippingFeeGtq ?? process.env.WEB_PRODUCT_SHIPPING_FEE_GTQ ?? 0) || 0
+      : 0;
+
+  if (shippingFee > 0) {
+    lines.push({
+      product_id: 'shipping' as UUID,
+      product_name: 'Envío a domicilio',
+      unit_price: shippingFee,
+      qty: 1,
+      line_total: shippingFee,
+    });
+  }
+
+  const total = Math.round((subtotal + shippingFee) * 100) / 100;
   return { ok: true, order: { lines, total } };
 }
 

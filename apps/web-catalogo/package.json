@@ -10,8 +10,6 @@
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^1.16.10",
-    "@stripe/react-stripe-js": "^3.1.1",
-    "@stripe/stripe-js": "^5.6.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.105.1",
     "@swc/helpers": "^0.5.15",
@@ -20,8 +18,7 @@
     "next": "^16.2.9",
     "react": "^19.2.7",
     "react-dom": "19.2.4",
-    "sharp": "^0.34.5",
-    "stripe": "^17.7.0"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

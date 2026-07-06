@@ -28,12 +28,13 @@ import {
   validateCartBranchStock,
   fetchBranchStock,
   validateTarjetaForm,
-  isStripeConfigured,
+  isPaymentGatewayConfigured,
+  isPaymentGatewayConfigured as isStripeConfigured,
   listStripeSavedCards,
   formatSavedCardLabel,
   formatSavedCardSub,
 } from '@appsalon/shared-config';
-import { TiendaDomicilioStripePay } from '../stripe/TiendaDomicilioStripePay';
+import { TiendaDomicilioQPayPay } from '../payments/TiendaDomicilioQPayPay';
 import { ProductReviewsSection } from './ProductReviewsSection';
 import {
   buildTiendaCanjeCatalogSummary,
@@ -696,14 +697,14 @@ export function TiendaFlow({
     return { ok: true, last4: cardLast4FromSelection() };
   };
 
-  const domicilioUsaStripe = shipId === 'ship-home' && payId === 'pay-card' && isStripeConfigured();
+  const domicilioUsaQPay = shipId === 'ship-home' && payId === 'pay-card' && isStripeConfigured();
 
   const checkoutButtonTitle = useMemo(() => {
     if (checkoutBusy) return 'Procesando…';
-    if (domicilioUsaStripe) return 'Pagar con Stripe';
+    if (domicilioUsaQPay) return 'Pagar con QPayPro';
     if (shipId === 'ship-home' && payId === 'pay-card') return 'Confirmar pago y pedido';
     return 'Enviar pedido al salón';
-  }, [checkoutBusy, shipId, payId, domicilioUsaStripe]);
+  }, [checkoutBusy, shipId, payId, domicilioUsaQPay]);
 
   return (
     <View style={styles.wrap}>
@@ -1266,7 +1267,7 @@ export function TiendaFlow({
           {payId === 'pay-card' ? (
             shipId === 'ship-home' && isStripeConfigured() ? (
               <View style={[subStyles.card, styles.cardManager]}>
-                <TiendaDomicilioStripePay ref={stripePayRef} />
+                <TiendaDomicilioQPayPay ref={stripePayRef} />
               </View>
             ) : shipId === 'ship-home' ? (
               <View style={[subStyles.card, styles.cardManager]}>
@@ -1281,7 +1282,7 @@ export function TiendaFlow({
                   onCvvChange={setCardCvv}
                 />
                 <Text style={[styles.choiceSub, { marginTop: spacing.sm }]}>
-                  Modo demo sin Stripe. Configurá EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY para pagos reales.
+                  Modo demo sin QPayPro. Configura credenciales QPayPro para pagos reales.
                 </Text>
               </View>
             ) : (
@@ -1398,7 +1399,7 @@ export function TiendaFlow({
                   return;
                 }
                 const cardPayment = resolveCardPaymentForCheckout();
-                if (shipId === 'ship-home' && !domicilioUsaStripe && !cardPayment.ok) {
+                if (shipId === 'ship-home' && !domicilioUsaQPay && !cardPayment.ok) {
                   Alert.alert('Tarjeta', cardPayment.message || 'Revisá los datos de la tarjeta.');
                   return;
                 }
@@ -1429,10 +1430,10 @@ export function TiendaFlow({
                     : null;
 
                 let res;
-                if (domicilioUsaStripe) {
+                if (domicilioUsaQPay) {
                   if (!stripePayRef.current?.checkout) {
                     setCheckoutBusy(false);
-                    Alert.alert('Stripe', 'El módulo de pago no está listo. Reintentá en unos segundos.');
+                    Alert.alert('QPayPro', 'El módulo de pago no está listo. Reintentá en unos segundos.');
                     return;
                   }
                   res = await stripePayRef.current.checkout({
@@ -1480,8 +1481,8 @@ export function TiendaFlow({
                   andreasDiscount: canjeCard.discount,
                   andreasCanje: buildAndreasCanjeFromCheckout(canjeCard),
                   paymentSummary: domicilioTarjeta
-                    ? domicilioUsaStripe
-                      ? `Stripe · ${stripeBrand || 'Tarjeta'} · **** ${stripeLast4 || '—'} · pago confirmado`
+                    ? domicilioUsaQPay
+                      ? `QPayPro · ${stripeBrand || 'Tarjeta'} · **** ${stripeLast4 || '—'} · pago confirmado`
                       : `Tarjeta ${cardPayment.brand || '—'} · **** ${cardPayment.last4 || '—'} · pago confirmado`
                     : `Tarjeta · últimos ${cardLast4FromSelection() || '—'} · pendiente de cobro en salón`,
                   shippingSummary:

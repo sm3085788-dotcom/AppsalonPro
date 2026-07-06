@@ -24,17 +24,18 @@ export default async function HomePage() {
         <p className="eyebrow text-[10px] tracking-[0.18em] sm:text-[11px]">
           Salón premium · Belleza de autor
         </p>
-        <div className="mt-3 flex items-center justify-center gap-3 md:mt-5 md:justify-start md:gap-4">
-          <span className="rule-gold hidden w-10 sm:block md:w-12" />
-          <span className="font-serif text-xl font-medium uppercase tracking-[0.18em] text-gradient-gold sm:text-3xl md:text-4xl">
+        <div className="mt-3 flex items-center justify-center gap-3 md:mt-5 md:gap-4">
+          <span className="rule-gold hidden w-10 sm:block md:hidden" />
+          <span className="font-serif text-xl font-medium uppercase tracking-[0.18em] text-gradient-gold sm:text-3xl md:text-[2.7rem]">
             Salón Andreas
           </span>
         </div>
-        <h1 className="mt-4 text-balance text-3xl font-light leading-[1.08] tracking-tight text-shine sm:mt-6 sm:text-5xl md:text-6xl lg:text-7xl">
-          El arte de
-          <br />
-          verse{' '}
-          <span className="text-gradient-gold italic">extraordinario</span>
+        <h1 className="mt-4 w-full overflow-visible text-3xl font-light leading-[1.14] tracking-tight sm:mt-6 sm:text-5xl md:text-6xl lg:text-7xl">
+          <span className="block text-balance text-shine">El arte de</span>
+          <span className="mt-0.5 block text-balance">
+            <span className="text-shine">verse </span>
+            <span className="text-gradient-gold italic">extraordinario</span>
+          </span>
         </h1>
         <p className="mt-4 max-w-md text-pretty text-sm font-light leading-relaxed text-muted sm:mt-6 sm:text-base">
           Un espacio donde el detalle es lujo. Reserva con maestros del estilo,
@@ -42,7 +43,7 @@ export default async function HomePage() {
         </p>
       </HeroCover>
 
-      <section className="mx-auto grid max-w-7xl items-start gap-8 px-4 pb-14 pt-8 sm:px-6 sm:pb-20 sm:pt-12 lg:grid-cols-12 lg:gap-8 lg:px-8 lg:pb-28 lg:pt-16">
+      <section className="mx-auto grid max-w-7xl items-start gap-8 px-4 pb-14 pt-8 sm:px-6 sm:pb-20 sm:pt-12 lg:grid-cols-12 lg:items-center lg:gap-8 lg:px-8 lg:pb-28 lg:pt-16">
         <div className="lg:col-span-6">
           <div className="flex flex-wrap items-center gap-4 sm:gap-6">
             <Link
@@ -82,7 +83,7 @@ export default async function HomePage() {
           )}
         </div>
 
-        <div className="relative lg:col-span-6">
+        <div className="relative flex justify-center lg:col-span-6 lg:items-center lg:self-stretch">
           <HeroEliteCarousel />
         </div>
       </section>
@@ -319,16 +320,15 @@ export default async function HomePage() {
                 Llévate AppSalon Pro contigo
               </h2>
               <p className="mt-4 max-w-md text-[13px] font-light leading-relaxed text-muted">
-                Gestiona tus citas, premios ANDREAS, pedidos y mensajes con el
-                salón. Explora servicios y tienda, descubre Tendencias con looks
-                e inspiración del salón en video, y recibe notificaciones en
-                tiempo real con pagos con tarjeta seguros.
+                Pronto podrás gestionar citas, premios ANDREAS y mensajes con el
+                salón desde tu móvil. Mientras tanto, reserva servicios y explora
+                nuestro catálogo desde esta web.
               </p>
               <ul className="mt-6 space-y-2.5">
                 {[
-                  'Reserva y reprograma en segundos',
-                  'Tienda con stock real por sucursal',
-                  'Premios ANDREAS y seguimiento de pedidos',
+                  'Reserva servicios en línea',
+                  'Catálogo de productos y servicios',
+                  'Tarjeta regalo VIP y premios ANDREAS',
                 ].map((item) => (
                   <li
                     key={item}

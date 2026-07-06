@@ -20,7 +20,6 @@ import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { TiendaCartProvider, useTiendaCart } from './context/TiendaCartContext';
 import { ServiciosCartProvider, useServiciosCart } from './context/ServiciosCartContext';
-import { StripeRoot } from './components/stripe/StripeRoot';
 import { TiendaCartButton } from './components/tienda/TiendaCartButton';
 import { countActivePedidos } from './utils/pedidosBadge';
 import {
@@ -1890,15 +1889,13 @@ export default function App() {
           ) : gate.phase === 'tour' ? (
             <AppTourScreen onDone={handleTourDone} />
           ) : (
-            <StripeRoot>
-              <ClientLocaleProvider>
-                <TiendaCartProvider>
-                  <ServiciosCartProvider>
-                    <AppMain onLogout={handleLogout} />
-                  </ServiciosCartProvider>
-                </TiendaCartProvider>
-              </ClientLocaleProvider>
-            </StripeRoot>
+            <ClientLocaleProvider>
+              <TiendaCartProvider>
+                <ServiciosCartProvider>
+                  <AppMain onLogout={handleLogout} />
+                </ServiciosCartProvider>
+              </TiendaCartProvider>
+            </ClientLocaleProvider>
           )}
         </ClientThemedRoot>
       </SafeAreaProvider>

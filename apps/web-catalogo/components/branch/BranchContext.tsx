@@ -29,13 +29,16 @@ function writeBranchCookie(id: string) {
 
 export function BranchProvider({
   branches,
+  initialBranchId = null,
   children,
 }: {
   branches: Branch[];
+  /** Sucursal leída en SSR (cookie) para que el primer render coincida con el cliente. */
+  initialBranchId?: UUID | null;
   children: ReactNode;
 }) {
   const router = useRouter();
-  const [selectedBranchId, setSelected] = useState<UUID | null>(null);
+  const [selectedBranchId, setSelected] = useState<UUID | null>(initialBranchId);
 
   // Restaura la sucursal elegida o usa la matriz / primera activa.
   useEffect(() => {

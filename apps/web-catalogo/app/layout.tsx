@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { ConfigStatusBanner } from "@/components/site/ConfigStatusBanner";
 import { listBranches } from "@/lib/data/branches";
+import { getSelectedBranchId } from "@/lib/data/selectedBranch";
 import { getCurrentUser, getClienteDisplayName } from "@/lib/auth";
 import { getPublicSupabaseConfig } from "@/lib/supabase/public-config";
 
@@ -38,14 +39,16 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [branches, user, displayName, supabaseConfig] = await Promise.all([
-    listBranches(),
-    getCurrentUser(),
-    getCurrentUser().then((u) =>
-      u ? getClienteDisplayName(u.id, u) : Promise.resolve(null),
-    ),
-    Promise.resolve(getPublicSupabaseConfig()),
-  ]);
+  const [branches, initialBranchId, user, displayName, supabaseConfig] =
+    await Promise.all([
+      listBranches(),
+      getSelectedBranchId(),
+      getCurrentUser(),
+      getCurrentUser().then((u) =>
+        u ? getClienteDisplayName(u.id, u) : Promise.resolve(null),
+      ),
+      Promise.resolve(getPublicSupabaseConfig()),
+    ]);
 
   return (
     <html
@@ -56,14 +59,17 @@ export default async function RootLayout({
         {/* Glows editoriales de fondo */}
         <div
           aria-hidden
-          className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+          className="pointer-events-none fixed inset-0 -z-10 bg-background"
         >
-          <div className="glow-gold absolute -top-40 left-1/2 h-[640px] w-[640px] -translate-x-1/2" />
-          <div className="glow-cream absolute top-1/3 -right-40 h-[520px] w-[520px]" />
-          <div className="glow-gold absolute bottom-0 -left-40 h-[480px] w-[480px] opacity-70" />
+          <div className="glow-gold absolute -top-56 left-1/2 h-[820px] w-[820px] -translate-x-1/2 opacity-45 blur-[100px]" />
+          <div className="glow-cream absolute top-1/3 -right-56 h-[640px] w-[640px] opacity-35 blur-[100px]" />
+          <div className="glow-gold absolute bottom-0 -left-56 h-[600px] w-[600px] opacity-30 blur-[100px]" />
         </div>
         <SupabaseConfigProvider config={supabaseConfig}>
-          <BranchProvider branches={branches}>
+          <BranchProvider
+            branches={branches}
+            initialBranchId={initialBranchId}
+          >
             <ConfigStatusBanner configured={supabaseConfig.configured} />
             <SiteHeader
               userEmail={user?.email ?? null}

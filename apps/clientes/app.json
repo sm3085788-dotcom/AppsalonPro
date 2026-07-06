@@ -117,14 +117,7 @@
       ],
       "expo-font",
       "@react-native-community/datetimepicker",
-      "expo-video",
-      [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.com.appsalonpro.clientes",
-          "enableGooglePay": false
-        }
-      ]
+      "expo-video"
     ]
   }
 }

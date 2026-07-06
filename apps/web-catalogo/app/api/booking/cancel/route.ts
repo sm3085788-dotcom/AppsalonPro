@@ -1,15 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getStripe } from '@/lib/stripe/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import {
-  bookingRefundEligible,
-  mergeBookingNotas,
-  parseBookingNotas,
-  bookingRefundTooLateMessage,
-} from '@/lib/bookingPolicy';
+import { mergeBookingNotas, parseBookingNotas } from '@/lib/bookingPolicy';
 
-/** Cancela cita con reembolso automático del anticipo (plazo: BOOKING_REFUND_HOURS_BEFORE). */
+/** Cancela cita web (sin reembolso en línea — reservas sin anticipo). */
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { citaId?: string };
@@ -37,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     const { data: cita, error: citaErr } = await supabase
       .from('citas')
-      .select('id,cliente_id,estado,fecha_hora,notas_servicio,servicio')
+      .select('id,cliente_id,estado,notas_servicio')
       .eq('id', citaId)
       .eq('cliente_id', cliente.id)
       .maybeSingle();
@@ -54,62 +48,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No se puede cancelar una cita completada.' }, { status: 400 });
     }
 
-    const { meta } = parseBookingNotas(cita.notas_servicio);
-    const paymentIntentId = String(meta.payment_intent_id || '').trim();
-    if (!paymentIntentId) {
-      return NextResponse.json(
-        { error: 'Esta cita no tiene anticipo reembolsable en línea.' },
-        { status: 400 },
-      );
-    }
-
-    if (meta.refunded) {
-      return NextResponse.json({ error: 'El anticipo ya fue reembolsado.' }, { status: 400 });
-    }
-
-    if (!bookingRefundEligible(cita.fecha_hora)) {
-      return NextResponse.json(
-        { error: bookingRefundTooLateMessage() },
-        { status: 400 },
-      );
-    }
-
-    const stripe = getStripe();
-    if (!stripe) {
-      return NextResponse.json({ error: 'Stripe no configurado.' }, { status: 503 });
-    }
-
-    await stripe.refunds.create({ payment_intent: paymentIntentId });
-
+    const { staff, meta } = parseBookingNotas(cita.notas_servicio);
     const admin = createSupabaseAdminClient();
-    const { staff } = parseBookingNotas(cita.notas_servicio);
     const nextNotas = mergeBookingNotas(
-      `${staff}\nCancelada por el cliente · reembolso automático`.trim(),
-      { ...meta, refunded: true, refunded_at: new Date().toISOString() },
+      `${staff}\nCancelada por el cliente (web)`.trim(),
+      { ...meta, cancelled_at: new Date().toISOString() },
     );
 
     const { error: upErr } = await admin
       .from('citas')
-      .update({
-        estado: 'cancelada',
-        notas_servicio: nextNotas,
-      })
+      .update({ estado: 'cancelada', notas_servicio: nextNotas })
       .eq('id', citaId);
 
     if (upErr) {
-      console.error('[booking/cancel] update cita', upErr);
-      return NextResponse.json(
-        { error: 'Reembolso procesado pero no se pudo actualizar la cita. Contactá al salón.' },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: 'No se pudo cancelar la cita.' }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, refunded: true });
+    return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[booking/cancel]', err);
-    return NextResponse.json(
-      { error: 'No se pudo cancelar la cita.' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: 'No se pudo cancelar la cita.' }, { status: 500 });
   }
 }

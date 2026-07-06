@@ -83,7 +83,7 @@ export function PostLoginIntroScreen({ profile, onContinue }) {
         <Text style={styles.name}>{firstName}</Text>
         <Text style={styles.lead}>
           Tu espacio en el salón: tienda, citas, premios ANDREAS, eventos profesionales y mensajes con Andreas Pro.
-          Pagos con tarjeta seguros (Stripe). Elegí sucursal, idioma y tema en Configuración. Recorrido breve por lo esencial.
+          Pagos con tarjeta seguros (QPayPro). Elegí sucursal, idioma y tema en Configuración. Recorrido breve por lo esencial.
         </Text>
         {profile?.referralCode ? (
           <Text style={styles.refNote}>

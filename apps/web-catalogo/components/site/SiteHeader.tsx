@@ -13,6 +13,7 @@ const NAV = [
   { href: '/servicios', label: 'Servicios' },
   { href: '/productos', label: 'Productos' },
   { href: '/reservar', label: 'Reservar' },
+  { href: '/membresias', label: 'Membresías' },
   { href: '/#descargar', label: 'App' },
 ];
 
@@ -88,25 +89,22 @@ export function SiteHeader({
         </button>
       </div>
 
-      {/* Desktop */}
-      <div className="mx-auto hidden h-[72px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 md:flex">
+      {/* Desktop: logo | navegación centrada | sucursal + cuenta */}
+      <div className="mx-auto hidden h-[72px] max-w-7xl grid-cols-[auto_1fr_auto] items-center gap-6 px-4 sm:px-6 lg:px-8 md:grid">
         <Link
           href="/"
-          className="flex shrink-0 items-center gap-3"
-          aria-label="Inicio AppSalon Pro"
+          className="flex shrink-0 items-center"
+          aria-label="Inicio Andreas"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/images/logo-andreas-transparent.png"
-            alt="Andreas · AppSalon Pro"
+            alt="Andreas"
             className="h-11 w-11 object-contain sm:h-12 sm:w-12"
           />
-          <span className="hidden text-[15px] font-light tracking-[0.32em] text-cream min-[520px]:inline">
-            APPSALON <span className="text-gold">PRO</span>
-          </span>
         </Link>
 
-        <nav className="flex items-center gap-9">
+        <nav className="flex items-center justify-center gap-8 lg:gap-10">
           {NAV.map((item) => (
             <Link
               key={item.href}
