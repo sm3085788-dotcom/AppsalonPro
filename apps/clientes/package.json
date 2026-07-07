@@ -16,7 +16,7 @@
     "build:ios:preview": "eas build --platform ios --profile preview",
     "build:ios:production": "eas build --platform ios --profile production",
     "update:preview": "eas update --channel preview --non-interactive",
-    "update:production": "eas update --channel production --non-interactive",
+    "update:production": "eas update --channel production --non-interactive --message \"OTA production\"",
     "eas-build-pre-install": "cd ../.. && npm ci"
   },
   "dependencies": {
