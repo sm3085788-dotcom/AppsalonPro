@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
-  FlatList,
   RefreshControl,
   Alert,
   ScrollView,
@@ -12,22 +11,23 @@ import {
   TouchableOpacity,
   Linking,
   Modal,
+  FlatList,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Gift, KeyRound } from 'lucide-react-native';
+import { Gift, KeyRound, Link2, UserPlus } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   listGiftCardsStaff,
-  lookupGiftCardStaff,
   activateGiftCardAtSalon,
-  verifyGiftCardBirthday,
-  registerGiftCardUse,
   createGiftCardActivationCode,
   listGiftCardActivationCodesStaff,
   normalizeGtWhatsappPhone,
+  linkGiftCardToCliente,
+  unlinkGiftCardFromCliente,
   SALON_CONTACTO,
+  db,
 } from '@appsalon/shared-config';
-import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { SubScreenChrome, SalonButton, SalonSearchBar } from '../components/luxury';
 import { useTheme } from '../theme/ThemeProvider';
 import { GiftCardQrScannerModal } from '../components/GiftCardQrScannerModal';
 
@@ -46,7 +46,19 @@ function formatQ(n) {
   return `Q${v.toFixed(2)}`;
 }
 
+function estadoLabel(estado) {
+  if (estado === 'depleted') return 'Completado';
+  if (estado === 'issued') return 'Emitida';
+  if (estado === 'activated') return 'Activa';
+  if (estado === 'expired') return 'Vencida';
+  if (estado === 'cancelled') return 'Cancelada';
+  return estado || '—';
+}
+
 const WEB_ACTIVATE_URL = 'https://appsalon-pro-web-catalogo.vercel.app/tarjeta-regalo/activar';
+const SALDO_GREEN = '#22c55e';
+const SALDO_RED = '#ef4444';
+const COMPLETADO_BLUE = '#2563eb';
 
 export function TarjetasRegaloScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
@@ -55,9 +67,6 @@ export function TarjetasRegaloScreen({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [useAmount, setUseAmount] = useState('');
-  const [useNotes, setUseNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [emitOpen, setEmitOpen] = useState(true);
   const [generatedCode, setGeneratedCode] = useState(null);
@@ -68,6 +77,10 @@ export function TarjetasRegaloScreen({ onBack }) {
     mensaje: '',
     compradorTelefono: '',
   });
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkTargetCard, setLinkTargetCard] = useState(null);
+  const [clientes, setClientes] = useState([]);
+  const [clienteSearch, setClienteSearch] = useState('');
 
   const loadList = useCallback(async () => {
     const [cardsRes, codesRes] = await Promise.all([
@@ -91,23 +104,6 @@ export function TarjetasRegaloScreen({ onBack }) {
     await loadList();
     setRefreshing(false);
   }, [loadList]);
-
-  const openCode = useCallback(async (codigo) => {
-    setBusy(true);
-    setScannerOpen(false);
-    try {
-      const res = await lookupGiftCardStaff(codigo);
-      if (!res.ok) {
-        Alert.alert('Tarjeta regalo', res.error || 'No encontrada.');
-        return;
-      }
-      setSelected(res.card);
-      setUseAmount('');
-      setUseNotes('');
-    } finally {
-      setBusy(false);
-    }
-  }, []);
 
   const runEmitCode = useCallback(async () => {
     const monto = Number(String(emitForm.monto).replace(',', '.'));
@@ -161,93 +157,183 @@ export function TarjetasRegaloScreen({ onBack }) {
     void Linking.openURL(url);
   }, []);
 
-  const runActivate = useCallback(async () => {
-    if (!selected?.codigo) return;
-    Alert.alert(
-      'Activar tarjeta',
-      '¿Confirmás identidad del destinatario? La tarjeta quedará activa para usar saldo.',
-      [
+  const runActivate = useCallback(
+    async (codigo) => {
+      Alert.alert(
+        'Activar tarjeta',
+        '¿Confirmás identidad del destinatario? La tarjeta quedará activa para usar saldo.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Activar',
+            onPress: async () => {
+              setBusy(true);
+              try {
+                const res = await activateGiftCardAtSalon(codigo);
+                if (!res.ok) {
+                  Alert.alert('Tarjeta regalo', res.error || 'No se pudo activar.');
+                  return;
+                }
+                await loadList();
+                Alert.alert('Listo', 'Tarjeta activada.');
+              } finally {
+                setBusy(false);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [loadList],
+  );
+
+  const openLinkModal = useCallback(async (card) => {
+    setLinkTargetCard(card);
+    setClienteSearch('');
+    setLinkModalOpen(true);
+    const { data } = await db.clientes.getAll();
+    setClientes(data || []);
+  }, []);
+
+  const clientesFiltrados = useMemo(() => {
+    const q = clienteSearch.trim().toLowerCase();
+    if (!q || q.length < 2) return [];
+    return clientes
+      .filter((cl) => {
+        const blob = [cl.nombre, cl.telefono, cl.email].filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+      })
+      .slice(0, 30);
+  }, [clientes, clienteSearch]);
+
+  const confirmLink = useCallback(
+    async (cliente) => {
+      if (!linkTargetCard?.codigo || !cliente?.id) return;
+      setBusy(true);
+      try {
+        const res = await linkGiftCardToCliente(linkTargetCard.codigo, cliente.id);
+        if (!res.ok) {
+          Alert.alert('Vincular', res.error || 'No se pudo vincular.');
+          return;
+        }
+        setLinkModalOpen(false);
+        setLinkTargetCard(null);
+        await loadList();
+        Alert.alert('Vinculado', `Tarjeta asociada a ${cliente.nombre}. El saldo se aplicará en Vender.`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [linkTargetCard, loadList],
+  );
+
+  const confirmUnlink = useCallback(
+    (card) => {
+      Alert.alert('Desvincular', `¿Quitar la vinculación de ${card.cliente_vinculado_nombre || 'cliente'}?`, [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Activar',
+          text: 'Desvincular',
+          style: 'destructive',
           onPress: async () => {
             setBusy(true);
             try {
-              const res = await activateGiftCardAtSalon(selected.codigo);
+              const res = await unlinkGiftCardFromCliente(card.codigo);
               if (!res.ok) {
-                Alert.alert('Tarjeta regalo', res.error || 'No se pudo activar.');
+                Alert.alert('Desvincular', res.error || 'No se pudo desvincular.');
                 return;
               }
-              setSelected(res.card);
               await loadList();
-              Alert.alert('Listo', 'Tarjeta activada.');
             } finally {
               setBusy(false);
             }
           },
         },
-      ],
-    );
-  }, [selected, loadList]);
+      ]);
+    },
+    [loadList],
+  );
 
-  const runBirthday = useCallback(async () => {
-    if (!selected?.codigo) return;
-    Alert.alert(
-      'Verificar cumpleaños',
-      '¿Confirmás identificación? Tras agotar saldo, aplicar 15% manual en caja.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Verificar ID',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              const res = await verifyGiftCardBirthday(selected.codigo);
-              if (!res.ok) {
-                Alert.alert('Tarjeta regalo', res.error || 'No se pudo verificar.');
-                return;
-              }
-              setSelected(res.card);
-              Alert.alert('Verificado', res.message || 'Cumpleaños confirmado.');
-            } finally {
-              setBusy(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [selected]);
-
-  const runUse = useCallback(async () => {
-    if (!selected?.codigo) return;
-    const monto = Number(String(useAmount).replace(',', '.'));
-    if (!Number.isFinite(monto) || monto <= 0) {
-      Alert.alert('Monto', 'Ingresá un monto válido.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await registerGiftCardUse(selected.codigo, monto, useNotes);
-      if (!res.ok) {
-        Alert.alert('Tarjeta regalo', res.error || 'No se pudo registrar.');
-        return;
-      }
-      setSelected(res.card);
-      setUseAmount('');
-      setUseNotes('');
+  const onScanCode = useCallback(
+    async (codigo) => {
+      setScannerOpen(false);
       await loadList();
-      if (res.card?.cumpleanos_bonus_disponible) {
-        Alert.alert('Saldo agotado', 'Aplicar 15% manual en caja (cumpleaños verificado).');
-      }
-    } finally {
-      setBusy(false);
-    }
-  }, [selected, useAmount, useNotes, loadList]);
+      Alert.alert('Tarjeta escaneada', `Código ${codigo} — revisá la lista.`);
+    },
+    [loadList],
+  );
 
   const inputStyle = [
     styles.input,
     { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
   ];
+
+  const renderCard = (item) => {
+    const depleted = item.estado === 'depleted';
+    const saldoNum = Number(item.saldo);
+    const saldoColor =
+      depleted || saldoNum <= 0 ? SALDO_RED : SALDO_GREEN;
+    const cardBorder = depleted ? COMPLETADO_BLUE : c.cardBorder;
+    const cardBg = depleted ? `${COMPLETADO_BLUE}12` : c.card;
+
+    return (
+      <View
+        key={item.id}
+        style={[styles.cardBox, { backgroundColor: cardBg, borderColor: cardBorder }]}
+      >
+        <View style={styles.cardTopRow}>
+          <Gift size={18} color={depleted ? COMPLETADO_BLUE : c.primary} />
+          <Text style={[styles.cardCode, { color: c.foreground, flex: 1 }]}>{item.codigo}</Text>
+          {item.estado === 'activated' && saldoNum > 0 ? (
+            <TouchableOpacity
+              onPress={() =>
+                item.cliente_vinculado_id
+                  ? confirmUnlink(item)
+                  : void openLinkModal(item)
+              }
+              hitSlop={8}
+              accessibilityLabel={
+                item.cliente_vinculado_id ? 'Desvincular cliente' : 'Vincular cliente'
+              }
+            >
+              {item.cliente_vinculado_id ? (
+                <Link2 size={20} color={c.primary} />
+              ) : (
+                <UserPlus size={20} color={c.primary} />
+              )}
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <Text style={[styles.cardMeta, { color: c.foregroundMuted }]}>
+          Para: {item.para_nombre} · De: {item.de_nombre}
+        </Text>
+        {item.mensaje ? (
+          <Text style={[styles.cardQuote, { color: c.foreground }]}>&ldquo;{item.mensaje}&rdquo;</Text>
+        ) : null}
+        <Text style={[styles.cardSaldo, { color: saldoColor }]}>
+          Saldo: {formatQ(item.saldo)} / {formatQ(item.monto_inicial)}
+        </Text>
+        <Text style={[styles.cardMeta, { color: depleted ? COMPLETADO_BLUE : c.foregroundMuted }]}>
+          {estadoLabel(item.estado)}
+          {item.cliente_vinculado_nombre ? ` · ${item.cliente_vinculado_nombre}` : ''}
+        </Text>
+        <Text style={[styles.cardMeta, { color: c.foregroundMuted }]}>
+          Emisión: {formatWhen(item.emitida_en)} · Vence: {formatWhen(item.vence_en)}
+        </Text>
+
+        {item.estado === 'issued' ? (
+          <SalonButton
+            title="Activar tarjeta (verificar ID)"
+            variant="heroGold"
+            fullWidth
+            onPress={() => void runActivate(item.codigo)}
+            disabled={busy}
+            style={{ marginTop: spacing.sm }}
+          />
+        ) : null}
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
@@ -259,136 +345,70 @@ export function TarjetasRegaloScreen({ onBack }) {
         refreshing={refreshing}
         onRefresh={onRefresh}
       >
-        {!selected ? (
-          <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
-            <TouchableOpacity
-              style={[styles.emitHeader, { borderColor: c.cardBorder, backgroundColor: c.card }]}
-              onPress={() => setEmitOpen((v) => !v)}
-            >
-              <KeyRound size={18} color={c.primary} />
-              <Text style={[styles.emitHeaderTxt, { color: c.foreground }]}>
-                Emitir código de activación
+        <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+          <TouchableOpacity
+            style={[styles.emitHeader, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+            onPress={() => setEmitOpen((v) => !v)}
+          >
+            <KeyRound size={18} color={c.primary} />
+            <Text style={[styles.emitHeaderTxt, { color: c.foreground }]}>
+              Emitir código de activación
+            </Text>
+          </TouchableOpacity>
+
+          {emitOpen ? (
+            <View style={[styles.emitBox, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+              <Text style={[styles.emitHint, { color: c.foregroundMuted }]}>
+                Tras validar monto y pago, generá un código de 6 dígitos para que el comprador lo
+                ingrese en la web.
               </Text>
-            </TouchableOpacity>
+              <TextInput style={inputStyle} placeholder="Monto Q (50–2000)" placeholderTextColor={c.foregroundSubtle} keyboardType="decimal-pad" value={emitForm.monto} onChangeText={(v) => setEmitForm((f) => ({ ...f, monto: v }))} />
+              <TextInput style={inputStyle} placeholder="Para (destinatario)" placeholderTextColor={c.foregroundSubtle} value={emitForm.paraNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, paraNombre: v }))} />
+              <TextInput style={inputStyle} placeholder="De (comprador)" placeholderTextColor={c.foregroundSubtle} value={emitForm.deNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, deNombre: v }))} />
+              <TextInput style={inputStyle} placeholder="Teléfono comprador (WhatsApp)" placeholderTextColor={c.foregroundSubtle} keyboardType="phone-pad" value={emitForm.compradorTelefono} onChangeText={(v) => setEmitForm((f) => ({ ...f, compradorTelefono: v }))} />
+              <TextInput style={inputStyle} placeholder="Mensaje (opcional)" placeholderTextColor={c.foregroundSubtle} value={emitForm.mensaje} onChangeText={(v) => setEmitForm((f) => ({ ...f, mensaje: v }))} />
+              <SalonButton title="Generar código ACT-" variant="heroGold" fullWidth onPress={() => void runEmitCode()} disabled={busy} />
+            </View>
+          ) : null}
 
-            {emitOpen ? (
-              <View style={[styles.emitBox, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                <Text style={[styles.emitHint, { color: c.foregroundMuted }]}>
-                  Tras validar monto y pago con tarjeta, generá un código para que el comprador lo
-                  ingrese en la web y obtenga la tarjeta compartible.
-                </Text>
-                <TextInput style={inputStyle} placeholder="Monto Q (50–2000)" placeholderTextColor={c.foregroundSubtle} keyboardType="decimal-pad" value={emitForm.monto} onChangeText={(v) => setEmitForm((f) => ({ ...f, monto: v }))} />
-                <TextInput style={inputStyle} placeholder="Para (destinatario)" placeholderTextColor={c.foregroundSubtle} value={emitForm.paraNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, paraNombre: v }))} />
-                <TextInput style={inputStyle} placeholder="De (comprador)" placeholderTextColor={c.foregroundSubtle} value={emitForm.deNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, deNombre: v }))} />
-                <TextInput style={inputStyle} placeholder="Teléfono comprador (WhatsApp)" placeholderTextColor={c.foregroundSubtle} keyboardType="phone-pad" value={emitForm.compradorTelefono} onChangeText={(v) => setEmitForm((f) => ({ ...f, compradorTelefono: v }))} />
-                <TextInput style={inputStyle} placeholder="Mensaje (opcional)" placeholderTextColor={c.foregroundSubtle} value={emitForm.mensaje} onChangeText={(v) => setEmitForm((f) => ({ ...f, mensaje: v }))} />
-                <SalonButton title="Generar código ACT-" variant="heroGold" fullWidth onPress={() => void runEmitCode()} disabled={busy} />
-              </View>
-            ) : null}
-
-            {pendingCodes.length > 0 ? (
-              <View style={{ marginTop: spacing.md }}>
-                <Text style={[styles.sectionLbl, { color: c.foreground }]}>Códigos pendientes</Text>
-                {pendingCodes.map((row) => (
-                  <View key={row.id} style={[styles.row, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowTitle, { color: c.foreground }]}>{row.codigo_activacion}</Text>
-                      <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
-                        {row.para_nombre} · {formatQ(row.monto)}
-                      </Text>
-                    </View>
-                    <TouchableOpacity onPress={() => shareActivationCode(row)}>
-                      <Text style={{ color: c.primary, fontFamily: typography.fontSansMedium, fontSize: 13 }}>WhatsApp</Text>
-                    </TouchableOpacity>
+          {pendingCodes.length > 0 ? (
+            <View style={{ marginTop: spacing.md }}>
+              <Text style={[styles.sectionLbl, { color: c.foreground }]}>Códigos pendientes</Text>
+              {pendingCodes.map((row) => (
+                <View key={row.id} style={[styles.row, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowTitle, { color: c.foreground }]}>{row.codigo_activacion}</Text>
+                    <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
+                      {row.para_nombre} · {formatQ(row.monto)}
+                    </Text>
                   </View>
-                ))}
-              </View>
-            ) : null}
-
-            <SalonButton
-              title="Escanear QR tarjeta"
-              variant="outlineGold"
-              fullWidth
-              onPress={() => setScannerOpen(true)}
-              disabled={busy}
-              style={{ marginTop: spacing.lg, marginBottom: spacing.md }}
-            />
-
-            {loading ? (
-              <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
-            ) : (
-              <FlatList
-                data={cards}
-                scrollEnabled={false}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[styles.row, { backgroundColor: c.card, borderColor: c.cardBorder }]}
-                    onPress={() => void openCode(item.codigo)}
-                  >
-                    <Gift size={18} color={c.primary} />
-                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                      <Text style={[styles.rowTitle, { color: c.foreground }]}>{item.codigo}</Text>
-                      <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
-                        {item.para_nombre} · {formatQ(item.saldo)} · {item.estado}
-                      </Text>
-                    </View>
+                  <TouchableOpacity onPress={() => shareActivationCode(row)}>
+                    <Text style={{ color: c.primary, fontFamily: typography.fontSansMedium, fontSize: 13 }}>WhatsApp</Text>
                   </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  <Text style={[styles.empty, { color: c.foregroundMuted }]}>
-                    Las tarjetas activadas aparecerán aquí cuando el comprador use su código en la web.
-                  </Text>
-                }
-              />
-            )}
-          </ScrollView>
-        ) : (
-          <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
-            <Text style={[styles.detailTitle, { color: c.foreground }]}>{selected.codigo}</Text>
-            <Text style={[styles.detailMeta, { color: c.foregroundMuted }]}>
-              Para: {selected.para_nombre} · De: {selected.de_nombre}
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <SalonButton
+            title="Escanear QR tarjeta"
+            variant="outlineGold"
+            fullWidth
+            onPress={() => setScannerOpen(true)}
+            disabled={busy}
+            style={{ marginTop: spacing.lg, marginBottom: spacing.md }}
+          />
+
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: spacing.xl }} color={c.primary} />
+          ) : cards.length === 0 ? (
+            <Text style={[styles.empty, { color: c.foregroundMuted }]}>
+              Las tarjetas activadas aparecerán aquí cuando el comprador use su código en la web.
             </Text>
-            <Text style={[styles.detailMeta, { color: c.foregroundMuted }]}>
-              Saldo: {formatQ(selected.saldo)} / {formatQ(selected.monto_inicial)} · {selected.estado}
-            </Text>
-            <Text style={[styles.detailMeta, { color: c.foregroundMuted }]}>
-              Emisión: {formatWhen(selected.emitida_en)} · Vence: {formatWhen(selected.vence_en)}
-            </Text>
-            {selected.mensaje ? (
-              <Text style={[styles.detailQuote, { color: c.foreground }]}>&ldquo;{selected.mensaje}&rdquo;</Text>
-            ) : null}
-
-            {selected.estado === 'issued' ? (
-              <SalonButton title="Activar tarjeta (verificar ID)" variant="heroGold" fullWidth onPress={() => void runActivate()} disabled={busy} style={{ marginTop: spacing.lg }} />
-            ) : null}
-
-            {selected.estado === 'activated' ? (
-              <>
-                <SalonButton
-                  title={selected.cumpleanos_verificado ? 'Cumpleaños verificado' : 'Verificar cumpleaños (ID)'}
-                  variant="outlineGold"
-                  fullWidth
-                  onPress={() => void runBirthday()}
-                  disabled={busy || selected.cumpleanos_verificado}
-                  style={{ marginTop: spacing.lg }}
-                />
-                <Text style={[styles.fieldLbl, { color: c.foreground }]}>Registrar uso de saldo</Text>
-                <TextInput style={inputStyle} placeholder="Monto Q" placeholderTextColor={c.foregroundSubtle} keyboardType="decimal-pad" value={useAmount} onChangeText={setUseAmount} />
-                <TextInput style={inputStyle} placeholder="Notas (opcional)" placeholderTextColor={c.foregroundSubtle} value={useNotes} onChangeText={setUseNotes} />
-                <SalonButton title="Registrar descuento" variant="heroGold" fullWidth onPress={() => void runUse()} disabled={busy} />
-              </>
-            ) : null}
-
-            {selected.cumpleanos_bonus_disponible ? (
-              <Text style={[styles.bonusHint, { color: c.primary }]}>
-                15% cumpleaños — aplicar manual en caja.
-              </Text>
-            ) : null}
-
-            <SalonButton title="Cerrar ficha" variant="outlineGray" fullWidth onPress={() => setSelected(null)} style={{ marginTop: spacing.lg }} />
-          </ScrollView>
-        )}
+          ) : (
+            cards.map((item) => renderCard(item))
+          )}
+        </ScrollView>
       </SubScreenChrome>
 
       <Modal visible={Boolean(generatedCode)} transparent animationType="fade" onRequestClose={() => setGeneratedCode(null)}>
@@ -408,10 +428,52 @@ export function TarjetasRegaloScreen({ onBack }) {
         </View>
       </Modal>
 
+      <Modal visible={linkModalOpen} transparent animationType="slide" onRequestClose={() => setLinkModalOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.linkModalCard, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
+            <Text style={[styles.modalTitle, { color: c.foreground }]}>Vincular cliente</Text>
+            <Text style={[styles.modalHint, { color: c.foregroundMuted }]}>
+              Tarjeta {linkTargetCard?.codigo} — buscá el cliente para aplicar saldo en Vender.
+            </Text>
+            <SalonSearchBar
+              value={clienteSearch}
+              onChangeText={setClienteSearch}
+              placeholder="Nombre, teléfono o email (mín. 2 letras)"
+            />
+            <FlatList
+              data={clientesFiltrados}
+              keyExtractor={(item) => String(item.id)}
+              style={{ maxHeight: 280, marginTop: spacing.sm }}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                clienteSearch.trim().length >= 2 ? (
+                  <Text style={[styles.empty, { color: c.foregroundMuted }]}>Sin resultados</Text>
+                ) : (
+                  <Text style={[styles.empty, { color: c.foregroundMuted }]}>Escribí al menos 2 caracteres</Text>
+                )
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.clienteRow, { borderBottomColor: c.cardBorder }]}
+                  onPress={() => void confirmLink(item)}
+                  disabled={busy}
+                >
+                  <Text style={[styles.rowTitle, { color: c.foreground }]}>{item.nombre}</Text>
+                  <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
+                    {[item.telefono, item.email].filter(Boolean).join(' · ')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+            <SalonButton title="Cancelar" variant="outlineGray" fullWidth onPress={() => setLinkModalOpen(false)} style={{ marginTop: spacing.md }} />
+          </View>
+        </View>
+      </Modal>
+
       <GiftCardQrScannerModal
         visible={scannerOpen}
         onClose={() => setScannerOpen(false)}
-        onPayload={(code) => void openCode(code)}
+        onPayload={(code) => void onScanCode(code)}
       />
     </View>
   );
@@ -432,10 +494,17 @@ const styles = StyleSheet.create({
   emitBox: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.sm },
   emitHint: { fontFamily: typography.fontSans, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },
   sectionLbl: { fontFamily: typography.fontSansMedium, fontSize: 14, marginBottom: spacing.sm },
-  detailTitle: { fontFamily: typography.fontDisplay, fontSize: 22 },
-  detailMeta: { fontFamily: typography.fontSans, fontSize: 14, marginTop: spacing.xs, lineHeight: 20 },
-  detailQuote: { fontFamily: typography.fontSans, fontSize: 14, fontStyle: 'italic', marginTop: spacing.md },
-  fieldLbl: { fontFamily: typography.fontSansMedium, fontSize: 14, marginTop: spacing.lg, marginBottom: spacing.xs },
+  cardBox: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  cardCode: { fontFamily: typography.fontSansMedium, fontSize: 16 },
+  cardMeta: { fontFamily: typography.fontSans, fontSize: 13, marginTop: 4, lineHeight: 18 },
+  cardQuote: { fontFamily: typography.fontSans, fontSize: 13, fontStyle: 'italic', marginTop: spacing.xs },
+  cardSaldo: { fontFamily: typography.fontSansMedium, fontSize: 16, marginTop: spacing.xs },
   input: {
     borderWidth: 1,
     borderRadius: radii.md,
@@ -445,7 +514,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: spacing.sm,
   },
-  bonusHint: { fontFamily: typography.fontSansMedium, fontSize: 13, marginTop: spacing.md },
   empty: { fontFamily: typography.fontSans, fontSize: 14, textAlign: 'center', marginTop: spacing.xl },
   row: {
     flexDirection: 'row',
@@ -457,6 +525,7 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontFamily: typography.fontSansMedium, fontSize: 15 },
   rowSub: { fontFamily: typography.fontSans, fontSize: 13, marginTop: 2 },
+  clienteRow: { paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -464,6 +533,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   modalCard: { borderRadius: radii.lg, borderWidth: 1, padding: spacing.lg },
+  linkModalCard: { borderRadius: radii.lg, borderWidth: 1, padding: spacing.lg, maxHeight: '85%' },
   modalTitle: { fontFamily: typography.fontSansMedium, fontSize: 16 },
   modalCode: { fontFamily: typography.fontDisplay, fontSize: 28, marginTop: spacing.md, letterSpacing: 2 },
   modalMeta: { fontFamily: typography.fontSans, fontSize: 14, marginTop: spacing.xs },

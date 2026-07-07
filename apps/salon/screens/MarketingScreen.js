@@ -26,6 +26,8 @@ import {
   Bell,
   Heart,
   MessageCircle,
+  Cake,
+  ThumbsDown,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
@@ -379,6 +381,11 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'marketing_post_likes' },
+        () => void refreshEngagementAlerts(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'birthday_club_reactions' },
         () => void refreshEngagementAlerts(),
       )
       .subscribe();
@@ -1196,13 +1203,29 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
                   <View style={styles.engagementRowIcon}>
                     {ev.kind === 'like' ? (
                       <Heart size={16} color="#FF4D6D" fill="#FF4D6D" />
+                    ) : ev.kind === 'comment' ? (
+                      <MessageCircle size={16} color={c.primary} />
+                    ) : ev.kind === 'birthday_dislike' ? (
+                      <ThumbsDown size={16} color="#E53935" />
+                    ) : ev.kind === 'birthday_love' || ev.kind === 'birthday_like' ? (
+                      <Cake size={16} color="#FFB300" />
                     ) : (
                       <MessageCircle size={16} color={c.primary} />
                     )}
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={{ fontFamily: typography.fontSansMedium, color: c.foreground, fontSize: 13 }}>
-                      {ev.kind === 'like' ? 'Me gusta' : 'Comentario'}
+                      {ev.kind === 'like'
+                        ? 'Me gusta'
+                        : ev.kind === 'comment'
+                          ? 'Comentario'
+                          : ev.kind === 'birthday_love'
+                            ? 'Me encanta · Cumpleaños'
+                            : ev.kind === 'birthday_dislike'
+                              ? 'No le convence · Cumpleaños'
+                              : ev.kind === 'birthday_like'
+                                ? 'Me gusta · Cumpleaños'
+                                : 'Actividad'}
                     </Text>
                     <Text
                       style={{

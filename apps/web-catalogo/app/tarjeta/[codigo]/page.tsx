@@ -85,14 +85,14 @@ export default async function PublicGiftCardPage({ params }: PageProps) {
       </div>
       <div className="mt-10 rounded-2xl border border-gold/20 bg-gold/5 p-6 text-sm text-muted">
         <p>
-          Verifica cumpleaños con identificación en recepción y, tras agotar el saldo, recibe
-          15% en productos y servicios (aplicado manualmente en caja).
+          Presenta esta tarjeta en recepción dentro de los 30 días. El salón activará tu saldo al
+          verificar tu identidad.
         </p>
         <Link
           href="/"
           className="link-underline mt-6 inline-block text-[13px] uppercase tracking-widest text-cream"
         >
-          Conoce más en appsalon-pro-web-catalogo
+          Conoce más en ANDREAS Salon
         </Link>
       </div>
     </div>

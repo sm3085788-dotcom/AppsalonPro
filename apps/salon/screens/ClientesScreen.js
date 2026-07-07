@@ -31,6 +31,8 @@ import {
   getSalonSessionProfile,
   isSalonSucursalAdmin,
   getSalonBranchDisplayName,
+  getBirthdayClubEnrollmentForCliente,
+  verifyBirthdayClubId,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { SalonFichaSheet } from '../components/SalonFichaSheet';
@@ -140,6 +142,8 @@ export function ClientesScreen({ onBack }) {
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
   const [asignandoMembresia, setAsignandoMembresia] = useState(false);
   const [savingClienteKey, setSavingClienteKey] = useState(null);
+  const [birthdayEnrollment, setBirthdayEnrollment] = useState(null);
+  const [birthdayVerifyBusy, setBirthdayVerifyBusy] = useState(false);
   const loadClientes = useCallback(async () => {
     setLoadError(null);
     try {
@@ -238,6 +242,39 @@ export function ClientesScreen({ onBack }) {
       setCodigosPendientes([]);
     }
   }, [detailCliente, loadCodigosPendientes, isSucursalAdmin]);
+
+  useEffect(() => {
+    const id = detailCliente?.id;
+    if (!id) {
+      setBirthdayEnrollment(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await getBirthdayClubEnrollmentForCliente(id);
+      if (cancelled) return;
+      setBirthdayEnrollment(res.ok ? res.enrollment : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detailCliente?.id]);
+
+  const onVerifyBirthdayClubId = useCallback(async () => {
+    if (!detailCliente?.id) return;
+    setBirthdayVerifyBusy(true);
+    try {
+      const res = await verifyBirthdayClubId(detailCliente.id);
+      if (!res.ok) {
+        Alert.alert('Club cumpleaños', res.error || 'No se pudo verificar.');
+        return;
+      }
+      setBirthdayEnrollment(res.enrollment);
+      Alert.alert('Listo', 'Identificación verificada en salón.');
+    } finally {
+      setBirthdayVerifyBusy(false);
+    }
+  }, [detailCliente?.id]);
 
   useEffect(() => {
     const id = detailCliente?.id;
@@ -694,6 +731,26 @@ export function ClientesScreen({ onBack }) {
         extraContent={
           detailCliente?.id && !fichaReadOnly ? (
             <>
+              {birthdayEnrollment ? (
+                <View style={[styles.membresiaBlock, { borderColor: c.cardBorder, marginBottom: spacing.sm }]}>
+                  <Text style={[styles.membresiaBlockTitle, { color: c.foreground }]}>Club cumpleaños</Text>
+                  <Text style={[styles.membresiaBlockHint, { color: c.foregroundMuted }]}>
+                    {birthdayEnrollment.status === 'id_verified'
+                      ? 'ID verificado en salón · beneficios activos'
+                      : 'Inscrito en la web · presenta ID en recepción'}
+                  </Text>
+                  {birthdayEnrollment.status !== 'id_verified' ? (
+                    <SalonButton
+                      title="ID verificado en salón"
+                      variant="outlineGold"
+                      fullWidth
+                      onPress={() => void onVerifyBirthdayClubId()}
+                      disabled={birthdayVerifyBusy}
+                      style={{ marginTop: spacing.sm }}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
               <View style={styles.detailRow}>
                 <Text style={styles.detailLbl}>Membresía</Text>
                 <Text style={styles.detailVal}>

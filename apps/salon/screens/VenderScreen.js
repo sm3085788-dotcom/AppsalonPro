@@ -32,6 +32,8 @@ import {
   mergeNotasServicioConCanje,
   labelCanjeAndreasCliente,
   getSalonSucursalScope,
+  lookupGiftCardForCliente,
+  registerGiftCardUse,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar } from '../components/luxury';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
@@ -136,6 +138,7 @@ export function VenderScreen({ onBack }) {
   const [volumenPickProduct, setVolumenPickProduct] = useState(null);
   const [salonCanje, setSalonCanje] = useState(null);
   const [citasCanje, setCitasCanje] = useState(null);
+  const [giftCardLinked, setGiftCardLinked] = useState(null);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -209,6 +212,23 @@ export function VenderScreen({ onBack }) {
     void refreshClienteCanjes(clienteSel);
     // Solo al cambiar de cliente (evita bucle al persistir andreas_premios).
   }, [clienteSel?.id, refreshClienteCanjes]);
+
+  useEffect(() => {
+    if (!clienteSel?.id) {
+      setGiftCardLinked(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await lookupGiftCardForCliente(clienteSel.id);
+      if (cancelled) return;
+      if (res.ok && res.card) setGiftCardLinked(res.card);
+      else setGiftCardLinked(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clienteSel?.id]);
 
   const { refreshing, onRefresh } = useSalonPullRefresh(loadAll);
 
@@ -298,15 +318,33 @@ export function VenderScreen({ onBack }) {
 
   const total = useMemo(() => Math.max(0, subtotal - descuentoNum), [subtotal, descuentoNum]);
 
+  const giftSaldo = useMemo(() => {
+    const s = Number(giftCardLinked?.saldo);
+    return Number.isFinite(s) && s > 0 ? s : 0;
+  }, [giftCardLinked]);
+
+  const giftAplicar = useMemo(() => {
+    if (!giftCardLinked || giftSaldo <= 0 || total <= 0) return 0;
+    return Math.min(giftSaldo, total);
+  }, [giftCardLinked, giftSaldo, total]);
+
+  const totalACobrar = useMemo(
+    () => Math.max(0, Math.round((total - giftAplicar) * 100) / 100),
+    [total, giftAplicar],
+  );
+
   const efectivoRecibido = useMemo(() => parseMontoEfectivo(efectivoRecibidoStr), [efectivoRecibidoStr]);
 
   const cambio = useMemo(() => {
-    if (metodoPago !== 'efectivo' || total <= 0) return 0;
-    return Math.max(0, Math.round((efectivoRecibido - total) * 100) / 100);
-  }, [metodoPago, efectivoRecibido, total]);
+    if (metodoPago !== 'efectivo' || totalACobrar <= 0) return 0;
+    return Math.max(0, Math.round((efectivoRecibido - totalACobrar) * 100) / 100);
+  }, [metodoPago, efectivoRecibido, totalACobrar]);
 
   const efectivoInsuficiente =
-    metodoPago === 'efectivo' && total > 0 && efectivoRecibidoStr.trim() !== '' && efectivoRecibido < total - 0.004;
+    metodoPago === 'efectivo' &&
+    totalACobrar > 0 &&
+    efectivoRecibidoStr.trim() !== '' &&
+    efectivoRecibido < totalACobrar - 0.004;
 
   const maxQtyForLine = useCallback(
     (line) => {
@@ -454,13 +492,16 @@ export function VenderScreen({ onBack }) {
       Alert.alert('Descuento', 'El descuento no puede ser mayor al subtotal.');
       return;
     }
-    if (metodoPago === 'efectivo') {
+    if (metodoPago === 'efectivo' && totalACobrar > 0) {
       if (!efectivoRecibidoStr.trim()) {
         Alert.alert('Efectivo', 'Ingresá el monto que entregó el cliente.');
         return;
       }
-      if (efectivoRecibido < total - 0.004) {
-        Alert.alert('Efectivo', `Falta ${formatQ(total - efectivoRecibido)}. El recibido debe cubrir el total.`);
+      if (efectivoRecibido < totalACobrar - 0.004) {
+        Alert.alert(
+          'Efectivo',
+          `Falta ${formatQ(totalACobrar - efectivoRecibido)}. El recibido debe cubrir el resto.`,
+        );
         return;
       }
     }
@@ -498,19 +539,31 @@ export function VenderScreen({ onBack }) {
         notasFinal = mergeNotasServicioConCanje(notasFinal, citasCanjeCalc.canjeSnap);
       }
 
+      const detallesPagoParts = [];
+      if (giftAplicar > 0 && giftCardLinked?.codigo) {
+        detallesPagoParts.push(`Tarjeta regalo ${giftCardLinked.codigo}: ${formatQ(giftAplicar)}`);
+      }
+      if (totalACobrar > 0) {
+        detallesPagoParts.push(`${metodoPago}: ${formatQ(totalACobrar)}`);
+      } else if (giftAplicar > 0) {
+        detallesPagoParts.push('Cubierto 100% con tarjeta regalo');
+      }
+      const detallesPago = detallesPagoParts.length ? detallesPagoParts.join(' + ') : null;
+
       const { data: ventaRow, error: vErr } = await db.ventas.create(
         {
           cliente_id: clienteSel?.id ?? null,
           cliente_nombre: clienteSel?.nombre?.trim() || null,
           profesional: profNombre,
           vendedor_id: profesionalSel?.id ?? null,
-          total,
-          monto: total,
-          metodo_pago: metodoPago,
+          total: totalACobrar,
+          monto: totalACobrar,
+          metodo_pago: totalACobrar > 0 ? metodoPago : 'tarjeta_regalo',
           items,
           no_factura: noFactura,
           descuento: descuentoNum,
           notas: notasFinal,
+          detalles_pago: detallesPago,
           caja_id: cajaId,
         },
         {
@@ -520,6 +573,23 @@ export function VenderScreen({ onBack }) {
       );
 
       if (vErr) throw vErr;
+
+      if (giftAplicar > 0 && giftCardLinked?.codigo && ventaRow?.id) {
+        const giftRes = await registerGiftCardUse(
+          giftCardLinked.codigo,
+          giftAplicar,
+          `Venta ${noFactura}`,
+          ventaRow.id,
+        );
+        if (!giftRes.ok) {
+          Alert.alert(
+            'Venta registrada',
+            `Folio ${noFactura} guardado, pero no se descontó la tarjeta regalo: ${giftRes.error || 'error'}.`,
+          );
+        } else {
+          setGiftCardLinked(giftRes.card?.saldo > 0 ? giftRes.card : null);
+        }
+      }
 
       if (aplicaCanjeSalon && ventaRow?.id && clienteSel?.id) {
         const { error: canjeErr } = await db.premiosAndreas.registrarCanjeSalonFisicoVenta({
@@ -566,12 +636,13 @@ export function VenderScreen({ onBack }) {
         }
       }
 
-      await registrarMontoVentaEnMeta(total);
+      await registrarMontoVentaEnMeta(totalACobrar);
 
       await loadAll();
       resetFormPartial();
       setSalonCanje(null);
       setCitasCanje(null);
+      setGiftCardLinked(null);
 
       Alert.alert('Venta registrada', `Folio ${noFactura} guardado correctamente.`);
 
@@ -583,11 +654,11 @@ export function VenderScreen({ onBack }) {
         items,
         subtotal,
         descuento: descuentoNum,
-        total,
-        metodo_pago: metodoPago,
-        efectivo_recibido: metodoPago === 'efectivo' ? efectivoRecibido : null,
-        cambio: metodoPago === 'efectivo' ? cambio : null,
-        notas: notas.trim() || null,
+        total: totalACobrar,
+        metodo_pago: totalACobrar > 0 ? metodoPago : 'tarjeta_regalo',
+        efectivo_recibido: metodoPago === 'efectivo' && totalACobrar > 0 ? efectivoRecibido : null,
+        cambio: metodoPago === 'efectivo' && totalACobrar > 0 ? cambio : null,
+        notas: [notas.trim(), detallesPago].filter(Boolean).join(' · ') || null,
       }).catch((printErr) => {
         Alert.alert(
           'Ticket',
@@ -1013,10 +1084,37 @@ export function VenderScreen({ onBack }) {
                   </Text>
                 </>
               ) : null}
+              {giftAplicar > 0 && giftCardLinked ? (
+                <View
+                  style={[
+                    styles.giftBanner,
+                    { borderColor: '#22c55e55', backgroundColor: '#22c55e12' },
+                  ]}
+                >
+                  <Text style={[styles.giftBannerTitle, { color: '#22c55e' }]}>
+                    Tarjeta regalo {giftCardLinked.codigo}
+                  </Text>
+                  <Text style={[styles.hint, { color: c.foregroundMuted, marginTop: 4 }]}>
+                    Saldo {formatQ(giftSaldo)} · se aplicarán {formatQ(giftAplicar)}
+                    {totalACobrar > 0
+                      ? ` · falta cobrar ${formatQ(totalACobrar)}`
+                      : ' · venta cubierta al 100%'}
+                  </Text>
+                </View>
+              ) : null}
               <View style={[styles.grandRow, { borderTopColor: c.cardBorder }]}>
-                <Text style={[styles.grandLbl, { color: c.foreground }]}>Total</Text>
-                <Text style={[styles.grandVal, { color: c.primary }]}>{formatQ(total)}</Text>
+                <Text style={[styles.grandLbl, { color: c.foreground }]}>
+                  {giftAplicar > 0 ? 'Total a cobrar' : 'Total'}
+                </Text>
+                <Text style={[styles.grandVal, { color: c.primary }]}>
+                  {formatQ(giftAplicar > 0 ? totalACobrar : total)}
+                </Text>
               </View>
+              {giftAplicar > 0 ? (
+                <Text style={[styles.hint, { color: c.foregroundMuted }]}>
+                  Subtotal venta {formatQ(total)} · tarjeta regalo −{formatQ(giftAplicar)}
+                </Text>
+              ) : null}
             </View>
 
             <Text style={[styles.fieldLbl, { color: c.foreground, marginTop: spacing.md }]}>Pago</Text>
@@ -1047,7 +1145,7 @@ export function VenderScreen({ onBack }) {
               })}
             </View>
 
-            {metodoPago === 'efectivo' ? (
+            {metodoPago === 'efectivo' && totalACobrar > 0 ? (
               <View
                 style={[
                   styles.efectivoBlock,
@@ -1071,7 +1169,7 @@ export function VenderScreen({ onBack }) {
                       backgroundColor: c.card,
                     },
                   ]}
-                  placeholder={total > 0 ? formatQ(total) : '0.00'}
+                  placeholder={totalACobrar > 0 ? formatQ(totalACobrar) : '0.00'}
                   placeholderTextColor={c.foregroundSubtle}
                   value={efectivoRecibidoStr}
                   onChangeText={(t) => setEfectivoRecibidoStr(sanitizeMontoInput(t))}
@@ -1091,7 +1189,7 @@ export function VenderScreen({ onBack }) {
                   </Text>
                 </View>
                 {efectivoInsuficiente ? (
-                  <Text style={styles.cambioWarn}>El monto recibido es menor al total ({formatQ(total)}).</Text>
+                  <Text style={styles.cambioWarn}>El monto recibido es menor al resto ({formatQ(totalACobrar)}).</Text>
                 ) : null}
               </View>
             ) : null}
@@ -1424,6 +1522,16 @@ function createStyles() {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
       marginBottom: spacing.xs,
+    },
+    giftBanner: {
+      marginTop: spacing.sm,
+      padding: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
+    },
+    giftBannerTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
     },
     grandRow: {
       flexDirection: 'row',

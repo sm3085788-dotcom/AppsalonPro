@@ -13,6 +13,7 @@ const NAV = [
   { href: '/productos', label: 'Productos' },
   { href: '/reservar', label: 'Reservar' },
   { href: '/membresias', label: 'Membresías' },
+  { href: '/tu-cumpleanos', label: 'Tu Cumpleaños' },
   { href: '/#descargar', label: 'App' },
 ];
 

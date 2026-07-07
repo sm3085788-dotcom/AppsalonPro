@@ -101,8 +101,8 @@ export function GiftCardActivatePanel() {
       <p className="eyebrow text-gold">Tarjeta VIP</p>
       <h1 className="mt-3 text-3xl font-light text-cream">Activar tarjeta</h1>
       <p className="mt-3 text-sm font-light leading-relaxed text-muted">
-        Ingresa el código que te entregó el salón después de validar el monto y el pago con
-        tarjeta ({SALON_CONTACT.telefonoLabel}).
+        Ingresa el código de 6 dígitos que te entregó el salón después de validar el monto y el pago
+        ({SALON_CONTACT.telefonoLabel}). Formato: ACT-123456.
       </p>
 
       <form onSubmit={(e) => void onSubmit(e)} className="mt-8 space-y-4">
@@ -113,7 +113,9 @@ export function GiftCardActivatePanel() {
           <input
             value={codigo}
             onChange={(e) => setCodigo(e.target.value.toUpperCase())}
-            placeholder="ACT-XXXXXXXX"
+            placeholder="ACT-123456"
+            maxLength={10}
+            pattern="ACT-[0-9]{6}"
             className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm uppercase tracking-widest text-foreground outline-none focus:border-gold"
             required
           />

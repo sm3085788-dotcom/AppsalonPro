@@ -35,11 +35,37 @@ export async function verifyGiftCardBirthday(codigo) {
   return data ?? { ok: false, error: 'Sin respuesta.' };
 }
 
-export async function registerGiftCardUse(codigo, monto, notas = null) {
+export async function registerGiftCardUse(codigo, monto, notas = null, ventaId = null) {
   const { data, error } = await supabase.rpc('register_gift_card_use', {
     p_codigo: codigo,
     p_monto: monto,
     p_notas: notas,
+    p_venta_id: ventaId,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function linkGiftCardToCliente(codigo, clienteId) {
+  const { data, error } = await supabase.rpc('link_gift_card_to_cliente', {
+    p_codigo: codigo,
+    p_cliente_id: clienteId,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function unlinkGiftCardFromCliente(codigo) {
+  const { data, error } = await supabase.rpc('unlink_gift_card_from_cliente', {
+    p_codigo: codigo,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function lookupGiftCardForCliente(clienteId) {
+  const { data, error } = await supabase.rpc('lookup_gift_card_for_cliente', {
+    p_cliente_id: clienteId,
   });
   if (error) return { ok: false, error: error.message };
   return data ?? { ok: false, error: 'Sin respuesta.' };

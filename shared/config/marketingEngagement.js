@@ -66,7 +66,7 @@ export async function fetchMarketingEngagementFeed(lookbackDays = ENGAGEMENT_FEE
 }
 
 async function fetchMarketingEngagementCore(since) {
-  const [likesRes, commentsRes, postsRes] = await Promise.all([
+  const [likesRes, commentsRes, postsRes, birthdayRes] = await Promise.all([
     supabase
       .from('marketing_post_likes')
       .select('post_id, client_key, created_at')
@@ -84,6 +84,12 @@ async function fetchMarketingEngagementCore(since) {
       .from('marketing_posts')
       .select('id, title, body, audience, status, media_url, content_type, published_at, created_at')
       .limit(500),
+    supabase
+      .from('birthday_club_reactions')
+      .select('id, reaction, comment, author_name, created_at, cliente_id')
+      .gt('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(80),
   ]);
 
   const allPosts = postsRes.data || [];
@@ -131,12 +137,30 @@ async function fetchMarketingEngagementCore(since) {
       );
     });
 
-  const merged = [...likes, ...comments].sort(
+  const birthdayEvents = (birthdayRes.data || []).map((r) => {
+    const reactionLabel =
+      r.reaction === 'love' ? 'Me encanta' : r.reaction === 'dislike' ? 'No le convence' : 'Me gusta';
+    const commentText = String(r.comment || '').trim();
+    return {
+      kind: r.reaction === 'love' ? 'birthday_love' : r.reaction === 'dislike' ? 'birthday_dislike' : 'birthday_like',
+      id: `birthday-${r.id}-${r.created_at}`,
+      postId: null,
+      clientLabel: r.author_name || 'Cliente web',
+      body: commentText || reactionLabel,
+      createdAt: r.created_at,
+      postTitle: 'Club Tu Cumpleaños',
+      postBody: commentText,
+      publicationNo: null,
+      publicationLabel: 'Club Cumpleaños · Web',
+    };
+  });
+
+  const merged = [...likes, ...comments, ...birthdayEvents].sort(
     (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
   );
 
   return {
     data: merged,
-    error: likesRes.error || commentsRes.error || postsRes.error || null,
+    error: likesRes.error || commentsRes.error || postsRes.error || birthdayRes.error || null,
   };
 }

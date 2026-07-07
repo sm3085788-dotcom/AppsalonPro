@@ -363,6 +363,11 @@ function SalonAdminShell({ onSignOut, profile }) {
         { event: 'INSERT', schema: 'public', table: 'marketing_post_likes' },
         () => void refreshMarketingAlert(),
       )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'birthday_club_reactions' },
+        () => void refreshMarketingAlert(),
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);

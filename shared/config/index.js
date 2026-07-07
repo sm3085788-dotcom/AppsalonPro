@@ -387,4 +387,14 @@ export {
   normalizeGtWhatsappPhone,
   createGiftCardActivationCode,
   listGiftCardActivationCodesStaff,
+  linkGiftCardToCliente,
+  unlinkGiftCardFromCliente,
+  lookupGiftCardForCliente,
 } from './giftCardSalon.js';
+export {
+  enrollBirthdayClub,
+  getBirthdayClubStatus,
+  setBirthdayClubReaction,
+  verifyBirthdayClubId,
+  getBirthdayClubEnrollmentForCliente,
+} from './birthdayClub.js';
