@@ -1,4 +1,6 @@
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { unstable_cache } from 'next/cache';
+import { createSupabasePublicClient } from '@/lib/supabase/public';
+import { isSupabaseConfigured } from '@/lib/env';
 import type { ClientReview } from '@/lib/data/googleReviews';
 
 type BirthdayTestimonialRow = {
@@ -41,10 +43,11 @@ function mapBirthdayReview(row: BirthdayTestimonialRow): ClientReview {
   };
 }
 
-/** Comentarios reales del Club Tu Cumpleaños (clientes contentos, públicos en la web). */
-export async function getBirthdayClubPublicReviews(): Promise<ClientReview[]> {
+async function fetchBirthdayClubPublicReviews(): Promise<ClientReview[]> {
+  if (!isSupabaseConfigured) return [];
+
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabasePublicClient();
     const { data, error } = await supabase.rpc('list_public_birthday_club_testimonials', {
       p_limit: 24,
     });
@@ -64,4 +67,15 @@ export async function getBirthdayClubPublicReviews(): Promise<ClientReview[]> {
     console.error('[birthdayClubReviews]', err);
     return [];
   }
+}
+
+const getCachedBirthdayClubPublicReviews = unstable_cache(
+  fetchBirthdayClubPublicReviews,
+  ['birthday-club-public-reviews'],
+  { revalidate: 3600, tags: ['birthday-club-reviews'] },
+);
+
+/** Comentarios reales del Club Tu Cumpleaños (clientes contentos, públicos en la web). */
+export async function getBirthdayClubPublicReviews(): Promise<ClientReview[]> {
+  return getCachedBirthdayClubPublicReviews();
 }

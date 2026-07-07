@@ -13,6 +13,9 @@ export const metadata = {
   description: 'Club de cumpleaños ANDREAS — beneficios exclusivos para tu día especial.',
 };
 
+/** Auth y panel personal usan cookies; reseñas públicas van por cliente anónimo. */
+export const dynamic = 'force-dynamic';
+
 export default async function TuCumpleanosPage() {
   const publicReviews = await getBirthdayClubPublicReviews();
   const user = await getCurrentUser();

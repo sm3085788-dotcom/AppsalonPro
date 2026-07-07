@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { ensureClienteFromAuth } from '@/lib/data/cliente';
 import { getCurrentUser } from '@/lib/auth';
@@ -51,6 +51,7 @@ export async function setBirthdayReactionAction(
 
   revalidatePath('/tu-cumpleanos');
   revalidatePath('/');
+  revalidateTag('birthday-club-reviews', 'max');
   return { ok: true };
 }
 
