@@ -67,9 +67,52 @@ export function formatFechaVenta(iso) {
 }
 
 export function formatMetodoPago(m) {
-  const s = String(m || '').trim();
+  const s = String(m || '').trim().toLowerCase();
   if (!s) return '—';
+  if (s === 'tarjeta_regalo') return 'Tarjeta regalo';
+  if (s === 'tarjeta') return 'Tarjeta';
+  if (s === 'transferencia') return 'Transferencia';
+  if (s === 'efectivo') return 'Efectivo';
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Extrae código e importe aplicado desde detalles_pago / notas de la venta. */
+export function extractGiftCardFromVenta(venta) {
+  const blob = [venta?.detalles_pago, venta?.notas].filter(Boolean).join(' · ');
+  if (!blob) return null;
+
+  const match = blob.match(/Tarjeta regalo\s+([A-Za-z0-9\-]+)\s*:\s*Q?\s*([\d.,]+)/i);
+  if (match) {
+    const monto = Number(String(match[2]).replace(',', '.'));
+    return {
+      codigo: match[1].trim(),
+      monto: Number.isFinite(monto) ? monto : null,
+    };
+  }
+
+  const soloCodigo = blob.match(/Tarjeta regalo\s+([A-Za-z0-9\-]+)/i);
+  if (soloCodigo && /tarjeta regalo/i.test(blob)) {
+    return { codigo: soloCodigo[1].trim(), monto: null };
+  }
+
+  return null;
+}
+
+export function ventaConTarjetaRegalo(venta) {
+  if (String(venta?.metodo_pago || '').toLowerCase() === 'tarjeta_regalo') return true;
+  if (/tarjeta regalo/i.test(String(venta?.detalles_pago || ''))) return true;
+  return Boolean(extractGiftCardFromVenta(venta));
+}
+
+/** Línea legible del desglose de pago (incluye tarjeta regalo). */
+export function formatDetallesPagoDisplay(detallesPago) {
+  const raw = String(detallesPago || '').trim();
+  if (!raw) return null;
+  return raw
+    .split(/\s*\+\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** Notas de venta legibles en UI/ticket (sin JSON ni URL del canje ANDREAS). */

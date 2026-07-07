@@ -8,14 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { useRouter } from 'next/navigation';
 
-const NAV = [
-  { href: '/servicios', label: 'Servicios' },
-  { href: '/productos', label: 'Productos' },
-  { href: '/reservar', label: 'Reservar' },
-  { href: '/membresias', label: 'Membresías' },
-  { href: '/tu-cumpleanos', label: 'Tu Cumpleaños' },
-  { href: '/#descargar', label: 'App' },
-];
+import { NAV_ALL } from '@/lib/navigation';
 
 export function MobileNavDrawer({
   open,
@@ -81,7 +74,7 @@ export function MobileNavDrawer({
           </div>
 
           <nav className="flex flex-col gap-1">
-            {NAV.map((item) => (
+            {NAV_ALL.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

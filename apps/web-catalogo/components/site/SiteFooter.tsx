@@ -1,10 +1,10 @@
 import Link from 'next/link';
 
-import { Mail, MapPin, Phone } from 'lucide-react';
-
-import { branchGoogleMapsUrl } from '@/lib/geo/mapsLinks';
-import { SALON_CONTACT } from '@/lib/salonContact';
+import { Mail, MapPin } from 'lucide-react';
 import { SocialLogo, type SocialBrand } from '@/components/site/SocialLogos';
+import { CustomerServiceWhatsAppButton } from '@/components/site/CustomerServiceWhatsAppButton';
+import { branchGoogleMapsUrl } from '@/lib/geo/mapsLinks';
+import { buildWhatsAppCustomerUrl, SALON_CONTACT } from '@/lib/salonContact';
 
 import type { Branch } from '@/lib/types/db';
 
@@ -246,21 +246,11 @@ export function SiteFooter({ branches = [] }: { branches?: Branch[] }) {
 
             })}
 
-            <li>
-              <a
-                href={SALON_CONTACT.telUrl}
-                className="group flex items-start gap-3 transition-colors hover:text-cream"
-              >
-                <Phone
-                  className="mt-0.5 h-4 w-4 shrink-0 text-gold transition-colors group-hover:text-gold-soft"
-                  strokeWidth={1.5}
-                />
-                <span>
-                  {SALON_CONTACT.telefonoLabel}
-                  <br />
-                  Servicio al cliente
-                </span>
-              </a>
+            <li className="pt-2">
+              <CustomerServiceWhatsAppButton
+                href={buildWhatsAppCustomerUrl('general')}
+                size="compact"
+              />
             </li>
           </ul>
 

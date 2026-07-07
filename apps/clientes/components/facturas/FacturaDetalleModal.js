@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { View, Text, Modal, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import { X, Gift } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   formatQ,
@@ -12,6 +12,8 @@ import {
   formatFechaVenta,
   formatMetodoPago,
   formatVentaNotasParaDisplay,
+  extractGiftCardFromVenta,
+  formatDetallesPagoDisplay,
 } from '../../../../shared/utils/ventaFactura';
 import { SalonButton } from '../luxury/SalonButton';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -33,6 +35,11 @@ export function FacturaDetalleModal({ venta, visible, onClose, clienteNombre }) 
   const styles = useMemo(() => createStyles(c), [c]);
   const detalleItems = useMemo(() => parseVentaItems(venta?.items), [venta?.items]);
   const notasDisplay = useMemo(() => formatVentaNotasParaDisplay(venta?.notas), [venta?.notas]);
+  const giftInfo = useMemo(() => extractGiftCardFromVenta(venta), [venta]);
+  const detallePagoDisplay = useMemo(
+    () => formatDetallesPagoDisplay(venta?.detalles_pago),
+    [venta?.detalles_pago],
+  );
 
   if (!venta) return null;
 
@@ -79,7 +86,27 @@ export function FacturaDetalleModal({ venta, visible, onClose, clienteNombre }) 
                   Descuento: {formatQ(venta.descuento)}
                 </Text>
               ) : null}
+              {detallePagoDisplay ? (
+                <Text style={[styles.detailPago, { color: c.foregroundMuted, marginTop: spacing.sm, textAlign: 'center' }]}>
+                  {detallePagoDisplay}
+                </Text>
+              ) : null}
             </View>
+
+            {giftInfo?.codigo ? (
+              <View style={[styles.giftDetailCard, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}>
+                <View style={styles.giftDetailHead}>
+                  <Gift size={16} color={c.primary} strokeWidth={2} />
+                  <Text style={[styles.giftDetailTitle, { color: c.primary }]}>Tarjeta regalo</Text>
+                </View>
+                <Text style={[styles.giftDetailCodigo, { color: c.foreground }]}>{giftInfo.codigo}</Text>
+                {giftInfo.monto != null ? (
+                  <Text style={[styles.giftDetailMonto, { color: c.foregroundMuted }]}>
+                    Aplicado: {formatQ(giftInfo.monto)}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
 
             <View style={[styles.detailInfoCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
               {[
@@ -212,6 +239,35 @@ function createStyles() {
       marginTop: spacing.xs,
     },
     detailPago: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      marginTop: spacing.xs,
+    },
+    giftDetailCard: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      alignItems: 'center',
+    },
+    giftDetailHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginBottom: spacing.xs,
+    },
+    giftDetailTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    giftDetailCodigo: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 20,
+      letterSpacing: 0.5,
+    },
+    giftDetailMonto: {
       fontFamily: typography.fontSans,
       fontSize: 13,
       marginTop: spacing.xs,

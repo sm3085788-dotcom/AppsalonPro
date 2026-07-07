@@ -1,0 +1,19 @@
+export type NavLink = {
+  href: string;
+  label: string;
+};
+
+export const NAV_PRIMARY: NavLink[] = [
+  { href: '/servicios', label: 'Servicios' },
+  { href: '/productos', label: 'Productos' },
+  { href: '/reservar', label: 'Reservar' },
+  { href: '/membresias', label: 'Membresías' },
+];
+
+export const NAV_MORE: NavLink[] = [
+  { href: '/tu-cumpleanos', label: 'Tu Cumpleaños' },
+  { href: '/#tarjeta-regalo', label: 'Tarjeta de regalo' },
+  { href: '/#resenas', label: 'Reseñas' },
+];
+
+export const NAV_ALL: NavLink[] = [...NAV_PRIMARY, ...NAV_MORE];

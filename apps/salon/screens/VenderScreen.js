@@ -656,9 +656,10 @@ export function VenderScreen({ onBack }) {
         descuento: descuentoNum,
         total: totalACobrar,
         metodo_pago: totalACobrar > 0 ? metodoPago : 'tarjeta_regalo',
+        detalles_pago: detallesPago,
         efectivo_recibido: metodoPago === 'efectivo' && totalACobrar > 0 ? efectivoRecibido : null,
         cambio: metodoPago === 'efectivo' && totalACobrar > 0 ? cambio : null,
-        notas: [notas.trim(), detallesPago].filter(Boolean).join(' · ') || null,
+        notas: notasFinal,
       }).catch((printErr) => {
         Alert.alert(
           'Ticket',

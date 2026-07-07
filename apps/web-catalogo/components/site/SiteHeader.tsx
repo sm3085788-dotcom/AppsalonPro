@@ -1,23 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { User2, LogOut, Menu } from 'lucide-react';
+import { ChevronDown, User2, LogOut, Menu } from 'lucide-react';
 import { BranchSelect } from '@/components/branch/BranchSelect';
 import { MobileNavDrawer } from '@/components/site/MobileNavDrawer';
 import { createClient } from '@/lib/supabase/client';
 import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { useRouter } from 'next/navigation';
-
-const NAV = [
-  { href: '/servicios', label: 'Servicios' },
-  { href: '/productos', label: 'Productos' },
-  { href: '/reservar', label: 'Reservar' },
-  { href: '/membresias', label: 'Membresías' },
-  { href: '/tu-cumpleanos', label: 'Tu Cumpleaños' },
-  { href: '/#descargar', label: 'App' },
-];
-
+import { NAV_MORE, NAV_PRIMARY } from '@/lib/navigation';
 function LoginButton({ className = '' }: { className?: string }) {
   return (
     <Link
@@ -39,7 +30,26 @@ export function SiteHeader({
   const router = useRouter();
   const { configured: supabaseConfigured } = useSupabaseConfig();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [moreOpen]);
   const onLogout = async () => {
     if (!supabaseConfigured) return;
     await createClient().auth.signOut();
@@ -106,7 +116,7 @@ export function SiteHeader({
         </Link>
 
         <nav className="flex items-center justify-center gap-8 lg:gap-10">
-          {NAV.map((item) => (
+          {NAV_PRIMARY.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -115,8 +125,41 @@ export function SiteHeader({
               {item.label}
             </Link>
           ))}
-        </nav>
 
+          <div ref={moreMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreOpen((open) => !open)}
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+              aria-label="Más secciones"
+              className="flex items-center rounded-full border border-transparent p-1 text-muted transition-colors hover:border-border hover:text-gold"
+            >
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {moreOpen ? (
+              <div
+                role="menu"
+                className="absolute left-1/2 top-[calc(100%+0.65rem)] z-50 min-w-[12.5rem] -translate-x-1/2 rounded-xl border border-border bg-charcoal py-2 shadow-2xl"
+              >
+                {NAV_MORE.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    role="menuitem"
+                    onClick={() => setMoreOpen(false)}
+                    className="block px-4 py-2.5 text-[12px] font-light uppercase tracking-[0.16em] text-pearl transition-colors hover:bg-surface hover:text-gold"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </nav>
         <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
           <BranchSelect compact />
           {userEmail ? (

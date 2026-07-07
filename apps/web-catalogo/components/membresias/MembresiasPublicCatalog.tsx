@@ -1,8 +1,8 @@
 'use client';
 
-import { Crown, Medal, Phone, Sparkles, Check } from 'lucide-react';
-
-import { SALON_CONTACT } from '@/lib/salonContact';
+import { Crown, Medal, Sparkles, Check } from 'lucide-react';
+import { CustomerServiceWhatsAppButton } from '@/components/site/CustomerServiceWhatsAppButton';
+import { buildWhatsAppCustomerUrl, type WhatsAppCustomerContext } from '@/lib/salonContact';
 import {
   formatMembresiaPrice,
   getMembresiaWebCatalog,
@@ -34,7 +34,11 @@ const TIER_STYLES: Record<
   },
 };
 
-export function MembresiasPublicCatalog() {
+export function MembresiasPublicCatalog({
+  customerWhatsappContext,
+}: {
+  customerWhatsappContext?: WhatsAppCustomerContext;
+}) {
   const tiers = getMembresiaWebCatalog();
 
   return (
@@ -56,9 +60,14 @@ export function MembresiasPublicCatalog() {
           </h2>
           <div className="mt-3 h-0.5 w-8 rounded-full bg-gold/85" />
           <p className="mt-3.5 text-sm font-light leading-relaxed text-muted">
-            Cada membresía incluye beneficios exclusivos en salón. Acercate a cualquier sucursal
+            Cada membresía incluye beneficios exclusivos en salón. Acércate a cualquier sucursal
             Andreas para adquirirla y activarla con nuestro equipo.
           </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <CustomerServiceWhatsAppButton
+              href={buildWhatsAppCustomerUrl('membresias', customerWhatsappContext)}
+            />
+          </div>
         </div>
       </div>
 
@@ -149,15 +158,12 @@ export function MembresiasPublicCatalog() {
       <div className="mx-auto max-w-3xl rounded-xl border border-gold/30 bg-gold/[0.06] px-4 py-5 text-center sm:px-7">
         <p className="mx-auto max-w-lg text-xs font-light leading-relaxed text-muted">
           Para elegir el nivel ideal, conocer promociones vigentes o adquirir tu membresía,
-          comunícate con nuestro equipo. Te atenderemos con gusto en cualquier sucursal Andreas.
+          escríbenos por WhatsApp. Te atenderemos con gusto en cualquier sucursal Andreas.
         </p>
-        <a
-          href={SALON_CONTACT.telUrl}
-          className="mt-4 inline-flex items-center justify-center gap-2 rounded-full border border-gold/50 bg-gold/10 px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.12em] text-gold transition-colors hover:bg-gold hover:text-charcoal"
-        >
-          <Phone className="h-3.5 w-3.5" strokeWidth={2} />
-          Llamar servicio al cliente · {SALON_CONTACT.telefonoLabel}
-        </a>
+        <CustomerServiceWhatsAppButton
+          href={buildWhatsAppCustomerUrl('membresias', customerWhatsappContext)}
+          className="mt-4"
+        />
         <p className="mt-3 text-[9px] text-muted/80">
           Niveles definidos por el salón · canjes y activación en recepción Andreas.
         </p>

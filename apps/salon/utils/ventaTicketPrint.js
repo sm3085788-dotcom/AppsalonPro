@@ -2,7 +2,13 @@ import { Alert } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { SALON_TICKET } from '../config/salonTicket';
-import { formatVentaNotasParaDisplay } from '../../../shared/utils/ventaFactura';
+import {
+  formatVentaNotasParaDisplay,
+  extractGiftCardFromVenta,
+  formatDetallesPagoDisplay,
+  formatMetodoPago,
+  parseVentaItems,
+} from '../../../shared/utils/ventaFactura';
 
 function escHtml(s) {
   return String(s ?? '')
@@ -19,16 +25,20 @@ function formatQ(n) {
 }
 
 function metodoLabel(id) {
-  if (id === 'tarjeta') return 'Tarjeta';
-  if (id === 'transferencia') return 'Transferencia';
-  return 'Efectivo';
+  return formatMetodoPago(id);
 }
 
 /**
  * HTML estrecho (~80 mm) para impresora térmica vía expo-print.
  */
 export function buildVentaTicketHtml(venta) {
-  const items = Array.isArray(venta.items) ? venta.items : [];
+  const parsedItems = parseVentaItems(venta.items);
+  const items = parsedItems.map((it) => ({
+    nombre: it.nombre,
+    cantidad: it.cantidad,
+    precio_unitario: it.precio_unitario,
+    subtotal: it.subtotal,
+  }));
   const linesHtml = items
     .map((it) => {
       const nom = escHtml(it.nombre || 'Ítem');
@@ -66,6 +76,19 @@ export function buildVentaTicketHtml(venta) {
 
   const notasTxt = formatVentaNotasParaDisplay(venta.notas);
   const notas = notasTxt ? `<div class="notes">${escHtml(notasTxt)}</div>` : '';
+
+  const gift = extractGiftCardFromVenta(venta);
+  const detallesTxt = formatDetallesPagoDisplay(venta.detalles_pago);
+  const giftBlock = gift?.codigo
+    ? `<div class="row"><span>Tarjeta regalo</span><span>${escHtml(gift.codigo)}</span></div>${
+        gift.monto != null
+          ? `<div class="row"><span>Aplicado tarjeta</span><span>${formatQ(gift.monto)}</span></div>`
+          : ''
+      }`
+    : '';
+  const detallesBlock = detallesTxt
+    ? `<div class="notes">${escHtml(detallesTxt)}</div>`
+    : '';
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"/>
@@ -118,6 +141,8 @@ export function buildVentaTicketHtml(venta) {
   <div class="row total-line"><span>TOTAL</span><span>${formatQ(total)}</span></div>
   <div class="row"><span>Pago</span><span>${escHtml(metodo)}</span></div>
   ${cashBlock}
+  ${giftBlock}
+  ${detallesBlock}
   ${notas}
   <p class="foot">Gracias por su visita</p>
 </body></html>`;

@@ -12,7 +12,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, X } from 'lucide-react-native';
+import { ChevronRight, X, Gift } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { fetchClientMisFacturas } from '@appsalon/shared-config';
 import {
@@ -20,6 +20,7 @@ import {
   montoVenta,
   facturaLabel,
   profesionalLabel,
+  extractGiftCardFromVenta,
 } from '../../../shared/utils/ventaFactura';
 import { FacturaDetalleModal } from '../components/facturas/FacturaDetalleModal';
 import { SalonButton } from '../components/luxury/SalonButton';
@@ -108,7 +109,8 @@ export function MisFacturasBody({ clienteId, clienteNombre, onClose, initialVent
     const q = query.trim().toLowerCase();
     if (q) {
       rows = rows.filter((v) => {
-        const blob = [facturaLabel(v), v?.metodo_pago, profesionalLabel(v), v?.notas]
+        const gift = extractGiftCardFromVenta(v);
+        const blob = [facturaLabel(v), v?.metodo_pago, profesionalLabel(v), v?.notas, gift?.codigo, v?.detalles_pago]
           .join(' ')
           .toLowerCase();
         return blob.includes(q);
@@ -144,6 +146,7 @@ export function MisFacturasBody({ clienteId, clienteNombre, onClose, initialVent
           })
         : '—';
       const subParts = [prof, fecha, v?.metodo_pago].filter(Boolean);
+      const gift = extractGiftCardFromVenta(v);
 
       return (
         <TouchableOpacity
@@ -163,6 +166,14 @@ export function MisFacturasBody({ clienteId, clienteNombre, onClose, initialVent
             <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
               {subParts.length ? subParts.join(' · ') : '—'}
             </Text>
+            {gift?.codigo ? (
+              <View style={[styles.giftBadge, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}>
+                <Gift size={11} color={c.primary} strokeWidth={2} />
+                <Text style={[styles.giftBadgeTxt, { color: c.primary }]} numberOfLines={1}>
+                  Tarjeta regalo · {gift.codigo}
+                </Text>
+              </View>
+            ) : null}
           </View>
           <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} />
         </TouchableOpacity>
@@ -398,6 +409,23 @@ function createStyles() {
       fontSize: 11,
       lineHeight: 15,
       marginTop: 2,
+    },
+    giftBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 4,
+      marginTop: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      maxWidth: '100%',
+    },
+    giftBadgeTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+      flexShrink: 1,
     },
     rowChev: {
       flexShrink: 0,

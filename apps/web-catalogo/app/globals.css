@@ -250,11 +250,12 @@ body {
   display: flex;
   width: max-content;
   animation: marquee 34s linear infinite;
+  backface-visibility: hidden;
 }
 
 @keyframes marquee {
   to {
-    transform: translateX(-50%);
+    transform: translate3d(-50%, 0, 0);
   }
 }
 

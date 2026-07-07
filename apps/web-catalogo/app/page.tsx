@@ -1,21 +1,25 @@
 import Link from 'next/link';
 import {
   ArrowUpRight,
-  Zap,
   Target,
   Eye,
 } from 'lucide-react';
-import { IphoneMockup } from '@/components/ui/IphoneMockup';
-import { AppStoreButtons } from '@/components/site/AppStoreButtons';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
 import { HeroCover } from '@/components/home/HeroCover';
 import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
 import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
 import { GiftCardSection } from '@/components/home/GiftCardSection';
+import { BrandMarquee } from '@/components/home/BrandMarquee';
+import { GoogleReviewsSection } from '@/components/home/GoogleReviewsSection';
 import { getServices } from '@/lib/data/catalog';
+import { getGoogleReviews } from '@/lib/data/googleReviews';
 
 export default async function HomePage() {
-  const services = (await getServices()).slice(0, 4);
+  const [services, googleReviews] = await Promise.all([
+    getServices(),
+    getGoogleReviews(),
+  ]);
+  const featuredServices = services.slice(0, 4);
 
   return (
     <div>
@@ -61,7 +65,7 @@ export default async function HomePage() {
             </Link>
           </div>
 
-          {services.length > 0 && (
+          {featuredServices.length > 0 && (
             <div className="mt-6 sm:mt-10">
               <div className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-muted sm:text-[11px] sm:tracking-[0.2em]">
@@ -75,7 +79,7 @@ export default async function HomePage() {
                 </Link>
               </div>
               <div className="grid grid-cols-2 gap-2.5 sm:max-w-xl sm:gap-4">
-                {services.map((s) => (
+                {featuredServices.map((s) => (
                   <ServiceCard key={s.id} service={s} />
                 ))}
               </div>
@@ -88,46 +92,26 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Marquee editorial ──────────────────────────── */}
-      <section className="relative overflow-hidden border-y border-border py-3 sm:py-5">
-        <div className="marquee gap-10">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="flex shrink-0 items-center gap-10 pr-10">
-              {[
-                'Color de autor',
-                'Cortes de precisión',
-                'Tratamientos de spa',
-                'Barbería premium',
-                'Productos premium',
-                'Novias & eventos',
-              ].map((word) => (
-                <span
-                  key={word}
-                  className="flex items-center gap-10 text-lg font-light uppercase tracking-[0.22em] text-pearl-dim"
-                >
-                  {word}
-                  <span className="h-1 w-1 rounded-full bg-gold" />
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* ── Marquee marcas premium ─────────────────────── */}
+      <BrandMarquee />
 
       {/* ── Cifras / confianza ─────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 pt-14 sm:px-6 sm:pt-24 lg:px-8">
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:rounded-2xl lg:grid-cols-4">
           {[
-            { k: '19+', v: 'Años de oficio' },
-            { k: '25k', v: 'Clientes consentidos' },
-            { k: '4.9', v: 'Reseñas verificadas' },
-            { k: '1', v: 'Sucursal · 3 en proceso' },
-          ].map(({ k, v }) => (
+            { k: '19+', v: 'Años de oficio', color: '#f5ead2' },
+            { k: '25k', v: 'Clientes consentidos', color: '#f0e0dc' },
+            { k: '4.9', v: 'Reseñas verificadas', color: '#dcebe4' },
+            { k: '1', v: 'Sucursal · 3 en proceso', color: '#dfe6f2' },
+          ].map(({ k, v, color }) => (
             <div
               key={v}
               className="group bg-background px-4 py-6 text-center transition-colors hover:bg-surface sm:px-6 sm:py-9"
             >
-              <p className="text-2xl font-light text-pearl transition-colors group-hover:text-gold sm:text-4xl">
+              <p
+                className="text-2xl font-light transition-opacity group-hover:opacity-90 sm:text-4xl"
+                style={{ color }}
+              >
                 {k}
               </p>
               <p className="mt-2 text-xs font-light uppercase tracking-[0.2em] text-muted">
@@ -302,72 +286,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Descarga la app ────────────────────────────── */}
-      <section
-        id="descargar"
-        className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 lg:px-8"
-      >
-        <div className="relative mx-auto w-[90%] overflow-hidden rounded-[29px] border border-border bg-surface p-[1.35rem] sm:p-9">
-          <div className="glow-cream pointer-events-none absolute -right-[4.5rem] -top-[4.5rem] h-72 w-72" />
-          <div className="glow-gold pointer-events-none absolute -left-[4.5rem] bottom-0 h-64 w-64 opacity-60" />
-
-          <div className="relative grid items-center gap-7 lg:grid-cols-2 lg:gap-9">
-            <div className="relative">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold/5 px-3.5 py-1 text-[11px] uppercase tracking-[0.23em] text-gold">
-                <Zap className="h-3 w-3" strokeWidth={1.5} /> App móvil
-              </span>
-              <h2 className="mt-6 text-balance text-[1.6875rem] font-light leading-tight text-cream sm:text-[2.025rem]">
-                Llévate AppSalon Pro contigo
-              </h2>
-              <p className="mt-4 max-w-md text-[13px] font-light leading-relaxed text-muted">
-                Pronto podrás gestionar citas, premios ANDREAS y mensajes con el
-                salón desde tu móvil. Mientras tanto, reserva servicios y explora
-                nuestro catálogo desde esta web.
-              </p>
-              <ul className="mt-6 space-y-2.5">
-                {[
-                  'Reserva servicios en línea',
-                  'Catálogo de productos y servicios',
-                  'Tarjeta regalo VIP y premios ANDREAS',
-                ].map((item) => (
-                  <li
-                    key={item}
-                    className="flex items-center gap-2.5 text-[13px] font-light text-pearl-dim"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-gold" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-8 scale-90 origin-left">
-                <AppStoreButtons />
-              </div>
-            </div>
-
-            {/* Trío de teléfonos con distintas pantallas (abanico contenido) */}
-            <div className="relative flex scale-90 items-center justify-center py-3.5">
-              <IphoneMockup
-                src="/images/app-servicios.png"
-                alt="Pantalla de servicios de la app AppSalon Pro"
-                size="sm"
-                className="hidden -mr-14 translate-y-7 -rotate-6 opacity-90 lg:block"
-              />
-              <IphoneMockup
-                src="/images/app-home.png"
-                alt="Pantalla principal de la app AppSalon Pro"
-                size="lg"
-                className="relative z-10"
-              />
-              <IphoneMockup
-                src="/images/app-producto.png"
-                alt="Pantalla de producto de la app AppSalon Pro"
-                size="sm"
-                className="hidden -ml-14 translate-y-7 rotate-6 opacity-90 lg:block"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
+      <GoogleReviewsSection data={googleReviews} />
     </div>
   );
 }

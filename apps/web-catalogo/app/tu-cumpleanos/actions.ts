@@ -50,7 +50,19 @@ export async function setBirthdayReactionAction(
   if (!payload?.ok) return { ok: false, error: payload?.error || 'No se pudo guardar.' };
 
   revalidatePath('/tu-cumpleanos');
+  revalidatePath('/');
   return { ok: true };
+}
+
+export async function sendBirthdayClubCommentAction(
+  comment: string,
+  reaction: 'like' | 'dislike' | 'love' = 'love',
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const trimmed = comment.trim();
+  if (!trimmed) {
+    return { ok: false, error: 'Escribí un comentario antes de enviar.' };
+  }
+  return setBirthdayReactionAction(reaction, trimmed);
 }
 
 export async function getBirthdayClubStatusAction() {

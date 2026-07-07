@@ -1,9 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { BirthdayClubPanel } from '@/components/birthday/BirthdayClubPanel';
+import { BirthdayClubTestimonials } from '@/components/birthday/BirthdayClubTestimonials';
+import { getBirthdayClubPublicReviews } from '@/lib/data/birthdayClubReviews';
 import { getCurrentUser } from '@/lib/auth';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { ensureClienteFromAuth } from '@/lib/data/cliente';
+import { whatsappContextFromCliente } from '@/lib/salonContact';
 
 export const metadata = {
   title: 'Tu Cumpleaños | ANDREAS Salon',
@@ -11,6 +14,7 @@ export const metadata = {
 };
 
 export default async function TuCumpleanosPage() {
+  const publicReviews = await getBirthdayClubPublicReviews();
   const user = await getCurrentUser();
 
   if (!user) {
@@ -19,8 +23,12 @@ export default async function TuCumpleanosPage() {
         <p className="eyebrow text-gold">Club cumpleaños</p>
         <h1 className="mt-3 text-3xl font-light text-cream">Tu Cumpleaños</h1>
         <p className="mt-4 text-sm font-light leading-relaxed text-muted">
-          En Andreas Salon consentimos tu día especial. Crea tu cuenta en la web para descubrir
-          beneficios exclusivos y compartir tu emoción con nuestro equipo.
+          En{' '}
+          <span className="font-serif font-medium uppercase tracking-[0.14em] text-gradient-gold">
+            Salón Andreas
+          </span>{' '}
+          consentimos tu día especial. Crea tu cuenta en la web para descubrir beneficios exclusivos
+          y compartir tu emoción con nuestro equipo.
         </p>
         <div className="mt-8 flex flex-wrap gap-4">
           <Link
@@ -36,6 +44,8 @@ export default async function TuCumpleanosPage() {
             Iniciar sesión
           </Link>
         </div>
+
+        <BirthdayClubTestimonials reviews={publicReviews} />
       </div>
     );
   }
@@ -55,16 +65,21 @@ export default async function TuCumpleanosPage() {
   const enrolled = Boolean(status.enrollment);
   const reaction = (status.reaction?.reaction as 'like' | 'dislike' | 'love' | null) || null;
   const comment = status.reaction?.comment || '';
+  const customerWhatsappContext = whatsappContextFromCliente(row, user.email);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
       <p className="eyebrow text-gold">Club cumpleaños</p>
-      <h1 className="mt-3 text-3xl font-light text-cream sm:text-4xl">
-        En Andreas Salon consentimos tu día especial
+      <h1 className="mt-3 text-3xl font-light leading-tight text-cream sm:text-4xl">
+        En{' '}
+        <span className="font-serif font-medium uppercase tracking-[0.14em] text-gradient-gold">
+          Salón Andreas
+        </span>{' '}
+        consentimos tu día especial
       </h1>
       <p className="mt-4 text-sm font-light leading-relaxed text-muted">
-        Hola{row.nombre ? `, ${row.nombre.split(/\s+/)[0]}` : ''}. Estos son los beneficios que
-        preparamos para celebrar contigo.
+        Hola{row.nombre ? `, ${row.nombre.split(/\s+/)[0]}` : ''}. Todo el equipo de Andreas Salon te
+        espera para consentirte en tu cumpleaños.
       </p>
 
       <div className="mt-10">
@@ -72,8 +87,12 @@ export default async function TuCumpleanosPage() {
           initialEnrolled={enrolled}
           initialReaction={reaction}
           initialComment={comment}
+          firstName={row.nombre?.split(/\s+/)[0]}
+          customerWhatsappContext={customerWhatsappContext}
         />
       </div>
+
+      <BirthdayClubTestimonials reviews={publicReviews} />
     </div>
   );
 }

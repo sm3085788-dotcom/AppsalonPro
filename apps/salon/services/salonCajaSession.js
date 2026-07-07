@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, getSalonSessionProfile, getSalonSucursalScope } from '@appsalon/shared-config';
+import { extractGiftCardFromVenta } from '../../../shared/utils/ventaFactura';
 
 const KEY_PREFIX = '@salon/caja_abierta_v1';
 const KEY_CHICA_PREFIX = '@salon/caja_chica_saldo_v1';
@@ -181,7 +182,10 @@ export function mapVentaToTx(v) {
   const mp = v.metodo_pago || 'efectivo';
   const signo = mp === 'efectivo' ? 1 : 0;
   const cliente = v.cliente_nombre || v.cliente?.nombre;
-  const detalle = [cliente, mp].filter(Boolean).join(' · ') || '—';
+  const gift = extractGiftCardFromVenta(v);
+  const detalleParts = [cliente, mp].filter(Boolean);
+  if (gift?.codigo) detalleParts.push(`Tarjeta ${gift.codigo}`);
+  const detalle = detalleParts.join(' · ') || '—';
   const productos = ventaProductosNombres(v);
   return {
     id: `ven-${v.id}`,
@@ -190,6 +194,7 @@ export function mapVentaToTx(v) {
     titulo: v.no_factura || 'Venta POS',
     productos,
     detalle,
+    giftCardCodigo: gift?.codigo || null,
     monto: Number(v.total ?? v.monto ?? 0),
     signo,
   };

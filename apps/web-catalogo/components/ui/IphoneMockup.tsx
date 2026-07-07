@@ -5,6 +5,8 @@ type IphoneMockupProps = {
   /** Escala visual: 'lg' para el destacado, 'sm' para los secundarios. */
   size?: 'lg' | 'sm';
   className?: string;
+  /** Difumina la captura para que no se distinga el diseño en público. */
+  obscured?: boolean;
 };
 
 /**
@@ -16,6 +18,7 @@ export function IphoneMockup({
   alt = 'Pantalla de la app AppSalon Pro para clientes',
   size = 'lg',
   className = '',
+  obscured = true,
 }: IphoneMockupProps) {
   const dims =
     size === 'lg'
@@ -35,13 +38,26 @@ export function IphoneMockup({
           className={`absolute left-1/2 z-10 -translate-x-1/2 rounded-full bg-charcoal ${notch}`}
         />
         {/* Pantalla */}
-        <div className={`h-full w-full overflow-hidden ${screenRadius} bg-background`}>
+        <div
+          className={`relative h-full w-full select-none overflow-hidden ${screenRadius} bg-background`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={src || "/placeholder.svg"}
             alt={alt}
-            className="h-full w-full object-cover object-top"
+            draggable={false}
+            className={`h-full w-full object-cover object-top ${
+              obscured
+                ? 'scale-110 blur-md brightness-75 saturate-50'
+                : ''
+            }`}
           />
+          {obscured ? (
+            <div
+              className="pointer-events-none absolute inset-0 bg-charcoal/50 backdrop-blur-lg"
+              aria-hidden
+            />
+          ) : null}
         </div>
       </div>
     </div>

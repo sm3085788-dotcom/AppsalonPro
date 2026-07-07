@@ -827,6 +827,11 @@ export function CajaScreen({ onBack }) {
                             {t.productos}
                           </Text>
                         ) : null}
+                        {t.giftCardCodigo ? (
+                          <View style={styles.giftTxBadge}>
+                            <Text style={styles.giftTxBadgeTxt}>Tarjeta regalo · {t.giftCardCodigo}</Text>
+                          </View>
+                        ) : null}
                         <Text style={subStyles.muted}>{t.detalle}</Text>
                         <Text style={styles.txTime}>{new Date(t.ts).toLocaleString('es-GT')}</Text>
                       </View>
@@ -1358,6 +1363,22 @@ function createStyles(c) {
     badge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radii.pill },
     badgeTxt: { fontFamily: typography.fontSansMedium, fontSize: 10 },
     txTit: { fontFamily: typography.fontSansMedium, fontSize: 14, color: c.foreground },
+    giftTxBadge: {
+      alignSelf: 'flex-start',
+      marginTop: 4,
+      marginBottom: 2,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radii.pill,
+      backgroundColor: 'rgba(212,175,55,0.14)',
+      borderWidth: 1,
+      borderColor: 'rgba(212,175,55,0.45)',
+    },
+    giftTxBadgeTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+      color: c.primary,
+    },
     txTime: { fontFamily: typography.fontSans, fontSize: 11, color: c.foregroundSubtle, marginTop: 4 },
     txAmt: { fontFamily: typography.fontSansMedium, fontSize: 14, marginLeft: spacing.xs },
     modalBackdrop: {

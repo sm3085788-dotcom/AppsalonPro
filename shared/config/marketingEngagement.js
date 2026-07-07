@@ -86,9 +86,9 @@ async function fetchMarketingEngagementCore(since) {
       .limit(500),
     supabase
       .from('birthday_club_reactions')
-      .select('id, reaction, comment, author_name, created_at, cliente_id')
-      .gt('created_at', since)
-      .order('created_at', { ascending: false })
+      .select('id, reaction, comment, author_name, created_at, updated_at, cliente_id')
+      .or(`created_at.gt.${since},updated_at.gt.${since}`)
+      .order('updated_at', { ascending: false })
       .limit(80),
   ]);
 
@@ -143,11 +143,11 @@ async function fetchMarketingEngagementCore(since) {
     const commentText = String(r.comment || '').trim();
     return {
       kind: r.reaction === 'love' ? 'birthday_love' : r.reaction === 'dislike' ? 'birthday_dislike' : 'birthday_like',
-      id: `birthday-${r.id}-${r.created_at}`,
+      id: `birthday-${r.id}-${r.updated_at || r.created_at}`,
       postId: null,
       clientLabel: r.author_name || 'Cliente web',
       body: commentText || reactionLabel,
-      createdAt: r.created_at,
+      createdAt: r.updated_at || r.created_at,
       postTitle: 'Club Tu Cumpleaños',
       postBody: commentText,
       publicationNo: null,

@@ -27,6 +27,7 @@ import { SubScreenChrome, SalonButton, useSubStyles, modalSheetBottomPad, modalS
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 import { addReporte, loadReportes, subscribeReportesStorage } from '../services/salonReportesStorage';
+import { extractGiftCardFromVenta } from '../../../shared/utils/ventaFactura';
 
 const REPORT_TYPES = [
   { id: 'caja', label: 'Caja' },
@@ -99,10 +100,12 @@ function enrichVentaRow(r) {
   const fact = r?.no_factura ?? r?.id ?? '-';
   const cliente = r?.cliente?.nombre || r?.cliente_nombre || 'Cliente';
   const vend = r?.vendedor?.nombre || 'Sin vendedor';
+  const gift = extractGiftCardFromVenta(r);
+  const giftNote = gift?.codigo ? ` · Tarjeta ${gift.codigo}` : '';
   return {
     ...r,
     nombre: `Fact. ${fact} · ${cliente}`,
-    descripcion: `${vend} · Q${montoVenta(r).toFixed(2)}`,
+    descripcion: `${vend} · Q${montoVenta(r).toFixed(2)}${giftNote}`,
   };
 }
 

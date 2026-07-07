@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Phone } from 'lucide-react';
+import { CustomerServiceWhatsAppButton } from '@/components/site/CustomerServiceWhatsAppButton';
 import {
   loadGiftCardCheckoutPayload,
 } from '@/components/gift-card/GiftCardCheckoutForm';
 import type { GiftCardCheckoutPayload } from '@/lib/gift-card/validation';
 import { GiftCardVisual } from '@/components/gift-card/GiftCardVisual';
-import { SALON_CONTACT } from '@/lib/salonContact';
 
 export function GiftCardPreviewPanel() {
   const [payload, setPayload] = useState<GiftCardCheckoutPayload | null>(null);
@@ -51,18 +50,15 @@ export function GiftCardPreviewPanel() {
         <GiftCardVisual data={{ ...visualData, showDates: false }} />
       </div>
 
-      <div className="rounded-2xl border border-gold/25 bg-gold/5 p-5">
-        <p className="text-sm font-light leading-relaxed text-cream/90">
+      <div className="rounded-xl border border-gold/25 bg-gold/5 p-[1.125rem]">
+        <p className="text-[0.7875rem] font-light leading-relaxed text-cream/90">
           Para validar el monto y completar el pago con tarjeta, comunícate con servicio al
           cliente. Recibirás un código de activación para generar la tarjeta oficial con QR.
         </p>
-        <a
-          href={SALON_CONTACT.telUrl}
-          className="mt-4 inline-flex items-center gap-2 text-sm text-gold hover:underline"
-        >
-          <Phone className="h-4 w-4" />
-          {SALON_CONTACT.telefonoLabel}
-        </a>
+        <CustomerServiceWhatsAppButton
+          variant="phone"
+          className="mt-3.5 px-[1.125rem] py-2 text-[10px] [&_svg]:h-3.5 [&_svg]:w-3.5 [&_span:last-child]:text-[9px]"
+        />
       </div>
 
       <div className="flex flex-wrap gap-4 border-t border-border pt-8">

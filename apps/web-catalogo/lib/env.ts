@@ -46,6 +46,7 @@ export const env = {
   qpayproEnv: readEnv('QPAYPRO_ENV') || 'sandbox',
   productShippingFeeGtq: Number(readEnv('WEB_PRODUCT_SHIPPING_FEE_GTQ') || '0') || 0,
   googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+  googlePlaceId: readEnv('GOOGLE_PLACE_ID', 'NEXT_PUBLIC_GOOGLE_PLACE_ID'),
   deliveryProvider: process.env.DELIVERY_PROVIDER ?? 'mock',
   deliveryApiKey: process.env.DELIVERY_API_KEY ?? '',
   contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? '',

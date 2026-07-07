@@ -388,6 +388,11 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
         { event: 'INSERT', schema: 'public', table: 'birthday_club_reactions' },
         () => void refreshEngagementAlerts(),
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'birthday_club_reactions' },
+        () => void refreshEngagementAlerts(),
+      )
       .subscribe();
     const iv = setInterval(() => void refreshEngagementAlerts(), 45000);
     return () => {

@@ -3,12 +3,8 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, ShoppingBag } from 'lucide-react';
 import { getProductById } from '@/lib/data/catalog';
 import { getSelectedBranchId } from '@/lib/data/selectedBranch';
-import { getReviews, canReview, userHasReviewed } from '@/lib/data/reviews';
-import { getCurrentUser, getClienteNombre } from '@/lib/auth';
 import { ProductPurchase } from '@/components/catalog/ProductPurchase';
 import { StarRatingDisplay } from '@/components/ui/StarRating';
-import { ReviewList } from '@/components/reviews/ReviewList';
-import { ReviewForm } from '@/components/reviews/ReviewForm';
 
 export default async function ProductoPage({
   params,
@@ -20,13 +16,6 @@ export default async function ProductoPage({
   const product = await getProductById(id, branchId);
 
   if (!product) notFound();
-
-  const [reviews, user] = await Promise.all([getReviews(id), getCurrentUser()]);
-  const [puedeResenar, yaReseno, nombre] = await Promise.all([
-    user ? canReview(id) : Promise.resolve(false),
-    user ? userHasReviewed(id, user.id) : Promise.resolve(false),
-    user ? getClienteNombre(user.id) : Promise.resolve(''),
-  ]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -72,31 +61,6 @@ export default async function ProductoPage({
           </div>
         </div>
       </div>
-
-      <section className="mt-16">
-        <h2 className="mb-6 text-2xl font-light text-cream">Reseñas</h2>
-
-        {!user ? (
-          <p className="mb-6 rounded-2xl border border-border bg-surface p-5 text-sm text-muted">
-            <Link href="/login" className="text-gold hover:underline">
-              Inicia sesión
-            </Link>{' '}
-            para ver y escribir reseñas verificadas.
-          </p>
-        ) : puedeResenar && !yaReseno ? (
-          <div className="mb-8">
-            <ReviewForm inventarioId={id} autorNombre={nombre} />
-          </div>
-        ) : (
-          <p className="mb-6 rounded-2xl border border-border bg-surface p-5 text-sm text-muted">
-            {yaReseno
-              ? 'Ya dejaste tu reseña para este producto. ¡Gracias!'
-              : 'Solo quienes recibieron este producto pueden reseñarlo.'}
-          </p>
-        )}
-
-        <ReviewList reviews={reviews} />
-      </section>
     </div>
   );
 }

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, X, Check } from 'lucide-react-native';
+import { ChevronRight, X, Check, Gift, Printer } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
@@ -31,7 +31,11 @@ import {
   formatFechaVenta,
   formatMetodoPago,
   formatVentaNotasParaDisplay,
+  extractGiftCardFromVenta,
+  ventaConTarjetaRegalo,
+  formatDetallesPagoDisplay,
 } from '../../../shared/utils/ventaFactura';
+import { printVentaTicket } from '../utils/ventaTicketPrint';
 
 export function PapeleriaScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
@@ -49,6 +53,8 @@ export function PapeleriaScreen({ onBack }) {
   const [filterVendedor, setFilterVendedor] = useState('todos');
   const [filterMetodo, setFilterMetodo] = useState('todos');
   const [filterFactura, setFilterFactura] = useState('todas');
+  const [tabPapel, setTabPapel] = useState('todas');
+  const [printing, setPrinting] = useState(false);
   const [detalleVenta, setDetalleVenta] = useState(null);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
@@ -122,10 +128,26 @@ export function PapeleriaScreen({ onBack }) {
     () => (detalleVenta ? parseVentaItems(detalleVenta.items) : []),
     [detalleVenta],
   );
+  const detalleGift = useMemo(
+    () => (detalleVenta ? extractGiftCardFromVenta(detalleVenta) : null),
+    [detalleVenta],
+  );
   const detalleNotasDisplay = useMemo(
     () => (detalleVenta ? formatVentaNotasParaDisplay(detalleVenta.notas) : null),
     [detalleVenta],
   );
+
+  const imprimirDetalle = async () => {
+    if (!detalleVenta || printing) return;
+    setPrinting(true);
+    try {
+      await printVentaTicket(detalleVenta);
+    } catch (e) {
+      Alert.alert('Impresión', e?.message || 'No se pudo imprimir el ticket.');
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     let rows = [...ventas];
@@ -134,9 +156,15 @@ export function PapeleriaScreen({ onBack }) {
       rows = rows.filter((v) => {
         const cli = v?.cliente?.nombre || v?.cliente_nombre || '';
         const vend = profesionalLabel(v);
-        const blob = [facturaLabel(v), cli, vend, v?.metodo_pago, v?.notas].join(' ').toLowerCase();
+        const gift = extractGiftCardFromVenta(v);
+        const blob = [facturaLabel(v), cli, vend, v?.metodo_pago, v?.notas, gift?.codigo, v?.detalles_pago]
+          .join(' ')
+          .toLowerCase();
         return blob.includes(q);
       });
+    }
+    if (tabPapel === 'tarjeta_regalo') {
+      rows = rows.filter((v) => ventaConTarjetaRegalo(v));
     }
     if (filterVendedor === '__sin__') {
       rows = rows.filter((v) => !v?.vendedor_id && !v?.vendedor?.id);
@@ -165,7 +193,7 @@ export function PapeleriaScreen({ onBack }) {
       return sortMode === 'fecha_asc' ? ta - tb : tb - ta;
     });
     return rows;
-  }, [ventas, query, sortMode, filterVendedor, filterMetodo, filterFactura, vendedoresOpts]);
+  }, [ventas, query, sortMode, filterVendedor, filterMetodo, filterFactura, tabPapel, vendedoresOpts]);
 
   const verDetalle = (v) => {
     if (!sel.active) setDetalleVenta(v);
@@ -218,6 +246,7 @@ export function PapeleriaScreen({ onBack }) {
         })
       : '—';
     const subParts = [prof, cli, fecha, v?.metodo_pago].filter(Boolean);
+    const gift = extractGiftCardFromVenta(v);
     const picked = sel.isSelected(v.id);
 
     return (
@@ -262,6 +291,14 @@ export function PapeleriaScreen({ onBack }) {
           <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
             {subParts.length ? subParts.join(' · ') : '—'}
           </Text>
+          {gift?.codigo ? (
+            <View style={[styles.giftBadge, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}>
+              <Gift size={11} color={c.primary} strokeWidth={2} />
+              <Text style={[styles.giftBadgeTxt, { color: c.primary }]} numberOfLines={1}>
+                Tarjeta regalo · {gift.codigo}
+              </Text>
+            </View>
+          ) : null}
         </View>
         {!sel.active ? <ChevronRight size={16} color={c.foregroundSubtle} style={styles.rowChev} /> : null}
       </TouchableOpacity>
@@ -314,6 +351,36 @@ export function PapeleriaScreen({ onBack }) {
             {filtroResumen}
           </Text>
 
+          <View style={styles.tabRow}>
+            {[
+              { id: 'todas', label: 'Todas las facturas' },
+              { id: 'tarjeta_regalo', label: 'Tarjeta regalo' },
+            ].map((tab) => {
+              const on = tabPapel === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[
+                    styles.tabChip,
+                    {
+                      borderColor: on ? c.primary : c.cardBorder,
+                      backgroundColor: on ? c.surfaceMuted : c.card,
+                    },
+                  ]}
+                  onPress={() => setTabPapel(tab.id)}
+                  activeOpacity={0.85}
+                >
+                  {tab.id === 'tarjeta_regalo' ? (
+                    <Gift size={13} color={on ? c.primary : c.foregroundMuted} strokeWidth={2} />
+                  ) : null}
+                  <Text style={[styles.tabChipTxt, { color: on ? c.primary : c.foreground }]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           {loading ? (
             <ActivityIndicator style={{ marginTop: spacing.md }} color={c.primary} />
           ) : (
@@ -340,7 +407,9 @@ export function PapeleriaScreen({ onBack }) {
                   <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>
                     {ventas.length === 0
                       ? 'No hay ventas registradas.'
-                      : 'Ningún resultado con la búsqueda o filtros actuales.'}
+                      : tabPapel === 'tarjeta_regalo'
+                        ? 'No hay facturas con tarjeta regalo en este periodo.'
+                        : 'Ningún resultado con la búsqueda o filtros actuales.'}
                   </Text>
                 }
               />
@@ -379,6 +448,15 @@ export function PapeleriaScreen({ onBack }) {
                   <TouchableOpacity onPress={() => setDetalleVenta(null)} hitSlop={12} accessibilityLabel="Cerrar">
                     <X size={22} color={c.foregroundMuted} />
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={imprimirDetalle}
+                    hitSlop={12}
+                    accessibilityLabel="Imprimir detalle de venta"
+                    disabled={printing}
+                    style={{ opacity: printing ? 0.5 : 1 }}
+                  >
+                    <Printer size={22} color={c.primary} />
+                  </TouchableOpacity>
                 </View>
 
                 <ScrollView
@@ -399,7 +477,27 @@ export function PapeleriaScreen({ onBack }) {
                         Descuento: {formatQ(detalleVenta.descuento)}
                       </Text>
                     ) : null}
+                    {detallePagoDisplay ? (
+                      <Text style={[styles.detailPago, { color: c.foregroundMuted, marginTop: spacing.sm, textAlign: 'center' }]}>
+                        {detallePagoDisplay}
+                      </Text>
+                    ) : null}
                   </View>
+
+                  {detalleGift?.codigo ? (
+                    <View style={[styles.giftDetailCard, { borderColor: c.primary, backgroundColor: c.surfaceMuted }]}>
+                      <View style={styles.giftDetailHead}>
+                        <Gift size={16} color={c.primary} strokeWidth={2} />
+                        <Text style={[styles.giftDetailTitle, { color: c.primary }]}>Tarjeta regalo</Text>
+                      </View>
+                      <Text style={[styles.giftDetailCodigo, { color: c.foreground }]}>{detalleGift.codigo}</Text>
+                      {detalleGift.monto != null ? (
+                        <Text style={[styles.giftDetailMonto, { color: c.foregroundMuted }]}>
+                          Aplicado: {formatQ(detalleGift.monto)}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
 
                   <View style={[styles.detailInfoCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
                     {[
@@ -457,6 +555,14 @@ export function PapeleriaScreen({ onBack }) {
                   ) : null}
                 </ScrollView>
 
+                <SalonButton
+                  title={printing ? 'Imprimiendo…' : 'Imprimir ticket'}
+                  variant="heroGold"
+                  fullWidth
+                  onPress={imprimirDetalle}
+                  disabled={printing}
+                  style={{ marginTop: spacing.sm }}
+                />
                 <SalonButton
                   title="Cerrar"
                   variant="outlineGray"
@@ -629,6 +735,71 @@ function createStyles(c) {
       fontSize: 11,
       lineHeight: 15,
       marginBottom: spacing.xs,
+    },
+    tabRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    tabChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.md,
+      borderWidth: 1,
+    },
+    tabChipTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+    },
+    giftBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 4,
+      marginTop: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      maxWidth: '100%',
+    },
+    giftBadgeTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 10,
+      flexShrink: 1,
+    },
+    giftDetailCard: {
+      borderWidth: 1,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      alignItems: 'center',
+    },
+    giftDetailHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginBottom: spacing.xs,
+    },
+    giftDetailTitle: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    giftDetailCodigo: {
+      fontFamily: typography.fontDisplay,
+      fontSize: 20,
+      letterSpacing: 0.5,
+    },
+    giftDetailMonto: {
+      fontFamily: typography.fontSans,
+      fontSize: 13,
+      marginTop: spacing.xs,
     },
     listShell: {
       flex: 1,
