@@ -1,7 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Cake, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { Cake, ChevronLeft, ChevronRight, Gift, Star, X } from 'lucide-react';
+import { GiftCardReviewPanel } from '@/components/gift-card/GiftCardReviewPanel';
+import type { GiftCardReviewStatus } from '@/app/gift-card-review/actions';
 import type { ClientReview, GoogleReviewsPayload } from '@/lib/data/googleReviews';
 
 function GoogleMark({ className = 'h-4 w-4' }: { className?: string }) {
@@ -83,6 +86,8 @@ function ReviewCard({
 }) {
   const isGoogle = review.source === 'google';
   const isBirthdayClub = review.source === 'birthday_club';
+  const isGiftCard = review.source === 'gift_card';
+  const isVerifiedWeb = isBirthdayClub || isGiftCard;
 
   return (
     <article className="flex h-full min-h-[280px] flex-col rounded-xl bg-white px-5 py-6 text-center shadow-lg sm:min-h-[300px] sm:px-6 sm:py-7">
@@ -90,7 +95,7 @@ function ReviewCard({
         <ReviewAvatar name={review.authorName} photoUrl={review.authorPhotoUrl} />
       </div>
       <div className="mt-4">
-        {isBirthdayClub ? (
+        {isVerifiedWeb ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700 sm:text-[11px]">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
             Experiencia verificada
@@ -121,6 +126,12 @@ function ReviewCard({
               Club Tu Cumpleaños
             </span>
           ) : null}
+          {isGiftCard ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#1a4d3e]/10 px-2 py-0.5 text-[9px] font-medium uppercase tracking-wide text-[#1a4d3e] sm:text-[10px]">
+              <Gift className="h-3 w-3" aria-hidden />
+              Tarjeta regalo
+            </span>
+          ) : null}
           <span>
             {review.authorName} · {review.relativeTime}
           </span>
@@ -137,17 +148,42 @@ function headerSubtitle(source: GoogleReviewsPayload['source'], totalReviews: nu
   if (source === 'birthday_club') {
     return `${totalReviews} clientas contentas con el Club Tu Cumpleaños`;
   }
+  if (source === 'gift_card') {
+    return `${totalReviews} clientas contentas con Tarjeta Regalo`;
+  }
   if (source === 'mixed') {
     return `${totalReviews} reseñas de clientas y Google`;
   }
   return 'Sé la primera en compartir tu experiencia';
 }
 
-export function GoogleReviewsSection({ data }: { data: GoogleReviewsPayload }) {
+function HeaderSourceIcon({ source }: { source: GoogleReviewsPayload['source'] }) {
+  if (source === 'google' || source === 'mixed') {
+    return <GoogleMark className="h-5 w-5" />;
+  }
+  if (source === 'gift_card') {
+    return <Gift className="h-5 w-5 text-gold" strokeWidth={1.5} />;
+  }
+  return <Cake className="h-5 w-5 text-gold" strokeWidth={1.5} />;
+}
+
+export function GoogleReviewsSection({
+  data,
+  giftReviewStatus,
+}: {
+  data: GoogleReviewsPayload;
+  giftReviewStatus?: GiftCardReviewStatus;
+}) {
   const { reviews, rating, totalReviews, placeName, googleMapsUrl, source } = data;
   const hasGoogle = source === 'google' || source === 'mixed';
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(1);
+  const [giftPanelOpen, setGiftPanelOpen] = useState(false);
+
+  const canAddGiftReview = Boolean(giftReviewStatus?.loggedIn && giftReviewStatus?.eligible);
+  const showGiftHint =
+    giftReviewStatus?.loggedIn === true && giftReviewStatus?.eligible === false;
+  const showLoginHint = giftReviewStatus?.loggedIn === false;
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -182,11 +218,13 @@ export function GoogleReviewsSection({ data }: { data: GoogleReviewsPayload }) {
 
   const roundedRating = rating.toFixed(1);
   const subtitle = headerSubtitle(source, totalReviews);
+  const hasWebVerifiedReviews =
+    source === 'birthday_club' || source === 'gift_card' || source === 'mixed';
 
   return (
     <section
       id="resenas"
-      className="relative mx-auto max-w-7xl overflow-hidden px-4 pb-10 pt-14 sm:px-6 lg:px-8"
+      className="relative mx-auto max-w-7xl overflow-hidden px-4 pb-4 pt-5 sm:px-6 lg:px-8"
     >
       <div className="relative overflow-hidden rounded-[29px]">
         <div className="absolute inset-0">
@@ -199,18 +237,14 @@ export function GoogleReviewsSection({ data }: { data: GoogleReviewsPayload }) {
           <div className="absolute inset-0 bg-charcoal/75" />
         </div>
 
-        <div className="relative px-5 py-12 sm:px-10 sm:py-16 lg:px-14 lg:py-20">
+        <div className="relative px-5 py-8 sm:px-10 sm:py-12 lg:px-14 lg:py-16">
           <header className="text-center">
             <h2 className="text-balance text-2xl font-light text-white sm:text-3xl lg:text-[2rem]">
               Descubre lo que dicen nuestros clientes
             </h2>
 
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-white">
-              {hasGoogle ? (
-                <GoogleMark className="h-5 w-5" />
-              ) : (
-                <Cake className="h-5 w-5 text-gold" strokeWidth={1.5} />
-              )}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-white">
+              <HeaderSourceIcon source={source} />
               <span className="text-3xl font-light tabular-nums sm:text-4xl">
                 {roundedRating}
               </span>
@@ -242,13 +276,41 @@ export function GoogleReviewsSection({ data }: { data: GoogleReviewsPayload }) {
                 </span>
               )}
             </div>
+
+            {canAddGiftReview ? (
+              <div className="mt-5 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setGiftPanelOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-full border border-gold/40 bg-gold/10 px-4 py-2 text-sm font-medium text-gold transition-colors hover:border-gold/60 hover:bg-gold/15"
+                >
+                  <Gift className="h-4 w-4" aria-hidden />
+                  Agregar reseña · Tarjeta regalo
+                </button>
+              </div>
+            ) : null}
+
+            {showGiftHint ? (
+              <p className="mt-4 text-xs font-light text-white/60">
+                Vinculá tu tarjeta en salón para compartir tu experiencia.
+              </p>
+            ) : null}
+
+            {showLoginHint ? (
+              <p className="mt-4 text-xs font-light text-white/60">
+                <Link href="/login?redirect=/#resenas" className="text-gold hover:underline">
+                  Iniciá sesión
+                </Link>{' '}
+                para dejar tu reseña de Tarjeta Regalo.
+              </p>
+            ) : null}
           </header>
 
-          <div className="relative mt-10 sm:mt-12">
+          <div className="relative mt-7 sm:mt-9">
             {reviews.length === 0 ? (
               <p className="text-center text-sm font-light text-white/70">
-                Las clientas del Club Tu Cumpleaños comparten aquí su experiencia real.
-                {' '}
+                Las clientas del Club Tu Cumpleaños y Tarjeta Regalo comparten aquí su experiencia
+                real.{' '}
                 <a href="/tu-cumpleanos" className="text-gold hover:underline">
                   Únete y deja tu comentario
                 </a>
@@ -309,15 +371,43 @@ export function GoogleReviewsSection({ data }: { data: GoogleReviewsPayload }) {
               </>
             )}
 
-            {source === 'birthday_club' || source === 'mixed' ? (
+            {hasWebVerifiedReviews ? (
               <p className="mt-8 text-center text-[11px] font-light leading-relaxed text-white/55 sm:text-xs">
-                Las reseñas con etiqueta Club Tu Cumpleaños son comentarios reales de
-                clientas que vivieron la experiencia en la web.
+                Las reseñas con etiqueta Club Tu Cumpleaños o Tarjeta regalo son comentarios
+                reales de clientas que vivieron la experiencia en la web.
               </p>
             ) : null}
           </div>
         </div>
       </div>
+
+      {giftPanelOpen && giftReviewStatus?.eligible ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gift-review-title"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-charcoal p-6 shadow-2xl">
+            <div className="mb-1 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setGiftPanelOpen(false)}
+                className="rounded-full p-1.5 text-muted transition-colors hover:bg-white/10 hover:text-cream"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <GiftCardReviewPanel
+              initialReaction={giftReviewStatus.initialReaction ?? null}
+              initialComment={giftReviewStatus.initialComment ?? ''}
+              giftCardCodigo={giftReviewStatus.giftCardCodigo}
+              onClose={() => setGiftPanelOpen(false)}
+            />
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

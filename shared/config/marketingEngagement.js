@@ -66,7 +66,7 @@ export async function fetchMarketingEngagementFeed(lookbackDays = ENGAGEMENT_FEE
 }
 
 async function fetchMarketingEngagementCore(since) {
-  const [likesRes, commentsRes, postsRes, birthdayRes] = await Promise.all([
+  const [likesRes, commentsRes, postsRes, birthdayRes, giftCardRes] = await Promise.all([
     supabase
       .from('marketing_post_likes')
       .select('post_id, client_key, created_at')
@@ -86,6 +86,12 @@ async function fetchMarketingEngagementCore(since) {
       .limit(500),
     supabase
       .from('birthday_club_reactions')
+      .select('id, reaction, comment, author_name, created_at, updated_at, cliente_id')
+      .or(`created_at.gt.${since},updated_at.gt.${since}`)
+      .order('updated_at', { ascending: false })
+      .limit(80),
+    supabase
+      .from('gift_card_reactions')
       .select('id, reaction, comment, author_name, created_at, updated_at, cliente_id')
       .or(`created_at.gt.${since},updated_at.gt.${since}`)
       .order('updated_at', { ascending: false })
@@ -155,12 +161,36 @@ async function fetchMarketingEngagementCore(since) {
     };
   });
 
-  const merged = [...likes, ...comments, ...birthdayEvents].sort(
+  const giftCardEvents = (giftCardRes.data || []).map((r) => {
+    const reactionLabel =
+      r.reaction === 'love' ? 'Me encanta' : r.reaction === 'dislike' ? 'No le convence' : 'Me gusta';
+    const commentText = String(r.comment || '').trim();
+    return {
+      kind: r.reaction === 'love' ? 'gift_card_love' : r.reaction === 'dislike' ? 'gift_card_dislike' : 'gift_card_like',
+      id: `gift-card-${r.id}-${r.updated_at || r.created_at}`,
+      postId: null,
+      clientLabel: r.author_name || 'Cliente web',
+      body: commentText || reactionLabel,
+      createdAt: r.updated_at || r.created_at,
+      postTitle: 'Tarjeta regalo',
+      postBody: commentText,
+      publicationNo: null,
+      publicationLabel: 'Tarjeta regalo · Web',
+    };
+  });
+
+  const merged = [...likes, ...comments, ...birthdayEvents, ...giftCardEvents].sort(
     (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
   );
 
   return {
     data: merged,
-    error: likesRes.error || commentsRes.error || postsRes.error || birthdayRes.error || null,
+    error:
+      likesRes.error ||
+      commentsRes.error ||
+      postsRes.error ||
+      birthdayRes.error ||
+      giftCardRes.error ||
+      null,
   };
 }

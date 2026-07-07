@@ -1,6 +1,12 @@
 import { getBirthdayClubPublicReviews } from '@/lib/data/birthdayClubReviews';
+import { getGiftCardPublicReviews } from '@/lib/data/giftCardReviews';
 
-export type ReviewSource = 'google' | 'birthday_club' | 'mixed' | 'empty';
+export type ReviewSource =
+  | 'google'
+  | 'birthday_club'
+  | 'gift_card'
+  | 'mixed'
+  | 'empty';
 
 export type ClientReview = {
   id: string;
@@ -9,7 +15,7 @@ export type ClientReview = {
   rating: number;
   text: string;
   relativeTime: string;
-  source?: 'google' | 'birthday_club';
+  source?: 'google' | 'birthday_club' | 'gift_card';
 };
 
 /** @deprecated Use ClientReview */
@@ -130,47 +136,60 @@ async function fetchGoogleReviews(): Promise<GoogleReviewsPayload | null> {
   }
 }
 
-function mergeReviews(
+function mergeAllReviews(
   birthdayReviews: ClientReview[],
+  giftCardReviews: ClientReview[],
   googlePayload: GoogleReviewsPayload | null,
 ): GoogleReviewsPayload {
-  if (birthdayReviews.length === 0 && !googlePayload) {
-    return EMPTY_PAYLOAD;
-  }
+  const hasBirthday = birthdayReviews.length > 0;
+  const hasGiftCard = giftCardReviews.length > 0;
+  const hasGoogle = Boolean(googlePayload?.reviews.length);
 
-  if (birthdayReviews.length === 0 && googlePayload) {
-    return googlePayload;
-  }
+  const activeSources = [hasBirthday, hasGiftCard, hasGoogle].filter(Boolean).length;
+  if (activeSources === 0) return EMPTY_PAYLOAD;
 
-  if (!googlePayload || googlePayload.reviews.length === 0) {
+  if (activeSources === 1) {
+    if (hasGoogle && googlePayload) return googlePayload;
+    if (hasBirthday) {
+      return {
+        placeName: 'Salón Andreas',
+        rating: 5,
+        totalReviews: birthdayReviews.length,
+        googleMapsUrl: googlePayload?.googleMapsUrl ?? DEFAULT_MAPS_URL,
+        reviews: birthdayReviews,
+        source: 'birthday_club',
+      };
+    }
     return {
       placeName: 'Salón Andreas',
       rating: 5,
-      totalReviews: birthdayReviews.length,
+      totalReviews: giftCardReviews.length,
       googleMapsUrl: googlePayload?.googleMapsUrl ?? DEFAULT_MAPS_URL,
-      reviews: birthdayReviews,
-      source: 'birthday_club',
+      reviews: giftCardReviews,
+      source: 'gift_card',
     };
   }
 
-  const merged = [...birthdayReviews, ...googlePayload.reviews];
+  const merged = [...birthdayReviews, ...giftCardReviews, ...(googlePayload?.reviews ?? [])];
 
   return {
-    placeName: googlePayload.placeName,
-    rating: googlePayload.rating,
-    totalReviews: googlePayload.totalReviews + birthdayReviews.length,
-    googleMapsUrl: googlePayload.googleMapsUrl,
+    placeName: googlePayload?.placeName ?? 'Salón Andreas',
+    rating: googlePayload?.rating ?? 5,
+    totalReviews:
+      (googlePayload?.totalReviews ?? 0) + birthdayReviews.length + giftCardReviews.length,
+    googleMapsUrl: googlePayload?.googleMapsUrl ?? DEFAULT_MAPS_URL,
     reviews: merged,
     source: 'mixed',
   };
 }
 
-/** Reseñas públicas: Club Tu Cumpleaños (reales) + Google Business si está configurado. */
+/** Reseñas públicas: Club, Tarjeta regalo y Google Business si está configurado. */
 export async function getGoogleReviews(): Promise<GoogleReviewsPayload> {
-  const [birthdayReviews, googlePayload] = await Promise.all([
+  const [birthdayReviews, giftCardReviews, googlePayload] = await Promise.all([
     getBirthdayClubPublicReviews(),
+    getGiftCardPublicReviews(),
     fetchGoogleReviews(),
   ]);
 
-  return mergeReviews(birthdayReviews, googlePayload);
+  return mergeAllReviews(birthdayReviews, giftCardReviews, googlePayload);
 }

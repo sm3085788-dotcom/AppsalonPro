@@ -27,6 +27,7 @@ import {
   Heart,
   MessageCircle,
   Cake,
+  Gift,
   ThumbsDown,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -391,6 +392,16 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'birthday_club_reactions' },
+        () => void refreshEngagementAlerts(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'gift_card_reactions' },
+        () => void refreshEngagementAlerts(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'gift_card_reactions' },
         () => void refreshEngagementAlerts(),
       )
       .subscribe();
@@ -1212,8 +1223,12 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
                       <MessageCircle size={16} color={c.primary} />
                     ) : ev.kind === 'birthday_dislike' ? (
                       <ThumbsDown size={16} color="#E53935" />
+                    ) : ev.kind === 'gift_card_dislike' ? (
+                      <ThumbsDown size={16} color="#E53935" />
                     ) : ev.kind === 'birthday_love' || ev.kind === 'birthday_like' ? (
                       <Cake size={16} color="#FFB300" />
+                    ) : ev.kind === 'gift_card_love' || ev.kind === 'gift_card_like' ? (
+                      <Gift size={16} color="#D4AF37" />
                     ) : (
                       <MessageCircle size={16} color={c.primary} />
                     )}
@@ -1230,7 +1245,13 @@ export function MarketingScreen({ onBack, onEngagementSeen }) {
                               ? 'No le convence · Cumpleaños'
                               : ev.kind === 'birthday_like'
                                 ? 'Me gusta · Cumpleaños'
-                                : 'Actividad'}
+                                : ev.kind === 'gift_card_love'
+                                  ? 'Me encanta · Tarjeta regalo'
+                                  : ev.kind === 'gift_card_dislike'
+                                    ? 'No le convence · Tarjeta regalo'
+                                    : ev.kind === 'gift_card_like'
+                                      ? 'Me gusta · Tarjeta regalo'
+                                      : 'Actividad'}
                     </Text>
                     <Text
                       style={{

@@ -11,13 +11,17 @@ import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
 import { GiftCardSection } from '@/components/home/GiftCardSection';
 import { BrandMarquee } from '@/components/home/BrandMarquee';
 import { GoogleReviewsSection } from '@/components/home/GoogleReviewsSection';
+import { getGiftCardReviewStatusForPage } from '@/app/gift-card-review/actions';
 import { getServices } from '@/lib/data/catalog';
 import { getGoogleReviews } from '@/lib/data/googleReviews';
 
+export const dynamic = 'force-dynamic';
+
 export default async function HomePage() {
-  const [services, googleReviews] = await Promise.all([
+  const [services, googleReviews, giftReviewStatus] = await Promise.all([
     getServices(),
     getGoogleReviews(),
+    getGiftCardReviewStatusForPage(),
   ]);
   const featuredServices = services.slice(0, 4);
 
@@ -286,7 +290,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <GoogleReviewsSection data={googleReviews} />
+      <GoogleReviewsSection data={googleReviews} giftReviewStatus={giftReviewStatus} />
     </div>
   );
 }
