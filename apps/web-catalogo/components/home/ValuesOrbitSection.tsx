@@ -7,6 +7,8 @@ import {
   Leaf,
   ShieldCheck,
   CalendarCheck,
+  Target,
+  Eye,
 } from 'lucide-react';
 import { ValuesOrbit, type ValueItem } from './ValuesOrbit';
 
@@ -41,20 +43,28 @@ const VALUES: ValueItem[] = [
     title: 'Compromiso',
     desc: 'Puntualidad y palabra cumplida.',
   },
+  {
+    icon: Target,
+    category: 'Misión',
+    title: 'Elevar el arte de sentirse bien',
+    desc: 'Ofrecer experiencias de belleza excepcionales que combinan la maestría de nuestros estilistas con tecnología que hace de cada visita algo simple, cercano y memorable.',
+  },
+  {
+    icon: Eye,
+    category: 'Visión',
+    title: 'El salón premium de referencia',
+    desc: 'Ser el estándar de la belleza de autor en la región: un espacio donde tradición y modernidad conviven, reconocido por su calidez, su detalle y la confianza de cada cliente.',
+  },
 ];
 
 export function ValuesOrbitSection() {
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6 lg:px-8">
-      <div className="flex flex-col items-center gap-8 text-center lg:gap-10">
+    <section className="mx-auto max-w-7xl px-4 pt-8 sm:px-6 lg:px-8">
+      <div className="flex flex-col items-center gap-4 text-center lg:gap-5">
         <div className="max-w-md">
           <h2 className="text-balance text-2xl font-light text-cream sm:text-3xl">
-            Valores &amp; principios
+            Valores, principios, misión y visión
           </h2>
-          <p className="mt-3 text-sm font-light leading-relaxed text-muted">
-            Un círculo virtuoso: cada valor refuerza al siguiente en cada visita,
-            en cada conversación y en cada detalle de nuestro oficio.
-          </p>
         </div>
         <div className="flex w-full justify-center overflow-visible">
           <ValuesOrbit items={VALUES} />

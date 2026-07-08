@@ -380,6 +380,8 @@ export {
 export {
   lookupGiftCardStaff,
   listGiftCardsStaff,
+  searchGiftCardsStaff,
+  looksLikeGiftCardQuery,
   activateGiftCardAtSalon,
   verifyGiftCardBirthday,
   registerGiftCardUse,
@@ -390,6 +392,10 @@ export {
   linkGiftCardToCliente,
   unlinkGiftCardFromCliente,
   lookupGiftCardForCliente,
+  deleteGiftCardStaff,
+  deleteGiftCardActivationCodeStaff,
+  restoreGiftCardStaff,
+  restoreGiftCardActivationCodeStaff,
 } from './giftCardSalon.js';
 export {
   enrollBirthdayClub,

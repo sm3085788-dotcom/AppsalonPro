@@ -283,6 +283,9 @@ export function BasureroScreen({ onBack, embedded = false }) {
     { id: 'proveedores', label: 'Proveedores' },
     { id: 'incidentes', label: 'Incidentes' },
     { id: 'citas', label: 'Citas' },
+    { id: 'gift_cards', label: 'Tarjetas regalo' },
+    { id: 'gift_card_activation_codes', label: 'Códigos ACT' },
+    { id: 'sucursales', label: 'Sucursales' },
     { id: 'mensajes', label: 'Mensajes' },
     { id: 'otros', label: 'Otros' },
   ];

@@ -77,6 +77,14 @@ function ReviewAvatar({
   );
 }
 
+function formatReviewExclamation(text: string) {
+  const t = text.trim();
+  if (!t) return t;
+  const open = t.startsWith('¡') ? '' : '¡';
+  const close = t.endsWith('!') ? '' : '!';
+  return `${open}${t}${close}`;
+}
+
 function ReviewCard({
   review,
   mapsUrl,
@@ -105,7 +113,7 @@ function ReviewCard({
         )}
       </div>
       <p className="mt-4 line-clamp-5 flex-1 text-[13px] leading-relaxed text-[#333] sm:text-sm">
-        {review.text}
+        {formatReviewExclamation(review.text)}
       </p>
       {isGoogle ? (
         <a

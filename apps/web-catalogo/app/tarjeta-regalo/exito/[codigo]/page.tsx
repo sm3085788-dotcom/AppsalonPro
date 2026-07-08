@@ -3,18 +3,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
-import { GiftCardShareCard } from '@/components/gift-card/GiftCardShareCard';
+import {
+  GiftCardActivatedDashboard,
+  GiftCardActivatedDashboardLinks,
+} from '@/components/gift-card/GiftCardActivatedDashboard';
+import { loadActiveGiftCard } from '@/lib/gift-card/activeGiftCardStorage';
 import { clearGiftCardCheckoutPayload } from '@/components/gift-card/GiftCardCheckoutForm';
-
-interface CardRow {
-  codigo: string;
-  monto_inicial: number;
-  para_nombre: string;
-  de_nombre: string;
-  mensaje: string | null;
-  emitida_en: string;
-  vence_en: string;
-}
+import type { RedeemedGiftCard } from '@/lib/gift-card/redeemActivationCode';
 
 export default function GiftCardSuccessByCodePage({
   params,
@@ -22,7 +17,7 @@ export default function GiftCardSuccessByCodePage({
   params: Promise<{ codigo: string }>;
 }) {
   const [codigo, setCodigo] = useState<string | null>(null);
-  const [card, setCard] = useState<CardRow | null>(null);
+  const [card, setCard] = useState<RedeemedGiftCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -33,6 +28,14 @@ export default function GiftCardSuccessByCodePage({
   useEffect(() => {
     if (!codigo) return;
     clearGiftCardCheckoutPayload();
+
+    const cached = loadActiveGiftCard();
+    if (cached && cached.codigo.toUpperCase() === codigo.toUpperCase()) {
+      setCard(cached);
+      setLoading(false);
+      return;
+    }
+
     (async () => {
       try {
         const res = await fetch(`/api/gift-card/${encodeURIComponent(codigo)}`);
@@ -71,8 +74,11 @@ export default function GiftCardSuccessByCodePage({
     return (
       <div className="mx-auto max-w-lg px-4 py-24 text-center">
         <p className="text-red-300">{error}</p>
-        <Link href="/" className="mt-6 inline-block text-gold">
-          Inicio
+        <p className="mt-3 text-sm text-muted">
+          Volvé al inicio e ingresá tu código ACT en la sección Tarjeta regalo.
+        </p>
+        <Link href="/#tarjeta-regalo-activar" className="mt-6 inline-block text-gold">
+          Ir a activar tarjeta
         </Link>
       </div>
     );
@@ -80,25 +86,8 @@ export default function GiftCardSuccessByCodePage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-8 px-4 py-16 sm:px-6 lg:px-8">
-      <div>
-        <p className="eyebrow text-gold">Tarjeta verificada</p>
-        <h1 className="mt-3 text-3xl font-light text-cream">¡Lista para regalar!</h1>
-        <p className="mt-2 text-sm text-muted">
-          Canjeable en cualquier sucursal ANDREAS dentro de 30 días. Escaneá el QR en la app del
-          salón.
-        </p>
-      </div>
-      <GiftCardShareCard
-          data={{
-            codigo: card.codigo,
-            monto: Number(card.monto_inicial),
-            paraNombre: card.para_nombre,
-            deNombre: card.de_nombre,
-            mensaje: card.mensaje,
-            emitidaEn: card.emitida_en,
-            venceEn: card.vence_en,
-          }}
-      />
+      <GiftCardActivatedDashboard card={card} />
+      <GiftCardActivatedDashboardLinks />
     </div>
   );
 }

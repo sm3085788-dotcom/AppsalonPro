@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { useRouter } from 'next/navigation';
 import { NAV_MORE, NAV_PRIMARY } from '@/lib/navigation';
+import { isHomeHashHref, navigateHomeHash } from '@/lib/hashNavigation';
 function LoginButton({ className = '' }: { className?: string }) {
   return (
     <Link
@@ -56,8 +57,19 @@ export function SiteHeader({
     router.refresh();
   };
 
+  const onMoreNavClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    const hash = isHomeHashHref(href);
+    if (!hash) {
+      setMoreOpen(false);
+      return;
+    }
+    event.preventDefault();
+    setMoreOpen(false);
+    navigateHomeHash(hash, router, { drawerCloseDelayMs: 0 });
+  };
+
   return (
-    <header className="glass sticky top-0 z-50 border-b border-border">
+    <header className="glass fixed top-0 left-0 right-0 z-[100] border-b border-border">
       {/* Móvil: logo | ingresar | menú */}
       <div className="mx-auto grid h-14 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 md:hidden">
         <Link
@@ -150,7 +162,7 @@ export function SiteHeader({
                     key={item.href}
                     href={item.href}
                     role="menuitem"
-                    onClick={() => setMoreOpen(false)}
+                    onClick={(event) => onMoreNavClick(event, item.href)}
                     className="block px-4 py-2.5 text-[12px] font-light uppercase tracking-[0.16em] text-pearl transition-colors hover:bg-surface hover:text-gold"
                   >
                     {item.label}

@@ -16,6 +16,7 @@ import {
   Building2,
   CalendarHeart,
   Gift,
+  UserPlus,
 } from 'lucide-react-native';
 
 /**
@@ -75,6 +76,12 @@ export const SALON_MODULES = [
     title: 'Eventos Profesionales',
     subtitle: 'Paquetes especiales y solicitudes de clientes',
     Icon: CalendarHeart,
+  },
+  {
+    id: 'unete_equipo',
+    title: 'Únete al Equipo',
+    subtitle: 'Solicitudes de reclutamiento desde la web',
+    Icon: UserPlus,
   },
   {
     id: 'mensajes',
@@ -146,6 +153,7 @@ const MODULE_KEYWORDS = {
   reportes: ['reporte', 'reportes', 'indicador', 'exportar', 'pdf'],
   marketing: ['marketing', 'tendencias', 'carrusel', 'publicacion', 'post'],
   eventos: ['evento', 'eventos', 'boda', 'fiesta', 'profesional', 'solicitud'],
+  unete_equipo: ['reclutamiento', 'equipo', 'socio', 'empleado', 'postulacion', 'unete'],
   mensajes: ['mensaje', 'mensajes', 'chat', 'andreas', 'promo'],
   panel: ['panel', 'kpi', 'control', 'resumen', 'basurero', 'eliminado', 'papelera', 'recuperar', 'borrado'],
   incidentes: ['incidente', 'accidente', 'reporte', 'folio', 'pdf'],

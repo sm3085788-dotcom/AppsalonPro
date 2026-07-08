@@ -69,7 +69,12 @@ export function GlobalSearchResults({
                   styles.row,
                   idx < items.length - 1 && { borderBottomColor: c.cardBorder, borderBottomWidth: 1 },
                 ]}
-                onPress={() => onOpenModule(hit.moduleId)}
+                onPress={() =>
+                  onOpenModule(
+                    hit.moduleId,
+                    hit.giftCardCodigo ? { giftCardCodigo: hit.giftCardCodigo } : undefined,
+                  )
+                }
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel={`Abrir ${mod?.title || hit.category}: ${hit.title}`}

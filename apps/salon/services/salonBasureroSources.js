@@ -11,6 +11,9 @@ export const BASURERO_SOURCE_LABELS = {
   papeleria: 'Papelería · ventas',
   mensajes: 'Mensajes',
   pedidos: 'Pedidos e-commerce',
+  gift_cards: 'Tarjetas regalo',
+  gift_card_activation_codes: 'Tarjetas regalo · códigos',
+  sucursales: 'Sucursales',
 };
 
 export const BASURERO_KNOWN_SOURCES = new Set(Object.keys(BASURERO_SOURCE_LABELS));

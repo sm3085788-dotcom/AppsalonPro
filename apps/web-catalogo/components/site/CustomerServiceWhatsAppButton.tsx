@@ -33,7 +33,7 @@ export function CustomerServiceWhatsAppButton({
       {isCompact ? (
         <>
           {isPhone ? (
-            <Phone className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+            <Phone className="h-3.5 w-3.5 shrink-0 text-[#25D366]" strokeWidth={2} />
           ) : (
             <SocialLogo brand="whatsapp" size={14} />
           )}
@@ -46,7 +46,7 @@ export function CustomerServiceWhatsAppButton({
         <>
           <span className="inline-flex items-center gap-2">
             {isPhone ? (
-              <Phone className="h-4 w-4" strokeWidth={2} />
+              <Phone className="h-4 w-4 text-[#25D366]" strokeWidth={2} />
             ) : (
               <SocialLogo brand="whatsapp" size={16} />
             )}

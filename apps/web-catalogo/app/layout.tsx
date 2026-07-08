@@ -6,6 +6,7 @@ import { SupabaseConfigProvider } from "@/components/supabase/SupabaseConfigProv
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { ConfigStatusBanner } from "@/components/site/ConfigStatusBanner";
+import { HashScrollSync } from "@/components/site/HashScrollSync";
 import { listBranches } from "@/lib/data/branches";
 import { getSelectedBranchId } from "@/lib/data/selectedBranch";
 import { getCurrentUser, getClienteDisplayName } from "@/lib/auth";
@@ -71,11 +72,12 @@ export default async function RootLayout({
             initialBranchId={initialBranchId}
           >
             <ConfigStatusBanner configured={supabaseConfig.configured} />
+            <HashScrollSync />
             <SiteHeader
               userEmail={user?.email ?? null}
               userDisplayName={displayName}
             />
-            <main className="flex-1">{children}</main>
+            <main className="flex-1 pt-14 md:pt-[72px]">{children}</main>
             <SiteFooter branches={branches} />
           </BranchProvider>
         </SupabaseConfigProvider>

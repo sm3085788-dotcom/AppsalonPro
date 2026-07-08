@@ -1,14 +1,16 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CalendarClock, ShoppingBag, UserPen, AlertCircle } from 'lucide-react';
+import { CalendarClock, ShoppingBag, UserPen, AlertCircle, Users } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { BookingCancelButton } from '@/components/booking/BookingCancelButton';
+import { JoinTeamStatusBadge } from '@/components/recruitment/JoinTeamStatusBadge';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/env';
 import { parseBookingNotas } from '@/lib/bookingPolicy';
 import { displayNameFromUser } from '@/lib/clientDisplayName';
+import type { JoinTeamEstado } from '@/lib/recruitment/constants';
 import {
   ensureClienteFromAuth,
   isProfileComplete,
@@ -35,6 +37,7 @@ export default async function CuentaPage() {
   let clienteNombre = displayNameFromUser(user);
   let profileComplete = false;
   let missing: string[] = [];
+  let joinTeamEstado: JoinTeamEstado | null = null;
 
   if (isSupabaseConfigured) {
     try {
@@ -43,6 +46,14 @@ export default async function CuentaPage() {
       if (row?.nombre?.trim()) clienteNombre = row.nombre.trim();
       profileComplete = isProfileComplete(row);
       missing = profileMissingLabels(row);
+
+      const { data: joinStatus } = await supabase.rpc('get_unete_equipo_status');
+      const joinPayload = (joinStatus || {}) as {
+        solicitud?: { estado?: JoinTeamEstado } | null;
+      };
+      if (joinPayload.solicitud?.estado) {
+        joinTeamEstado = joinPayload.solicitud.estado;
+      }
 
       if (row?.id) {
         const { data } = await supabase
@@ -71,6 +82,32 @@ export default async function CuentaPage() {
             : 'Completa tu perfil para que el salón te reconozca en citas y pedidos.'
         }
       />
+
+      {joinTeamEstado ? (
+        <div className="mb-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
+          <Users className="h-4 w-4 shrink-0 text-gold" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-cream">Únete al Equipo</p>
+            <p className="text-xs text-muted">Estado de tu postulación</p>
+          </div>
+          <JoinTeamStatusBadge estado={joinTeamEstado} />
+          <Link
+            href="/unete-al-equipo"
+            className="text-xs text-gold hover:underline"
+          >
+            Ver detalle
+          </Link>
+        </div>
+      ) : (
+        <div className="mb-8">
+          <Link
+            href="/unete-al-equipo"
+            className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:border-gold hover:text-gold"
+          >
+            <Users className="h-4 w-4" /> Únete al Equipo
+          </Link>
+        </div>
+      )}
 
       {!profileComplete && (
         <Link

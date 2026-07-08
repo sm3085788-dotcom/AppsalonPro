@@ -12,6 +12,7 @@ export const NAV_PRIMARY: NavLink[] = [
 
 export const NAV_MORE: NavLink[] = [
   { href: '/tu-cumpleanos', label: 'Tu Cumpleaños' },
+  { href: '/unete-al-equipo', label: 'Únete al Equipo' },
   { href: '/#tarjeta-regalo', label: 'Tarjeta de regalo' },
   { href: '/#resenas', label: 'Reseñas' },
 ];

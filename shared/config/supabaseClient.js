@@ -4284,6 +4284,42 @@ export const db = {
     },
   },
 
+  // ==================== ÚNETE AL EQUIPO (RECLUTAMIENTO) ====================
+  uneteEquipo: {
+    listSolicitudes: async (estado = null) => {
+      const { data, error } = await supabase.rpc('list_unete_equipo_solicitudes_staff', {
+        p_estado: estado || null,
+      });
+      if (error) return { data: [], error };
+      const payload = data || {};
+      if (!payload.ok) {
+        return { data: [], error: { message: payload.error || 'No se pudo listar.' } };
+      }
+      return { data: Array.isArray(payload.solicitudes) ? payload.solicitudes : [], error: null };
+    },
+
+    updateEstado: async (id, estado) => {
+      const { data, error } = await supabase.rpc('update_unete_equipo_estado_staff', {
+        p_id: id,
+        p_estado: estado,
+      });
+      if (error) return { data: null, error };
+      const payload = data || {};
+      if (!payload.ok) {
+        return { data: null, error: { message: payload.error || 'No se pudo actualizar.' } };
+      }
+      return { data: payload.solicitud, error: null };
+    },
+
+    countPendientes: async () => {
+      const res = await supabase.rpc('list_unete_equipo_solicitudes_staff', { p_estado: 'enviado' });
+      if (res.error) return { count: 0, error: res.error };
+      const payload = res.data || {};
+      const list = Array.isArray(payload.solicitudes) ? payload.solicitudes : [];
+      return { count: list.length, error: null };
+    },
+  },
+
   // ==================== METAS (OBJETIVOS) ====================
   metas: {
     getAll: async () => {
@@ -7357,6 +7393,24 @@ export const db = {
         p_nombre: nombre || null,
       });
       return { data, error };
+    },
+
+    desactivar: async (id) => {
+      const { data, error } = await supabase.rpc('desactivar_sucursal_staff', { p_id: id });
+      if (error) return { data: null, error };
+      if (data && data.ok === false) {
+        return { data: null, error: { message: data.error || 'No se pudo desactivar.' } };
+      }
+      return { data, error: null };
+    },
+
+    reactivar: async (id) => {
+      const { data, error } = await supabase.rpc('reactivar_sucursal_staff', { p_id: id });
+      if (error) return { data: null, error };
+      if (data && data.ok === false) {
+        return { data: null, error: { message: data.error || 'No se pudo reactivar.' } };
+      }
+      return { data, error: null };
     },
   },
 

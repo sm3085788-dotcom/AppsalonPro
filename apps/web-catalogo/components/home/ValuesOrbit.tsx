@@ -7,6 +7,8 @@ export interface ValueItem {
   icon: LucideIcon;
   title: string;
   desc: string;
+  /** Etiqueta del centro cuando este ítem está activo (p. ej. Misión, Visión). */
+  category?: string;
 }
 
 const ROTATE_MS = 3800;
@@ -44,9 +46,13 @@ export function ValuesOrbit({ items }: { items: ValueItem[] }) {
         <div className="absolute left-1/2 top-1/2 z-10 w-[44%] -translate-x-1/2 -translate-y-1/2 text-center">
           <p className="eyebrow text-[10px] sm:text-[11px]">Lo que nos mueve</p>
           <p className="mt-1 font-serif text-lg font-medium leading-tight text-gradient-gold sm:text-xl">
-            Valores
+            {items[active]?.category ?? 'Valores'}
           </p>
-          <p className="mt-2 line-clamp-2 min-h-[2.25rem] text-[10px] font-light leading-snug text-muted transition-opacity duration-500 sm:text-xs">
+          <p
+            className={`mt-2 min-h-[2.25rem] text-[10px] font-light leading-snug text-muted transition-opacity duration-500 sm:text-xs ${
+              items[active]?.category ? 'line-clamp-4 sm:line-clamp-5' : 'line-clamp-2'
+            }`}
+          >
             {items[active]?.desc}
           </p>
         </div>
@@ -79,8 +85,12 @@ export function ValuesOrbit({ items }: { items: ValueItem[] }) {
                   {item.title}
                 </h3>
                 <p
-                  className={`mt-1 line-clamp-2 text-[9px] font-light leading-snug sm:text-[10px] ${
-                    isFront ? 'text-pearl-dim' : 'text-muted'
+                  className={`mt-1 text-[9px] font-light leading-snug sm:text-[10px] ${
+                    isFront
+                      ? item.category
+                        ? 'line-clamp-4 text-pearl-dim'
+                        : 'line-clamp-2 text-pearl-dim'
+                      : 'line-clamp-2 text-muted'
                   }`}
                 >
                   {item.desc}

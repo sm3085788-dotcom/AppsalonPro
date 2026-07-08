@@ -31,8 +31,8 @@ export function GiftCardVisual({
 }) {
   const qrUrl = giftCardQrImageUrl(data.codigo, compact ? 120 : 160);
   const shell = compact
-    ? 'h-[20.4rem] max-w-[20.4rem] rounded-[20px] p-[1.4rem]'
-    : 'mx-auto w-full max-w-md rounded-[26px] p-8';
+    ? 'mx-auto w-full max-w-[17.5rem] rounded-[20px] p-4 sm:max-w-[18rem]'
+    : 'mx-auto w-full max-w-sm rounded-[22px] p-6 sm:max-w-md sm:rounded-[26px] sm:p-8';
   const innerInset = compact ? 'inset-[0.72rem] rounded-[16px]' : 'inset-4 rounded-2xl';
 
   return (

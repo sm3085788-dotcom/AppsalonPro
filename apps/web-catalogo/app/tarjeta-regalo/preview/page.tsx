@@ -2,7 +2,7 @@ import { GiftCardPreviewPanel } from '@/components/gift-card/GiftCardPreviewPane
 
 export const metadata = {
   title: 'Vista previa tarjeta VIP | AppSalon Pro',
-  description: 'Descarga la vista previa de tu tarjeta regalo VIP.',
+  description: 'Vista previa de tu tarjeta regalo VIP antes de activarla.',
 };
 
 export default function GiftCardPreviewPage() {

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { env, isSupabaseConfigured } from '@/lib/env';
+import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { env, isSupabaseAdminConfigured, isSupabaseConfigured } from '@/lib/env';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,9 +16,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Servidor no configurado.' }, { status: 503 });
     }
 
-    const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const supabase = isSupabaseAdminConfigured
+      ? createSupabaseAdminClient()
+      : createClient(env.supabaseUrl, env.supabaseAnonKey, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
+
     const { data, error } = await supabase.rpc('redeem_gift_card_activation_code', {
       p_codigo_activacion: codigo,
     });
@@ -33,6 +37,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      already_redeemed: Boolean(data.already_redeemed),
       codigo: data.codigo,
       redirectTo: `/tarjeta-regalo/exito/${encodeURIComponent(String(data.codigo))}`,
       card: {

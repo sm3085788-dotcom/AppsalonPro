@@ -354,6 +354,7 @@ DECLARE
   v_act public.gift_card_activation_codes%ROWTYPE;
   v_card public.gift_cards%ROWTYPE;
   v_gc text;
+  v_comprador_email text;
 BEGIN
   IF v_code IS NULL OR v_code !~ '^ACT-([0-9]{6}|[A-Z0-9]{8})$' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'Código de activación inválido.');
@@ -393,6 +394,15 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'Código no disponible.');
   END IF;
 
+  v_comprador_email := coalesce(
+    nullif(trim(v_act.comprador_email), ''),
+    CASE
+      WHEN nullif(trim(v_act.comprador_telefono), '') IS NOT NULL
+      THEN trim(v_act.comprador_telefono) || '@whatsapp.salon'
+      ELSE 'sin-correo@whatsapp.salon'
+    END
+  );
+
   v_gc := public.generate_gift_card_code();
 
   INSERT INTO public.gift_cards (
@@ -416,7 +426,7 @@ BEGIN
     v_act.para_nombre,
     v_act.de_nombre,
     v_act.mensaje,
-    v_act.comprador_email,
+    v_comprador_email,
     v_act.codigo_activacion,
     'salon_manual',
     v_act.codigo_activacion,
@@ -447,6 +457,7 @@ BEGIN
 END;
 $$;
 
+GRANT EXECUTE ON FUNCTION public.redeem_gift_card_activation_code(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.link_gift_card_to_cliente(text, uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.unlink_gift_card_from_cliente(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.lookup_gift_card_for_cliente(uuid) TO authenticated;

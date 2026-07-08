@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { GiftCardActivatePanel } from '@/components/gift-card/GiftCardActivatePanel';
 
 export const metadata = {
@@ -6,5 +7,15 @@ export const metadata = {
 };
 
 export default function GiftCardActivatePage() {
-  return <GiftCardActivatePanel />;
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-lg px-4 py-24 text-center text-sm text-muted">
+          Cargando…
+        </div>
+      }
+    >
+      <GiftCardActivatePanel />
+    </Suspense>
+  );
 }

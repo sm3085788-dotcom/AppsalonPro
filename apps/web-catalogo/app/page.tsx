@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import {
   ArrowUpRight,
-  Target,
-  Eye,
 } from 'lucide-react';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
 import { HeroCover } from '@/components/home/HeroCover';
@@ -219,70 +217,24 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Misión & Visión ────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24 lg:px-8">
-        <div className="mx-auto grid max-w-4xl gap-5 lg:max-w-none lg:grid-cols-2 lg:gap-6">
-          {[
-            {
-              icon: Target,
-              tag: 'Misión',
-              title: 'Elevar el arte de sentirse bien',
-              desc: 'Ofrecer experiencias de belleza excepcionales que combinan la maestría de nuestros estilistas con tecnología que hace de cada visita algo simple, cercano y memorable.',
-            },
-            {
-              icon: Eye,
-              tag: 'Visión',
-              title: 'El salón premium de referencia',
-              desc: 'Ser el estándar de la belleza de autor en la región: un espacio donde tradición y modernidad conviven, reconocido por su calidez, su detalle y la confianza de cada cliente.',
-            },
-          ].map(({ icon: Icon, tag, title, desc }) => (
-            <article
-              key={tag}
-              className="ring-gold-hover relative overflow-hidden rounded-[24px] border border-border bg-surface p-6 sm:p-8"
-            >
-              <div className="glow-gold pointer-events-none absolute -right-14 -top-14 h-44 w-44 opacity-60" />
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-gold sm:px-3.5 sm:py-1.5 sm:text-[11px] sm:tracking-[0.25em]">
-                <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" strokeWidth={1.5} /> {tag}
-              </span>
-              <h3 className="mt-5 text-balance text-xl font-light leading-snug text-cream sm:mt-6 sm:text-2xl">
-                {title}
-              </h3>
-              <p className="mt-3 max-w-sm text-xs font-light leading-relaxed text-muted sm:mt-4 sm:max-w-md sm:text-sm">
-                {desc}
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <ValuesOrbitSection />
 
       {/* ── Tarjeta de regalo recargable ─────────────── */}
       <GiftCardSection />
 
       {/* ── Ambiente editorial ─────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">
-        <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-16">
+      <section className="mx-auto max-w-7xl px-4 pb-6 pt-4 sm:px-6 sm:pt-5 lg:px-8">
+        <div className="grid items-center gap-6 lg:grid-cols-12 lg:gap-10">
           <figure className="group relative order-2 mx-auto w-[85%] overflow-hidden rounded-[24px] border border-border lg:order-1 lg:col-span-5 lg:max-w-[85%]">
             <div className="media-3-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/ambiance.png" alt="Interior premium del salón" />
             </div>
           </figure>
-          <div className="order-1 lg:order-2 lg:col-span-7">
-            <p className="eyebrow">El espacio</p>
-            <h2 className="mt-5 text-balance text-3xl font-light leading-snug text-cream sm:text-4xl lg:text-5xl">
-              Un refugio diseñado para
-              <span className="text-gold"> sentirte en casa</span>
-            </h2>
-            <p className="mt-6 max-w-lg text-base font-light leading-relaxed text-muted">
-              Latón cálido, mármol crema y luz tenue. Cada sucursal comparte un
-              mismo lenguaje de calma y precisión, para que el único protagonista
-              seas tú.
-            </p>
+          <div className="order-1 space-y-2 lg:order-2 lg:col-span-7">
             <Link
               href="/servicios"
-              className="link-underline mt-8 inline-block text-[13px] font-light uppercase tracking-[0.18em] text-cream"
+              className="inline-block border-b border-cream/70 pb-0.5 pt-0.5 text-[13px] font-light uppercase tracking-[0.18em] text-cream transition-colors hover:border-gold hover:text-gold"
             >
               Descubre el catálogo
             </Link>

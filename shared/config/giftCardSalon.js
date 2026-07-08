@@ -2,6 +2,31 @@
 
 import { supabase } from './supabaseClient.js';
 
+/** Consulta parece código de tarjeta (GC-/ACT-) para búsqueda staff. */
+export function looksLikeGiftCardQuery(raw) {
+  const t = String(raw || '').trim();
+  if (t.length < 3) return false;
+  const up = t.toUpperCase();
+  if (up.startsWith('GC-') || up.startsWith('ACT-')) return true;
+  if (t.includes('-') && /^[A-Za-z0-9-]+$/.test(t)) return true;
+  return false;
+}
+
+export async function searchGiftCardsStaff(query, limit = 8) {
+  const q = String(query || '').trim();
+  if (q.length < 3) return { ok: true, results: [] };
+
+  const { data, error } = await supabase.rpc('search_gift_cards_staff', {
+    p_query: q,
+    p_limit: limit,
+  });
+  if (error) return { ok: false, error: error.message, results: [] };
+
+  const payload = data ?? {};
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  return { ok: Boolean(payload.ok), results, error: payload.error };
+}
+
 export async function lookupGiftCardStaff(codigo) {
   const { data, error } = await supabase.rpc('lookup_gift_card_staff', {
     p_codigo: codigo,
@@ -108,6 +133,32 @@ export async function createGiftCardActivationCode({
 export async function listGiftCardActivationCodesStaff(limit = 20) {
   const { data, error } = await supabase.rpc('list_gift_card_activation_codes_staff', {
     p_limit: limit,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function deleteGiftCardStaff(id) {
+  const { data, error } = await supabase.rpc('delete_gift_card_staff', { p_id: id });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function deleteGiftCardActivationCodeStaff(id) {
+  const { data, error } = await supabase.rpc('delete_gift_card_activation_code_staff', { p_id: id });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function restoreGiftCardStaff(snapshot) {
+  const { data, error } = await supabase.rpc('restore_gift_card_staff', { p_snapshot: snapshot });
+  if (error) return { ok: false, error: error.message };
+  return data ?? { ok: false, error: 'Sin respuesta.' };
+}
+
+export async function restoreGiftCardActivationCodeStaff(snapshot) {
+  const { data, error } = await supabase.rpc('restore_gift_card_activation_code_staff', {
+    p_snapshot: snapshot,
   });
   if (error) return { ok: false, error: error.message };
   return data ?? { ok: false, error: 'Sin respuesta.' };

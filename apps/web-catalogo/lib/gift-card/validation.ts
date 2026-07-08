@@ -1,5 +1,5 @@
 export const GIFT_CARD_MIN_GTQ = 50;
-export const GIFT_CARD_MAX_GTQ = 2000;
+export const GIFT_CARD_MAX_GTQ = 10000;
 export const GIFT_CARD_PRESETS = [50, 100, 200, 500] as const;
 
 export interface GiftCardFormInput {
@@ -26,6 +26,14 @@ export function parseGiftCardAmount(raw: string): number | null {
   return rounded;
 }
 
+function hasNombreYApellido(value: string): boolean {
+  const parts = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part.length >= 2);
+  return parts.length >= 2;
+}
+
 export function validateGiftCardPayload(input: GiftCardFormInput): {
   ok: true;
   payload: GiftCardCheckoutPayload;
@@ -34,7 +42,7 @@ export function validateGiftCardPayload(input: GiftCardFormInput): {
   if (monto == null) {
     return {
       ok: false,
-      error: `El monto debe estar entre Q${GIFT_CARD_MIN_GTQ} y Q${GIFT_CARD_MAX_GTQ}.`,
+      error: `El monto debe estar entre Q${GIFT_CARD_MIN_GTQ} y Q${GIFT_CARD_MAX_GTQ.toLocaleString('es-GT')}.`,
     };
   }
 
@@ -43,8 +51,22 @@ export function validateGiftCardPayload(input: GiftCardFormInput): {
   const compradorEmail = String(input.buyerEmail || '').trim().toLowerCase();
   const mensaje = String(input.message || '').trim().slice(0, 150);
 
-  if (!paraNombre) return { ok: false, error: 'Indica el nombre del destinatario.' };
-  if (!deNombre) return { ok: false, error: 'Indica tu nombre.' };
+  if (!paraNombre) {
+    return { ok: false, error: 'Indica el nombre y apellido del destinatario.' };
+  }
+  if (!hasNombreYApellido(paraNombre)) {
+    return {
+      ok: false,
+      error: 'Escribe nombre y apellido del destinatario (ej. María López).',
+    };
+  }
+  if (!deNombre) return { ok: false, error: 'Indica tu nombre y apellido.' };
+  if (!hasNombreYApellido(deNombre)) {
+    return {
+      ok: false,
+      error: 'Escribe tu nombre y apellido (ej. Juan Pérez).',
+    };
+  }
   if (compradorEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(compradorEmail)) {
     return { ok: false, error: 'Ingresa un correo válido.' };
   }

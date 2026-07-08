@@ -22,6 +22,8 @@ export const GLOBAL_ONLY_MODULE_IDS = new Set([
   'panel',
   'incidentes',
   'sucursales',
+  'eventos',
+  'unete_equipo',
 ]);
 
 export function filterSalonModulesForProfile(modules, profile) {

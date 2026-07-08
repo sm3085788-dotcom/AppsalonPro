@@ -1,4 +1,4 @@
-import { db, inventarioSearchSubtitle } from '@appsalon/shared-config';
+import { db, inventarioSearchSubtitle, searchGiftCardsStaff, looksLikeGiftCardQuery, clienteOrigenLabel } from '@appsalon/shared-config';
 
 export const SALON_SEARCH_MIN_LEN = 2;
 const PER_SOURCE = 8;
@@ -60,6 +60,7 @@ async function safeSearch(fn) {
  * @property {string} category
  * @property {string} title
  * @property {string} subtitle
+ * @property {string} [giftCardCodigo]
  */
 
 /**
@@ -74,6 +75,9 @@ export async function runSalonGlobalSearch(rawQuery) {
   }
 
   const limit = PER_SOURCE;
+  const giftCardSearchPromise = looksLikeGiftCardQuery(query)
+    ? searchGiftCardsStaff(query, limit)
+    : Promise.resolve({ ok: true, results: [] });
 
   const [
     clientes,
@@ -90,6 +94,7 @@ export async function runSalonGlobalSearch(rawQuery) {
     cajas,
     servicios,
     devoluciones,
+    giftCardRes,
   ] = await Promise.all([
     safeSearch(() => db.clientes.search(query)),
     safeSearch(() => db.empleados.search(query)),
@@ -105,18 +110,49 @@ export async function runSalonGlobalSearch(rawQuery) {
     safeSearch(() => db.cajas.search(query, limit)),
     safeSearch(() => db.servicios.search(query, limit)),
     safeSearch(() => db.devoluciones.search(query)),
+    giftCardSearchPromise,
   ]);
+
+  const giftCards = giftCardRes?.ok && Array.isArray(giftCardRes.results) ? giftCardRes.results : [];
 
   /** @type {SalonSearchHit[]} */
   const hits = [];
 
   for (const c of clientes.slice(0, limit)) {
+    const origen = clienteOrigenLabel(c);
+    const contact = [c.telefono, c.email, c.categoria].filter(Boolean).join(' · ');
+    const subtitle = contact
+      ? origen && origen !== 'Manual'
+        ? `${contact} · ${origen}`
+        : contact
+      : origen || 'Sin contacto';
     push(hits, {
       id: `cliente-${c.id}`,
       moduleId: 'clients',
       category: 'Clientes',
       title: c.nombre || 'Cliente',
-      subtitle: [c.telefono, c.email, c.categoria].filter(Boolean).join(' · ') || 'Sin contacto',
+      subtitle,
+    });
+  }
+
+  for (const gc of giftCards.slice(0, limit)) {
+    const saldoTxt =
+      gc.kind === 'activation'
+        ? formatQ(gc.monto)
+        : `${formatQ(gc.saldo)} saldo`;
+    push(hits, {
+      id: `gc-${gc.kind}-${gc.codigo}`,
+      moduleId: 'tarjetas_regalo',
+      category: 'Tarjetas regalo',
+      title: gc.codigo,
+      subtitle: [
+        saldoTxt,
+        gc.para_nombre,
+        gc.cliente_vinculado_nombre ? `Vinculada: ${gc.cliente_vinculado_nombre}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      giftCardCodigo: gc.codigo,
     });
   }
 

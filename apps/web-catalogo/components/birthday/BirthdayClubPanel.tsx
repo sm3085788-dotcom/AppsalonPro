@@ -208,7 +208,11 @@ export function BirthdayClubPanel({
           <h2 className="text-lg font-light text-cream">¿Te emociona tu día especial?</h2>
         </div>
         <p className="mt-2 text-sm text-muted">
-          Tu opinión llega al equipo de marketing del salón en tiempo real.
+          Esta reseña es tu comentario de satisfacción por compartir tu tiempo y tu día especial en{' '}
+          <span className="font-serif font-medium uppercase tracking-[0.12em] text-gradient-gold">
+            Salón Andreas
+          </span>
+          .
         </p>
 
         <div className="mt-5 flex flex-wrap gap-3">

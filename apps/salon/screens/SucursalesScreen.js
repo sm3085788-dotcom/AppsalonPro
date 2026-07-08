@@ -8,14 +8,19 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db } from '@appsalon/shared-config';
 import { useTheme } from '../theme/ThemeProvider';
 import { SubScreenChrome } from '../components/luxury/SubScreenChrome';
 import { SalonButton } from '../components/luxury';
+import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
+import { useListSelection } from '../hooks/useListSelection';
+import { deleteRowWithBasurero } from '../services/salonDeleteFlow';
 import { PinField } from '../components/auth/PinField';
 import {
   normalizeSucursalCodigo,
@@ -31,6 +36,8 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
+  const sel = useListSelection();
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -169,6 +176,41 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
     loginPinConfirm.length === BRANCH_PIN_LENGTH &&
     loginPin === loginPinConfirm;
 
+  const confirmDeleteSelected = () => {
+    if (!sel.count) return;
+    Alert.alert(
+      'Desactivar sucursales',
+      `¿Desactivar ${sel.count} sucursal(es)? Dejarán de aparecer en listas activas. Se guardará una copia en Basurero.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desactivar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteBusy(true);
+            let ok = 0;
+            const errs = [];
+            for (const id of sel.selectedIds) {
+              const row = rows.find((x) => String(x.id) === String(id));
+              if (!row || row.es_matriz) continue;
+              const r = await deleteRowWithBasurero('sucursales', row, () => db.sucursales.desactivar(row.id));
+              if (r.ok) ok += 1;
+              else errs.push(r.error);
+            }
+            sel.exitSelectMode();
+            await load();
+            setDeleteBusy(false);
+            if (errs.length) {
+              Alert.alert('Completado con errores', `Desactivadas: ${ok}. Fallos: ${errs.length}.`);
+            } else {
+              Alert.alert('Listo', ok === 1 ? 'Sucursal desactivada.' : `Se desactivaron ${ok} sucursales.`);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={[styles.shell, { backgroundColor: c.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -179,7 +221,10 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
         bottomPadding={0}
       >
         <ScrollView
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.xl }}
+          contentContainerStyle={{
+            padding: spacing.lg,
+            paddingBottom: sel.count ? 100 : insets.bottom + spacing.xl,
+          }}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />}
         >
@@ -300,30 +345,85 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
             />
           )}
 
-          <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Sucursales activas</Text>
+          <View style={styles.listToolbar}>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Sucursales activas</Text>
+            {rows.length > 0 ? (
+              <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
+            ) : null}
+          </View>
           {loading ? (
             <ActivityIndicator color={c.primary} style={{ marginTop: spacing.lg }} />
           ) : rows.length === 0 ? (
             <Text style={[styles.hint, { color: c.foregroundMuted }]}>No hay sucursales activas.</Text>
           ) : (
-            rows.map((s) => (
-              <View key={s.id} style={[styles.card, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                <Text style={styles.cardTitle}>
-                  {s.nombre}
-                  {s.es_matriz ? ' · Matriz' : ''}
-                </Text>
-                <Text style={[styles.cardMeta, { color: c.foregroundMuted }]}>
-                  {s.es_matriz
-                    ? 'Login matriz: teléfono +502…'
-                    : `Acceso sucursal · código ${s.codigo}`}
-                  {s.direccion ? `\n${s.direccion}` : ''}
-                  {s.telefono ? `\nContacto: ${s.telefono}` : ''}
-                </Text>
-              </View>
-            ))
+            rows.map((s) => {
+              const picked = sel.isSelected(s.id);
+              const canSelect = !s.es_matriz;
+              return (
+                <TouchableOpacity
+                  key={s.id}
+                  activeOpacity={canSelect ? 0.85 : 1}
+                  onPress={() => {
+                    if (sel.active && canSelect) sel.toggleId(s.id);
+                  }}
+                  onLongPress={() => {
+                    if (!canSelect) return;
+                    if (!sel.active) sel.setActive(true);
+                    sel.toggleId(s.id);
+                  }}
+                  style={[
+                    styles.card,
+                    {
+                      borderColor: c.cardBorder,
+                      backgroundColor: picked ? c.surfaceMuted : c.card,
+                    },
+                  ]}
+                >
+                  {sel.active && canSelect ? (
+                    <View
+                      style={[
+                        styles.check,
+                        {
+                          borderColor: picked ? c.primary : c.cardBorder,
+                          backgroundColor: picked ? c.primary : 'transparent',
+                        },
+                      ]}
+                    >
+                      {picked ? (
+                        <Check size={14} color={isDark ? '#141414' : '#fff'} strokeWidth={3} />
+                      ) : null}
+                    </View>
+                  ) : null}
+                  <Text style={styles.cardTitle}>
+                    {s.nombre}
+                    {s.es_matriz ? ' · Matriz' : ''}
+                  </Text>
+                  <Text style={[styles.cardMeta, { color: c.foregroundMuted }]}>
+                    {s.es_matriz
+                      ? 'Login matriz: teléfono +502…'
+                      : `Acceso sucursal · código ${s.codigo}`}
+                    {s.direccion ? `\n${s.direccion}` : ''}
+                    {s.telefono ? `\nContacto: ${s.telefono}` : ''}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
           )}
         </ScrollView>
       </SubScreenChrome>
+
+      {sel.active && sel.count > 0 ? (
+        <ListSelectionActionBar
+          count={sel.count}
+          onCancel={sel.exitSelectMode}
+          onConfirm={confirmDeleteSelected}
+          confirmLabel={deleteBusy ? 'Desactivando…' : 'Desactivar'}
+          confirmTextStyle={{ color: c.error }}
+          confirmStyle={{ borderColor: c.error }}
+          colors={c}
+          bottomInset={insets.bottom}
+        />
+      ) : null}
     </View>
   );
 }
@@ -402,6 +502,22 @@ function createStyles(c) {
       borderRadius: radii.lg,
       padding: spacing.md,
       marginBottom: spacing.sm,
+    },
+    listToolbar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: spacing.xl,
+      marginBottom: spacing.sm,
+    },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.xs,
     },
     cardTitle: {
       fontFamily: typography.fontSansMedium,

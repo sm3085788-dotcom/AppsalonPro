@@ -107,7 +107,7 @@ body {
 
 /* Glass navbar / paneles translúcidos */
 .glass {
-  background: color-mix(in srgb, var(--background) 65%, transparent);
+  background: color-mix(in srgb, var(--background) 82%, transparent);
   backdrop-filter: saturate(160%) blur(18px);
   -webkit-backdrop-filter: saturate(160%) blur(18px);
 }

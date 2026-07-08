@@ -34,8 +34,13 @@ import {
   getSalonSucursalScope,
   lookupGiftCardForCliente,
   registerGiftCardUse,
+  searchGiftCardsStaff,
+  looksLikeGiftCardQuery,
+  clienteOrigenLabel,
 } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, SalonSearchBar } from '../components/luxury';
+import { ClienteOrigenIcon } from '../components/ClienteOrigenIcon';
+import { GiftCardSearchHitRow } from '../components/GiftCardSearchHitRow';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
 import { printVentaTicket } from '../utils/ventaTicketPrint';
@@ -114,7 +119,7 @@ function precioSugerenciaInventario(p) {
   return formatQ(p.precio_venta);
 }
 
-export function VenderScreen({ onBack }) {
+export function VenderScreen({ onBack, onOpenTarjetasRegalo }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(), []);
@@ -139,6 +144,9 @@ export function VenderScreen({ onBack }) {
   const [salonCanje, setSalonCanje] = useState(null);
   const [citasCanje, setCitasCanje] = useState(null);
   const [giftCardLinked, setGiftCardLinked] = useState(null);
+  const [giftCardHits, setGiftCardHits] = useState([]);
+  const [giftSearchBusy, setGiftSearchBusy] = useState(false);
+  const giftSearchTimerRef = useRef(null);
 
   const padBottom = Math.max(insets.bottom + spacing.md, spacing.xl);
 
@@ -229,6 +237,62 @@ export function VenderScreen({ onBack }) {
       cancelled = true;
     };
   }, [clienteSel?.id]);
+
+  useEffect(() => {
+    if (giftSearchTimerRef.current) clearTimeout(giftSearchTimerRef.current);
+    const q = clienteSearch.trim();
+    if (!looksLikeGiftCardQuery(q)) {
+      setGiftCardHits([]);
+      setGiftSearchBusy(false);
+      return undefined;
+    }
+    setGiftSearchBusy(true);
+    giftSearchTimerRef.current = setTimeout(() => {
+      void (async () => {
+        const res = await searchGiftCardsStaff(q, 8);
+        setGiftCardHits(res.ok ? res.results || [] : []);
+        setGiftSearchBusy(false);
+      })();
+    }, 350);
+    return () => {
+      if (giftSearchTimerRef.current) clearTimeout(giftSearchTimerRef.current);
+    };
+  }, [clienteSearch]);
+
+  const handleGiftCardHit = useCallback(
+    async (hit) => {
+      if (!hit?.codigo) return;
+      if (hit.kind === 'activation') {
+        onOpenTarjetasRegalo?.(hit.codigo);
+        return;
+      }
+      if (hit.cliente_vinculado_id) {
+        const { data: fresh } = await db.clientes.getById(hit.cliente_vinculado_id);
+        const row = fresh || null;
+        if (!row) {
+          Alert.alert('Cliente', 'No se encontró el cliente vinculado a esta tarjeta.');
+          return;
+        }
+        setClienteSel(row);
+        setClienteSearch('');
+        setGiftCardHits([]);
+        await refreshClienteCanjes(row);
+        return;
+      }
+      Alert.alert(
+        'Tarjeta sin vínculo',
+        `La tarjeta ${hit.codigo} no está vinculada a un cliente. ¿Ir a Tarjetas Regalo para vincularla?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Ir a Tarjetas Regalo',
+            onPress: () => onOpenTarjetasRegalo?.(hit.codigo),
+          },
+        ],
+      );
+    },
+    [onOpenTarjetasRegalo, refreshClienteCanjes],
+  );
 
   const { refreshing, onRefresh } = useSalonPullRefresh(loadAll);
 
@@ -801,9 +865,42 @@ export function VenderScreen({ onBack }) {
                 ) : null}
               </View>
             ) : null}
-            {!clienteSel && clienteSearch.trim().length >= 2 && clientesFiltrados.length === 0 ? (
+            {!clienteSel && giftSearchBusy ? (
+              <ActivityIndicator style={{ marginTop: spacing.sm }} color={c.primary} size="small" />
+            ) : null}
+            {!clienteSel && giftCardHits.length > 0 ? (
+              <View
+                style={[
+                  styles.pickBlock,
+                  { borderColor: posAccent.sectionBorder, backgroundColor: c.card, marginBottom: spacing.sm },
+                ]}
+              >
+                <Text style={[styles.pickSectionLbl, { color: c.primary }]}>Tarjeta regalo</Text>
+                {giftCardHits.map((hit) => (
+                  <GiftCardSearchHitRow
+                    key={`${hit.kind}-${hit.codigo}`}
+                    hit={hit}
+                    onPress={() => void handleGiftCardHit(hit)}
+                  />
+                ))}
+              </View>
+            ) : null}
+            {!clienteSel &&
+            clienteSearch.trim().length >= 2 &&
+            clientesFiltrados.length === 0 &&
+            !giftSearchBusy &&
+            giftCardHits.length === 0 ? (
               <Text style={[styles.pickHint, { color: c.foregroundMuted }]}>
-                Sin coincidencias para «{clienteSearch.trim()}».
+                Sin tarjetas ni clientes para «{clienteSearch.trim()}».
+              </Text>
+            ) : null}
+            {!clienteSel &&
+            clienteSearch.trim().length >= 2 &&
+            clientesFiltrados.length === 0 &&
+            !giftSearchBusy &&
+            giftCardHits.length > 0 ? (
+              <Text style={[styles.pickHint, { color: c.foregroundMuted }]}>
+                Sin clientes con ese criterio; tocá la tarjeta arriba si aplica.
               </Text>
             ) : null}
             {!clienteSel && clientesFiltrados.length > 0 ? (
@@ -827,13 +924,20 @@ export function VenderScreen({ onBack }) {
                       })();
                     }}
                   >
-                    <Text style={[styles.pickName, { color: c.foreground }]} numberOfLines={1}>
-                      {item.nombre}
-                    </Text>
-                    <Text style={[styles.pickMeta, { color: c.foregroundMuted }]} numberOfLines={1}>
-                      {item.telefono || item.email || '—'}
-                      {labelCanjeAndreasCliente(item)}
-                    </Text>
+                    <View style={styles.pickRowMain}>
+                      <ClienteOrigenIcon row={item} size={15} />
+                      <View style={styles.pickRowText}>
+                        <Text style={[styles.pickName, { color: c.foreground }]} numberOfLines={1}>
+                          {item.nombre}
+                        </Text>
+                        <Text style={[styles.pickMeta, { color: c.foregroundMuted }]} numberOfLines={1}>
+                          {[item.telefono, item.email, clienteOrigenLabel(item)]
+                            .filter(Boolean)
+                            .join(' · ')}
+                          {labelCanjeAndreasCliente(item)}
+                        </Text>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1358,6 +1462,25 @@ function createStyles() {
       borderWidth: 1,
       overflow: 'hidden',
       marginBottom: spacing.sm,
+    },
+    pickSectionLbl: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 11,
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: 4,
+    },
+    pickRowMain: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      flex: 1,
+    },
+    pickRowText: {
+      flex: 1,
+      minWidth: 0,
     },
     suggestList: {
       marginBottom: spacing.sm,

@@ -91,6 +91,29 @@ export function buildDeletionMeta(source, row) {
           .join(' · '),
         snapshot: snap,
       };
+    case 'gift_cards':
+      return {
+        source: 'gift_cards',
+        title: snap.codigo || 'Tarjeta regalo',
+        summary: [snap.para_nombre, snap.de_nombre, snap.estado].filter(Boolean).join(' · '),
+        snapshot: snap,
+      };
+    case 'gift_card_activation_codes':
+      return {
+        source: 'gift_card_activation_codes',
+        title: snap.codigo_activacion || 'Código ACT',
+        summary: [snap.para_nombre, snap.monto != null ? `Q${Number(snap.monto).toFixed(2)}` : null, snap.status]
+          .filter(Boolean)
+          .join(' · '),
+        snapshot: snap,
+      };
+    case 'sucursales':
+      return {
+        source: 'sucursales',
+        title: snap.nombre || snap.codigo || 'Sucursal',
+        summary: [snap.codigo, snap.direccion].filter(Boolean).join(' · '),
+        snapshot: snap,
+      };
     default:
       return {
         source: src,

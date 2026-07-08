@@ -136,6 +136,10 @@ export function PapeleriaScreen({ onBack }) {
     () => (detalleVenta ? formatVentaNotasParaDisplay(detalleVenta.notas) : null),
     [detalleVenta],
   );
+  const detallePagoDisplay = useMemo(
+    () => (detalleVenta ? formatDetallesPagoDisplay(detalleVenta.detalles_pago) : null),
+    [detalleVenta],
+  );
 
   const imprimirDetalle = async () => {
     if (!detalleVenta || printing) return;
@@ -555,14 +559,6 @@ export function PapeleriaScreen({ onBack }) {
                   ) : null}
                 </ScrollView>
 
-                <SalonButton
-                  title={printing ? 'Imprimiendo…' : 'Imprimir ticket'}
-                  variant="heroGold"
-                  fullWidth
-                  onPress={imprimirDetalle}
-                  disabled={printing}
-                  style={{ marginTop: spacing.sm }}
-                />
                 <SalonButton
                   title="Cerrar"
                   variant="outlineGray"

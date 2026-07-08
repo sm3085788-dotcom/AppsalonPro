@@ -9,6 +9,7 @@ import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider'
 import { useRouter } from 'next/navigation';
 
 import { NAV_ALL } from '@/lib/navigation';
+import { isHomeHashHref, navigateHomeHash } from '@/lib/hashNavigation';
 
 export function MobileNavDrawer({
   open,
@@ -40,10 +41,21 @@ export function MobileNavDrawer({
     router.refresh();
   };
 
+  const onNavClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    const hash = isHomeHashHref(href);
+    if (!hash) {
+      onClose();
+      return;
+    }
+    event.preventDefault();
+    onClose();
+    navigateHomeHash(hash, router);
+  };
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] md:hidden" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[110] md:hidden" role="dialog" aria-modal="true">
       <button
         type="button"
         aria-label="Cerrar menú"
@@ -78,7 +90,7 @@ export function MobileNavDrawer({
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={onClose}
+                onClick={(event) => onNavClick(event, item.href)}
                 className="rounded-xl px-3 py-2.5 text-[13px] font-light uppercase tracking-[0.16em] text-pearl transition-colors hover:bg-surface hover:text-gold"
               >
                 {item.label}

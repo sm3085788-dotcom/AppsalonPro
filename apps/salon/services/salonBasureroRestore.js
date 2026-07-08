@@ -1,4 +1,8 @@
-import { db } from '@appsalon/shared-config';
+import {
+  db,
+  restoreGiftCardStaff,
+  restoreGiftCardActivationCodeStaff,
+} from '@appsalon/shared-config';
 import { deleteBasureroEntryById } from './salonBasurero';
 
 const OMIT_INSERT = [
@@ -20,6 +24,12 @@ function payloadForInsert(snapshot) {
     s.logo_url = s.remoteLogo;
     delete s.remoteLogo;
   }
+  return s;
+}
+
+function snapshotForGiftRestore(snapshot) {
+  const s = { ...snapshot };
+  delete s.cliente_vinculado_nombre;
   return s;
 }
 
@@ -62,6 +72,24 @@ export async function restoreBasureroEntry(entry) {
       case 'citas':
         res = await db.citas.create(data);
         break;
+      case 'gift_cards': {
+        const r = await restoreGiftCardStaff(snapshotForGiftRestore(snap));
+        if (!r.ok) return { ok: false, error: r.error || 'No se pudo restaurar la tarjeta.' };
+        res = { data: r, error: null };
+        break;
+      }
+      case 'gift_card_activation_codes': {
+        const r = await restoreGiftCardActivationCodeStaff(snapshotForGiftRestore(snap));
+        if (!r.ok) return { ok: false, error: r.error || 'No se pudo restaurar el código ACT.' };
+        res = { data: r, error: null };
+        break;
+      }
+      case 'sucursales': {
+        const sucursalId = snap.id;
+        if (!sucursalId) return { ok: false, error: 'La copia no tiene id de sucursal.' };
+        res = await db.sucursales.reactivar(sucursalId);
+        break;
+      }
       default:
         return { ok: false, error: `Restaurar «${src}» no está soportado.` };
     }

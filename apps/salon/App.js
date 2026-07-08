@@ -62,6 +62,7 @@ import {
 import { IncidentesScreen } from './screens/IncidentesScreen';
 import { InventarioScreen } from './screens/InventarioScreen';
 import { EventosProfesionalesScreen } from './screens/EventosProfesionalesScreen';
+import { UneteEquipoScreen } from './screens/UneteEquipoScreen';
 import { PapeleriaScreen } from './screens/PapeleriaScreen';
 import { ProveedoresScreen } from './screens/ProveedoresScreen';
 import { PedidosScreen } from './screens/PedidosScreen';
@@ -117,6 +118,7 @@ const BADGE_MODULE_IDS = ['agenda', 'cajas', 'clients', 'mensajes', 'inventory']
 const SALON_MESSAGES_LAST_SEEN_KEY = '@appsalon/salon/mensajes_last_seen_at';
 const SALON_PEDIDOS_LAST_SEEN_KEY = '@appsalon/salon/pedidos_last_seen_at';
 const SALON_GIFT_CARDS_LAST_SEEN_KEY = '@appsalon/salon/gift_cards_last_seen_at';
+const SALON_UNETE_EQUIPO_LAST_SEEN_KEY = '@appsalon/salon/unete_equipo_last_seen_at';
 const SALON_MARKETING_ENGAGEMENT_LAST_SEEN_KEY = '@appsalon/salon/marketing_engagement_last_seen_at';
 
 function isPendingCashOrder(order) {
@@ -146,6 +148,42 @@ function webCardOrderNotificationBody(order) {
   return `Pedido web ${code} · tarjeta · ${modalidad}${totalLabel}`;
 }
 
+const UNETE_BRANCH_LABELS = {
+  coloracion: 'Coloración',
+  maquillaje: 'Maquillaje',
+  cejas: 'Cejas',
+  manicure: 'Manicure',
+  pedicure: 'Pedicure',
+  planchado: 'Planchado',
+  cuidado_capilar: 'Cuidado capilar',
+  higiene: 'Higiene',
+  spa_masaje: 'Masaje',
+  spa_corporal: 'Tratamiento corporal',
+  spa_relajacion: 'Relajación y aromaterapia',
+  skincare_facial: 'Facial',
+  skincare_limpieza: 'Limpieza profunda',
+  skincare_hidratacion: 'Hidratación y nutrición',
+  recepcion_administrativa: 'Habilidad administrativa',
+  recepcion_atencion: 'Atención al cliente',
+  recepcion_agenda: 'Agenda y citas',
+  recepcion_cobros: 'Cobros y POS',
+  recepcion_multitarea: 'Atención al cliente y coordinación simultánea bajo presión',
+  spas: 'Spas',
+  skincare: 'Skincare',
+  pestanas: 'Pestañas',
+  corte_peinado: 'Corte y peinado',
+};
+
+function BRANCH_UNETE_LABEL(key) {
+  return UNETE_BRANCH_LABELS[String(key || '')] || 'Belleza';
+}
+
+function MODALIDAD_UNETE_LABEL(value) {
+  if (value === 'socio_co_dependiente') return 'Socio co-dependiente';
+  if (value === 'empleado_directo') return 'Empleado directo';
+  return 'Postulación';
+}
+
 function SalonAdminShell({ onSignOut, profile }) {
   const insets = useSafeAreaInsets();
   const { width: winW } = useWindowDimensions();
@@ -157,6 +195,7 @@ function SalonAdminShell({ onSignOut, profile }) {
   const [mensajesAlertReady, setMensajesAlertReady] = useState(false);
   const [hasNewPedidos, setHasNewPedidos] = useState(false);
   const [hasNewGiftCards, setHasNewGiftCards] = useState(false);
+  const [hasNewUneteEquipo, setHasNewUneteEquipo] = useState(false);
   const [hasNewMarketing, setHasNewMarketing] = useState(false);
   const [agendaPendientes, setAgendaPendientes] = useState(0);
   const [homeRefreshing, setHomeRefreshing] = useState(false);
@@ -264,6 +303,29 @@ function SalonAdminShell({ onSignOut, profile }) {
     }
   }, []);
 
+  const refreshUneteEquipoAlert = useCallback(async () => {
+    try {
+      const [{ count, error }, lastSeenAt] = await Promise.all([
+        db.uneteEquipo.countPendientes(),
+        AsyncStorage.getItem(SALON_UNETE_EQUIPO_LAST_SEEN_KEY),
+      ]);
+      if (error) return;
+      const lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+      if (!lastSeenMs) {
+        setHasNewUneteEquipo((count || 0) > 0);
+        return;
+      }
+      const { data: listRes } = await db.uneteEquipo.listSolicitudes('enviado');
+      const hasNew = (listRes || []).some((row) => {
+        const ms = new Date(row.created_at).getTime();
+        return Number.isFinite(ms) && ms > lastSeenMs;
+      });
+      setHasNewUneteEquipo(hasNew);
+    } catch {
+      setHasNewUneteEquipo(false);
+    }
+  }, []);
+
   const refreshAgendaAlert = useCallback(async () => {
     try {
       const { data, error } = await db.citas.getByEstado('pendiente');
@@ -278,9 +340,10 @@ function SalonAdminShell({ onSignOut, profile }) {
     refreshMensajesAlert();
     refreshPedidosAlert();
     refreshGiftCardsAlert();
+    refreshUneteEquipoAlert();
     refreshAgendaAlert();
     refreshMarketingAlert();
-  }, [refreshMensajesAlert, refreshPedidosAlert, refreshGiftCardsAlert, refreshAgendaAlert, refreshMarketingAlert]);
+  }, [refreshMensajesAlert, refreshPedidosAlert, refreshGiftCardsAlert, refreshUneteEquipoAlert, refreshAgendaAlert, refreshMarketingAlert]);
 
   useEffect(() => {
     configureSalonPushHandler();
@@ -448,6 +511,35 @@ function SalonAdminShell({ onSignOut, profile }) {
     };
   }, [refreshGiftCardsAlert]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel('salon-home-unete-equipo-alert')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'unete_equipo_solicitudes' },
+        (payload) => {
+          const row = payload?.new;
+          void showLocalSalonNotification({
+            title: 'Nueva solicitud · Únete al Equipo',
+            body: `${MODALIDAD_UNETE_LABEL(row?.modalidad)} · ${BRANCH_UNETE_LABEL(row?.rama_destacada)}`,
+            data: { module: 'unete_equipo' },
+          });
+          void refreshUneteEquipoAlert();
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'unete_equipo_solicitudes' },
+        () => {
+          void refreshUneteEquipoAlert();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshUneteEquipoAlert]);
+
   const openModule = useCallback(async (id) => {
     if (!canOpenSalonModule(id, profile)) {
       Alert.alert('Sin acceso', 'Tu sucursal no tiene permiso para abrir este módulo.');
@@ -466,6 +558,10 @@ function SalonAdminShell({ onSignOut, profile }) {
       setHasNewGiftCards(false);
       void AsyncStorage.setItem(SALON_GIFT_CARDS_LAST_SEEN_KEY, new Date().toISOString());
     }
+    if (id === 'unete_equipo') {
+      setHasNewUneteEquipo(false);
+      void AsyncStorage.setItem(SALON_UNETE_EQUIPO_LAST_SEEN_KEY, new Date().toISOString());
+    }
   }, [profile]);
   const onHomeRefresh = useCallback(async () => {
     setHomeRefreshing(true);
@@ -475,6 +571,7 @@ function SalonAdminShell({ onSignOut, profile }) {
         refreshMensajesAlert(),
         refreshPedidosAlert(),
         refreshGiftCardsAlert(),
+        refreshUneteEquipoAlert(),
         refreshAgendaAlert(),
         refreshMarketingAlert(),
       ]);
@@ -487,7 +584,7 @@ function SalonAdminShell({ onSignOut, profile }) {
     } finally {
       setHomeRefreshing(false);
     }
-  }, [search, refreshMensajesAlert, refreshPedidosAlert, refreshGiftCardsAlert, refreshAgendaAlert]);
+  }, [search, refreshMensajesAlert, refreshPedidosAlert, refreshGiftCardsAlert, refreshUneteEquipoAlert, refreshAgendaAlert, refreshMarketingAlert]);
 
   const closeModule = useCallback(() => {
     setOpenedModuleId(null);
@@ -560,6 +657,18 @@ function SalonAdminShell({ onSignOut, profile }) {
 
   if (openedModuleId === 'eventos') {
     return <EventosProfesionalesScreen onBack={closeModule} />;
+  }
+
+  if (openedModuleId === 'unete_equipo') {
+    return (
+      <UneteEquipoScreen
+        onBack={closeModule}
+        onSeen={() => {
+          setHasNewUneteEquipo(false);
+          void AsyncStorage.setItem(SALON_UNETE_EQUIPO_LAST_SEEN_KEY, new Date().toISOString());
+        }}
+      />
+    );
   }
 
   if (openedModuleId === 'mensajes') {
@@ -713,6 +822,7 @@ function SalonAdminShell({ onSignOut, profile }) {
                     (m.id === 'mensajes' && mensajesAlertReady && hasNewMensajes) ||
                     (m.id === 'pedidos' && hasNewPedidos) ||
                     (m.id === 'tarjetas_regalo' && hasNewGiftCards) ||
+                    (m.id === 'unete_equipo' && hasNewUneteEquipo) ||
                     (m.id === 'marketing' && hasNewMarketing)
                   }
                   onPress={() => openModule(m.id)}
