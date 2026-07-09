@@ -1,4 +1,4 @@
-import { db, supabase } from '@appsalon/shared-config';
+import { db, supabase, deleteGiftCardStaff, deleteGiftCardActivationCodeStaff } from '@appsalon/shared-config';
 import { recordSalonDeletion } from './salonBasurero';
 import { controlPanelActionToSource } from './salonBasureroSources';
 
@@ -114,6 +114,14 @@ export function buildDeletionMeta(source, row) {
         summary: [snap.codigo, snap.direccion].filter(Boolean).join(' · '),
         snapshot: snap,
       };
+    case 'unete_equipo':
+    case 'unete_equipo_solicitudes':
+      return {
+        source: 'unete_equipo',
+        title: snap.cliente?.nombre || 'Solicitud Únete al equipo',
+        summary: [snap.estado, snap.rama_destacada].filter(Boolean).join(' · '),
+        snapshot: snap,
+      };
     default:
       return {
         source: src,
@@ -196,6 +204,33 @@ export async function fetchModuleSnapshot(actionId, id) {
       if (error) return null;
       return data;
     }
+    case 'tarjetas_regalo': {
+      const raw = String(id);
+      if (raw.startsWith('code:')) {
+        const codeId = raw.slice(5);
+        const { data: payload } = await supabase.rpc('list_gift_card_activation_codes_staff', { p_limit: 50 });
+        const row = payload?.ok ? (payload.codes || []).find((c) => String(c.id) === codeId) : null;
+        return row || { id: codeId };
+      }
+      const cardId = raw.startsWith('card:') ? raw.slice(5) : raw;
+      const { data, error } = await supabase.from('gift_cards').select('*').eq('id', cardId).single();
+      if (error) return null;
+      return data;
+    }
+    case 'sucursales': {
+      const { data, error } = await supabase
+        .from('sucursales')
+        .select('id, codigo, nombre, direccion, telefono, activa, es_matriz')
+        .eq('id', id)
+        .single();
+      if (error) return null;
+      return data;
+    }
+    case 'unete_equipo': {
+      const { data, error } = await supabase.from('unete_equipo_solicitudes').select('*').eq('id', id).single();
+      if (error) return null;
+      return data;
+    }
     default:
       return null;
   }
@@ -206,7 +241,10 @@ export async function deleteModuleItemWithBasurero(actionId, id) {
   const rawErr = await rawDeleteModuleItem(actionId, id);
   if (rawErr?.message) return rawErr;
   if (snapshot && !['basurero_local', 'reportes_local'].includes(actionId)) {
-    const src = controlPanelActionToSource(actionId);
+    let src = controlPanelActionToSource(actionId);
+    if (actionId === 'tarjetas_regalo' && String(id).startsWith('code:')) {
+      src = 'gift_card_activation_codes';
+    }
     const meta = buildDeletionMeta(src, snapshot);
     await recordSalonDeletion(meta);
   }
@@ -234,6 +272,22 @@ async function rawDeleteModuleItem(actionId, id) {
       return (await db.metas.delete(id)).error;
     case 'caja_chain':
       return (await db.cajas.delete(id)).error;
+    case 'tarjetas_regalo': {
+      const raw = String(id);
+      if (raw.startsWith('code:')) {
+        const res = await deleteGiftCardActivationCodeStaff(raw.slice(5));
+        return res?.ok ? null : { message: res?.error || 'No se pudo borrar el código.' };
+      }
+      const cardId = raw.startsWith('card:') ? raw.slice(5) : raw;
+      const res = await deleteGiftCardStaff(cardId);
+      return res?.ok ? null : { message: res?.error || 'No se pudo borrar la tarjeta.' };
+    }
+    case 'sucursales':
+      return (await db.sucursales.desactivar(id)).error;
+    case 'unete_equipo': {
+      const { error } = await supabase.from('unete_equipo_solicitudes').delete().eq('id', id);
+      return error;
+    }
     default:
       return { message: 'Este módulo no admite borrado puntual desde el panel.' };
   }

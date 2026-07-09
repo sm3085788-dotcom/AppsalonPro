@@ -98,6 +98,9 @@ export function CajaScreen({ onBack }) {
 
   const [view, setView] = useState('gate');
   const [adminApertura, setAdminApertura] = useState('');
+  const [adminEmpleadoId, setAdminEmpleadoId] = useState(null);
+  const [adminStaffSearch, setAdminStaffSearch] = useState('');
+  const [catalogEmpleados, setCatalogEmpleados] = useState([]);
   const [cajaChicaStr, setCajaChicaStr] = useState('');
   const [montoApertura, setMontoApertura] = useState('');
   const [gerenteCierre, setGerenteCierre] = useState('');
@@ -284,6 +287,48 @@ export function CajaScreen({ onBack }) {
   );
   const chicaInsuficiente = montoAperturaNum > 0 && cajaChicaNum + 0.004 < montoAperturaNum;
 
+  const selectedAdminEmpleado = useMemo(
+    () => catalogEmpleados.find((e) => e.id === adminEmpleadoId) ?? null,
+    [catalogEmpleados, adminEmpleadoId],
+  );
+
+  const adminStaffMatches = useMemo(() => {
+    if (selectedAdminEmpleado) return [];
+    const q = adminStaffSearch.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return catalogEmpleados
+      .filter((e) => {
+        const n = String(e.nombre || '').toLowerCase();
+        const r = String(e.rol || '').toLowerCase();
+        const mail = String(e.email || '').toLowerCase();
+        return n.includes(q) || r.includes(q) || mail.includes(q);
+      })
+      .slice(0, 8);
+  }, [adminStaffSearch, catalogEmpleados, selectedAdminEmpleado]);
+
+  const selectAdminEmpleado = (emp) => {
+    setAdminEmpleadoId(emp.id);
+    setAdminApertura(String(emp.nombre || '').trim());
+    setAdminStaffSearch('');
+  };
+
+  const clearAdminEmpleado = () => {
+    setAdminEmpleadoId(null);
+    setAdminApertura('');
+    setAdminStaffSearch('');
+  };
+
+  useEffect(() => {
+    let alive = true;
+    void db.empleados.getAll().then(({ data, error }) => {
+      if (!alive || error) return;
+      setCatalogEmpleados(Array.isArray(data) ? data : []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const guardarSaldoCajaChica = async () => {
     const n = parseAmount(cajaChicaStr);
     await setCajaChicaSaldo(n);
@@ -295,7 +340,7 @@ export function CajaScreen({ onBack }) {
     const nom = adminApertura.trim();
     const m = parseAmount(montoApertura);
     if (!nom) {
-      Alert.alert('Dato requerido', 'Ingresá el nombre del administrador responsable.');
+      Alert.alert('Dato requerido', 'Elegí un empleado como administrador responsable.');
       return;
     }
     if (m <= 0) {
@@ -647,13 +692,61 @@ export function CajaScreen({ onBack }) {
                 {branchLabel ? ` Control de «${branchLabel}» (caja chica propia, independiente de otras sucursales).` : ''}
               </Text>
               <Text style={styles.label}>Administrador responsable</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Nombre completo"
-                placeholderTextColor={c.foregroundSubtle}
-                value={adminApertura}
-                onChangeText={setAdminApertura}
-              />
+              {selectedAdminEmpleado && adminStaffSearch.trim().length < 2 ? (
+                <View style={[styles.adminSelectedCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                  <Text style={styles.adminSelectedName}>{selectedAdminEmpleado.nombre}</Text>
+                  <Text style={[subStyles.muted, { marginTop: 4 }]}>
+                    {[selectedAdminEmpleado.rol, selectedAdminEmpleado.telefono, selectedAdminEmpleado.email]
+                      .filter(Boolean)
+                      .join(' · ') || 'Empleado'}
+                  </Text>
+                  <TouchableOpacity onPress={clearAdminEmpleado} style={[styles.inlineBtn, { marginTop: spacing.sm }]}>
+                    <Text style={styles.inlineBtnTxt}>Cambiar empleado</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Buscar por nombre, rol o correo"
+                    placeholderTextColor={c.foregroundSubtle}
+                    value={adminStaffSearch}
+                    onChangeText={(v) => {
+                      setAdminStaffSearch(v);
+                      if (adminEmpleadoId) {
+                        setAdminEmpleadoId(null);
+                        setAdminApertura('');
+                      }
+                    }}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                  {adminStaffSearch.trim().length > 0 && adminStaffSearch.trim().length < 2 ? (
+                    <Text style={[subStyles.muted, styles.searchHint]}>
+                      Escribí al menos 2 letras para buscar en el equipo.
+                    </Text>
+                  ) : null}
+                  {adminStaffSearch.trim().length >= 2 && adminStaffMatches.length === 0 ? (
+                    <Text style={[subStyles.muted, styles.searchHint]}>No hay coincidencias con la búsqueda.</Text>
+                  ) : null}
+                  {adminStaffMatches.length > 0 ? (
+                    <View style={[styles.suggestions, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+                      {adminStaffMatches.map((emp) => (
+                        <TouchableOpacity
+                          key={emp.id}
+                          style={[styles.suggestionRow, { borderBottomColor: c.cardBorder }]}
+                          onPress={() => selectAdminEmpleado(emp)}
+                        >
+                          <Text style={styles.suggestionName}>{emp.nombre}</Text>
+                          <Text style={subStyles.muted}>
+                            {[emp.rol, emp.telefono, emp.email].filter(Boolean).join(' · ') || 'Sin datos'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : null}
+                </>
+              )}
               <Text style={styles.label}>Caja chica (saldo disponible)</Text>
               <View style={styles.qRow}>
                 <Text style={styles.qPrefix}>{Q}</Text>
@@ -1169,6 +1262,55 @@ function createStyles(c) {
       fontSize: 15,
       color: c.foreground,
       marginBottom: spacing.md,
+    },
+    searchHint: {
+      marginTop: -spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    adminSelectedCard: {
+      borderRadius: radii.md,
+      borderWidth: 1,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      borderLeftWidth: 3,
+      borderLeftColor: c.primary,
+    },
+    adminSelectedName: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 15,
+      color: c.foreground,
+    },
+    suggestions: {
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      marginTop: -spacing.sm,
+      marginBottom: spacing.md,
+      overflow: 'hidden',
+    },
+    suggestionRow: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderBottomWidth: 1,
+    },
+    suggestionName: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      color: c.foreground,
+      marginBottom: 2,
+    },
+    inlineBtn: {
+      alignSelf: 'flex-start',
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radii.pill,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      backgroundColor: c.surfaceMuted,
+    },
+    inlineBtnTxt: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      color: c.foregroundMuted,
     },
     qRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
     qPrefix: {

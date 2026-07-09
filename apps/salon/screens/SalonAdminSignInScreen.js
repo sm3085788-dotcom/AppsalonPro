@@ -15,6 +15,7 @@ import { spacing, typography, radii } from '@appsalon/design-tokens';
 import { db, isSalonAdminRole, isSalonSucursalAdmin, setSalonSessionProfile } from '@appsalon/shared-config';
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury';
+import { PinField } from '../components/auth/PinField';
 import {
   loadPendingBranchAdminSetup,
   clearPendingBranchAdminSetup,
@@ -570,16 +571,13 @@ export function SalonAdminSignInScreen({ onSignedIn, initialError }) {
           editable={!busy}
         />
 
-        <Text style={styles.label}>{isBranchLogin ? `PIN (${BRANCH_PIN_LENGTH} números)` : 'Contraseña'}</Text>
-        <TextInput
-          style={[styles.input, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
-          placeholder={isBranchLogin ? `${BRANCH_PIN_LENGTH} números` : 'Contraseña matriz'}
-          placeholderTextColor={c.foregroundSubtle}
+        <PinField
+          label={isBranchLogin ? `PIN (${BRANCH_PIN_LENGTH} números)` : 'Contraseña'}
           value={password}
           onChangeText={(t) => setPassword(isBranchLogin ? sanitizeBranchPinInput(t) : t)}
-          secureTextEntry
-          keyboardType={isBranchLogin ? 'number-pad' : 'default'}
+          placeholder={isBranchLogin ? `${BRANCH_PIN_LENGTH} números` : 'Contraseña matriz'}
           maxLength={isBranchLogin ? BRANCH_PIN_LENGTH : undefined}
+          keyboardType={isBranchLogin ? 'number-pad' : 'default'}
           editable={!busy}
         />
 

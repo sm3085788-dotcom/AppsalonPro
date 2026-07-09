@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Alert,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,14 +20,20 @@ import { ListSelectionToolbarLink } from '../components/ListSelectionBar';
 import { useTheme } from '../theme/ThemeProvider';
 import { useListSelection } from '../hooks/useListSelection';
 import {
-  clearAllBasureroEntries,
   deleteBasureroEntriesByIds,
   getBasureroEntries,
 } from '../services/salonBasurero';
 import { BASURERO_KNOWN_SOURCES, basureroSourceLabel } from '../services/salonBasureroSources';
 import { restoreBasureroEntries } from '../services/salonBasureroRestore';
+import { basureroEntryMatchesScope } from '../services/controlPanelScope';
 
-export function BasureroScreen({ onBack, embedded = false }) {
+export function BasureroScreen({
+  onBack,
+  embedded = false,
+  branchScope = null,
+  panelTab = 'basurero',
+  onPanelTabChange,
+}) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
@@ -60,14 +67,7 @@ export function BasureroScreen({ onBack, embedded = false }) {
   };
 
   const filtroResumen = useMemo(() => {
-    const orden =
-      sortMode === 'fecha_asc'
-        ? 'Más antiguos primero'
-        : sortMode === 'nombre_asc'
-          ? 'Título A → Z'
-          : sortMode === 'nombre_desc'
-            ? 'Título Z → A'
-            : 'Más recientes primero';
+    const orden = sortMode === 'fecha_asc' ? 'Más antiguos primero' : 'Más recientes primero';
     const origen =
       filterSource === 'todos'
         ? 'Todos los orígenes'
@@ -79,6 +79,9 @@ export function BasureroScreen({ onBack, embedded = false }) {
 
   const filtered = useMemo(() => {
     let rows = [...entries];
+    if (branchScope?.sucursalId) {
+      rows = rows.filter((e) => basureroEntryMatchesScope(e, branchScope));
+    }
     const q = query.trim().toLowerCase();
     if (q) {
       rows = rows.filter((e) => {
@@ -92,16 +95,12 @@ export function BasureroScreen({ onBack, embedded = false }) {
       rows = rows.filter((e) => String(e.source) === filterSource);
     }
     rows.sort((a, b) => {
-      if (sortMode === 'fecha_desc' || sortMode === 'fecha_asc') {
-        const ta = new Date(a.deletedAt).getTime();
-        const tb = new Date(b.deletedAt).getTime();
-        return sortMode === 'fecha_desc' ? tb - ta : ta - tb;
-      }
-      const cmp = String(a.title || '').localeCompare(String(b.title || ''), 'es', { sensitivity: 'base' });
-      return sortMode === 'nombre_desc' ? -cmp : cmp;
+      const ta = new Date(a.deletedAt).getTime();
+      const tb = new Date(b.deletedAt).getTime();
+      return sortMode === 'fecha_desc' ? tb - ta : ta - tb;
     });
     return rows;
-  }, [entries, query, filterSource, sortMode]);
+  }, [entries, query, filterSource, sortMode, branchScope]);
 
   const selectedEntries = useMemo(
     () => filtered.filter((e) => sel.selectedIds.has(String(e.id))),
@@ -118,29 +117,6 @@ export function BasureroScreen({ onBack, embedded = false }) {
     const max = 3500;
     if (text.length > max) text = `${text.slice(0, max)}\n… (truncado)`;
     Alert.alert('Copia guardada', text, [{ text: 'Cerrar' }], { cancelable: true });
-  };
-
-  const limpiarTodo = () => {
-    if (!entries.length) {
-      Alert.alert('Basurero', 'No hay nada para borrar.');
-      return;
-    }
-    Alert.alert(
-      'Vaciar basurero',
-      `Se eliminarán ${entries.length} copia(s) guardadas en este dispositivo. No afecta la base de datos.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Vaciar todo',
-          style: 'destructive',
-          onPress: async () => {
-            await clearAllBasureroEntries();
-            sel.exitSelectMode();
-            setEntries([]);
-          },
-        },
-      ],
-    );
   };
 
   const confirmBorrarCopias = () => {
@@ -274,35 +250,25 @@ export function BasureroScreen({ onBack, embedded = false }) {
       : 'Ningún resultado con la búsqueda o filtros actuales.';
 
   const filterOptions = [
-    { id: 'todos', label: 'Todos' },
-    { id: 'ventas', label: 'Papelería' },
-    { id: 'marketing_posts', label: 'Marketing' },
-    { id: 'inventario', label: 'Inventario' },
-    { id: 'clientes', label: 'Clientes' },
-    { id: 'empleados', label: 'Empleados' },
-    { id: 'proveedores', label: 'Proveedores' },
-    { id: 'incidentes', label: 'Incidentes' },
-    { id: 'citas', label: 'Citas' },
-    { id: 'gift_cards', label: 'Tarjetas regalo' },
-    { id: 'gift_card_activation_codes', label: 'Códigos ACT' },
-    { id: 'sucursales', label: 'Sucursales' },
-    { id: 'mensajes', label: 'Mensajes' },
-    { id: 'otros', label: 'Otros' },
+    { id: 'todos', label: 'Todos', detail: 'Copias de cualquier módulo en este teléfono.' },
+    { id: 'ventas', label: 'Papelería', detail: 'Facturas y ventas del punto de venta.' },
+    { id: 'marketing_posts', label: 'Marketing', detail: 'Publicaciones y contenido de marketing.' },
+    { id: 'inventario', label: 'Inventario', detail: 'Productos y servicios del catálogo.' },
+    { id: 'clientes', label: 'Clientes', detail: 'Fichas de clientes eliminadas.' },
+    { id: 'empleados', label: 'Empleados', detail: 'Perfiles del equipo eliminados.' },
+    { id: 'proveedores', label: 'Proveedores', detail: 'Proveedores quitados del listado.' },
+    { id: 'incidentes', label: 'Incidentes', detail: 'Reportes de incidentes del salón.' },
+    { id: 'citas', label: 'Citas', detail: 'Citas de la agenda eliminadas.' },
+    { id: 'gift_cards', label: 'Tarjetas regalo', detail: 'Tarjetas regalo emitidas o activadas.' },
+    { id: 'gift_card_activation_codes', label: 'Códigos ACT', detail: 'Códigos de activación de tarjeta regalo.' },
+    { id: 'sucursales', label: 'Sucursales', detail: 'Sucursales desactivadas desde matriz.' },
+    { id: 'mensajes', label: 'Mensajes', detail: 'Mensajes directos de marketing.' },
+    { id: 'otros', label: 'Otros', detail: 'Orígenes no clasificados o legacy.' },
   ];
 
   const mainContent = (
     <>
       <View style={styles.body}>
-        {!sel.active ? (
-          <SalonButton
-            title="Vaciar todo el basurero"
-            variant="outlineGray"
-            fullWidth
-            onPress={limpiarTodo}
-            style={{ marginBottom: spacing.sm }}
-          />
-        ) : null}
-
         <TextInput
           style={[styles.search, { borderColor: c.cardBorder, backgroundColor: c.card, color: c.foreground }]}
           placeholder="Buscar por título, resumen u origen…"
@@ -313,12 +279,40 @@ export function BasureroScreen({ onBack, embedded = false }) {
           accessibilityLabel="Buscar en basurero"
         />
 
-        <View style={styles.toolbar}>
-          <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
-            {filtered.length} copia{filtered.length === 1 ? '' : 's'}
-            {!loading && entries.length ? ` de ${entries.length}` : ''}
-          </Text>
+        <View style={[styles.toolbar, embedded && styles.toolbarEmbedded]}>
+          {!embedded ? (
+            <Text style={[styles.toolbarMeta, { color: c.foregroundMuted }]}>
+              {filtered.length} copia{filtered.length === 1 ? '' : 's'}
+              {!loading && entries.length ? ` de ${entries.length}` : ''}
+            </Text>
+          ) : null}
           <View style={styles.toolbarRight}>
+            {embedded && onPanelTabChange ? (
+              <>
+                <TouchableOpacity hitSlop={12} onPress={() => onPanelTabChange('purge')}>
+                  <Text
+                    style={[
+                      styles.toolbarLink,
+                      { color: panelTab === 'purge' ? c.primary : c.foregroundMuted },
+                    ]}
+                  >
+                    Borrado masivo
+                  </Text>
+                </TouchableOpacity>
+                <Text style={[styles.toolbarDot, { color: c.foregroundSubtle }]}> · </Text>
+                <TouchableOpacity hitSlop={12} onPress={() => onPanelTabChange('basurero')}>
+                  <Text
+                    style={[
+                      styles.toolbarLink,
+                      { color: panelTab === 'basurero' ? c.primary : c.foregroundMuted },
+                    ]}
+                  >
+                    Basurero
+                  </Text>
+                </TouchableOpacity>
+                <Text style={[styles.toolbarDot, { color: c.foregroundSubtle }]}> · </Text>
+              </>
+            ) : null}
             <ListSelectionToolbarLink active={sel.active} onPress={sel.toggleSelectMode} color={c.primary} />
             <Text style={[styles.toolbarDot, { color: c.foregroundSubtle }]}> · </Text>
             <TouchableOpacity hitSlop={12} onPress={() => setModalFiltros(true)}>
@@ -330,7 +324,7 @@ export function BasureroScreen({ onBack, embedded = false }) {
           {sel.active ? 'Tocá las tarjetas para marcarlas.' : filtroResumen}
         </Text>
 
-        <View style={[styles.listShell, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
+        <View style={styles.listShell}>
           <FlatList
             data={filtered}
             keyExtractor={(it) => it.id}
@@ -344,7 +338,7 @@ export function BasureroScreen({ onBack, embedded = false }) {
                 progressBackgroundColor={c.card}
               />
             }
-            contentContainerStyle={{ paddingBottom: sel.count ? 120 : padBottom, flexGrow: 1 }}
+            contentContainerStyle={{ paddingBottom: sel.count ? 120 : padBottom, flexGrow: 0 }}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
               <Text style={[styles.emptyTxt, { color: c.foregroundMuted }]}>{emptyText}</Text>
@@ -358,8 +352,7 @@ export function BasureroScreen({ onBack, embedded = false }) {
           style={[
             styles.selectBar,
             {
-              backgroundColor: c.card,
-              borderTopColor: c.cardBorder,
+              backgroundColor: c.background,
               paddingBottom: Math.max(insets.bottom, spacing.sm),
             },
           ]}
@@ -400,13 +393,12 @@ export function BasureroScreen({ onBack, embedded = false }) {
             </TouchableOpacity>
           </View>
 
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Text style={[styles.fieldLbl, { color: c.foreground }]}>Orden</Text>
           <View style={styles.typeGrid}>
             {[
               { id: 'fecha_desc', label: 'Más recientes' },
               { id: 'fecha_asc', label: 'Más antiguos' },
-              { id: 'nombre_asc', label: 'Título A → Z' },
-              { id: 'nombre_desc', label: 'Título Z → A' },
             ].map((opt) => {
               const on = sortMode === opt.id;
               return (
@@ -425,23 +417,46 @@ export function BasureroScreen({ onBack, embedded = false }) {
           </View>
 
           <Text style={[styles.fieldLbl, { color: c.foreground }]}>Origen</Text>
-          <View style={styles.typeGrid}>
-            {filterOptions.map((opt) => {
+          <View style={[styles.originPickList, { borderColor: c.cardBorder }]}>
+            {filterOptions.map((opt, index) => {
               const on = filterSource === opt.id;
+              const isLast = index === filterOptions.length - 1;
               return (
                 <TouchableOpacity
                   key={opt.id}
                   style={[
-                    styles.typeChip,
-                    { borderColor: on ? c.primary : c.cardBorder, backgroundColor: on ? c.surfaceMuted : c.card },
+                    styles.originPickRow,
+                    !isLast && {
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: c.cardBorder,
+                    },
+                    on && { backgroundColor: c.surfaceMuted },
                   ]}
                   onPress={() => setFilterSource(opt.id)}
+                  activeOpacity={0.85}
                 >
-                  <Text style={[styles.typeChipTxt, { color: on ? c.primary : c.foreground }]}>{opt.label}</Text>
+                  <Text
+                    style={[styles.originPickTxt, { color: on ? c.primary : c.foreground }]}
+                    numberOfLines={1}
+                  >
+                    {opt.label}
+                  </Text>
+                  {opt.detail ? (
+                    <Text
+                      style={[
+                        styles.originPickSub,
+                        { color: on ? c.foregroundMuted : c.foregroundSubtle },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {opt.detail}
+                    </Text>
+                  ) : null}
                 </TouchableOpacity>
               );
             })}
           </View>
+          </ScrollView>
 
           <SalonButton title="Listo" variant="heroGold" fullWidth onPress={() => setModalFiltros(false)} />
         </View>
@@ -500,6 +515,9 @@ function createStyles(c) {
       alignItems: 'center',
       marginBottom: spacing.xs,
     },
+    toolbarEmbedded: {
+      justifyContent: 'flex-end',
+    },
     toolbarRight: { flexDirection: 'row', alignItems: 'center' },
     toolbarMeta: {
       fontFamily: typography.fontSansMedium,
@@ -520,8 +538,6 @@ function createStyles(c) {
     },
     listShell: {
       flex: 1,
-      borderWidth: 1,
-      borderRadius: radii.md,
       overflow: 'hidden',
     },
     row: {
@@ -569,7 +585,6 @@ function createStyles(c) {
       padding: spacing.md,
     },
     selectBar: {
-      borderTopWidth: StyleSheet.hairlineWidth,
       paddingHorizontal: spacing.sm,
       paddingTop: spacing.sm,
       gap: spacing.xs,
@@ -624,6 +639,27 @@ function createStyles(c) {
     typeChipTxt: {
       fontFamily: typography.fontSans,
       fontSize: 13,
+    },
+    originPickList: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+      marginBottom: spacing.md,
+    },
+    originPickRow: {
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+    },
+    originPickTxt: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 14,
+      lineHeight: 18,
+    },
+    originPickSub: {
+      fontFamily: typography.fontSans,
+      fontSize: 12,
+      lineHeight: 16,
+      marginTop: 2,
     },
   });
 }

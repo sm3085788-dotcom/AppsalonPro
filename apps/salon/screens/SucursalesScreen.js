@@ -222,8 +222,9 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
       >
         <ScrollView
           contentContainerStyle={{
-            padding: spacing.lg,
-            paddingBottom: sel.count ? 100 : insets.bottom + spacing.xl,
+            paddingHorizontal: spacing.md,
+            paddingTop: spacing.sm,
+            paddingBottom: sel.count ? 100 : insets.bottom + spacing.lg,
           }}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />}
@@ -264,7 +265,7 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
             editable={!saving}
           />
 
-          <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>2 · Acceso App Salón</Text>
+          <Text style={[styles.sectionTitle, { marginTop: spacing.md }]}>2 · Acceso App Salón</Text>
           <Text style={[styles.hint, { color: c.foregroundMuted }]}>
             El admin de esta sucursal iniciará sesión con código + PIN ({BRANCH_PIN_LENGTH} números). Igual que matriz usa
             teléfono, pero la sucursal usa un alias corto — no pongas tu +502 de matriz acá.
@@ -303,6 +304,7 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
             placeholder={`${BRANCH_PIN_LENGTH} números`}
             maxLength={BRANCH_PIN_LENGTH}
             editable={!saving}
+            compact
           />
 
           <PinField
@@ -314,6 +316,7 @@ export function SucursalesScreen({ onBack, onRequestSignOut }) {
             showMismatch={pinMismatch}
             mismatchText="Los PIN no coinciden."
             editable={!saving}
+            compact
           />
 
           {loginPreview && codigoValidation.ok && loginPin.length === BRANCH_PIN_LENGTH && loginPin === loginPinConfirm ? (
@@ -440,21 +443,21 @@ function createStyles(c) {
     hint: {
       fontFamily: typography.fontSans,
       fontSize: 13,
-      lineHeight: 19,
-      marginBottom: spacing.md,
+      lineHeight: 17,
+      marginBottom: spacing.sm,
     },
     label: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
       color: c.foreground,
-      marginBottom: spacing.xs,
-      marginTop: spacing.sm,
+      marginBottom: 4,
+      marginTop: spacing.xs,
     },
     fieldHint: {
       fontFamily: typography.fontSans,
       fontSize: 11,
-      lineHeight: 16,
-      marginTop: 4,
+      lineHeight: 15,
+      marginTop: 2,
     },
     fieldErr: {
       fontFamily: typography.fontSans,
@@ -465,10 +468,11 @@ function createStyles(c) {
     input: {
       fontFamily: typography.fontSans,
       fontSize: 16,
-      minHeight: 48,
+      minHeight: 42,
       borderRadius: radii.lg,
       borderWidth: 1,
       paddingHorizontal: spacing.md,
+      paddingVertical: 10,
     },
     previewCard: {
       borderWidth: 1,

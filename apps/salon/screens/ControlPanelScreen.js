@@ -4,18 +4,24 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   Platform,
-  TextInput,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { VerticalDatePickerSheet } from '../components/VerticalDatePicker';
-import { Trash2, Calendar, ArrowUpDown, ListOrdered, ChevronDown, ChevronUp, Search } from 'lucide-react-native';
-import { spacing, typography, radii } from '@appsalon/design-tokens';
+import { spacing, typography } from '@appsalon/design-tokens';
 import { SubScreenChrome, SalonButton } from '../components/luxury';
+import { PinField } from '../components/auth/PinField';
+import { SalonSucursalSelect } from '../components/SalonSucursalSelect';
+import { ControlPanelOrdenarFiltros } from '../components/ControlPanelOrdenarFiltros';
 import { useSalonPullRefresh } from '../hooks/useSalonPullRefresh';
 import { useTheme } from '../theme/ThemeProvider';
+import {
+  db,
+  getSalonSessionProfile,
+  isSalonGlobalAdmin,
+  getSalonSucursalScope,
+} from '@appsalon/shared-config';
+import { panelScopeFrom } from '../services/controlPanelScope';
 import {
   purgeCitas,
   purgeVentasYRelacionadas,
@@ -32,16 +38,15 @@ import {
   purgeIncidentes,
   purgeBasureroLocal,
   purgeReportesLocales,
-  purgeAllModules,
+  purgeTarjetasRegalo,
+  purgeSucursales,
+  purgeUneteEquipo,
   normalizeDateRangeOpts,
 } from '../services/controlPanelPurge';
 import { searchModuleItems, deleteModuleItem, moduleSupportsSearch, listModuleItems, moduleListsOnExpand } from '../services/controlPanelItemOps';
 import { BasureroScreen } from './BasureroScreen';
 
-const PANEL_TABS = [
-  { id: 'purge', label: 'Borrado masivo' },
-  { id: 'basurero', label: 'Basurero' },
-];
+const CONTROL_PANEL_PASSWORD = '123456';
 
 const PURGE_ACTIONS = [
   {
@@ -124,6 +129,24 @@ const PURGE_ACTIONS = [
     run: purgeEmpleados,
   },
   {
+    id: 'tarjetas_regalo',
+    title: 'Tarjeta regalo',
+    detail: 'Tarjetas emitidas y códigos ACT pendientes visibles en staff. Con fechas: tarjetas por emitida_en.',
+    run: purgeTarjetasRegalo,
+  },
+  {
+    id: 'sucursales',
+    title: 'Sucursales',
+    detail: 'Desactiva todas las sucursales activas excepto la matriz. Sin filtro por fechas.',
+    run: purgeSucursales,
+  },
+  {
+    id: 'unete_equipo',
+    title: 'Únete al equipo',
+    detail: 'Solicitudes de reclutamiento. Con fechas: por created_at.',
+    run: purgeUneteEquipo,
+  },
+  {
     id: 'basurero_local',
     title: 'Basurero local (teléfono)',
     detail: 'Copias en este dispositivo. Con fechas: solo entradas por fecha de borrado local.',
@@ -150,35 +173,78 @@ function formatShortDate(d) {
 
 export function ControlPanelScreen({ onBack }) {
   const { colors: c, isDark } = useTheme();
+  const [unlocked, setUnlocked] = useState(false);
+  const [accessPassword, setAccessPassword] = useState('');
+  const [accessError, setAccessError] = useState('');
   const [panelTab, setPanelTab] = useState('purge');
   const [purgingId, setPurgingId] = useState(null);
-  const [purgeAllBusy, setPurgeAllBusy] = useState(false);
-  const [includeReportes, setIncludeReportes] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [moduleSearch, setModuleSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchBusy, setSearchBusy] = useState(false);
-  const [sortMode, setSortMode] = useState('default');
   const [dateFrom, setDateFrom] = useState(null);
   const [dateTo, setDateTo] = useState(null);
   const [pickerTarget, setPickerTarget] = useState(null);
+  const [panelSucursales, setPanelSucursales] = useState([]);
+  const [panelSucursalId, setPanelSucursalId] = useState(null);
+
+  const sessionProfile = getSalonSessionProfile();
+  const isGlobalAdmin = isSalonGlobalAdmin(sessionProfile?.role);
 
   const styles = useMemo(() => createStyles(), []);
 
+  const matrizSucursalId = useMemo(
+    () => panelSucursales.find((s) => s.es_matriz)?.id || panelSucursales[0]?.id || null,
+    [panelSucursales],
+  );
+
+  const panelSucursalNombre = useMemo(() => {
+    if (!panelSucursalId) return null;
+    return panelSucursales.find((s) => String(s.id) === String(panelSucursalId))?.nombre || 'Sucursal';
+  }, [panelSucursalId, panelSucursales]);
+
+  const panelScope = useMemo(
+    () => panelScopeFrom({ sucursalId: panelSucursalId, matrizId: matrizSucursalId }),
+    [panelSucursalId, matrizSucursalId],
+  );
+
   const rangeActive = !!(dateFrom && dateTo);
 
-  const sortedActions = useMemo(() => {
-    const list = [...PURGE_ACTIONS];
-    if (sortMode === 'alpha') {
-      list.sort((a, b) => a.title.localeCompare(b.title, 'es'));
-    }
-    return list;
-  }, [sortMode]);
-
   const buildOpts = useCallback(() => {
-    if (!dateFrom || !dateTo) return {};
-    return { dateFrom, dateTo };
-  }, [dateFrom, dateTo]);
+    const base = panelSucursalId ? { sucursalId: panelSucursalId, matrizId: matrizSucursalId } : {};
+    if (!dateFrom || !dateTo) return base;
+    return { ...base, dateFrom, dateTo };
+  }, [dateFrom, dateTo, panelSucursalId, matrizSucursalId]);
+
+  useEffect(() => {
+    if (isGlobalAdmin) {
+      let cancelled = false;
+      void db.sucursales.listActivas().then(({ data, error }) => {
+        if (cancelled || error) return;
+        const list = Array.isArray(data) ? data : [];
+        setPanelSucursales(list);
+        const matrizId = list.find((s) => s.es_matriz)?.id || list[0]?.id || null;
+        setPanelSucursalId((prev) => prev || matrizId);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    const sid = sessionProfile?.sucursal_id || getSalonSucursalScope().sucursalId || null;
+    if (sid) {
+      setPanelSucursalId(sid);
+      if (sessionProfile?.sucursal_nombre) {
+        setPanelSucursales([
+          {
+            id: sid,
+            nombre: sessionProfile.sucursal_nombre,
+            es_matriz: false,
+          },
+        ]);
+      }
+    }
+    return undefined;
+  }, [isGlobalAdmin, sessionProfile?.sucursal_id, sessionProfile?.sucursal_nombre]);
 
   useEffect(() => {
     if (!expandedId || !moduleSupportsSearch(expandedId)) {
@@ -194,7 +260,7 @@ export function ControlPanelScreen({ onBack }) {
     const timer = setTimeout(async () => {
       setSearchBusy(true);
       try {
-        const rows = await listModuleItems(expandedId, q);
+        const rows = await listModuleItems(expandedId, q, panelScope);
         if (!cancelled) setSearchResults(rows);
       } catch {
         if (!cancelled) setSearchResults([]);
@@ -206,7 +272,7 @@ export function ControlPanelScreen({ onBack }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [expandedId, moduleSearch]);
+  }, [expandedId, moduleSearch, panelScope]);
 
   const reloadPanel = useCallback(async () => {
     if (!expandedId || !moduleSupportsSearch(expandedId)) return;
@@ -214,14 +280,14 @@ export function ControlPanelScreen({ onBack }) {
     if (!moduleListsOnExpand(expandedId) && q.length < 2) return;
     setSearchBusy(true);
     try {
-      const rows = await listModuleItems(expandedId, q);
+      const rows = await listModuleItems(expandedId, q, panelScope);
       setSearchResults(rows);
     } catch {
       setSearchResults([]);
     } finally {
       setSearchBusy(false);
     }
-  }, [expandedId, moduleSearch]);
+  }, [expandedId, moduleSearch, panelScope]);
 
   const { refreshing, onRefresh } = useSalonPullRefresh(reloadPanel);
 
@@ -275,6 +341,9 @@ export function ControlPanelScreen({ onBack }) {
           return;
         }
       }
+      if (panelSucursalNombre) {
+        rangeNote += `\n\nSucursal: ${panelSucursalNombre}.`;
+      }
       const msg = `${action.detail}${rangeNote}\n\nEsta acción no se puede deshacer.`;
       Alert.alert(`Borrar todo: ${action.title}`, msg, [
         { text: 'Cancelar', style: 'cancel' },
@@ -289,7 +358,7 @@ export function ControlPanelScreen({ onBack }) {
               if (expandedId === action.id) {
                 setModuleSearch('');
                 if (moduleSupportsSearch(action.id)) {
-                  const rows = await listModuleItems(action.id, '');
+                  const rows = await listModuleItems(action.id, '', panelScope);
                   setSearchResults(rows);
                 } else {
                   setSearchResults([]);
@@ -307,51 +376,8 @@ export function ControlPanelScreen({ onBack }) {
         },
       ]);
     },
-    [buildOpts, dateFrom, dateTo, expandedId, finishPurgeMessage, moduleSearch, rangeActive],
+    [buildOpts, dateFrom, dateTo, expandedId, finishPurgeMessage, moduleSearch, panelScope, panelSucursalNombre, rangeActive],
   );
-
-  const confirmPurgeAll = useCallback(() => {
-    let rangeNote = '';
-    if (rangeActive) {
-      try {
-        normalizeDateRangeOpts({ dateFrom, dateTo });
-        rangeNote = `\n\nSolo registros entre ${formatShortDate(dateFrom)} y ${formatShortDate(dateTo)} (donde cada módulo lo permita).`;
-      } catch (err) {
-        Alert.alert('Fechas inválidas', err?.message || 'Revisá el rango.');
-        return;
-      }
-    } else {
-      rangeNote = '\n\nSin rango de fechas: se vacía cada módulo por completo (donde aplique).';
-    }
-    const reportesNote = includeReportes
-      ? '\n• Reportes guardados en este teléfono: SÍ se borrarán.'
-      : '\n• Reportes guardados en este teléfono: NO se borrarán (activá la casilla si los querés incluir).';
-    Alert.alert(
-      'Borrar todos los módulos',
-      `Se ejecutará el borrado masivo de ventas, caja, pedidos, citas, marketing, notificaciones, metas, incidentes, inventario, proveedores, clientes, empleados y basurero local.${reportesNote}${rangeNote}\n\nEsta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Borrar todo',
-          style: 'destructive',
-          onPress: async () => {
-            setPurgeAllBusy(true);
-            try {
-              const n = await purgeAllModules({ ...buildOpts(), includeReportes });
-              Alert.alert('Listo', `Borrado global completado (${n} operaciones/registros afectados aprox.).`);
-              setExpandedId(null);
-              setModuleSearch('');
-              setSearchResults([]);
-            } catch (e) {
-              Alert.alert('Error', e?.message || 'No se pudo completar el borrado global.');
-            } finally {
-              setPurgeAllBusy(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [buildOpts, dateFrom, dateTo, includeReportes, rangeActive]);
 
   const confirmDeleteItem = useCallback(
     (action, item) => {
@@ -370,7 +396,7 @@ export function ControlPanelScreen({ onBack }) {
                 setSearchResults((prev) => prev.filter((r) => String(r.id) !== String(item.id)));
                 Alert.alert('Listo', 'Registro eliminado.');
                 if (expandedId === action.id) {
-                  const rows = await listModuleItems(action.id, moduleSearch);
+                  const rows = await listModuleItems(action.id, moduleSearch, panelScope);
                   setSearchResults(rows);
                 }
               }
@@ -383,7 +409,7 @@ export function ControlPanelScreen({ onBack }) {
         },
       ]);
     },
-    [expandedId, moduleSearch],
+    [expandedId, moduleSearch, panelScope],
   );
 
   const onDateChange = (event, selectedDate) => {
@@ -408,316 +434,135 @@ export function ControlPanelScreen({ onBack }) {
     if (pickerTarget === 'to') setDateTo(selectedDate);
   };
 
-  const panelSubtitle =
-    panelTab === 'basurero'
-      ? 'Copias locales eliminadas — restaurar o borrar.'
-      : 'Borrado masivo y basurero local.';
+  const tryUnlock = () => {
+    if (accessPassword === CONTROL_PANEL_PASSWORD) {
+      setAccessError('');
+      setAccessPassword('');
+      setUnlocked(true);
+      return;
+    }
+    setAccessError('Contraseña incorrecta.');
+  };
+
+  if (!unlocked) {
+    return (
+      <>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <SubScreenChrome
+          title="Panel de control"
+          subtitle="Acceso restringido"
+          onBack={onBack}
+          edgeToEdge={false}
+        >
+          <Text style={[styles.gateHint, { color: c.foregroundMuted }]}>
+            Ingresá la contraseña para abrir borrado masivo y basurero.
+          </Text>
+          <PinField
+            label="Contraseña"
+            value={accessPassword}
+            onChangeText={(t) => {
+              setAccessPassword(t.replace(/\D/g, '').slice(0, 6));
+              if (accessError) setAccessError('');
+            }}
+            placeholder="6 números"
+            maxLength={6}
+            showMismatch={!!accessError}
+            mismatchText={accessError}
+          />
+          <SalonButton
+            title="Entrar"
+            variant="heroGold"
+            fullWidth
+            onPress={tryUnlock}
+            disabled={accessPassword.length < 6}
+            style={{ marginTop: spacing.sm }}
+          />
+        </SubScreenChrome>
+      </>
+    );
+  }
 
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
-        title="Panel de control"
-        subtitle={panelSubtitle}
+        hideTitles
         onBack={onBack}
-        disableBodyScroll={panelTab !== 'purge'}
-        edgeToEdge={panelTab !== 'purge'}
-        bottomPadding={panelTab !== 'purge' ? 0 : undefined}
+        disableBodyScroll
+        edgeToEdge={false}
+        bottomPadding={0}
         refreshing={panelTab === 'purge' ? refreshing : false}
         onRefresh={panelTab === 'purge' ? onRefresh : undefined}
       >
-        <View style={styles.tabRow}>
-          {PANEL_TABS.map((tab) => {
-            const active = panelTab === tab.id;
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                style={[
-                  styles.tabChip,
-                  {
-                    borderColor: active ? c.primary : c.cardBorder,
-                    backgroundColor: active ? c.surfaceMuted : c.card,
-                  },
-                ]}
-                onPress={() => {
-                  setPanelTab(tab.id);
-                  if (tab.id !== 'purge') {
-                    setExpandedId(null);
-                    setModuleSearch('');
-                    setSearchResults([]);
-                  }
-                }}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.tabChipTxt, { color: active ? c.primary : c.foreground }]}>{tab.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {isGlobalAdmin && panelSucursales.length > 0 ? (
+          <SalonSucursalSelect
+            sucursales={panelSucursales}
+            selectedId={panelSucursalId}
+            variant="field"
+            onSelect={(id) => {
+              setPanelSucursalId(id);
+              setExpandedId(null);
+              setModuleSearch('');
+              setSearchResults([]);
+            }}
+            label="Sucursal"
+          />
+        ) : panelSucursalNombre ? (
+          <Text style={[styles.branchLabel, { color: c.foregroundMuted }]} numberOfLines={1}>
+            SUCURSAL · {panelSucursalNombre}
+          </Text>
+        ) : null}
 
         {panelTab === 'basurero' ? (
-          <BasureroScreen embedded />
+          <BasureroScreen
+            embedded
+            branchScope={panelScope}
+            panelTab={panelTab}
+            onPanelTabChange={(tab) => {
+              setPanelTab(tab);
+              if (tab !== 'purge') {
+                setExpandedId(null);
+                setModuleSearch('');
+                setSearchResults([]);
+              }
+            }}
+          />
         ) : (
           <>
-        <View style={[styles.filterCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-          <Text style={[styles.filterHead, { color: c.foreground }]}>Ordenar y filtrar</Text>
-          <Text style={[styles.filterSub, { color: c.foregroundMuted }]}>
-            Ordená la lista de acciones y, si querés, definí un rango de fechas para borrar solo la información en ese
-            intervalo (según el campo de fecha de cada módulo).
-          </Text>
-
-          <Text style={[styles.fieldLbl, { color: c.foregroundMuted }]}>Orden de la lista</Text>
-          <View style={styles.chipRow}>
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                { borderColor: sortMode === 'default' ? c.primary : c.cardBorder, backgroundColor: sortMode === 'default' ? c.surfaceMuted : c.background },
-              ]}
-              onPress={() => setSortMode('default')}
-            >
-              <ListOrdered size={16} color={sortMode === 'default' ? c.primary : c.foregroundMuted} />
-              <Text style={[styles.filterChipTxt, { color: sortMode === 'default' ? c.primary : c.foreground }]}>
-                Original
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                { borderColor: sortMode === 'alpha' ? c.primary : c.cardBorder, backgroundColor: sortMode === 'alpha' ? c.surfaceMuted : c.background },
-              ]}
-              onPress={() => setSortMode('alpha')}
-            >
-              <ArrowUpDown size={16} color={sortMode === 'alpha' ? c.primary : c.foregroundMuted} />
-              <Text style={[styles.filterChipTxt, { color: sortMode === 'alpha' ? c.primary : c.foreground }]}>
-                A → Z
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.fieldLbl, { color: c.foregroundMuted, marginTop: spacing.sm }]}>Rango de fechas</Text>
-          <View style={styles.dateRowWrap}>
-            <TouchableOpacity
-              style={[styles.dateTap, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}
-              onPress={() => setPickerTarget('from')}
-            >
-              <Text style={[styles.dateLbl, { color: c.foregroundMuted }]}>Desde</Text>
-              <View style={styles.dateTapInner}>
-                <Text style={[styles.dateVal, { color: c.foreground }]}>{formatShortDate(dateFrom)}</Text>
-                <Calendar size={18} color={c.primary} strokeWidth={2} />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dateTap, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}
-              onPress={() => setPickerTarget('to')}
-            >
-              <Text style={[styles.dateLbl, { color: c.foregroundMuted }]}>Hasta</Text>
-              <View style={styles.dateTapInner}>
-                <Text style={[styles.dateVal, { color: c.foreground }]}>{formatShortDate(dateTo)}</Text>
-                <Calendar size={18} color={c.primary} strokeWidth={2} />
-              </View>
-            </TouchableOpacity>
-          </View>
-          {rangeActive ? (
-            <Text style={[styles.rangeOn, { color: c.primary }]}>Filtro por fechas activo</Text>
-          ) : (
-            <Text style={[styles.rangeOff, { color: c.foregroundSubtle }]}>
-              Sin rango: cada acción borra todo lo que corresponda a ese módulo.
-            </Text>
-          )}
-          {(dateFrom || dateTo) && !rangeActive ? (
-            <Text style={[styles.rangeWarn, { color: c.error }]}>Elegí ambas fechas para aplicar el filtro.</Text>
-          ) : null}
-          {dateFrom || dateTo ? (
-            <SalonButton
-              title="Quitar fechas"
-              variant="outlineGray"
-              fullWidth
-              onPress={() => {
-                setDateFrom(null);
-                setDateTo(null);
-                setPickerTarget(null);
-              }}
-              style={{ marginTop: spacing.sm }}
-            />
-          ) : null}
-
-          <VerticalDatePickerSheet
-            visible={Boolean(pickerTarget)}
-            value={
-              pickerTarget === 'from' ? dateFrom || new Date() : dateTo || dateFrom || new Date()
+        <ControlPanelOrdenarFiltros
+          actions={PURGE_ACTIONS}
+          panelTab={panelTab}
+          onPanelTabChange={(tab) => {
+            setPanelTab(tab);
+            if (tab !== 'purge') {
+              setExpandedId(null);
+              setModuleSearch('');
+              setSearchResults([]);
             }
-            minimumDate={pickerTarget === 'to' && dateFrom ? dateFrom : undefined}
-            maximumDate={pickerTarget === 'from' && dateTo ? dateTo : undefined}
-            colors={c}
-            onChange={(selectedDate) => {
-              if (pickerTarget === 'from') setDateFrom(selectedDate);
-              if (pickerTarget === 'to') setDateTo(selectedDate);
-            }}
-            onClose={() => setPickerTarget(null)}
-          />
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: c.error }]}>Zona destructiva</Text>
-        <Text style={[styles.sectionHint, { color: c.foregroundMuted }]}>
-          «Borrar todos los módulos» vacía casi todo; los reportes del teléfono solo si marcás la casilla. Tocá una tarjeta
-          para borrar todo ese módulo o buscar un registro puntual.
-        </Text>
-
-        <View style={[styles.purgeAllCard, { borderColor: c.error + '66', backgroundColor: c.card }]}>
-          <Text style={[styles.purgeAllTitle, { color: c.foreground }]}>Borrar todos los módulos</Text>
-          <Text style={[styles.purgeAllSub, { color: c.foregroundMuted }]}>
-            Ventas, caja, pedidos, citas, marketing, notificaciones, metas, incidentes, inventario, proveedores, clientes,
-            empleados y basurero local. Los reportes son opcionales.
-          </Text>
-          <TouchableOpacity
-            style={styles.checkRow}
-            onPress={() => setIncludeReportes((v) => !v)}
-            activeOpacity={0.8}
-          >
-            <View
-              style={[
-                styles.checkBox,
-                {
-                  borderColor: includeReportes ? c.primary : c.cardBorder,
-                  backgroundColor: includeReportes ? c.primary : 'transparent',
-                },
-              ]}
-            />
-            <Text style={[styles.checkLabel, { color: c.foreground }]}>Incluir reportes generados (teléfono)</Text>
-          </TouchableOpacity>
-          <SalonButton
-            title={purgeAllBusy ? 'Borrando…' : 'Borrar todos los módulos'}
-            variant="outlineGray"
-            fullWidth
-            disabled={!!purgingId || purgeAllBusy}
-            onPress={confirmPurgeAll}
-            style={{ marginTop: spacing.sm, borderColor: c.error }}
-            textStyle={{ color: c.error }}
-          />
-          {purgeAllBusy ? <ActivityIndicator color={c.error} style={{ marginTop: spacing.sm }} /> : null}
-        </View>
-
-        {sortedActions.map((action) => {
-          const busy = purgingId === action.id;
-          const proveedorBlocked = action.id === 'proveedores' && rangeActive;
-          const expanded = expandedId === action.id;
-          const searchable = moduleSupportsSearch(action.id);
-          return (
-            <View
-              key={action.id}
-              style={[
-                styles.purgeRowWrap,
-                {
-                  borderColor: proveedorBlocked ? c.cardBorder : c.error + '55',
-                  backgroundColor: c.card,
-                  opacity: proveedorBlocked ? 0.45 : 1,
-                },
-              ]}
-            >
-              <TouchableOpacity
-                style={styles.purgeRowHead}
-                onPress={() => {
-                  if (proveedorBlocked) {
-                    Alert.alert(
-                      'Proveedores',
-                      'Este módulo no admite filtro por fechas. Quitá el rango o tocá «Quitar fechas» para borrar todo el listado de proveedores.',
-                    );
-                    return;
-                  }
-                  toggleExpanded(action.id);
-                }}
-                disabled={!!purgingId && !expanded}
-                activeOpacity={0.85}
-              >
-                <Trash2 size={20} color={proveedorBlocked ? c.foregroundMuted : c.error} strokeWidth={2} />
-                <View style={{ flex: 1, minWidth: 0, marginLeft: spacing.sm }}>
-                  <Text style={[styles.purgeTitle, { color: c.foreground }]}>{action.title}</Text>
-                  <Text style={[styles.purgeDetail, { color: c.foregroundMuted }]}>{action.detail}</Text>
-                </View>
-                {expanded ? (
-                  <ChevronUp size={20} color={c.foregroundMuted} />
-                ) : (
-                  <ChevronDown size={20} color={c.foregroundMuted} />
-                )}
-              </TouchableOpacity>
-
-              {expanded ? (
-                <View style={styles.purgeExpand}>
-                  <SalonButton
-                    title={busy ? 'Borrando…' : 'Borrar todo este módulo'}
-                    variant="outlineGray"
-                    fullWidth
-                    disabled={!!purgingId || proveedorBlocked}
-                    onPress={() => confirmPurge(action)}
-                    style={{ borderColor: c.error }}
-                    textStyle={{ color: c.error }}
-                  />
-
-                  {searchable ? (
-                    <>
-                      <View style={[styles.moduleSearchWrap, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
-                        <Search size={18} color={c.foregroundSubtle} strokeWidth={1.8} />
-                        <TextInput
-                          style={[styles.moduleSearchInput, { color: c.foreground }]}
-                          placeholder={
-                            moduleListsOnExpand(action.id)
-                              ? action.id === 'papeleria'
-                                ? 'Filtrar facturas (opcional)…'
-                                : 'Filtrar listado (opcional)…'
-                              : 'Buscar un registro para borrar (mín. 2 letras)…'
-                          }
-                          placeholderTextColor={c.foregroundSubtle}
-                          value={moduleSearch}
-                          onChangeText={setModuleSearch}
-                          autoCorrect={false}
-                          editable={!busy}
-                        />
-                        {searchBusy ? <ActivityIndicator size="small" color={c.primary} /> : null}
-                      </View>
-                      {moduleListsOnExpand(action.id) && searchResults.length === 0 && !searchBusy ? (
-                        <Text style={[styles.noHits, { color: c.foregroundSubtle }]}>
-                          No hay entradas guardadas en este teléfono.
-                        </Text>
-                      ) : null}
-                      {!moduleListsOnExpand(action.id) &&
-                      moduleSearch.trim().length >= 2 &&
-                      !searchBusy &&
-                      searchResults.length === 0 ? (
-                        <Text style={[styles.noHits, { color: c.foregroundSubtle }]}>Sin coincidencias.</Text>
-                      ) : null}
-                      {searchResults.map((item) => (
-                        <TouchableOpacity
-                          key={String(item.id)}
-                          style={[styles.hitRow, { borderColor: c.cardBorder }]}
-                          onPress={() => confirmDeleteItem(action, item)}
-                          disabled={!!purgingId}
-                        >
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text style={[styles.hitTitle, { color: c.foreground }]} numberOfLines={1}>
-                              {item.label}
-                            </Text>
-                            {item.sub ? (
-                              <Text style={[styles.hitSub, { color: c.foregroundMuted }]} numberOfLines={1}>
-                                {item.sub}
-                              </Text>
-                            ) : null}
-                          </View>
-                          <Trash2 size={16} color={c.error} />
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  ) : (
-                    <Text style={[styles.noSearchHint, { color: c.foregroundSubtle }]}>
-                      Este módulo solo admite «Borrar todo» (sin búsqueda puntual).
-                    </Text>
-                  )}
-                </View>
-              ) : null}
-
-              {busy && !expanded ? <ActivityIndicator color={c.error} style={styles.rowBusy} /> : null}
-            </View>
-          );
-        })}
+          }}
+          panelSucursalNombre={panelSucursalNombre}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          pickerTarget={pickerTarget}
+          onPickerTargetChange={setPickerTarget}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          onClearDates={() => {
+            setDateFrom(null);
+            setDateTo(null);
+            setPickerTarget(null);
+          }}
+          rangeActive={rangeActive}
+          purgingId={purgingId}
+          expandedId={expandedId}
+          moduleSearch={moduleSearch}
+          onModuleSearchChange={setModuleSearch}
+          searchResults={searchResults}
+          searchBusy={searchBusy}
+          onToggleExpanded={toggleExpanded}
+          onConfirmPurge={confirmPurge}
+          onConfirmDeleteItem={confirmDeleteItem}
+        />
 
         {Platform.OS === 'ios' ? <View style={{ height: spacing.lg }} /> : null}
           </>
@@ -729,235 +574,18 @@ export function ControlPanelScreen({ onBack }) {
 
 function createStyles() {
   return StyleSheet.create({
-    tabRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.xs,
-      marginBottom: spacing.md,
-    },
-    tabChip: {
-      flexGrow: 1,
-      flexBasis: '30%',
-      minWidth: 96,
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.sm,
-      alignItems: 'center',
-    },
-    tabChipTxt: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 13,
-      textAlign: 'center',
-    },
-    filterCard: {
-      borderRadius: radii.lg,
-      borderWidth: 1,
-      padding: spacing.md,
-      marginBottom: spacing.lg,
-    },
-    filterHead: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 16,
-      marginBottom: spacing.xs,
-    },
-    filterSub: {
+    gateHint: {
       fontFamily: typography.fontSans,
-      fontSize: 13,
-      lineHeight: 19,
+      fontSize: 14,
+      lineHeight: 20,
       marginBottom: spacing.md,
     },
-    fieldLbl: {
+    branchLabel: {
       fontFamily: typography.fontSansMedium,
       fontSize: 12,
-      marginBottom: spacing.xs,
-      textTransform: 'uppercase',
       letterSpacing: 0.6,
-    },
-    chipRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.sm,
-    },
-    filterChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.xs,
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.md,
-      borderRadius: radii.pill,
-      borderWidth: 1,
-    },
-    filterChipTxt: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 14,
-    },
-    dateRowWrap: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-    },
-    dateTap: {
-      flex: 1,
-      borderRadius: radii.md,
-      borderWidth: 1,
-      padding: spacing.sm,
-    },
-    dateLbl: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 11,
-      marginBottom: 4,
-    },
-    dateTapInner: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    dateVal: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 15,
-    },
-    rangeOn: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 13,
-      marginTop: spacing.sm,
-    },
-    rangeOff: {
-      fontFamily: typography.fontSans,
-      fontSize: 12,
-      marginTop: spacing.sm,
-    },
-    rangeWarn: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 12,
-      marginTop: spacing.xs,
-    },
-    sectionTitle: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 13,
-      letterSpacing: 1.2,
       textTransform: 'uppercase',
-      marginBottom: spacing.xs,
-    },
-    sectionHint: {
-      fontFamily: typography.fontSans,
-      fontSize: 13,
-      lineHeight: 19,
-      marginBottom: spacing.md,
-    },
-    purgeAllCard: {
-      borderWidth: 1,
-      borderRadius: radii.lg,
-      padding: spacing.md,
-      marginBottom: spacing.lg,
-    },
-    purgeAllTitle: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 16,
-      marginBottom: spacing.xs,
-    },
-    purgeAllSub: {
-      fontFamily: typography.fontSans,
-      fontSize: 13,
-      lineHeight: 19,
       marginBottom: spacing.sm,
-    },
-    checkRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      paddingVertical: spacing.xs,
-    },
-    checkBox: {
-      width: 22,
-      height: 22,
-      borderRadius: radii.sm,
-      borderWidth: 2,
-    },
-    checkLabel: {
-      flex: 1,
-      fontFamily: typography.fontSans,
-      fontSize: 14,
-    },
-    purgeRowWrap: {
-      borderWidth: 1,
-      borderRadius: radii.md,
-      marginBottom: spacing.sm,
-      overflow: 'hidden',
-    },
-    purgeRowHead: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: spacing.md,
-      gap: spacing.sm,
-    },
-    purgeExpand: {
-      paddingHorizontal: spacing.md,
-      paddingBottom: spacing.md,
-      gap: spacing.sm,
-    },
-    moduleSearchWrap: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.md,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: Platform.OS === 'ios' ? spacing.sm : 0,
-    },
-    moduleSearchInput: {
-      flex: 1,
-      fontFamily: typography.fontSans,
-      fontSize: 15,
-      paddingVertical: spacing.sm,
-    },
-    noHits: {
-      fontFamily: typography.fontSans,
-      fontSize: 12,
-    },
-    noSearchHint: {
-      fontFamily: typography.fontSans,
-      fontSize: 12,
-      lineHeight: 17,
-    },
-    hitRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      borderWidth: 1,
-      borderRadius: radii.sm,
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.sm,
-    },
-    hitTitle: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 14,
-    },
-    hitSub: {
-      fontFamily: typography.fontSans,
-      fontSize: 12,
-      marginTop: 2,
-    },
-    rowBusy: {
-      marginBottom: spacing.sm,
-    },
-    purgeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderRadius: radii.md,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-      gap: spacing.sm,
-    },
-    purgeTitle: {
-      fontFamily: typography.fontSansMedium,
-      fontSize: 15,
-    },
-    purgeDetail: {
-      fontFamily: typography.fontSans,
-      fontSize: 12,
-      marginTop: 4,
-      lineHeight: 17,
     },
   });
 }

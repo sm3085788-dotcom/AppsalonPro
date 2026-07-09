@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation';
 import { CalendarClock, ShoppingBag, UserPen, AlertCircle, Users } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { BookingCancelButton } from '@/components/booking/BookingCancelButton';
+import { BookingCitaActions } from '@/components/booking/BookingCitaActions';
+import { CitaVisitaQrPanel } from '@/components/booking/CitaVisitaQrPanel';
 import { JoinTeamStatusBadge } from '@/components/recruitment/JoinTeamStatusBadge';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
@@ -17,6 +18,7 @@ import {
   profileMissingLabels,
 } from '@/lib/data/cliente';
 import { formatFechaHora, formatQ } from '@/lib/format';
+import { citaEstadoBadgeClass } from '@/lib/citaEstadoBadge';
 
 export const metadata = { title: 'Mi cuenta | AppSalon Pro' };
 
@@ -27,6 +29,8 @@ interface CitaRow {
   fecha_hora: string;
   precio: number | null;
   notas_servicio: string | null;
+  visita_qr_token: string | null;
+  visita_validada_en: string | null;
 }
 
 export default async function CuentaPage() {
@@ -58,10 +62,12 @@ export default async function CuentaPage() {
       if (row?.id) {
         const { data } = await supabase
           .from('citas')
-          .select('id,servicio,estado,fecha_hora,precio,notas_servicio')
+          .select(
+            'id,servicio,estado,fecha_hora,precio,notas_servicio,visita_qr_token,visita_validada_en',
+          )
           .eq('cliente_id', row.id)
           .order('fecha_hora', { ascending: false })
-          .limit(10);
+          .limit(6);
         citas = (data ?? []) as CitaRow[];
       }
     } catch {
@@ -84,19 +90,25 @@ export default async function CuentaPage() {
       />
 
       {joinTeamEstado ? (
-        <div className="mb-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
-          <Users className="h-4 w-4 shrink-0 text-gold" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-cream">Únete al Equipo</p>
-            <p className="text-xs text-muted">Estado de tu postulación</p>
+        <div className="mb-8 rounded-2xl border border-border bg-surface px-4 py-3">
+          <div className="flex gap-3">
+            <Users className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-cream">Únete al Equipo</p>
+                  <p className="text-xs text-muted">Estado de tu postulación</p>
+                </div>
+                <Link
+                  href="/unete-al-equipo"
+                  className="shrink-0 text-xs text-gold hover:underline"
+                >
+                  Ver detalle
+                </Link>
+              </div>
+              <JoinTeamStatusBadge estado={joinTeamEstado} />
+            </div>
           </div>
-          <JoinTeamStatusBadge estado={joinTeamEstado} />
-          <Link
-            href="/unete-al-equipo"
-            className="text-xs text-gold hover:underline"
-          >
-            Ver detalle
-          </Link>
         </div>
       ) : (
         <div className="mb-8">
@@ -162,14 +174,14 @@ export default async function CuentaPage() {
             return (
               <li
                 key={c.id}
-                className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-surface p-4"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-4"
               >
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="font-medium text-cream">{c.servicio}</p>
                   <p className="text-xs text-muted">
                     {formatFechaHora(c.fecha_hora)}
                   </p>
-                  <BookingCancelButton
+                  <BookingCitaActions
                     citaId={c.id}
                     fechaHora={c.fecha_hora}
                     estado={c.estado}
@@ -178,10 +190,14 @@ export default async function CuentaPage() {
                     depositGtq={c.precio ?? meta.deposit_gtq ?? null}
                   />
                 </div>
+                <CitaVisitaQrPanel
+                  citaId={c.id}
+                  estado={c.estado}
+                  visitaQrToken={c.visita_qr_token}
+                  visitaValidadaEn={c.visita_validada_en}
+                />
                 <div className="shrink-0 text-right">
-                  <span className="rounded-full bg-surface-2 px-3 py-1 text-xs capitalize text-gold">
-                    {c.estado}
-                  </span>
+                  <span className={citaEstadoBadgeClass(c.estado)}>{c.estado}</span>
                   {c.precio != null && hasDeposit && (
                     <p className="mt-1 text-sm text-foreground">
                       Anticipo {formatQ(c.precio)}

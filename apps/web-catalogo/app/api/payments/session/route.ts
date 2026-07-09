@@ -69,7 +69,11 @@ export async function POST(request: NextRequest) {
       if (!isSupabaseAdminConfigured) {
         return NextResponse.json({ error: 'Servidor no configurado.' }, { status: 503 });
       }
-      const { monto, paraNombre, deNombre, mensaje, compradorEmail } = validated.payload;
+      const { monto } = validated.payload;
+      const paraNombre = String(giftInput.forName || '').trim() || 'Destinatario';
+      const deNombre = String(giftInput.fromName || '').trim() || 'Cliente';
+      const mensaje = String(giftInput.message || '').trim().slice(0, 150);
+      const compradorEmail = String(giftInput.buyerEmail || '').trim().toLowerCase();
       amount = monto;
       customerEmail = compradorEmail;
       const admin = createSupabaseAdminClient();

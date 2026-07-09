@@ -11,13 +11,19 @@ export function PinField({
   value,
   onChangeText,
   placeholder,
-  maxLength = 10,
+  maxLength,
   showMismatch,
   mismatchText = 'Los PIN no coinciden.',
   editable = true,
+  keyboardType = 'number-pad',
+  letterSpacing,
+  autoCapitalize = 'none',
+  compact = false,
 }) {
   const { colors: c } = useTheme();
   const [visible, setVisible] = useState(false);
+  const resolvedLetterSpacing = letterSpacing ?? (keyboardType === 'number-pad' ? 4 : 0);
+  const revealNoun = keyboardType === 'number-pad' ? 'PIN' : 'contraseña';
 
   const styles = useMemo(
     () =>
@@ -26,13 +32,13 @@ export function PinField({
           fontFamily: typography.fontSansMedium,
           fontSize: 13,
           color: c.foreground,
-          marginBottom: spacing.xs,
-          marginTop: spacing.sm,
+          marginBottom: compact ? 4 : spacing.xs,
+          marginTop: compact ? spacing.xs : spacing.sm,
         },
         row: {
           flexDirection: 'row',
           alignItems: 'center',
-          minHeight: 48,
+          minHeight: compact ? 42 : 48,
           borderWidth: 1,
           borderColor: showMismatch ? c.error || MISMATCH_RED : c.cardBorder,
           borderRadius: radii.lg,
@@ -43,14 +49,14 @@ export function PinField({
           flex: 1,
           fontFamily: typography.fontSansMedium,
           fontSize: 16,
-          letterSpacing: 4,
+          letterSpacing: resolvedLetterSpacing,
           color: c.foreground,
           paddingHorizontal: spacing.md,
-          paddingVertical: 12,
+          paddingVertical: compact ? 10 : 12,
         },
         eyeBtn: {
           paddingHorizontal: spacing.md,
-          paddingVertical: 12,
+          paddingVertical: compact ? 10 : 12,
         },
         mismatch: {
           fontFamily: typography.fontSans,
@@ -61,11 +67,11 @@ export function PinField({
           marginBottom: spacing.xs,
         },
       }),
-    [c, showMismatch],
+    [c, showMismatch, resolvedLetterSpacing, compact],
   );
 
   return (
-    <View style={{ marginBottom: showMismatch ? 0 : spacing.xs }}>
+    <View style={{ marginBottom: showMismatch ? 0 : compact ? 4 : spacing.xs }}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.row}>
         <TextInput
@@ -74,10 +80,10 @@ export function PinField({
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={c.foregroundSubtle}
-          keyboardType="number-pad"
+          keyboardType={keyboardType}
           maxLength={maxLength}
           secureTextEntry={!visible}
-          autoCapitalize="none"
+          autoCapitalize={autoCapitalize}
           autoCorrect={false}
           editable={editable}
         />
@@ -85,7 +91,7 @@ export function PinField({
           style={styles.eyeBtn}
           onPress={() => setVisible((v) => !v)}
           accessibilityRole="button"
-          accessibilityLabel={visible ? 'Ocultar PIN' : 'Mostrar PIN'}
+          accessibilityLabel={visible ? `Ocultar ${revealNoun}` : `Mostrar ${revealNoun}`}
         >
           {visible ? (
             <EyeOff size={20} color={c.foregroundMuted} strokeWidth={1.8} />

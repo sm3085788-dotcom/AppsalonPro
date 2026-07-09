@@ -1,7 +1,8 @@
-import { db, supabase } from '@appsalon/shared-config';
+import { db, supabase, listGiftCardsStaff, listGiftCardActivationCodesStaff, searchGiftCardsStaff } from '@appsalon/shared-config';
 import { getBasureroEntries, deleteBasureroEntryById } from './salonBasurero';
 import { loadReportes, deleteReporteById } from './salonReportesStorage';
 import { deleteModuleItemWithBasurero } from './salonDeleteFlow';
+import { scopePanelRows, basureroEntryMatchesScope } from './controlPanelScope';
 
 function mapRows(rows, labelKey, subKeys = []) {
   return (rows || []).slice(0, 15).map((r) => ({
@@ -25,7 +26,7 @@ function mapVentasRows(rows, limit = 25) {
   }));
 }
 
-async function listVentasForPanel(query = '') {
+async function listVentasForPanel(query = '', scope = {}) {
   const q = String(query || '').trim();
   const ql = q.toLowerCase();
   if (q.length >= 2) {
@@ -36,7 +37,7 @@ async function listVentasForPanel(query = '') {
       .order('fecha', { ascending: false })
       .limit(25);
     if (error) throw new Error(error.message);
-    return mapVentasRows(data);
+    return mapVentasRows(scopePanelRows(data, 'papeleria', scope));
   }
   const { data, error } = await db.ventas.getAll();
   if (error) throw new Error(error.message);
@@ -50,10 +51,55 @@ async function listVentasForPanel(query = '') {
       return blob.includes(ql);
     });
   }
+  list = scopePanelRows(list, 'papeleria', scope);
   return mapVentasRows(list, 30);
 }
 
-export async function listModuleItems(actionId, query = '') {
+function mapGiftCardRows(cards = [], codes = []) {
+  const cardRows = cards.slice(0, 20).map((r) => ({
+    id: `card:${r.id}`,
+    label: r.codigo || 'Tarjeta regalo',
+    sub: [r.para_nombre, r.estado, r.saldo_actual != null ? `Q${Number(r.saldo_actual).toFixed(2)}` : null]
+      .filter(Boolean)
+      .join(' · '),
+  }));
+  const codeRows = codes.slice(0, 15).map((r) => ({
+    id: `code:${r.id}`,
+    label: r.codigo_activacion || 'Código ACT',
+    sub: [r.para_nombre, r.status, r.monto != null ? `Q${Number(r.monto).toFixed(2)}` : null]
+      .filter(Boolean)
+      .join(' · '),
+  }));
+  return [...cardRows, ...codeRows];
+}
+
+async function listTarjetasRegaloItems(query = '', scope = {}) {
+  const q = String(query || '').trim();
+  if (q.length >= 3) {
+    const res = await searchGiftCardsStaff(q, 20);
+    if (!res.ok) throw new Error(res.error || 'Error al buscar tarjetas.');
+    return mapGiftCardRows(res.results || [], []);
+  }
+  const [cardsRes, codesRes] = await Promise.all([
+    listGiftCardsStaff(30),
+    listGiftCardActivationCodesStaff(15),
+  ]);
+  if (!cardsRes.ok && !codesRes.ok) {
+    throw new Error(cardsRes.error || codesRes.error || 'Error al listar tarjetas.');
+  }
+  let cards = cardsRes.ok ? cardsRes.cards || [] : [];
+  if (q.length >= 1) {
+    const ql = q.toLowerCase();
+    cards = cards.filter((r) =>
+      [r.codigo, r.para_nombre, r.de_nombre, r.estado].filter(Boolean).join(' ').toLowerCase().includes(ql),
+    );
+  }
+  cards = scopePanelRows(cards, 'tarjetas_regalo', scope);
+  const codes = codesRes.ok ? codesRes.codes || [] : [];
+  return mapGiftCardRows(cards, codes);
+}
+
+export async function listModuleItems(actionId, query = '', scope = {}) {
   const q = String(query || '').trim();
   const ql = q.toLowerCase();
 
@@ -71,6 +117,7 @@ export async function listModuleItems(actionId, query = '') {
 
   if (actionId === 'basurero_local') {
     let list = await getBasureroEntries();
+    list = list.filter((e) => basureroEntryMatchesScope(e, scope));
     if (q.length >= 2) {
       list = list.filter((e) => [e.title, e.source, e.summary].join(' ').toLowerCase().includes(ql));
     }
@@ -82,21 +129,25 @@ export async function listModuleItems(actionId, query = '') {
   }
 
   if (actionId === 'papeleria') {
-    return listVentasForPanel(q);
+    return listVentasForPanel(q, scope);
+  }
+
+  if (actionId === 'tarjetas_regalo') {
+    return listTarjetasRegaloItems(q, scope);
   }
 
   if (moduleListsOnExpand(actionId) && q.length < 2) {
-    return listModuleItemsExpanded(actionId);
+    return listModuleItemsExpanded(actionId, scope);
   }
 
   if (q.length < 2) return [];
-  return searchModuleItems(actionId, q);
+  return searchModuleItems(actionId, q, scope);
 }
 
-async function listModuleItemsExpanded(actionId) {
+async function listModuleItemsExpanded(actionId, scope = {}) {
   switch (actionId) {
     case 'papeleria':
-      return listVentasForPanel('');
+      return listVentasForPanel('', scope);
     case 'clientes': {
       const { data, error } = await db.clientes.getAll();
       if (error) throw new Error(error.message);
@@ -120,7 +171,7 @@ async function listModuleItemsExpanded(actionId) {
     case 'citas': {
       const { data, error } = await db.citas.getAll();
       if (error) throw new Error(error.message);
-      return (data || []).slice(0, 25).map((r) => ({
+      return scopePanelRows(data || [], 'citas', scope).slice(0, 25).map((r) => ({
         id: r.id,
         label: `${r.cliente?.nombre || r.cliente_nombre || 'Cliente'} · ${r.servicio || 'Cita'}`,
         sub: r.fecha_hora || r.estado || '',
@@ -135,12 +186,39 @@ async function listModuleItemsExpanded(actionId) {
         sub: [r.telefono, r.email].filter(Boolean).join(' · '),
       }));
     }
+    case 'tarjetas_regalo': {
+      return listTarjetasRegaloItems('', scope);
+    }
+    case 'sucursales': {
+      const { data, error } = await db.sucursales.listActivas();
+      if (error) throw new Error(error.message);
+      let rows = data || [];
+      if (scope?.sucursalId) {
+        rows = rows.filter((r) => String(r.id) === String(scope.sucursalId));
+      }
+      return rows.slice(0, 25).map((r) => ({
+        id: r.id,
+        label: r.nombre || r.codigo || 'Sucursal',
+        sub: [r.codigo, r.direccion].filter(Boolean).join(' · '),
+      }));
+    }
+    case 'unete_equipo': {
+      const { data, error } = await db.uneteEquipo.listSolicitudes(null);
+      if (error) throw new Error(error.message);
+      return (data || []).slice(0, 25).map((r) => ({
+        id: r.id,
+        label: r.cliente?.nombre || 'Solicitud',
+        sub: [r.estado, r.rama_destacada, r.created_at ? new Date(r.created_at).toLocaleDateString('es-GT') : null]
+          .filter(Boolean)
+          .join(' · '),
+      }));
+    }
     default:
       return [];
   }
 }
 
-export async function searchModuleItems(actionId, query) {
+export async function searchModuleItems(actionId, query, scope = {}) {
   const q = String(query || '').trim();
   if (q.length < 2) return [];
 
@@ -162,12 +240,12 @@ export async function searchModuleItems(actionId, query) {
     }
     case 'papeleria':
     case 'ventas_chain':
-      return listVentasForPanel(q);
+      return listVentasForPanel(q, scope);
     case 'citas': {
       const { data, error } = await db.citas.getAll();
       if (error) throw new Error(error.message);
       const ql = q.toLowerCase();
-      return (data || [])
+      return scopePanelRows(data || [], 'citas', scope)
         .filter((r) => {
           const blob = [r.cliente?.nombre, r.cliente_nombre, r.servicio, r.estado, r.notas]
             .filter(Boolean)
@@ -200,6 +278,51 @@ export async function searchModuleItems(actionId, query) {
           id: r.id,
           label: r.nombre_compania || 'Proveedor',
           sub: [r.telefono, r.email].filter(Boolean).join(' · '),
+        }));
+    }
+    case 'tarjetas_regalo':
+      return listTarjetasRegaloItems(q, scope);
+    case 'sucursales': {
+      const { data, error } = await db.sucursales.listActivas();
+      if (error) throw new Error(error.message);
+      const ql = q.toLowerCase();
+      let rows = data || [];
+      if (scope?.sucursalId) {
+        rows = rows.filter((r) => String(r.id) === String(scope.sucursalId));
+      }
+      return rows
+        .filter((r) =>
+          [r.nombre, r.codigo, r.direccion, r.telefono].filter(Boolean).join(' ').toLowerCase().includes(ql),
+        )
+        .slice(0, 15)
+        .map((r) => ({
+          id: r.id,
+          label: r.nombre || r.codigo || 'Sucursal',
+          sub: [r.codigo, r.direccion].filter(Boolean).join(' · '),
+        }));
+    }
+    case 'unete_equipo': {
+      const { data, error } = await db.uneteEquipo.listSolicitudes(null);
+      if (error) throw new Error(error.message);
+      const ql = q.toLowerCase();
+      return (data || [])
+        .filter((r) => {
+          const blob = [
+            r.cliente?.nombre,
+            r.estado,
+            r.rama_destacada,
+            ...(Array.isArray(r.experiencia_ramas) ? r.experiencia_ramas : []),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return blob.includes(ql);
+        })
+        .slice(0, 15)
+        .map((r) => ({
+          id: r.id,
+          label: r.cliente?.nombre || 'Solicitud',
+          sub: [r.estado, r.rama_destacada].filter(Boolean).join(' · '),
         }));
     }
     case 'metas': {
@@ -235,9 +358,9 @@ export async function searchModuleItems(actionId, query) {
         }));
     }
     case 'reportes_local':
-      return listModuleItems('reportes_local', q);
+      return listModuleItems('reportes_local', q, scope);
     case 'basurero_local':
-      return listModuleItems('basurero_local', q);
+      return listModuleItems('basurero_local', q, scope);
     default:
       return [];
   }
@@ -269,6 +392,9 @@ export function moduleSupportsSearch(actionId) {
     'caja_chain',
     'reportes_local',
     'basurero_local',
+    'tarjetas_regalo',
+    'sucursales',
+    'unete_equipo',
   ].includes(actionId);
 }
 
@@ -283,5 +409,8 @@ export function moduleListsOnExpand(actionId) {
     'incidentes',
     'citas',
     'proveedores',
+    'tarjetas_regalo',
+    'sucursales',
+    'unete_equipo',
   ].includes(actionId);
 }

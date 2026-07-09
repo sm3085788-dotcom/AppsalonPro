@@ -133,7 +133,7 @@ export function BirthdayClubPanel({
                   href="/reservar"
                   className="inline-flex text-[11px] font-medium text-gold hover:underline"
                 >
-                  Reservar mi visita de cumpleaños →
+                  Agendar mi visita de cumpleaños →
                 </Link>
                 <CustomerServiceWhatsAppButton
                   href={buildWhatsAppCustomerUrl('cumpleanos', customerWhatsappContext)}

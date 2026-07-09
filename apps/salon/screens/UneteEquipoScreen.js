@@ -120,6 +120,16 @@ function clienteNombre(item) {
   return String(item?.cliente?.nombre || '').trim() || 'Cliente web';
 }
 
+function SolicitudFieldLine({ label, value, lineStyle, labelStyle }) {
+  if (value == null || value === '') return null;
+  return (
+    <Text style={lineStyle}>
+      <Text style={labelStyle}>{label}: </Text>
+      {value}
+    </Text>
+  );
+}
+
 export function UneteEquipoScreen({ onBack, onSeen }) {
   const { colors: c, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -267,32 +277,66 @@ export function UneteEquipoScreen({ onBack, onSeen }) {
                     {ESTADO_LABELS[item.estado] || item.estado} · {formatDate(item.created_at)}
                   </Text>
                   {cliente.telefono ? (
-                    <Text style={styles.cardLine}>Tel: {cliente.telefono}</Text>
+                    <SolicitudFieldLine
+                      label="Tel"
+                      value={cliente.telefono}
+                      lineStyle={styles.cardLine}
+                      labelStyle={styles.cardLabel}
+                    />
                   ) : null}
                   {cliente.email ? (
-                    <Text style={styles.cardLine}>Email: {cliente.email}</Text>
+                    <SolicitudFieldLine
+                      label="Email"
+                      value={cliente.email}
+                      lineStyle={styles.cardLine}
+                      labelStyle={styles.cardLabel}
+                    />
                   ) : null}
                   {edad != null ? (
-                    <Text style={styles.cardLine}>Edad: {edad} años</Text>
+                    <SolicitudFieldLine
+                      label="Edad"
+                      value={`${edad} años`}
+                      lineStyle={styles.cardLine}
+                      labelStyle={styles.cardLabel}
+                    />
                   ) : cliente.cumpleanos ? (
-                    <Text style={styles.cardLine}>
-                      Cumpleaños: {formatBirthdate(cliente.cumpleanos)}
-                    </Text>
+                    <SolicitudFieldLine
+                      label="Cumpleaños"
+                      value={formatBirthdate(cliente.cumpleanos)}
+                      lineStyle={styles.cardLine}
+                      labelStyle={styles.cardLabel}
+                    />
                   ) : null}
                   {direccion ? (
-                    <Text style={styles.cardLine}>Dirección: {direccion}</Text>
+                    <SolicitudFieldLine
+                      label="Dirección"
+                      value={direccion}
+                      lineStyle={styles.cardLine}
+                      labelStyle={styles.cardLabel}
+                    />
                   ) : null}
                   {ramas.length > 0 ? (
-                    <Text style={styles.cardLine}>Experiencia: {ramas.join(' · ')}</Text>
+                    <SolicitudFieldLine
+                      label="Experiencia"
+                      value={ramas.join(' · ')}
+                      lineStyle={styles.cardLine}
+                      labelStyle={styles.cardLabel}
+                    />
                   ) : null}
                   {item.rama_destacada ? (
-                    <Text style={styles.cardLine}>
-                      Servicios destacados: {BRANCH_LABELS[item.rama_destacada] || item.rama_destacada}
-                    </Text>
+                    <SolicitudFieldLine
+                      label="Servicios destacados"
+                      value={BRANCH_LABELS[item.rama_destacada] || item.rama_destacada}
+                      lineStyle={styles.cardLine}
+                      labelStyle={styles.cardLabel}
+                    />
                   ) : null}
-                  <Text style={styles.cardLine}>
-                    Modalidad: {MODALIDAD_LABELS[item.modalidad] || item.modalidad}
-                  </Text>
+                  <SolicitudFieldLine
+                    label="Modalidad"
+                    value={MODALIDAD_LABELS[item.modalidad] || item.modalidad}
+                    lineStyle={styles.cardLine}
+                    labelStyle={styles.cardLabel}
+                  />
                   {item.mensaje ? <Text style={styles.cardMsg}>{item.mensaje}</Text> : null}
 
                   {item.estado === 'enviado' ? (
@@ -455,6 +499,7 @@ function createStyles(c) {
       marginBottom: spacing.xs,
     },
     cardLine: { fontFamily: typography.fontSans, fontSize: 13, color: c.foreground, marginTop: 2 },
+    cardLabel: { fontFamily: typography.fontSansMedium, color: c.primary },
     cardMsg: {
       fontFamily: typography.fontSans,
       fontSize: 13,

@@ -25,5 +25,7 @@ export function basureroSourceLabel(source) {
 /** Mapea id de módulo del panel de control al `source` del basurero. */
 export function controlPanelActionToSource(actionId) {
   if (actionId === 'papeleria' || actionId === 'ventas_chain') return 'ventas';
+  if (actionId === 'tarjetas_regalo') return 'gift_cards';
+  if (actionId === 'unete_equipo') return 'unete_equipo';
   return actionId;
 }
