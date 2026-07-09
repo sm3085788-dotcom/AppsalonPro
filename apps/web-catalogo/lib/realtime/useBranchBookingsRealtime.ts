@@ -22,8 +22,9 @@ interface Options {
   echo?: boolean;
 }
 
-/** Nombre de canal por sucursal. Compartido con el listener del APK. */
-export { branchChannelName, BOOKING_EVENT } from '@/lib/realtime/emitSalonBooking';
+import { branchChannelName, BOOKING_EVENT } from '@/lib/realtime/emitSalonBooking';
+
+export { branchChannelName, BOOKING_EVENT };
 
 /**
  * Req 2 (web): escucha en tiempo real las citas de UNA sucursal via Supabase
