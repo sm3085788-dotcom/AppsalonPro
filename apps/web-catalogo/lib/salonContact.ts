@@ -4,8 +4,15 @@ import {
   type WhatsAppCustomerContext,
   type WhatsAppCustomerTopic,
 } from '@/lib/whatsappCustomerMessages';
+import { getSalonGoogleMapsUrl } from '../../../shared/config/salonContacto.js';
 
 const WHATSAPP_NUMBER = '50247132123';
+
+export const SALON_SOCIALS = {
+  facebook: 'https://facebook.com/appsalonpro',
+  instagram: 'https://instagram.com/appsalonpro',
+  tiktok: 'https://tiktok.com',
+} as const;
 
 export type { WhatsAppCustomerContext, WhatsAppCustomerTopic };
 export {
@@ -31,4 +38,6 @@ export const SALON_CONTACT = {
   whatsappUrl: `https://wa.me/${WHATSAPP_NUMBER}`,
   customerServiceWhatsAppUrl: buildWhatsAppCustomerUrl('general'),
   telUrl: `tel:+${WHATSAPP_NUMBER}`,
+  googleMapsUrl: getSalonGoogleMapsUrl(),
+  socials: SALON_SOCIALS,
 } as const;

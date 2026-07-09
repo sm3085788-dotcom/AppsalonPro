@@ -5,7 +5,12 @@ import { env, isSupabaseAdminConfigured, isSupabaseConfigured } from '@/lib/env'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as { codigo?: string };
+    const body = (await request.json()) as {
+      codigo?: string;
+      paraNombre?: string | null;
+      deNombre?: string | null;
+      mensaje?: string | null;
+    };
     const codigo = String(body?.codigo || '').trim().toUpperCase();
 
     if (!codigo) {
@@ -24,6 +29,9 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase.rpc('redeem_gift_card_activation_code', {
       p_codigo_activacion: codigo,
+      p_para_nombre: body.paraNombre?.trim() || null,
+      p_de_nombre: body.deNombre?.trim() || null,
+      p_mensaje: body.mensaje?.trim() || null,
     });
 
     if (error) {

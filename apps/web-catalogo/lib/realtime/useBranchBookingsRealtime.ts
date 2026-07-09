@@ -23,11 +23,7 @@ interface Options {
 }
 
 /** Nombre de canal por sucursal. Compartido con el listener del APK. */
-export function branchChannelName(branchId: UUID) {
-  return `branch:${branchId}`;
-}
-
-export const BOOKING_EVENT = 'booking';
+export { branchChannelName, BOOKING_EVENT } from '@/lib/realtime/emitSalonBooking';
 
 /**
  * Req 2 (web): escucha en tiempo real las citas de UNA sucursal via Supabase

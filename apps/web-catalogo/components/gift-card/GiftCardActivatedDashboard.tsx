@@ -10,10 +10,13 @@ export function GiftCardActivatedDashboard({
   card,
   compact = false,
   onDismiss,
+  shareViewKey = 0,
 }: {
   card: RedeemedGiftCard;
   compact?: boolean;
   onDismiss?: () => void;
+  /** Incrementar al volver a mostrar la tarjeta para reiniciar descarga/compartir. */
+  shareViewKey?: number;
 }) {
   return (
     <div
@@ -43,6 +46,7 @@ export function GiftCardActivatedDashboard({
       </div>
 
       <GiftCardShareCard
+        key={`${card.codigo}-${shareViewKey}`}
         compact
         data={{
           codigo: card.codigo,
@@ -57,8 +61,8 @@ export function GiftCardActivatedDashboard({
 
       {!compact ? (
         <p className="text-center text-[10px] font-light leading-snug text-muted">
-          Guardá tu código ACT o el enlace de esta página. No necesitás cuenta en la web para volver a
-          ver tu tarjeta.
+          Guardá tu código ACT o el enlace de esta página. Podés volver a verla y compartirla cuando
+          quieras; no necesitás cuenta en la web.
         </p>
       ) : null}
     </div>

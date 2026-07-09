@@ -3,7 +3,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { BookingForm } from '@/components/booking/BookingForm';
 import { getServices } from '@/lib/data/catalog';
 
-export const metadata = { title: 'Reservar | AppSalon Pro' };
+export const metadata = { title: 'Agendar cita | AppSalon Pro' };
 
 export default async function ReservarPage({
   searchParams,
@@ -17,7 +17,7 @@ export default async function ReservarPage({
     <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
       <SectionHeader
         eyebrow="Agenda"
-        title="Reserva tu cita"
+        title="Agenda tu cita"
         subtitle="Elige sucursal, servicio y modalidad. El salón se entera al instante."
       />
       {services.length === 0 ? (

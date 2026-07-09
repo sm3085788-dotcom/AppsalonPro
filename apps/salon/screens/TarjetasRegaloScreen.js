@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gift, KeyRound, Link2, UserPlus, Check } from 'lucide-react-native';
+import { Gift, KeyRound, Link2, UserPlus, Check, User } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
 import {
   listGiftCardsStaff,
@@ -41,7 +41,7 @@ import { ClienteOrigenIcon } from '../components/ClienteOrigenIcon';
 import { GiftCardSearchHitRow } from '../components/GiftCardSearchHitRow';
 import { useTheme } from '../theme/ThemeProvider';
 import { GiftCardQrScannerModal } from '../components/GiftCardQrScannerModal';
-import { offerGiftCardClienteWhatsApp } from '../utils/salonStaffWhatsApp';
+import { offerGiftCardClienteWhatsApp, buildGiftCardActivationWhatsAppMessage } from '../utils/salonStaffWhatsApp';
 
 function formatWhen(iso) {
   if (!iso) return '—';
@@ -50,6 +50,20 @@ function formatWhen(iso) {
   } catch {
     return '—';
   }
+}
+
+const GIFT_ACT_STAFF_PREFIX = 'Atendió: ';
+
+function formatGiftActStaffNote(nombre) {
+  const n = String(nombre || '').trim();
+  return n ? `${GIFT_ACT_STAFF_PREFIX}${n}` : '';
+}
+
+function parseGiftActStaffName(notaSalon) {
+  const s = String(notaSalon || '').trim();
+  if (!s) return null;
+  const match = s.match(/^atendi[oó]:\s*(.+)$/i);
+  return (match ? match[1] : s).trim() || null;
 }
 
 function formatQ(n) {
@@ -67,10 +81,44 @@ function estadoLabel(estado) {
   return estado || '—';
 }
 
-const WEB_ACTIVATE_URL = 'https://appsalon-pro-web-catalogo.vercel.app/tarjeta-regalo/activar';
 const SALDO_GREEN = '#22c55e';
 const SALDO_RED = '#ef4444';
 const COMPLETADO_BLUE = '#2563eb';
+
+function normalizeGiftCardCode(raw) {
+  return String(raw || '').trim().toUpperCase();
+}
+
+function reorderCardsToFront(list, code) {
+  const normalized = normalizeGiftCardCode(code);
+  const idx = list.findIndex((x) => normalizeGiftCardCode(x.codigo) === normalized);
+  if (idx < 0) return { cards: list, match: null };
+  const match = list[idx];
+  if (idx === 0) return { cards: list, match };
+  return {
+    cards: [match, ...list.slice(0, idx), ...list.slice(idx + 1)],
+    match,
+  };
+}
+
+function cardFromSearchHit(hit) {
+  if (!hit?.codigo || hit.kind !== 'card') return null;
+  return {
+    id: hit.id || hit.codigo,
+    codigo: hit.codigo,
+    para_nombre: hit.para_nombre,
+    de_nombre: hit.de_nombre,
+    saldo: hit.saldo,
+    monto_inicial: hit.monto_inicial ?? hit.monto,
+    mensaje: hit.mensaje,
+    nota_salon: hit.nota_salon,
+    estado: hit.estado,
+    emitida_en: hit.emitida_en,
+    vence_en: hit.vence_en,
+    cliente_vinculado_id: hit.cliente_vinculado_id,
+    cliente_vinculado_nombre: hit.cliente_vinculado_nombre,
+  };
+}
 
 export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCodigo }) {
   const { colors: c, isDark } = useTheme();
@@ -87,11 +135,11 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
   const [generatedCode, setGeneratedCode] = useState(null);
   const [emitForm, setEmitForm] = useState({
     monto: '',
-    paraNombre: '',
-    deNombre: '',
-    mensaje: '',
     compradorTelefono: '',
   });
+  const [catalogEmpleados, setCatalogEmpleados] = useState([]);
+  const [emitStaffSearch, setEmitStaffSearch] = useState('');
+  const [emitEmpleadoId, setEmitEmpleadoId] = useState(null);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [linkTargetCard, setLinkTargetCard] = useState(null);
   const [clientes, setClientes] = useState([]);
@@ -100,15 +148,97 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
   const [giftSearchBusy, setGiftSearchBusy] = useState(false);
   const giftSearchTimerRef = useRef(null);
   const handledInitialRef = useRef(false);
+  const scrollRef = useRef(null);
+  const cardsSectionOffsetRef = useRef(0);
+  const highlightTimerRef = useRef(null);
+  const [highlightedCardCodigo, setHighlightedCardCodigo] = useState(null);
 
-  const loadList = useCallback(async () => {
+  const fetchLists = useCallback(async () => {
     const [cardsRes, codesRes] = await Promise.all([
       listGiftCardsStaff(40),
       listGiftCardActivationCodesStaff(15),
     ]);
-    if (cardsRes.ok) setCards(cardsRes.cards || []);
-    if (codesRes.ok) setPendingCodes(codesRes.codes || []);
+    return {
+      cards: cardsRes.ok ? cardsRes.cards || [] : [],
+      codes: codesRes.ok ? codesRes.codes || [] : [],
+    };
   }, []);
+
+  const loadList = useCallback(async () => {
+    const { cards: nextCards, codes } = await fetchLists();
+    setCards(nextCards);
+    setPendingCodes(codes);
+  }, [fetchLists]);
+
+  const scrollToCardsSection = useCallback(() => {
+    requestAnimationFrame(() => {
+      const y = cardsSectionOffsetRef.current;
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.sm), animated: true });
+    });
+  }, []);
+
+  const pulseCardHighlight = useCallback((codigo) => {
+    const normalized = normalizeGiftCardCode(codigo);
+    if (!normalized) return;
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    setHighlightedCardCodigo(normalized);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedCardCodigo(null);
+      highlightTimerRef.current = null;
+    }, 3200);
+  }, []);
+
+  const focusGiftCardByCodigo = useCallback(
+    async (codigo, { alertOnMissing = true } = {}) => {
+      const code = normalizeGiftCardCode(codigo);
+      if (!code) return null;
+
+      const { cards: fresh, codes } = await fetchLists();
+      setPendingCodes(codes);
+
+      let { cards: reordered, match } = reorderCardsToFront(fresh, code);
+
+      if (!match) {
+        const res = await searchGiftCardsStaff(code, 5);
+        const hit = (res.results || []).find(
+          (r) => r.kind === 'card' && normalizeGiftCardCode(r.codigo) === code,
+        );
+        const stub = cardFromSearchHit(hit);
+        if (stub) {
+          reordered = [stub, ...fresh.filter((x) => normalizeGiftCardCode(x.codigo) !== code)];
+          match = stub;
+        }
+      }
+
+      setCards(reordered);
+
+      const act = codes.find((x) => normalizeGiftCardCode(x.codigo_activacion) === code);
+      if (!match && act) {
+        if (alertOnMissing) {
+          Alert.alert('Código ACT', `${code} está pendiente de activación en la web, no es una tarjeta GC-.`);
+        }
+        return null;
+      }
+      if (!match) {
+        if (alertOnMissing) {
+          Alert.alert('No encontrada', `No hay tarjeta ${code} en el listado reciente.`);
+        }
+        return null;
+      }
+
+      pulseCardHighlight(match.codigo);
+      setTimeout(() => scrollToCardsSection(), 80);
+      return match;
+    },
+    [fetchLists, pulseCardHighlight, scrollToCardsSection],
+  );
+
+  useEffect(
+    () => () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     (async () => {
@@ -117,6 +247,46 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
       setLoading(false);
     })();
   }, [loadList]);
+
+  useEffect(() => {
+    let alive = true;
+    void db.empleados.getAll().then(({ data, error }) => {
+      if (!alive || error) return;
+      setCatalogEmpleados(Array.isArray(data) ? data : []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const selectedEmitEmpleado = useMemo(
+    () => catalogEmpleados.find((e) => e.id === emitEmpleadoId) ?? null,
+    [catalogEmpleados, emitEmpleadoId],
+  );
+
+  const emitStaffMatches = useMemo(() => {
+    if (selectedEmitEmpleado) return [];
+    const q = emitStaffSearch.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return catalogEmpleados
+      .filter((e) => {
+        const n = String(e.nombre || '').toLowerCase();
+        const r = String(e.rol || '').toLowerCase();
+        const mail = String(e.email || '').toLowerCase();
+        return n.includes(q) || r.includes(q) || mail.includes(q);
+      })
+      .slice(0, 6);
+  }, [emitStaffSearch, catalogEmpleados, selectedEmitEmpleado]);
+
+  const selectEmitEmpleado = (emp) => {
+    setEmitEmpleadoId(emp.id);
+    setEmitStaffSearch('');
+  };
+
+  const clearEmitEmpleado = () => {
+    setEmitEmpleadoId(null);
+    setEmitStaffSearch('');
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -130,8 +300,8 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
       Alert.alert('Monto', 'El monto debe estar entre Q50 y Q10,000.');
       return;
     }
-    if (!emitForm.paraNombre.trim() || !emitForm.deNombre.trim() || !emitForm.compradorTelefono.trim()) {
-      Alert.alert('Datos', 'Completa para, de y teléfono del comprador.');
+    if (!emitForm.compradorTelefono.trim()) {
+      Alert.alert('Datos', 'Ingresá el teléfono del comprador.');
       return;
     }
     const phone = normalizeGtWhatsappPhone(emitForm.compradorTelefono);
@@ -139,13 +309,16 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
       Alert.alert('Teléfono', 'Ingresá un número válido (8 dígitos o 502 + 8).');
       return;
     }
+    const staffNombre = String(selectedEmitEmpleado?.nombre || '').trim();
+    if (!staffNombre) {
+      Alert.alert('Empleado', 'Seleccioná quién atendió esta solicitud.');
+      return;
+    }
     setBusy(true);
     try {
       const res = await createGiftCardActivationCode({
         monto,
-        paraNombre: emitForm.paraNombre.trim(),
-        deNombre: emitForm.deNombre.trim(),
-        mensaje: emitForm.mensaje.trim(),
+        notaSalon: formatGiftActStaffNote(staffNombre),
         compradorTelefono: phone,
       });
       if (!res.ok) {
@@ -154,11 +327,12 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
       }
       setGeneratedCode(res);
       await loadList();
-      setEmitForm({ monto: '', paraNombre: '', deNombre: '', mensaje: '', compradorTelefono: '' });
+      setEmitForm({ monto: '', compradorTelefono: '' });
+      clearEmitEmpleado();
     } finally {
       setBusy(false);
     }
-  }, [emitForm, loadList]);
+  }, [emitForm, loadList, selectedEmitEmpleado]);
 
   const shareActivationCode = useCallback((codeRow) => {
     const code = codeRow?.codigo_activacion || codeRow?.codigoActivacion;
@@ -166,12 +340,7 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
     const phone =
       normalizeGtWhatsappPhone(codeRow?.comprador_telefono || codeRow?.compradorTelefono) ||
       SALON_CONTACTO.whatsapp;
-    const msg = [
-      `Tarjeta VIP ANDREAS · código de activación: ${code}`,
-      `Monto: ${formatQ(codeRow.monto)}`,
-      `Actívala en: ${WEB_ACTIVATE_URL}`,
-      `Servicio al cliente: ${SALON_CONTACTO.telefonoLabel}`,
-    ].join('\n');
+    const msg = buildGiftCardActivationWhatsAppMessage({ codigo: code, monto: codeRow.monto });
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
     void Linking.openURL(url);
   }, []);
@@ -416,10 +585,12 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
   const onScanCode = useCallback(
     async (codigo) => {
       setScannerOpen(false);
-      await loadList();
-      Alert.alert('Tarjeta escaneada', `Código ${codigo} — revisá la lista.`);
+      const match = await focusGiftCardByCodigo(codigo);
+      if (match) {
+        Alert.alert('Tarjeta encontrada', `${match.codigo} — ${match.para_nombre || 'VIP'}`);
+      }
     },
-    [loadList],
+    [focusGiftCardByCodigo],
   );
 
   const selectionKey = (kind, id) => `${kind}:${String(id)}`;
@@ -476,9 +647,22 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
   };
 
   const inputStyle = [
-    styles.input,
+    styles.emitInput,
     { borderColor: c.cardBorder, color: c.foreground, backgroundColor: c.card },
   ];
+
+  const renderStaffAttendedChip = (notaSalon) => {
+    const name = parseGiftActStaffName(notaSalon);
+    if (!name) return null;
+    return (
+      <View style={[styles.staffChip, { borderColor: c.primary, backgroundColor: `${c.primary}22` }]}>
+        <User size={11} color={c.primary} strokeWidth={2} />
+        <Text style={[styles.staffChipTxt, { color: c.primary }]} numberOfLines={1}>
+          Atendió: {name}
+        </Text>
+      </View>
+    );
+  };
 
   const renderCard = (item) => {
     const depleted = item.estado === 'depleted';
@@ -488,6 +672,9 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
     const cardBorder = depleted ? COMPLETADO_BLUE : c.cardBorder;
     const cardBg = depleted ? `${COMPLETADO_BLUE}12` : c.card;
     const picked = sel.isSelected(selectionKey('card', item.id));
+    const highlighted =
+      highlightedCardCodigo != null &&
+      normalizeGiftCardCode(item.codigo) === highlightedCardCodigo;
 
     return (
       <TouchableOpacity
@@ -503,6 +690,11 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
         style={[
           styles.cardBox,
           { backgroundColor: picked ? c.surfaceMuted : cardBg, borderColor: cardBorder },
+          highlighted && {
+            borderColor: c.primary,
+            borderWidth: 2,
+            backgroundColor: `${c.primary}18`,
+          },
         ]}
       >
         {sel.active ? (
@@ -551,6 +743,7 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
         <Text style={[styles.cardSaldo, { color: saldoColor }]}>
           Saldo: {formatQ(item.saldo)} / {formatQ(item.monto_inicial)}
         </Text>
+        {renderStaffAttendedChip(item.nota_salon)}
         <Text style={[styles.cardMeta, { color: depleted ? COMPLETADO_BLUE : c.foregroundMuted }]}>
           {estadoLabel(item.estado)}
           {item.cliente_vinculado_nombre ? ` · ${item.cliente_vinculado_nombre}` : ''}
@@ -600,13 +793,15 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
     <View style={[styles.root, { backgroundColor: c.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <SubScreenChrome
-        title="Tarjetas regalo"
-        subtitle="VIP · código · activación y saldo"
+        hideTitles
         onBack={onBack}
         refreshing={refreshing}
         onRefresh={onRefresh}
       >
-        <ScrollView contentContainerStyle={{ paddingBottom: sel.count ? 100 : spacing.xxl }}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={{ paddingBottom: sel.count ? 100 : spacing.xxl }}
+        >
           <TouchableOpacity
             style={[styles.emitHeader, { borderColor: c.cardBorder, backgroundColor: c.card }]}
             onPress={() => setEmitOpen((v) => !v)}
@@ -620,15 +815,66 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
           {emitOpen ? (
             <View style={[styles.emitBox, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
               <Text style={[styles.emitHint, { color: c.foregroundMuted }]}>
-                Tras validar monto y pago, generá un código de 6 dígitos para que el comprador lo
-                ingrese en la web.
+                Tras validar monto y pago, generá un código ACT para que el comprador active la tarjeta en la web.
+                Solo necesitás monto, teléfono WhatsApp y quién atendió (dato interno del equipo).
               </Text>
               <TextInput style={inputStyle} placeholder="Monto Q (50–10,000)" placeholderTextColor={c.foregroundSubtle} keyboardType="decimal-pad" value={emitForm.monto} onChangeText={(v) => setEmitForm((f) => ({ ...f, monto: v }))} />
-              <TextInput style={inputStyle} placeholder="Para (destinatario)" placeholderTextColor={c.foregroundSubtle} value={emitForm.paraNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, paraNombre: v }))} />
-              <TextInput style={inputStyle} placeholder="De (comprador)" placeholderTextColor={c.foregroundSubtle} value={emitForm.deNombre} onChangeText={(v) => setEmitForm((f) => ({ ...f, deNombre: v }))} />
               <TextInput style={inputStyle} placeholder="Teléfono comprador (WhatsApp)" placeholderTextColor={c.foregroundSubtle} keyboardType="phone-pad" value={emitForm.compradorTelefono} onChangeText={(v) => setEmitForm((f) => ({ ...f, compradorTelefono: v }))} />
-              <TextInput style={inputStyle} placeholder="Mensaje (opcional)" placeholderTextColor={c.foregroundSubtle} value={emitForm.mensaje} onChangeText={(v) => setEmitForm((f) => ({ ...f, mensaje: v }))} />
-              <SalonButton title="Generar código ACT-" variant="heroGold" fullWidth onPress={() => void runEmitCode()} disabled={busy} />
+              <Text style={[styles.emitFieldLbl, { color: c.primary }]}>Quién atendió</Text>
+              {selectedEmitEmpleado && emitStaffSearch.trim().length < 2 ? (
+                <View style={[styles.staffSelectedCard, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}>
+                  <Text style={[styles.staffSelectedName, { color: c.foreground }]}>{selectedEmitEmpleado.nombre}</Text>
+                  <Text style={[styles.staffSelectedMeta, { color: c.foregroundMuted }]}>
+                    {[selectedEmitEmpleado.rol, selectedEmitEmpleado.telefono].filter(Boolean).join(' · ') || 'Empleado'}
+                  </Text>
+                  <TouchableOpacity onPress={clearEmitEmpleado} style={styles.staffChangeBtn}>
+                    <Text style={[styles.staffChangeBtnTxt, { color: c.primary }]}>Cambiar empleado</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <TextInput
+                    style={inputStyle}
+                    placeholder="Buscar empleado por nombre, rol o correo"
+                    placeholderTextColor={c.foregroundSubtle}
+                    value={emitStaffSearch}
+                    onChangeText={(v) => {
+                      setEmitStaffSearch(v);
+                      if (emitEmpleadoId) clearEmitEmpleado();
+                    }}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                  {emitStaffSearch.trim().length > 0 && emitStaffSearch.trim().length < 2 ? (
+                    <Text style={[styles.staffSearchHint, { color: c.foregroundMuted }]}>
+                      Escribí al menos 2 letras para buscar en el equipo.
+                    </Text>
+                  ) : null}
+                  {emitStaffSearch.trim().length >= 2 && emitStaffMatches.length === 0 ? (
+                    <Text style={[styles.staffSearchHint, { color: c.foregroundMuted }]}>Sin empleados con ese criterio.</Text>
+                  ) : null}
+                  {emitStaffMatches.map((emp) => (
+                    <TouchableOpacity
+                      key={emp.id}
+                      style={[styles.staffSuggestRow, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+                      onPress={() => selectEmitEmpleado(emp)}
+                    >
+                      <Text style={[styles.staffSuggestName, { color: c.foreground }]}>{emp.nombre}</Text>
+                      <Text style={[styles.staffSuggestMeta, { color: c.foregroundMuted }]} numberOfLines={1}>
+                        {[emp.rol, emp.telefono].filter(Boolean).join(' · ') || 'Empleado'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+              <SalonButton
+                title="Generar código ACT-"
+                variant="heroGold"
+                fullWidth
+                onPress={() => void runEmitCode()}
+                disabled={busy}
+                style={{ marginTop: spacing.xs }}
+              />
             </View>
           ) : null}
 
@@ -672,10 +918,18 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
                         ) : null}
                       </View>
                     ) : null}
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowTitle, { color: c.foreground }]}>{row.codigo_activacion}</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <View style={styles.rowTopLine}>
+                        <Text style={[styles.rowTitle, { color: c.foreground, flex: 1 }]} numberOfLines={1}>
+                          {row.codigo_activacion}
+                        </Text>
+                        {renderStaffAttendedChip(row.nota_salon)}
+                      </View>
                       <Text style={[styles.rowSub, { color: c.foregroundMuted }]}>
-                        {row.para_nombre} · {formatQ(row.monto)}
+                        {formatQ(row.monto)}
+                        {row.comprador_telefono
+                          ? ` · ${String(row.comprador_telefono).replace(/^502/, '+502 ')}`
+                          : ''}
                       </Text>
                     </View>
                     {!sel.active ? (
@@ -712,10 +966,15 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
               Las tarjetas activadas aparecerán aquí cuando el comprador use su código en la web.
             </Text>
           ) : (
-            <>
+            <View
+              collapsable={false}
+              onLayout={(e) => {
+                cardsSectionOffsetRef.current = e.nativeEvent.layout.y;
+              }}
+            >
               <Text style={[styles.sectionLbl, { color: c.foreground }]}>Tarjetas</Text>
               {cards.map((item) => renderCard(item))}
-            </>
+            </View>
           )}
         </ScrollView>
       </SubScreenChrome>
@@ -739,8 +998,17 @@ export function TarjetasRegaloScreen({ onBack, initialCodigo, onConsumeInitialCo
             <Text style={[styles.modalTitle, { color: c.foreground }]}>Código generado</Text>
             <Text style={[styles.modalCode, { color: c.primary }]}>{generatedCode?.codigo_activacion}</Text>
             <Text style={[styles.modalMeta, { color: c.foregroundMuted }]}>
-              {generatedCode?.para_nombre} · {formatQ(generatedCode?.monto)}
+              {formatQ(generatedCode?.monto)}
+              {generatedCode?.comprador_telefono
+                ? ` · ${String(generatedCode.comprador_telefono).replace(/^502/, '+502 ')}`
+                : ''}
             </Text>
+            {(() => {
+              const staffChip = renderStaffAttendedChip(generatedCode?.nota_salon);
+              return staffChip ? (
+                <View style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}>{staffChip}</View>
+              ) : null;
+            })()}
             <Text style={[styles.modalHint, { color: c.foregroundMuted }]}>
               Dictá este código al comprador. Debe ingresarlo en la web para obtener la tarjeta PNG.
             </Text>
@@ -835,8 +1103,65 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   emitHeaderTxt: { fontFamily: typography.fontSansMedium, fontSize: 15, flex: 1 },
-  emitBox: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.sm },
-  emitHint: { fontFamily: typography.fontSans, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },
+  emitBox: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  emitHint: {
+    fontFamily: typography.fontSans,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: spacing.xs,
+  },
+  emitFieldLbl: {
+    fontFamily: typography.fontSansMedium,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginTop: spacing.xs,
+    marginBottom: 4,
+  },
+  staffSelectedCard: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  staffSelectedName: { fontFamily: typography.fontSansMedium, fontSize: 14 },
+  staffSelectedMeta: { fontFamily: typography.fontSans, fontSize: 12, marginTop: 2 },
+  staffChangeBtn: { marginTop: spacing.xs, alignSelf: 'flex-start' },
+  staffChangeBtnTxt: { fontFamily: typography.fontSansMedium, fontSize: 12 },
+  staffSearchHint: { fontFamily: typography.fontSans, fontSize: 11, marginBottom: spacing.xs },
+  staffSuggestRow: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  staffSuggestName: { fontFamily: typography.fontSansMedium, fontSize: 14 },
+  staffSuggestMeta: { fontFamily: typography.fontSans, fontSize: 12, marginTop: 2 },
+  staffChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: radii.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    maxWidth: '58%',
+  },
+  staffChipTxt: { fontFamily: typography.fontSansMedium, fontSize: 10 },
+  rowTopLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
   sectionLbl: { fontFamily: typography.fontSansMedium, fontSize: 14, marginBottom: spacing.sm },
   listToolbar: {
     flexDirection: 'row',
@@ -880,14 +1205,14 @@ const styles = StyleSheet.create({
   },
   waSaldoHint: { fontFamily: typography.fontSans, fontSize: 11 },
   waSaldoLink: { fontFamily: typography.fontSansMedium, fontSize: 12 },
-  input: {
+  emitInput: {
     borderWidth: 1,
     borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
     fontFamily: typography.fontSans,
-    fontSize: 16,
-    marginBottom: spacing.sm,
+    fontSize: 15,
+    marginBottom: spacing.xs,
   },
   empty: { fontFamily: typography.fontSans, fontSize: 14, textAlign: 'center', marginTop: spacing.xl },
   row: {

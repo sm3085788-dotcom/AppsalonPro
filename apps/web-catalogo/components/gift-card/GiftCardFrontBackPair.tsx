@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { GiftCardVisual, type GiftCardDisplayData } from './GiftCardVisual';
 import { GiftCardVisualBack } from './GiftCardVisualBack';
 import { GiftCardDualImageActions } from './GiftCardDualImageActions';
-import { giftCardPublicPath, GIFT_CARD_SITE_URL } from '@/lib/gift-card/public';
+import { buildGiftCardShareText, buildGiftCardShareUrl } from '@/lib/gift-card/shareMessage';
 
 export function GiftCardFrontBackPair({
   data,
@@ -23,9 +23,7 @@ export function GiftCardFrontBackPair({
   const backRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
 
-  const shareUrl = data.codigo.includes('PREVIEW')
-    ? GIFT_CARD_SITE_URL
-    : `${GIFT_CARD_SITE_URL}${giftCardPublicPath(data.codigo)}`;
+  const shareUrl = buildGiftCardShareUrl(data.codigo);
 
   async function captureFront() {
     if (!frontRef.current) throw new Error('missing front ref');
@@ -76,25 +74,20 @@ export function GiftCardFrontBackPair({
 
       <GiftCardDualImageActions
         busy={busy}
-        onDownloadBoth={() =>
-          runBusy(async () => {
-            const { triggerPngDownload } = await import('@/lib/gift-card/captureCardImage');
-            const [frontUrl, backUrl] = await Promise.all([captureFront(), captureBack()]);
-            triggerPngDownload(frontUrl, `tarjeta-vip-frente-${fileSlug}.png`);
-            window.setTimeout(() => {
-              triggerPngDownload(backUrl, `tarjeta-vip-reverso-${fileSlug}.png`);
-            }, 350);
-          })
-        }
         onShare={() =>
           runBusy(async () => {
             const { dataUrlToPngFile, triggerPngDownload } = await import(
               '@/lib/gift-card/captureCardImage'
             );
+            await new Promise<void>((resolve) => {
+              window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+            });
             const [frontUrl, backUrl] = await Promise.all([captureFront(), captureBack()]);
-            const text = data.codigo.includes('PREVIEW')
-              ? `Vista previa de Tarjeta VIP ANDREAS por $${data.monto} para ${data.paraNombre}.`
-              : `Te regalo una Tarjeta VIP ANDREAS por $${data.monto}. Código: ${data.codigo}`;
+            const text = buildGiftCardShareText({
+              codigo: data.codigo,
+              monto: data.monto,
+              paraNombre: data.paraNombre,
+            });
             const frontFile = await dataUrlToPngFile(
               frontUrl,
               `tarjeta-vip-frente-${fileSlug}.png`,
@@ -105,20 +98,30 @@ export function GiftCardFrontBackPair({
             );
 
             if (navigator.share && navigator.canShare?.({ files: [frontFile, backFile] })) {
-              await navigator.share({
-                title: 'Tarjeta VIP ANDREAS',
-                text,
-                files: [frontFile, backFile],
-              });
+              try {
+                await navigator.share({
+                  title: 'Tarjeta VIP ANDREAS',
+                  text,
+                  files: [frontFile, backFile],
+                });
+              } catch (err) {
+                if ((err as Error)?.name === 'AbortError') return;
+                throw err;
+              }
               return;
             }
 
             if (navigator.share && navigator.canShare?.({ files: [frontFile] })) {
-              await navigator.share({
-                title: 'Tarjeta VIP ANDREAS — Frente',
-                text,
-                files: [frontFile],
-              });
+              try {
+                await navigator.share({
+                  title: 'Tarjeta VIP ANDREAS — Frente',
+                  text,
+                  files: [frontFile],
+                });
+              } catch (err) {
+                if ((err as Error)?.name === 'AbortError') return;
+                throw err;
+              }
               return;
             }
 
@@ -126,8 +129,8 @@ export function GiftCardFrontBackPair({
               try {
                 await navigator.share({ title: 'Tarjeta VIP ANDREAS', text, url: shareUrl });
                 return;
-              } catch {
-                /* usuario canceló */
+              } catch (err) {
+                if ((err as Error)?.name === 'AbortError') return;
               }
             }
 

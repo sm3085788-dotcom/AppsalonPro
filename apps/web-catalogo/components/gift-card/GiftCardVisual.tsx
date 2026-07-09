@@ -18,16 +18,20 @@ export interface GiftCardDisplayData {
   emitidaEn?: string | null;
   venceEn?: string | null;
   showDates?: boolean;
+  /** Vista previa sin nombres reales (monto + diseño). */
+  incompletePreview?: boolean;
 }
 
 export function GiftCardVisual({
   data,
   compact = false,
   className = '',
+  incompletePreview = false,
 }: {
   data: GiftCardDisplayData;
   compact?: boolean;
   className?: string;
+  incompletePreview?: boolean;
 }) {
   const qrUrl = giftCardQrImageUrl(data.codigo, compact ? 120 : 160);
   const shell = compact
@@ -109,11 +113,23 @@ export function GiftCardVisual({
         <div className={`space-y-0.5 text-center text-cream/75 ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
           <p>
             <span className="font-semibold uppercase tracking-[0.12em] text-gold/90">Para:</span>{' '}
-            <span className="tracking-[0.18em]">{data.paraNombre}</span>
+            <span
+              className={`tracking-[0.18em] ${
+                incompletePreview || data.incompletePreview ? 'italic text-cream/40' : ''
+              }`}
+            >
+              {data.paraNombre}
+            </span>
           </p>
           <p>
             <span className="font-semibold uppercase tracking-[0.12em] text-gold/90">De:</span>{' '}
-            <span className="tracking-[0.18em]">{data.deNombre}</span>
+            <span
+              className={`tracking-[0.18em] ${
+                incompletePreview || data.incompletePreview ? 'italic text-cream/40' : ''
+              }`}
+            >
+              {data.deNombre}
+            </span>
           </p>
           {data.mensaje ? (
             <p className="mt-1.5 italic leading-relaxed text-cream/45">&ldquo;{data.mensaje}&rdquo;</p>

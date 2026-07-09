@@ -10,10 +10,10 @@ export function GiftCardCheckoutForm({ payload }: { payload: GiftCardCheckoutPay
     kind: 'gift_card',
     giftCard: {
       monto: payload.monto,
-      paraNombre: payload.paraNombre,
-      deNombre: payload.deNombre,
-      mensaje: payload.mensaje ?? '',
-      compradorEmail: payload.compradorEmail,
+      paraNombre: 'Destinatario',
+      deNombre: 'Cliente',
+      mensaje: '',
+      compradorEmail: '',
     },
   };
 
@@ -30,19 +30,14 @@ export function GiftCardCheckoutForm({ payload }: { payload: GiftCardCheckoutPay
       <aside className="h-fit rounded-2xl border border-border bg-surface p-6">
         <h3 className="mb-4 text-lg font-light text-cream">Resumen</h3>
         <ul className="space-y-3 text-sm">
-          <li className="flex justify-between">
-            <span className="text-muted">Para</span>
-            <span className="text-foreground">{payload.paraNombre}</span>
-          </li>
-          <li className="flex justify-between">
-            <span className="text-muted">De</span>
-            <span className="text-foreground">{payload.deNombre}</span>
-          </li>
           <li className="flex justify-between border-t border-border pt-4">
             <span className="text-cream">Total tarjeta</span>
             <span className="text-lg font-medium text-gold">{formatQ(payload.monto)}</span>
           </li>
         </ul>
+        <p className="mt-4 text-xs font-light leading-relaxed text-muted">
+          Los nombres y el mensaje se completan al activar el código en la web.
+        </p>
       </aside>
     </div>
   );
@@ -55,7 +50,9 @@ export function loadGiftCardCheckoutPayload(): GiftCardCheckoutPayload | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as GiftCardCheckoutPayload;
+    const parsed = JSON.parse(raw) as GiftCardCheckoutPayload & { paraNombre?: string };
+    if (typeof parsed.monto !== 'number') return null;
+    return { monto: parsed.monto };
   } catch {
     return null;
   }

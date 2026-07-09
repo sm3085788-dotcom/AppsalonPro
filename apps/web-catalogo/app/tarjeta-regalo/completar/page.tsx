@@ -2,11 +2,11 @@ import { Suspense } from 'react';
 import { GiftCardActivatePanel } from '@/components/gift-card/GiftCardActivatePanel';
 
 export const metadata = {
-  title: 'Recuperar tarjeta de regalo | AppSalon Pro',
-  description: 'Activa o recupera tu tarjeta VIP con el código del salón.',
+  title: 'Completar tarjeta de regalo | AppSalon Pro',
+  description: 'Ingresá tu código ACT y completá los datos de tu tarjeta VIP.',
 };
 
-export default function GiftCardActivatePage() {
+export default function GiftCardCompletePage() {
   return (
     <Suspense
       fallback={
@@ -15,7 +15,7 @@ export default function GiftCardActivatePage() {
         </div>
       }
     >
-      <GiftCardActivatePanel mode="recover" />
+      <GiftCardActivatePanel mode="complete" />
     </Suspense>
   );
 }

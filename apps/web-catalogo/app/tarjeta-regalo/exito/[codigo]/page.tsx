@@ -75,10 +75,10 @@ export default function GiftCardSuccessByCodePage({
       <div className="mx-auto max-w-lg px-4 py-24 text-center">
         <p className="text-red-300">{error}</p>
         <p className="mt-3 text-sm text-muted">
-          Volvé al inicio e ingresá tu código ACT en la sección Tarjeta regalo.
+          Volvé a recuperar tu tarjeta con tu código ACT.
         </p>
-        <Link href="/#tarjeta-regalo-activar" className="mt-6 inline-block text-gold">
-          Ir a activar tarjeta
+        <Link href="/tarjeta-regalo/activar" className="mt-6 inline-block text-gold">
+          Recuperar mi tarjeta de regalo
         </Link>
       </div>
     );

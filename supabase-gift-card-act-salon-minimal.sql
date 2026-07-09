@@ -1,10 +1,11 @@
--- Aumenta tope de monto en códigos ACT (Q50–Q10,000)
+-- ACT desde App Salón: solo monto + teléfono + nota interna (quién atendió).
+-- Para/De opcionales → valores genéricos para la tarjeta web al activar.
 -- Ejecutar en Supabase → SQL Editor
 
 CREATE OR REPLACE FUNCTION public.create_gift_card_activation_code(
   p_monto numeric,
-  p_para_nombre text,
-  p_de_nombre text,
+  p_para_nombre text DEFAULT NULL,
+  p_de_nombre text DEFAULT NULL,
   p_nota_salon text DEFAULT NULL,
   p_comprador_telefono text DEFAULT NULL
 )
@@ -15,8 +16,8 @@ SET search_path = public
 AS $$
 DECLARE
   v_monto numeric := round(p_monto::numeric, 2);
-  v_para text := nullif(trim(p_para_nombre), '');
-  v_de text := nullif(trim(p_de_nombre), '');
+  v_para text := coalesce(nullif(trim(p_para_nombre), ''), 'Destinatario');
+  v_de text := coalesce(nullif(trim(p_de_nombre), ''), 'Cliente');
   v_phone text := public.normalize_gt_whatsapp_phone(p_comprador_telefono);
   v_nota text := nullif(trim(p_nota_salon), '');
   v_codigo text;
@@ -29,12 +30,6 @@ BEGIN
 
   IF v_monto IS NULL OR v_monto < 50 OR v_monto > 10000 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'El monto debe estar entre Q50 y Q10,000.');
-  END IF;
-  IF v_para IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'Indica el nombre del destinatario.');
-  END IF;
-  IF v_de IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'Indica el nombre del comprador.');
   END IF;
   IF v_phone IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'Ingresá un número de teléfono válido (8 dígitos o 502 + 8).');
@@ -77,8 +72,11 @@ BEGIN
     'monto', v_row.monto,
     'para_nombre', v_row.para_nombre,
     'de_nombre', v_row.de_nombre,
+    'nota_salon', v_row.nota_salon,
     'comprador_telefono', v_row.comprador_telefono,
     'created_at', v_row.created_at
   );
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION public.create_gift_card_activation_code(numeric, text, text, text, text) TO authenticated;

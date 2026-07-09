@@ -30,8 +30,8 @@ export default function CheckoutPage() {
         >
           Ver productos
         </Link>
-        <Link href="/servicios" className="text-sm text-muted hover:text-gold">
-          Reservar un servicio
+        <Link href="/reservar" className="text-sm text-muted hover:text-gold">
+          Agendar cita
         </Link>
       </div>
     </div>

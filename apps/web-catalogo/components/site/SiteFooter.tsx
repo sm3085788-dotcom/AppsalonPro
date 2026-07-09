@@ -140,7 +140,7 @@ export function SiteFooter({ branches = [] }: { branches?: Branch[] }) {
 
               <Link href="/reservar" className="transition-colors hover:text-cream">
 
-                Reservar cita
+                Agendar cita
 
               </Link>
 
@@ -162,7 +162,10 @@ export function SiteFooter({ branches = [] }: { branches?: Branch[] }) {
 
 
 
-        <div className="text-sm lg:col-span-3">
+        <div
+          id="contacto"
+          className="scroll-mt-20 text-sm md:scroll-mt-[4.5rem] lg:col-span-3"
+        >
 
           <h4 className="eyebrow mb-5">Contacto</h4>
 

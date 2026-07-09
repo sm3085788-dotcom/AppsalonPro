@@ -25,10 +25,13 @@ export function SalonSucursalSelect({
   selectedId,
   onSelect,
   label = 'Sucursal',
+  variant = 'default',
+  style,
 }) {
   const { colors: c } = useTheme();
   const styles = useMemo(() => createStyles(), []);
   const [open, setOpen] = useState(false);
+  const isField = variant === 'field';
 
   const selected = useMemo(
     () => (sucursales || []).find((s) => String(s.id) === String(selectedId)) || null,
@@ -40,21 +43,43 @@ export function SalonSucursalSelect({
     setOpen(false);
   };
 
-  return (
-    <>
+  const trigger = isField ? (
+    <View style={[styles.fieldWrap, style]}>
+      <Text style={[styles.fieldLbl, { color: c.foregroundMuted }]}>{label}</Text>
       <TouchableOpacity
-        style={[styles.trigger, { borderColor: c.cardBorder, backgroundColor: c.card }]}
+        style={[styles.fieldTap, { borderColor: c.cardBorder, backgroundColor: c.surfaceMuted }]}
         onPress={() => setOpen(true)}
         activeOpacity={0.85}
         accessibilityRole="button"
         accessibilityLabel={`${label}, ${branchLabel(selected)}`}
       >
-        <Text style={[styles.triggerLabel, { color: c.foregroundMuted }]}>{label}</Text>
-        <Text style={[styles.triggerValue, { color: c.foreground }]} numberOfLines={1}>
-          {branchLabel(selected)}
-        </Text>
-        <ChevronDown size={18} color={c.foregroundMuted} strokeWidth={2} />
+        <View style={styles.fieldTapInner}>
+          <Text style={[styles.fieldValue, { color: c.foreground }]} numberOfLines={1}>
+            {branchLabel(selected)}
+          </Text>
+          <ChevronDown size={18} color={c.primary} strokeWidth={2} />
+        </View>
       </TouchableOpacity>
+    </View>
+  ) : (
+    <TouchableOpacity
+      style={[styles.trigger, { borderColor: c.cardBorder, backgroundColor: c.card }, style]}
+      onPress={() => setOpen(true)}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${branchLabel(selected)}`}
+    >
+      <Text style={[styles.triggerLabel, { color: c.foregroundMuted }]}>{label}</Text>
+      <Text style={[styles.triggerValue, { color: c.foreground }]} numberOfLines={1}>
+        {branchLabel(selected)}
+      </Text>
+      <ChevronDown size={18} color={c.foregroundMuted} strokeWidth={2} />
+    </TouchableOpacity>
+  );
+
+  return (
+    <>
+      {trigger}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
@@ -118,6 +143,32 @@ function createStyles() {
       fontFamily: typography.fontSansMedium,
       fontSize: 14,
       textAlign: 'right',
+    },
+    fieldWrap: {
+      marginBottom: spacing.sm,
+    },
+    fieldLbl: {
+      fontFamily: typography.fontSansMedium,
+      fontSize: 12,
+      marginBottom: spacing.xs,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    fieldTap: {
+      borderRadius: radii.md,
+      borderWidth: 1,
+      padding: spacing.sm,
+    },
+    fieldTapInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    fieldValue: {
+      flex: 1,
+      fontFamily: typography.fontSansMedium,
+      fontSize: 15,
     },
     backdrop: {
       flex: 1,

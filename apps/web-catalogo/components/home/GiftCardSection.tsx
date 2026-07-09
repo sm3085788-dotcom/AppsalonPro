@@ -1,8 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Gift } from 'lucide-react';
+import { Gift, KeyRound } from 'lucide-react';
 import {
   GIFT_CARD_MIN_GTQ,
   GIFT_CARD_MAX_GTQ,
@@ -10,31 +11,21 @@ import {
   validateGiftCardPayload,
 } from '@/lib/gift-card/validation';
 import { saveGiftCardCheckoutPayload } from '@/components/gift-card/GiftCardCheckoutForm';
-import { GiftCardActivationCodeForm } from '@/components/gift-card/GiftCardActivationCodeForm';
-import {
-  GiftCardActivatedDashboard,
-  GiftCardActivatedDashboardLinks,
-} from '@/components/gift-card/GiftCardActivatedDashboard';
 import { GiftCardVisual } from '@/components/gift-card/GiftCardVisual';
-import { clearActiveGiftCard } from '@/lib/gift-card/activeGiftCardStorage';
-import type { RedeemedGiftCard } from '@/lib/gift-card/redeemActivationCode';
+import {
+  GIFT_CARD_PREVIEW_INCOMPLETE,
+} from '@/lib/gift-card/previewCopy';
 
 export function GiftCardSection() {
   const router = useRouter();
-  const [activatedCard, setActivatedCard] = useState<RedeemedGiftCard | null>(null);
-  const [formData, setFormData] = useState({
-    amount: '',
-    forName: '',
-    fromName: '',
-    message: '',
-  });
+  const [amount, setAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const validated = validateGiftCardPayload({ ...formData, buyerEmail: '' });
+    const validated = validateGiftCardPayload({ amount });
     if (!validated.ok) {
       setError(validated.error);
       return;
@@ -44,7 +35,7 @@ export function GiftCardSection() {
     router.push('/tarjeta-regalo/preview');
   };
 
-  const previewAmount = Number(formData.amount) || 0;
+  const previewAmount = Number(amount) || 0;
 
   return (
     <section
@@ -57,12 +48,13 @@ export function GiftCardSection() {
           <div className="origin-center lg:scale-[1.3]">
             <GiftCardVisual
               compact
+              incompletePreview
               data={{
                 codigo: 'GC-PREVIEW',
                 monto: previewAmount || 100,
-                paraNombre: formData.forName || 'Nombre Apellido',
-                deNombre: formData.fromName || 'Tu Nombre',
-                mensaje: formData.message || null,
+                paraNombre: GIFT_CARD_PREVIEW_INCOMPLETE.paraNombre,
+                deNombre: GIFT_CARD_PREVIEW_INCOMPLETE.deNombre,
+                mensaje: null,
               }}
             />
           </div>
@@ -78,8 +70,10 @@ export function GiftCardSection() {
               Canjeable en cualquier sucursal
             </p>
             <p className="mt-2 text-sm font-light leading-relaxed text-muted">
-              Válida 30 días desde la activación. Comunícate con servicio al cliente para
-              completar el pago y recibir tu código de activación.
+              Válida 30 días desde la activación. Elige la cantidad y{' '}
+              <span className="font-medium text-gold">generá vista previa</span>. Comunícate con
+              Atención al Cliente para el pago. Recibirás tu código por mensaje y completás tu
+              tarjeta después: es tu secreto.
             </p>
           </div>
 
@@ -89,18 +83,18 @@ export function GiftCardSection() {
                 Monto de la tarjeta (Q{GIFT_CARD_MIN_GTQ}–{GIFT_CARD_MAX_GTQ.toLocaleString('es-GT')})
               </label>
               <div className="mt-1.5 flex flex-wrap justify-center gap-2">
-                {GIFT_CARD_PRESETS.map((amount) => (
+                {GIFT_CARD_PRESETS.map((preset) => (
                   <button
-                    key={amount}
+                    key={preset}
                     type="button"
-                    onClick={() => setFormData({ ...formData, amount: amount.toString() })}
+                    onClick={() => setAmount(preset.toString())}
                     className={`rounded-md border-2 px-3 py-1.5 text-xs font-semibold transition-all ${
-                      formData.amount === amount.toString()
+                      amount === preset.toString()
                         ? 'border-gold bg-gold/20 text-gold shadow-lg shadow-gold/30'
                         : 'border-gold/30 text-cream/70 hover:border-gold hover:bg-gold/10 hover:text-gold'
                     }`}
                   >
-                    ${amount}
+                    ${preset}
                   </button>
                 ))}
               </div>
@@ -108,58 +102,11 @@ export function GiftCardSection() {
                 type="number"
                 min={GIFT_CARD_MIN_GTQ}
                 max={GIFT_CARD_MAX_GTQ}
-                placeholder="O ingresa otro monto"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                placeholder="o ingresa otra cantidad"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
                 className="mt-1.5 w-full rounded-md border border-gold/30 bg-surface/50 px-3 py-2 text-sm text-center text-foreground placeholder-muted outline-none transition-all focus:border-gold focus:ring-2 focus:ring-gold/30 focus:bg-surface"
               />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-medium uppercase tracking-[0.17em] text-foreground">
-                Para (nombre y apellido del destinatario)
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ej: María López"
-                value={formData.forName}
-                onChange={(e) => setFormData({ ...formData, forName: e.target.value })}
-                autoComplete="name"
-                className="mt-1.5 w-full rounded-md border border-gold/30 bg-surface/50 px-3 py-2 text-sm text-center text-foreground placeholder-muted outline-none transition-all focus:border-gold focus:ring-2 focus:ring-gold/30 focus:bg-surface"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-medium uppercase tracking-[0.17em] text-foreground">
-                De (tu nombre y apellido)
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ej: Juan Pérez"
-                value={formData.fromName}
-                onChange={(e) => setFormData({ ...formData, fromName: e.target.value })}
-                autoComplete="name"
-                className="mt-1.5 w-full rounded-md border border-gold/50 bg-surface/50 px-3 py-2 text-sm text-center text-foreground placeholder-muted outline-none transition-all focus:border-gold focus:ring-2 focus:ring-gold/30 focus:bg-surface"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-medium uppercase tracking-[0.17em] text-foreground">
-                Mensaje adicional
-              </label>
-              <textarea
-                placeholder="Ej: ¡Espero que disfrutes de un día de relax!"
-                value={formData.message}
-                onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                maxLength={150}
-                rows={2}
-                className="mt-1.5 w-full resize-none rounded-md border border-gold/30 bg-surface/50 px-3 py-2 text-sm text-center text-foreground placeholder-muted outline-none transition-all focus:border-gold focus:ring-2 focus:ring-gold/30 focus:bg-surface"
-              />
-              <p className="mt-1 text-[10px] text-muted">
-                {formData.message.length}/150 caracteres
-              </p>
             </div>
 
             {error ? (
@@ -178,27 +125,15 @@ export function GiftCardSection() {
             </button>
           </form>
 
-          <GiftCardActivationCodeForm
-            variant="home"
-            onActivated={(card) => setActivatedCard(card)}
-          />
+          <Link
+            href="/tarjeta-regalo/activar"
+            className="mt-3 inline-flex w-full max-w-[20.4rem] items-center justify-center gap-2 rounded-md border border-gold/40 bg-surface-2 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-gold transition-colors hover:border-gold/60 hover:bg-gold/5"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            Recuperar mi tarjeta de regalo
+          </Link>
         </div>
       </div>
-
-      {activatedCard ? (
-        <div className="mt-5 border-t border-border pt-5 sm:mt-6 sm:pt-6">
-          <GiftCardActivatedDashboard
-            card={activatedCard}
-            onDismiss={() => {
-              clearActiveGiftCard();
-              setActivatedCard(null);
-            }}
-          />
-          <div className="mt-4">
-            <GiftCardActivatedDashboardLinks />
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

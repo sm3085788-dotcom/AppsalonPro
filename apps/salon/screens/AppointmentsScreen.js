@@ -27,6 +27,7 @@ import { SubScreenChrome, useSubStyles, modalSheetBottomPad, modalScrollBottomPa
 import { useTheme } from '../theme/ThemeProvider';
 import { SalonButton } from '../components/luxury/SalonButton';
 import { SalonSucursalSelect } from '../components/SalonSucursalSelect';
+import { ClienteOrigenChip } from '../components/ClienteOrigenChip';
 import {
   db,
   supabase,
@@ -69,7 +70,7 @@ function estadoLabel(est) {
   if (v === 'pendiente') return 'Pendiente';
   if (v === 'confirmado') return 'Confirmada';
   if (isCitaRechazada(v)) return 'Rechazada';
-  if (v === 'completada') return 'Completada';
+  if (v === 'completada' || v === 'completado') return 'Completada';
   return v;
 }
 
@@ -77,7 +78,7 @@ function estadoPillBg(_c, est) {
   const v = String(est || 'pendiente').toLowerCase();
   if (v === 'confirmado') return '#2E7D32';
   if (v === 'rechazado' || v === 'rechazada' || v === 'cancelado' || v === 'cancelada') return '#C62828';
-  if (v === 'completada') return '#5C6BC0';
+  if (v === 'completada' || v === 'completado') return '#5C6BC0';
   return '#F9A825';
 }
 
@@ -360,6 +361,7 @@ export function AppointmentsScreen({ onBack }) {
       pendiente: 'Pendiente',
       confirmado: 'Confirmado',
       rechazado: 'Rechazado',
+      completado: 'Completado',
     };
     const dtLbl = agendaFecha
       ? agendaFecha.toLocaleDateString('es-GT', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -386,6 +388,9 @@ export function AppointmentsScreen({ onBack }) {
         const v = String(r.estado || 'pendiente').toLowerCase();
         if (agendaEstado === 'rechazado') {
           return v === 'rechazado' || v === 'rechazada' || v === 'cancelado' || v === 'cancelada';
+        }
+        if (agendaEstado === 'completado') {
+          return v === 'completada' || v === 'completado';
         }
         return v === agendaEstado;
       });
@@ -815,7 +820,7 @@ export function AppointmentsScreen({ onBack }) {
     </TouchableOpacity>
   );
 
-  const modalContentPadBottom = insets.bottom + spacing.xl + spacing.md;
+  const modalContentPadBottom = insets.bottom + spacing.lg;
 
   return (
     <View style={[styles.shell, { backgroundColor: c.background }]}>
@@ -958,7 +963,7 @@ export function AppointmentsScreen({ onBack }) {
                       <Text style={[styles.citaCliente, { color: c.foregroundMuted }]} numberOfLines={1}>
                         {clienteNombre}
                       </Text>
-                      <Text style={[styles.citaWhen, { color: c.foregroundSubtle }]} numberOfLines={1}>
+                      <Text style={[styles.citaWhen, { color: c.primary }]} numberOfLines={1}>
                         {new Date(item.fecha_hora).toLocaleString('es-GT', {
                           weekday: 'short',
                           day: 'numeric',
@@ -1096,6 +1101,7 @@ export function AppointmentsScreen({ onBack }) {
                 { id: 'pendiente', label: 'Pendiente' },
                 { id: 'confirmado', label: 'Confirmado' },
                 { id: 'rechazado', label: 'Rechazado' },
+                { id: 'completado', label: 'Completado' },
               ].map((opt) => {
                 const on = agendaEstado === opt.id;
                 return (
@@ -1348,22 +1354,27 @@ export function AppointmentsScreen({ onBack }) {
           <ScrollView
             style={styles.modalScroll}
             contentContainerStyle={{
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.md,
+              paddingHorizontal: spacing.md,
+              paddingTop: spacing.sm,
               paddingBottom: modalContentPadBottom,
             }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             <Text style={styles.formTitle}>Nueva cita</Text>
-              <Text style={subStyles.muted}>
+              <Text style={[subStyles.muted, styles.formIntro]}>
                 Completá los datos y guardá; clientes, inventario (productos/servicios) y equipo salen de la base de datos.
               </Text>
 
-              <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Cliente (buscar existente)</Text>
+              <Text style={[styles.formLabel, { marginTop: spacing.sm }]}>Cliente (buscar existente)</Text>
               {selectedClient ? (
                 <View style={[styles.clientInfoCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
-                  <Text style={styles.suggestionName}>{selectedClient.nombre || 'Cliente'}</Text>
+                  <View style={styles.suggestionTopLine}>
+                    <Text style={[styles.suggestionName, { flex: 1 }]} numberOfLines={1}>
+                      {selectedClient.nombre || 'Cliente'}
+                    </Text>
+                    <ClienteOrigenChip row={selectedClient} colors={c} />
+                  </View>
                   {selectedClient.telefono ? (
                     <Text style={[subStyles.muted, { marginTop: 4 }]}>Tel. {selectedClient.telefono}</Text>
                   ) : null}
@@ -1405,7 +1416,12 @@ export function AppointmentsScreen({ onBack }) {
                           style={styles.suggestionRow}
                           onPress={() => selectClient(row)}
                         >
-                          <Text style={styles.suggestionName}>{row.nombre}</Text>
+                          <View style={styles.suggestionTopLine}>
+                            <Text style={[styles.suggestionName, { flex: 1 }]} numberOfLines={1}>
+                              {row.nombre}
+                            </Text>
+                            <ClienteOrigenChip row={row} colors={c} />
+                          </View>
                           <Text style={subStyles.muted}>
                             {[row.telefono, row.email].filter(Boolean).join(' · ') || 'Sin contacto'}
                           </Text>
@@ -1416,7 +1432,7 @@ export function AppointmentsScreen({ onBack }) {
                 </>
               )}
 
-              <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Producto o servicio (inventario)</Text>
+              <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Producto o servicio (inventario)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Escribí para buscar por nombre, marca o SKU…"
@@ -1463,7 +1479,7 @@ export function AppointmentsScreen({ onBack }) {
               ) : null}
               {selectedLines.length > 0 ? (
                 <View style={styles.selectedLinesWrap}>
-                  <Text style={[styles.formLabel, { marginBottom: spacing.sm }]}>Agregados a la cita</Text>
+                  <Text style={[styles.formLabel, { marginBottom: spacing.xs }]}>Agregados a la cita</Text>
                   {selectedLines.map((line) => {
                     const p = Number(line.precio);
                     const precioTxt = Number.isFinite(p)
@@ -1516,7 +1532,7 @@ export function AppointmentsScreen({ onBack }) {
                 </View>
               ) : null}
 
-              <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Fecha de cita</Text>
+              <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Fecha de cita</Text>
               <VerticalDatePicker
                 value={appointmentDate}
                 onChange={setAppointmentDate}
@@ -1531,7 +1547,7 @@ export function AppointmentsScreen({ onBack }) {
                 colors={c}
               />
 
-              <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Asignar profesional</Text>
+              <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Asignar profesional</Text>
               {selectedEmployee && staffSearch.trim().length < 2 ? (
                 <View style={[styles.clientInfoCard, { borderColor: c.cardBorder, backgroundColor: c.card }]}>
                   <Text style={styles.suggestionName}>{selectedEmployee.nombre}</Text>
@@ -1593,7 +1609,7 @@ export function AppointmentsScreen({ onBack }) {
                 </>
               )}
 
-              <Text style={[styles.formLabel, { marginTop: spacing.lg }]}>Descuento manual (opcional)</Text>
+              <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Descuento manual (opcional)</Text>
               <View style={styles.discountRow}>
                 <TextInput
                   style={[styles.input, styles.discountInput]}
@@ -1617,7 +1633,7 @@ export function AppointmentsScreen({ onBack }) {
               <Text style={subStyles.muted}>
                 Precio lista: Q{basePrice} · Descuento: {discountPct}% · Precio final: Q{finalPrice}
               </Text>
-              <Text style={[styles.formLabel, { marginTop: spacing.md }]}>Nota u observaciones</Text>
+              <Text style={[styles.formLabel, { marginTop: spacing.sm }]}>Nota u observaciones</Text>
               <TextInput
                 style={[styles.input, styles.noteInput]}
                 placeholder="Ej. preferencia de horario, productos sensibles…"
@@ -1961,16 +1977,20 @@ function createStyles(c) {
       fontFamily: typography.fontSansMedium,
       fontSize: 16,
       color: c.foreground,
+      marginBottom: 4,
+    },
+    formIntro: {
+      lineHeight: 17,
       marginBottom: spacing.xs,
     },
     formLabel: {
       fontFamily: typography.fontSansMedium,
       fontSize: 13,
       color: c.foreground,
-      marginBottom: spacing.xs,
+      marginBottom: 4,
     },
     input: {
-      minHeight: 46,
+      minHeight: 42,
       borderRadius: radii.sm,
       borderWidth: 1,
       borderColor: c.cardBorder,
@@ -1979,10 +1999,11 @@ function createStyles(c) {
       fontFamily: typography.fontSans,
       fontSize: 14,
       paddingHorizontal: spacing.md,
-      marginBottom: spacing.sm,
+      paddingVertical: 10,
+      marginBottom: spacing.xs,
     },
     noteInput: {
-      minHeight: 88,
+      minHeight: 72,
       textAlignVertical: 'top',
       paddingTop: spacing.sm,
       marginBottom: 0,
@@ -1991,10 +2012,10 @@ function createStyles(c) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
-      marginBottom: spacing.sm,
+      marginBottom: spacing.xs,
     },
     phonePrefix: {
-      minHeight: 46,
+      minHeight: 42,
       borderRadius: radii.sm,
       borderWidth: 1,
       borderColor: c.cardBorder,
@@ -2011,8 +2032,8 @@ function createStyles(c) {
     clientInfoCard: {
       borderRadius: radii.md,
       borderWidth: 1,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
+      padding: spacing.sm,
+      marginBottom: spacing.xs,
       borderLeftWidth: 3,
       borderLeftColor: c.primary,
     },
@@ -2021,12 +2042,12 @@ function createStyles(c) {
       borderWidth: 1,
       borderColor: c.cardBorder,
       backgroundColor: c.card,
-      marginBottom: spacing.sm,
+      marginBottom: spacing.xs,
       overflow: 'hidden',
     },
     suggestionRow: {
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
+      paddingVertical: spacing.xs,
       borderBottomWidth: 1,
       borderBottomColor: c.cardBorder,
     },
@@ -2040,8 +2061,8 @@ function createStyles(c) {
       opacity: 0.45,
     },
     selectedLinesWrap: {
-      marginTop: spacing.md,
-      gap: spacing.sm,
+      marginTop: spacing.sm,
+      gap: spacing.xs,
     },
     selectedLineRow: {
       flexDirection: 'row',
@@ -2079,11 +2100,17 @@ function createStyles(c) {
     removeLineBtn: {
       padding: 4,
     },
+    suggestionTopLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.xs,
+      marginBottom: 2,
+    },
     suggestionName: {
       fontFamily: typography.fontSansMedium,
       color: c.foreground,
       fontSize: 14,
-      marginBottom: 2,
     },
     selectedServiceBox: {
       marginTop: spacing.sm,
@@ -2131,13 +2158,13 @@ function createStyles(c) {
       fontSize: 16,
     },
     selectRow: {
-      minHeight: 46,
+      minHeight: 42,
       borderRadius: radii.sm,
       borderWidth: 1,
       borderColor: c.cardBorder,
       backgroundColor: c.card,
       paddingHorizontal: spacing.md,
-      marginBottom: spacing.sm,
+      marginBottom: spacing.xs,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -2156,7 +2183,7 @@ function createStyles(c) {
       borderColor: c.cardBorder,
       backgroundColor: c.card,
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
+      paddingVertical: spacing.xs,
     },
     staffChipOn: {
       borderColor: c.primary,
@@ -2177,9 +2204,9 @@ function createStyles(c) {
       color: c.foregroundMuted,
     },
     formActions: {
-      marginTop: spacing.lg,
-      gap: spacing.sm,
-      paddingBottom: spacing.lg,
+      marginTop: spacing.md,
+      gap: spacing.xs,
+      paddingBottom: spacing.md,
     },
   });
 }

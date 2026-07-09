@@ -5,6 +5,31 @@ const WEB_CATALOGO_BASE = 'https://appsalon-pro-web-catalogo.vercel.app';
 const GIFT_CARD_WEB_URL = `${WEB_CATALOGO_BASE}/#tarjeta-regalo`;
 const UNETE_EQUIPO_WEB_URL = `${WEB_CATALOGO_BASE}/unete-al-equipo`;
 
+/** URL de activación web con el código ACT precargado en el formulario. */
+export function buildGiftCardActivateUrl(codigo) {
+  const code = String(codigo || '').trim().toUpperCase();
+  const base = `${WEB_CATALOGO_BASE}/tarjeta-regalo/completar`;
+  if (!code) return base;
+  return `${base}?codigo=${encodeURIComponent(code)}`;
+}
+
+/** Mensaje WhatsApp al enviar código ACT al comprador. */
+export function buildGiftCardActivationWhatsAppMessage({ codigo, monto } = {}) {
+  const code = String(codigo || '').trim().toUpperCase();
+  const activateUrl = buildGiftCardActivateUrl(code);
+  return [
+    `¡Tarjeta VIP ANDREAS · ${formatQ(monto)}!`,
+    `Código: ${code}`,
+    '',
+    '¡Actívala aquí (código precargado) y completá Para, De y mensaje de tu tarjeta!',
+    activateUrl,
+    '',
+    '¡Gracias por tu noble gesto: el compartir es ganar, eres increíble!',
+    SALON_CONTACTO.telefonoLabel,
+    'Atención al cliente',
+  ].join('\n');
+}
+
 function formatQ(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return 'Q 0.00';

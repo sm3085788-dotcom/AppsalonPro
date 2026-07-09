@@ -1,5 +1,6 @@
 import { clearGiftCardCheckoutPayload } from '@/components/gift-card/GiftCardCheckoutForm';
 import { saveActiveGiftCard } from '@/lib/gift-card/activeGiftCardStorage';
+import type { GiftCardActivationPayload } from '@/lib/gift-card/validation';
 
 export type RedeemedGiftCard = {
   codigo: string;
@@ -17,9 +18,9 @@ export type RedeemActivationResult =
 
 /** Canjea ACT-XXXXXX (o recupera tarjeta ya activada). */
 export async function redeemGiftCardActivationCode(
-  activationCode: string,
+  input: GiftCardActivationPayload,
 ): Promise<RedeemActivationResult> {
-  const codigo = activationCode.trim().toUpperCase();
+  const codigo = input.codigo.trim().toUpperCase();
   if (!codigo) {
     return { ok: false, error: 'Ingresá el código de activación.' };
   }
@@ -28,7 +29,12 @@ export async function redeemGiftCardActivationCode(
     const res = await fetch('/api/gift-card/activate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codigo }),
+      body: JSON.stringify({
+        codigo,
+        paraNombre: input.paraNombre || null,
+        deNombre: input.deNombre || null,
+        mensaje: input.mensaje || null,
+      }),
     });
     const data = (await res.json()) as {
       ok?: boolean;

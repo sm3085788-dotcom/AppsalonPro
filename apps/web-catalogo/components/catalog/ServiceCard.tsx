@@ -79,7 +79,7 @@ export function ServiceCard({ service }: { service: Service }) {
             href={`/reservar?servicio=${encodeURIComponent(service.id)}`}
             className="link-underline inline-flex items-center gap-1 text-[11px] font-light uppercase tracking-[0.14em] text-cream group-hover:text-gold sm:gap-1.5 sm:text-[13px] sm:tracking-[0.18em]"
           >
-            Reservar
+            Agendar cita
             <ArrowUpRight className="hidden h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 sm:inline" />
           </Link>
         </div>

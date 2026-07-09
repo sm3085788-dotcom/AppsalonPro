@@ -125,7 +125,7 @@ export function buildGiftCardWhatsAppMessage(ctx?: WhatsAppCustomerContext): str
   return joinMessageParts([
     greetingLine(ctx),
     '',
-    'Deseo validar el monto y completar el pago de mi tarjeta regalo Andreas Salon. Agradezco su orientación para recibir el código de activación.',
+    'Deseo validar el monto y completar el pago de mi tarjeta regalo Andreas Salon. Agradezco su orientación para recibir el código de activación por mensaje; con él completaré los datos de mi tarjeta en la web.',
     '',
     'Consulta: Tarjeta regalo · Web catálogo Andreas Salon',
     '',

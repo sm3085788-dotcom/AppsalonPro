@@ -16,7 +16,7 @@ export function GiftCardShareCard({
       showDates
       compact={compact}
       fileSlug={data.codigo}
-      hint="Escaneá el QR del frente en la app del salón para validar y usar el saldo. Compartí también el reverso con tu mensaje."
+      hint="Escaneá el QR del frente en la app del salón. Compartí la tarjeta por WhatsApp: el mensaje incluye nuestras redes sociales."
     />
   );
 }

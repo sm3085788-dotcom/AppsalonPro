@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { scrollToHashWhenReady } from '@/lib/hashNavigation';
 import {
@@ -8,98 +8,157 @@ import {
   giftCardSuccessPath,
   type RedeemedGiftCard,
 } from '@/lib/gift-card/redeemActivationCode';
+import { formatActivationCodeInput } from '@/lib/gift-card/activationCodeInput';
+import { validateGiftCardActivationInput } from '@/lib/gift-card/validation';
+import { formatPersonName } from '@/lib/text/formatPersonName';
+import { polishSpanishGiftMessage } from '@/lib/text/polishSpanishGiftMessage';
+import type { GiftCardActivationMode } from '@/lib/gift-card/previewCopy';
 
 type GiftCardActivationCodeFormProps = {
-  variant?: 'home' | 'page';
+  variant?: GiftCardActivationMode;
   initialCodigo?: string;
   className?: string;
   onActivated?: (card: RedeemedGiftCard) => void;
 };
 
 export function GiftCardActivationCodeForm({
-  variant = 'page',
+  variant = 'recover',
   initialCodigo = '',
   className = '',
   onActivated,
 }: GiftCardActivationCodeFormProps) {
-  const [codigo, setCodigo] = useState(initialCodigo);
+  const isComplete = variant === 'complete';
+  const [codigo, setCodigo] = useState(() => formatActivationCodeInput(initialCodigo));
+  const [forName, setForName] = useState('');
+  const [fromName, setFromName] = useState('');
+  const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const next = formatActivationCodeInput(initialCodigo);
+    if (next) setCodigo(next);
+  }, [initialCodigo]);
+
+  function polishNameField(raw: string, setter: (v: string) => void) {
+    const formatted = formatPersonName(raw);
+    if (formatted !== raw) setter(formatted);
+  }
+
+  function finishActivation(card: RedeemedGiftCard) {
+    if (onActivated) {
+      onActivated(card);
+      window.requestAnimationFrame(() => {
+        scrollToHashWhenReady('#tarjeta-regalo-dashboard', 40, 40);
+      });
+      return;
+    }
+    window.location.assign(giftCardSuccessPath(card.codigo));
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    const validated = validateGiftCardActivationInput(
+      { codigo, forName, fromName, message },
+      { requireNames: isComplete },
+    );
+    if (!validated.ok) {
+      setError(validated.error);
+      return;
+    }
+
     setBusy(true);
     try {
-      const result = await redeemGiftCardActivationCode(codigo);
+      const result = await redeemGiftCardActivationCode(validated.payload);
       if (!result.ok) {
         setError(result.error);
         return;
       }
-
-      if (onActivated) {
-        onActivated(result.card);
-        window.requestAnimationFrame(() => {
-          scrollToHashWhenReady('#tarjeta-regalo-dashboard', 40, 40);
-        });
-        return;
-      }
-
-      window.location.assign(giftCardSuccessPath(result.card.codigo));
+      finishActivation(result.card);
     } finally {
       setBusy(false);
     }
   }
 
-  const isHome = variant === 'home';
+  const inputClass =
+    'w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-foreground outline-none focus:border-gold';
+  const labelClass = 'mb-2 block text-xs uppercase tracking-widest text-muted';
 
   return (
     <form
       onSubmit={(e) => void onSubmit(e)}
-      className={`${isHome ? 'mt-3 w-full max-w-[20.4rem] border-t border-gold/20 pt-3' : 'mt-8 space-y-4'} ${className}`.trim()}
-      id={isHome ? 'tarjeta-regalo-activar' : undefined}
+      className={`mt-8 space-y-4 ${className}`.trim()}
     >
-      {isHome ? (
-        <>
-          <p className="text-[10px] font-medium uppercase tracking-[0.17em] text-gold">
-            ¿Ya pagaste en salón?
-          </p>
-          <p className="mt-1 text-[11px] font-light leading-snug text-muted">
-            Ingresá tu código ACT para ver y descargar tu tarjeta oficial. Podés verlo las veces que
-            necesites, pero la tarjeta deja de funcionar una vez agotado su saldo.
-          </p>
-        </>
-      ) : null}
-
-      <div className={isHome ? 'mt-2' : ''}>
-        <label
-          className={`block uppercase tracking-widest text-muted ${
-            isHome ? 'text-[10px] font-medium tracking-[0.17em] text-foreground' : 'mb-2 text-xs'
-          }`}
-        >
-          Código de activación
-        </label>
+      <div>
+        <label className={labelClass}>Código de activación</label>
         <input
           value={codigo}
-          onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+          onChange={(e) => setCodigo(formatActivationCodeInput(e.target.value))}
           placeholder="ACT-123456"
           maxLength={12}
           autoComplete="off"
-          className={
-            isHome
-              ? 'mt-1 w-full rounded-md border border-gold/30 bg-surface/50 px-3 py-2 text-center text-sm uppercase tracking-widest text-foreground placeholder-muted outline-none transition-all focus:border-gold focus:ring-2 focus:ring-gold/30 focus:bg-surface'
-              : 'w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm uppercase tracking-widest text-foreground outline-none focus:border-gold'
-          }
+          className={`${inputClass} uppercase tracking-widest`}
           required
         />
       </div>
 
+      {isComplete ? (
+        <>
+          <div>
+            <label className={labelClass}>Para (nombre y apellido del destinatario)</label>
+            <input
+              type="text"
+              placeholder="Ej: María López"
+              value={forName}
+              onChange={(e) => setForName(e.target.value)}
+              onBlur={() => polishNameField(forName, setForName)}
+              autoComplete="name"
+              className={inputClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>De (tu nombre y apellido)</label>
+            <input
+              type="text"
+              placeholder="Ej: Juan Pérez"
+              value={fromName}
+              onChange={(e) => setFromName(e.target.value)}
+              onBlur={() => polishNameField(fromName, setFromName)}
+              autoComplete="name"
+              className={inputClass}
+              required
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Mensaje adicional (opcional)</label>
+            <textarea
+              placeholder="Ej: ¡Espero que disfrutes de un día de relax!"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onBlur={() => {
+                const polished = polishSpanishGiftMessage(message);
+                if (polished !== message) setMessage(polished);
+              }}
+              maxLength={150}
+              rows={3}
+              spellCheck
+              lang="es"
+              className={`${inputClass} resize-none`}
+            />
+            {message.length > 0 ? (
+              <p className="mt-1 text-xs text-muted">{message.length}/150 caracteres</p>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+
       {error ? (
-        <p
-          className={`rounded-md border border-red-500/30 bg-red-500/5 text-red-300 ${
-            isHome ? 'mt-2 p-2 text-xs' : 'rounded-xl p-3 text-sm'
-          }`}
-        >
+        <p className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-300">
           {error}
         </p>
       ) : null}
@@ -107,14 +166,16 @@ export function GiftCardActivationCodeForm({
       <button
         type="submit"
         disabled={busy || !codigo.trim()}
-        className={
-          isHome
-            ? 'mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gold/40 bg-surface-2 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-gold transition-colors hover:border-gold/60 hover:bg-gold/5 disabled:opacity-60'
-            : 'flex w-full items-center justify-center gap-2 rounded-xl bg-gold py-3.5 text-sm font-semibold text-charcoal disabled:opacity-60'
-        }
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold py-3.5 text-sm font-semibold text-charcoal disabled:opacity-60"
       >
-        <KeyRound className={isHome ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-        {busy ? 'Verificando…' : isHome ? 'Ver mi tarjeta' : 'Activar y generar tarjeta'}
+        <KeyRound className="h-4 w-4" />
+        {busy
+          ? isComplete
+            ? 'Generando…'
+            : 'Verificando…'
+          : isComplete
+            ? 'Activar y generar tarjeta'
+            : 'Recuperar tarjeta'}
       </button>
     </form>
   );

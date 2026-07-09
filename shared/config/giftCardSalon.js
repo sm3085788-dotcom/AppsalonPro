@@ -114,16 +114,16 @@ export function normalizeGtWhatsappPhone(raw) {
 
 export async function createGiftCardActivationCode({
   monto,
-  paraNombre,
-  deNombre,
-  mensaje = '',
+  paraNombre = null,
+  deNombre = null,
+  notaSalon = '',
   compradorTelefono,
 }) {
   const { data, error } = await supabase.rpc('create_gift_card_activation_code', {
     p_monto: monto,
-    p_para_nombre: paraNombre,
-    p_de_nombre: deNombre,
-    p_mensaje: mensaje || null,
+    p_para_nombre: paraNombre || null,
+    p_de_nombre: deNombre || null,
+    p_nota_salon: notaSalon || null,
     p_comprador_telefono: compradorTelefono,
   });
   if (error) return { ok: false, error: error.message };

@@ -34,6 +34,7 @@ BEGIN
         'estado', j->>'estado',
         'para_nombre', j->>'para_nombre',
         'de_nombre', j->>'de_nombre',
+        'nota_salon', j->>'nota_salon',
         'cliente_vinculado_id', j->>'cliente_vinculado_id',
         'cliente_vinculado_nombre', j->>'cliente_vinculado_nombre'
       )
@@ -60,6 +61,7 @@ BEGIN
         'estado', a.status,
         'para_nombre', a.para_nombre,
         'de_nombre', a.de_nombre,
+        'nota_salon', a.nota_salon,
         'cliente_vinculado_id', NULL,
         'cliente_vinculado_nombre', NULL
       )

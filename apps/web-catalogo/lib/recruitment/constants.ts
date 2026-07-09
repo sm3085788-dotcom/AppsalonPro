@@ -172,13 +172,13 @@ export const JOIN_TEAM_COPY = {
   suggestedBranches:
     'Servicios destacados: Coloración, Maquillaje y Cejas. Activá también Spas, Skincare o Recepción.',
   postSubmit: 'Solicitud recibida. Te contactaremos pronto.',
-  pageSubtitle: 'Crecé con nosotros si tenés determinación.',
+  pageSubtitle: 'Si tienes determinación, esta es tu oportunidad.',
 } as const;
 
 export type JoinTeamEstado = 'enviado' | 'recibido' | 'revisado';
 
 export const ESTADO_LABELS: Record<JoinTeamEstado, string> = {
   enviado: 'Solicitud enviada',
-  recibido: 'Salón confirmó recepción',
+  recibido: 'Salón lo ha recibido',
   revisado: 'Salón revisó tu documentación',
 };
