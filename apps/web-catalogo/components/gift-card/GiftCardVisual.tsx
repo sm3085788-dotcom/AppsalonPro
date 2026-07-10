@@ -1,13 +1,22 @@
 'use client';
 
-import { Gift } from 'lucide-react';
 import {
   formatGiftCardDate,
   giftCardQrImageUrl,
   GIFT_CARD_SITE_URL,
 } from '@/lib/gift-card/public';
-
-const LOGO_SRC = '/images/logo-andreas-transparent.png';
+import {
+  GiftCardBadge,
+  GiftCardCornerOrnaments,
+  GiftCardGoldDivider,
+  GiftCardHeaderBand,
+  GiftCardHeaderLogo,
+  GiftCardParaDeBlock,
+  GIFT_CARD_THEME,
+  giftCardShellClass,
+  giftCardShellStyle,
+  LOGO_SRC,
+} from './giftCardVisualUi';
 
 export interface GiftCardDisplayData {
   codigo: string;
@@ -33,141 +42,229 @@ export function GiftCardVisual({
   className?: string;
   incompletePreview?: boolean;
 }) {
-  const qrUrl = giftCardQrImageUrl(data.codigo, compact ? 120 : 160);
-  const shell = compact
-    ? 'mx-auto w-full max-w-[17.5rem] rounded-[20px] p-4 sm:max-w-[18rem]'
-    : 'mx-auto w-full max-w-sm rounded-[22px] p-6 sm:max-w-md sm:rounded-[26px] sm:p-8';
-  const innerInset = compact ? 'inset-[0.72rem] rounded-[16px]' : 'inset-4 rounded-2xl';
+  const qrUrl = giftCardQrImageUrl(data.codigo, compact ? 96 : 108);
+  const dimmed = incompletePreview || data.incompletePreview;
+  const showQr = qrUrl && data.codigo && !data.codigo.includes('PREVIEW');
+  const amountSize = compact ? 56 : 72;
+  const titleSize = compact ? 22 : 28;
 
   return (
     <div
-      className={`relative overflow-hidden border border-gold/50 bg-gradient-to-br from-[#141416] via-charcoal to-black shadow-[0_24px_60px_-20px_rgba(212,175,55,0.35),0_0_0_1px_rgba(212,175,55,0.12)] ${shell} ${className}`}
+      className={`relative flex flex-col items-center ${giftCardShellClass(compact)} ${className}`}
+      style={{ ...giftCardShellStyle(), padding: '0 0 24px 0', minHeight: compact ? 520 : 620 }}
     >
-      {/* Marco interior y brillo de lujo */}
-      <div className={`pointer-events-none absolute ${innerInset} border border-gold/25`} />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(212,175,55,0.14),transparent_55%),radial-gradient(ellipse_at_80%_100%,rgba(245,240,230,0.06),transparent_50%)]" />
-      <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gold/10 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-10 -left-6 h-28 w-28 rounded-full bg-cream/5 blur-3xl" />
+      <GiftCardHeaderBand
+        left={
+          <GiftCardBadge compact={compact}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" />
+              <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+              <line x1="12" y1="12" x2="12" y2="16" />
+              <line x1="10" y1="14" x2="14" y2="14" />
+            </svg>
+            VIP
+          </GiftCardBadge>
+        }
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              style={{
+                width: compact ? 28 : 32,
+                height: compact ? 28 : 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={LOGO_SRC}
+                alt="Andreas"
+                style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(1.1)' }}
+              />
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: compact ? 9 : 10, letterSpacing: '0.18em', fontWeight: 600 }}>
+              SALÓN
+            </div>
+          </div>
+        }
+      />
 
-      {/* Esquinas decorativas */}
-      <span className="pointer-events-none absolute left-3 top-3 h-4 w-4 border-l border-t border-gold/45" />
-      <span className="pointer-events-none absolute right-3 top-3 h-4 w-4 border-r border-t border-gold/45" />
-      <span className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 border-b border-l border-gold/45" />
-      <span className="pointer-events-none absolute bottom-3 right-3 h-4 w-4 border-b border-r border-gold/45" />
+      <GiftCardCornerOrnaments top={compact ? 62 : 68} />
 
-      <div className={`relative flex h-full flex-col ${compact ? 'justify-between gap-1' : 'gap-4'}`}>
-        {/* VIP separado del wordmark */}
-        <div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/55 bg-gradient-to-r from-gold/15 to-gold/5 px-2.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <Gift className="h-3 w-3 text-gold" strokeWidth={1.75} />
-            <span className="text-[8px] font-semibold uppercase tracking-[0.32em] text-gold">
-              VIP
-            </span>
+      <div className="flex w-full flex-col items-center" style={{ marginBottom: compact ? 14 : 18, paddingInline: compact ? 20 : 28 }}>
+        <div
+          style={{
+            letterSpacing: '0.42em',
+            color: GIFT_CARD_THEME.brown,
+            fontSize: titleSize,
+            fontWeight: 700,
+            lineHeight: 1,
+            marginBottom: 4,
+          }}
+        >
+          ANDREAS
+        </div>
+        <div
+          style={{
+            letterSpacing: '0.32em',
+            color: GIFT_CARD_THEME.goldMuted,
+            fontSize: compact ? 8.5 : 9.5,
+            fontWeight: 600,
+            marginBottom: compact ? 10 : 14,
+          }}
+        >
+          SALÓN DE LUJO
+        </div>
+        <GiftCardGoldDivider />
+      </div>
+
+      <div className="flex w-full flex-col items-center" style={{ marginBottom: compact ? 14 : 18, paddingInline: compact ? 20 : 28 }}>
+        <div
+          style={{
+            letterSpacing: '0.22em',
+            color: '#A08040',
+            fontSize: compact ? 8 : 9,
+            fontWeight: 700,
+            marginBottom: 6,
+            textTransform: 'uppercase',
+          }}
+        >
+          Valor de la Tarjeta
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+          <span
+            style={{
+              fontSize: compact ? 14 : 16,
+              fontWeight: 600,
+              color: GIFT_CARD_THEME.gold,
+              lineHeight: 1,
+              alignSelf: 'flex-start',
+              marginTop: compact ? 8 : 10,
+              marginRight: 2,
+            }}
+          >
+            $
+          </span>
+          <span
+            style={{
+              fontSize: amountSize,
+              fontWeight: 700,
+              color: GIFT_CARD_THEME.brown,
+              letterSpacing: '-0.03em',
+              lineHeight: 1,
+            }}
+          >
+            {data.monto}
           </span>
         </div>
-
-        {/* Logo + marca centrados */}
-        <div className={`flex flex-col items-center text-center ${compact ? 'gap-1 -mt-1' : 'gap-1.5'}`}>
-          <div className={compact ? 'h-[3.45rem] w-[3.45rem]' : 'h-[4.15rem] w-[4.15rem]'}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={LOGO_SRC}
-              alt="Andreas"
-              className="h-full w-full object-contain drop-shadow-[0_2px_8px_rgba(212,175,55,0.3)]"
-            />
-          </div>
-          <div>
-            <p
-              className={`font-serif font-light uppercase tracking-[0.38em] text-gold ${
-                compact ? 'text-[0.95rem]' : 'text-xl'
-              }`}
-            >
-              Andreas
-            </p>
-            <p className="mt-0.5 text-[7.5px] font-light uppercase tracking-[0.42em] text-cream/45">
-              Salón de lujo
-            </p>
-          </div>
+        <div
+          style={{
+            letterSpacing: '0.24em',
+            color: GIFT_CARD_THEME.goldMuted,
+            fontSize: compact ? 8 : 9,
+            fontWeight: 600,
+            marginTop: 4,
+          }}
+        >
+          PREMIUM EXPERIENCE
         </div>
-
-        <LuxuryDivider compact={compact} />
-
-        <div className="text-center">
-          <p className="text-[9px] font-light uppercase tracking-[0.28em] text-cream/55">
-            Valor de la tarjeta
-          </p>
-          <p
-            className={`mt-1.5 font-serif font-semibold tabular-nums text-gold drop-shadow-[0_0_18px_rgba(212,175,55,0.25)] ${
-              compact ? 'text-[2rem]' : 'text-5xl'
-            }`}
-          >
-            ${data.monto}
-          </p>
-          <p className="mt-0.5 text-[8.5px] uppercase tracking-[0.22em] text-cream/35">
-            Premium Experience
-          </p>
-        </div>
-
-        <LuxuryDivider compact={compact} />
-
-        <div className={`space-y-0.5 text-center text-cream/75 ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
-          <p>
-            <span className="font-semibold uppercase tracking-[0.12em] text-gold/90">Para:</span>{' '}
-            <span
-              className={`tracking-[0.18em] ${
-                incompletePreview || data.incompletePreview ? 'italic text-cream/40' : ''
-              }`}
-            >
-              {data.paraNombre}
-            </span>
-          </p>
-          <p>
-            <span className="font-semibold uppercase tracking-[0.12em] text-gold/90">De:</span>{' '}
-            <span
-              className={`tracking-[0.18em] ${
-                incompletePreview || data.incompletePreview ? 'italic text-cream/40' : ''
-              }`}
-            >
-              {data.deNombre}
-            </span>
-          </p>
-          {data.mensaje ? (
-            <p className="mt-1.5 italic leading-relaxed text-cream/45">&ldquo;{data.mensaje}&rdquo;</p>
-          ) : null}
-        </div>
-
-        {qrUrl && data.codigo && !data.codigo.includes('PREVIEW') ? (
-          <div className="flex flex-col items-center gap-1.5 pt-1">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={qrUrl}
-              alt={`QR tarjeta ${data.codigo}`}
-              className="rounded-md border border-gold/25 bg-white p-1 shadow-[0_4px_16px_rgba(0,0,0,0.35)]"
-              width={compact ? 72 : 104}
-              height={compact ? 72 : 104}
-            />
-            <p className="font-mono text-[8.5px] tracking-[0.2em] text-gold/85">{data.codigo}</p>
-          </div>
-        ) : null}
-
-        {data.showDates && (data.emitidaEn || data.venceEn) ? (
-          <div className="border-t border-gold/15 pt-2 text-center text-[8px] leading-relaxed text-cream/45">
-            {data.emitidaEn ? <p>Emisión: {formatGiftCardDate(data.emitidaEn)}</p> : null}
-            {data.venceEn ? <p>Canjeable hasta: {formatGiftCardDate(data.venceEn)}</p> : null}
-            <p className="mt-1 text-gold/70">{GIFT_CARD_SITE_URL.replace(/^https:\/\//, '')}</p>
-          </div>
-        ) : null}
       </div>
-    </div>
-  );
-}
 
-function LuxuryDivider({ compact }: { compact: boolean }) {
-  return (
-    <div className={`flex items-center gap-2 ${compact ? 'py-0' : 'py-0.5'}`}>
-      <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
-      <span className="h-1 w-1 rotate-45 border border-gold/60 bg-gold/20" />
-      <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
+      <GiftCardGoldDivider style={{ marginBottom: compact ? 14 : 18, paddingInline: compact ? 20 : 28 }} />
+
+      <div className="w-full" style={{ paddingInline: compact ? 20 : 28, marginBottom: compact ? 10 : 14 }}>
+        <GiftCardParaDeBlock
+          para={data.paraNombre}
+          de={data.deNombre}
+          compact={compact}
+          dimmed={dimmed}
+        />
+      </div>
+
+      {data.mensaje ? (
+        <div
+          style={{
+            paddingInline: compact ? 20 : 28,
+            marginBottom: compact ? 14 : 20,
+            textAlign: 'center',
+          }}
+        >
+          <span
+            style={{
+              fontStyle: 'italic',
+              color: '#7A5420',
+              fontSize: compact ? 12 : 13.5,
+              lineHeight: 1.65,
+              fontWeight: 400,
+            }}
+          >
+            &ldquo;{data.mensaje}&rdquo;
+          </span>
+        </div>
+      ) : null}
+
+      {showQr ? (
+        <div
+          style={{
+            background: '#FFFFFF',
+            border: '1px solid #E0CFA0',
+            borderRadius: 14,
+            padding: '10px 10px 6px',
+            marginBottom: 8,
+            boxShadow: '0 2px 12px rgba(180,140,40,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={qrUrl}
+            alt={`QR tarjeta ${data.codigo}`}
+            width={compact ? 88 : 108}
+            height={compact ? 88 : 108}
+          />
+        </div>
+      ) : null}
+
+      {showQr ? (
+        <div
+          style={{
+            letterSpacing: '0.28em',
+            color: '#9A7530',
+            fontSize: compact ? 10 : 11,
+            fontWeight: 700,
+            marginBottom: compact ? 14 : 18,
+          }}
+        >
+          {data.codigo}
+        </div>
+      ) : null}
+
+      {data.showDates && (data.emitidaEn || data.venceEn) ? (
+        <>
+          <GiftCardGoldDivider style={{ marginBottom: 14, paddingInline: compact ? 20 : 28 }} />
+          <div
+            style={{
+              fontSize: compact ? 9.5 : 10.5,
+              color: GIFT_CARD_THEME.textMuted,
+              textAlign: 'center',
+              lineHeight: 1.8,
+              fontFamily: 'system-ui, sans-serif',
+              letterSpacing: '0.03em',
+              paddingInline: compact ? 20 : 28,
+            }}
+          >
+            {data.emitidaEn ? <div>Emisión: {formatGiftCardDate(data.emitidaEn)}</div> : null}
+            {data.venceEn ? <div>Canjeable hasta: {formatGiftCardDate(data.venceEn)}</div> : null}
+            <div style={{ color: GIFT_CARD_THEME.gold, marginTop: 3, fontSize: compact ? 9 : 9.5, letterSpacing: '0.04em' }}>
+              {GIFT_CARD_SITE_URL.replace(/^https:\/\//, '')}
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
