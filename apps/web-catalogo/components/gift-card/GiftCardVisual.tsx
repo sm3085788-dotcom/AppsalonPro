@@ -10,11 +10,11 @@ import {
   GiftCardCornerOrnaments,
   GiftCardGoldDivider,
   GiftCardHeaderBand,
-  GiftCardHeaderLogo,
   GiftCardParaDeBlock,
   GIFT_CARD_THEME,
   giftCardShellClass,
   giftCardShellStyle,
+  giftCardSizes,
   LOGO_SRC,
 } from './giftCardVisualUi';
 
@@ -42,18 +42,18 @@ export function GiftCardVisual({
   className?: string;
   incompletePreview?: boolean;
 }) {
-  const qrUrl = giftCardQrImageUrl(data.codigo, compact ? 96 : 108);
+  const s = giftCardSizes(compact);
+  const qrUrl = giftCardQrImageUrl(data.codigo, compact ? 120 : 160);
   const dimmed = incompletePreview || data.incompletePreview;
   const showQr = qrUrl && data.codigo && !data.codigo.includes('PREVIEW');
-  const amountSize = compact ? 56 : 72;
-  const titleSize = compact ? 22 : 28;
 
   return (
     <div
       className={`relative flex flex-col items-center ${giftCardShellClass(compact)} ${className}`}
-      style={{ ...giftCardShellStyle(), padding: '0 0 24px 0', minHeight: compact ? 520 : 620 }}
+      style={{ ...giftCardShellStyle(), padding: compact ? '0 0 12px 0' : '0 0 16px 0' }}
     >
       <GiftCardHeaderBand
+        compact={compact}
         left={
           <GiftCardBadge compact={compact}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2">
@@ -66,11 +66,11 @@ export function GiftCardVisual({
           </GiftCardBadge>
         }
         right={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 8 }}>
             <div
               style={{
-                width: compact ? 28 : 32,
-                height: compact ? 28 : 32,
+                width: s.headerLogo,
+                height: s.headerLogo,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -83,24 +83,35 @@ export function GiftCardVisual({
                 style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(1.1)' }}
               />
             </div>
-            <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: compact ? 9 : 10, letterSpacing: '0.18em', fontWeight: 600 }}>
+            <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: compact ? 8 : 9, letterSpacing: '0.18em', fontWeight: 600 }}>
               SALÓN
             </div>
           </div>
         }
       />
 
-      <GiftCardCornerOrnaments top={compact ? 62 : 68} />
+      <GiftCardCornerOrnaments top={s.cornerTop} />
 
-      <div className="flex w-full flex-col items-center" style={{ marginBottom: compact ? 14 : 18, paddingInline: compact ? 20 : 28 }}>
+      <div
+        className="flex w-full flex-col items-center"
+        style={{ marginBottom: s.sectionMb, paddingInline: s.padX }}
+      >
+        <div style={{ width: compact ? 55 : 66, height: compact ? 55 : 66, marginBottom: compact ? 4 : 6 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={LOGO_SRC}
+            alt="Andreas"
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          />
+        </div>
         <div
           style={{
-            letterSpacing: '0.42em',
+            letterSpacing: '0.38em',
             color: GIFT_CARD_THEME.brown,
-            fontSize: titleSize,
+            fontSize: s.title,
             fontWeight: 700,
             lineHeight: 1,
-            marginBottom: 4,
+            marginBottom: 3,
           }}
         >
           ANDREAS
@@ -109,9 +120,9 @@ export function GiftCardVisual({
           style={{
             letterSpacing: '0.32em',
             color: GIFT_CARD_THEME.goldMuted,
-            fontSize: compact ? 8.5 : 9.5,
+            fontSize: compact ? 7.5 : 8.5,
             fontWeight: 600,
-            marginBottom: compact ? 10 : 14,
+            marginBottom: compact ? 8 : 10,
           }}
         >
           SALÓN DE LUJO
@@ -119,14 +130,17 @@ export function GiftCardVisual({
         <GiftCardGoldDivider />
       </div>
 
-      <div className="flex w-full flex-col items-center" style={{ marginBottom: compact ? 14 : 18, paddingInline: compact ? 20 : 28 }}>
+      <div
+        className="flex w-full flex-col items-center"
+        style={{ marginBottom: s.sectionMb, paddingInline: s.padX }}
+      >
         <div
           style={{
             letterSpacing: '0.22em',
             color: '#A08040',
             fontSize: compact ? 8 : 9,
             fontWeight: 700,
-            marginBottom: 6,
+            marginBottom: 4,
             textTransform: 'uppercase',
           }}
         >
@@ -135,12 +149,12 @@ export function GiftCardVisual({
         <div style={{ display: 'inline-flex', alignItems: 'baseline' }}>
           <span
             style={{
-              fontSize: compact ? 14 : 16,
+              fontSize: compact ? 12 : 14,
               fontWeight: 600,
               color: GIFT_CARD_THEME.gold,
               lineHeight: 1,
               alignSelf: 'flex-start',
-              marginTop: compact ? 8 : 10,
+              marginTop: compact ? 6 : 8,
               marginRight: 2,
             }}
           >
@@ -148,7 +162,7 @@ export function GiftCardVisual({
           </span>
           <span
             style={{
-              fontSize: amountSize,
+              fontSize: s.amount,
               fontWeight: 700,
               color: GIFT_CARD_THEME.brown,
               letterSpacing: '-0.03em',
@@ -160,20 +174,20 @@ export function GiftCardVisual({
         </div>
         <div
           style={{
-            letterSpacing: '0.24em',
+            letterSpacing: '0.22em',
             color: GIFT_CARD_THEME.goldMuted,
-            fontSize: compact ? 8 : 9,
+            fontSize: compact ? 7.5 : 8.5,
             fontWeight: 600,
-            marginTop: 4,
+            marginTop: 3,
           }}
         >
           PREMIUM EXPERIENCE
         </div>
       </div>
 
-      <GiftCardGoldDivider style={{ marginBottom: compact ? 14 : 18, paddingInline: compact ? 20 : 28 }} />
+      <GiftCardGoldDivider style={{ marginBottom: s.sectionMb, paddingInline: s.padX }} />
 
-      <div className="w-full" style={{ paddingInline: compact ? 20 : 28, marginBottom: compact ? 10 : 14 }}>
+      <div className="w-full" style={{ paddingInline: s.padX, marginBottom: compact ? 8 : 10 }}>
         <GiftCardParaDeBlock
           para={data.paraNombre}
           de={data.deNombre}
@@ -185,8 +199,8 @@ export function GiftCardVisual({
       {data.mensaje ? (
         <div
           style={{
-            paddingInline: compact ? 20 : 28,
-            marginBottom: compact ? 14 : 20,
+            paddingInline: s.padX,
+            marginBottom: compact ? 10 : 12,
             textAlign: 'center',
           }}
         >
@@ -194,8 +208,8 @@ export function GiftCardVisual({
             style={{
               fontStyle: 'italic',
               color: '#7A5420',
-              fontSize: compact ? 12 : 13.5,
-              lineHeight: 1.65,
+              fontSize: compact ? 9 : 10.5,
+              lineHeight: 1.55,
               fontWeight: 400,
             }}
           >
@@ -209,22 +223,21 @@ export function GiftCardVisual({
           style={{
             background: '#FFFFFF',
             border: '1px solid #E0CFA0',
-            borderRadius: 14,
-            padding: '10px 10px 6px',
-            marginBottom: 8,
+            borderRadius: compact ? 10 : 12,
+            padding: compact ? '6px 6px 4px' : '8px 8px 5px',
+            marginBottom: 6,
             boxShadow: '0 2px 12px rgba(180,140,40,0.1)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: 6,
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={qrUrl}
             alt={`QR tarjeta ${data.codigo}`}
-            width={compact ? 88 : 108}
-            height={compact ? 88 : 108}
+            width={s.qr}
+            height={s.qr}
           />
         </div>
       ) : null}
@@ -232,11 +245,11 @@ export function GiftCardVisual({
       {showQr ? (
         <div
           style={{
-            letterSpacing: '0.28em',
+            letterSpacing: '0.2em',
             color: '#9A7530',
-            fontSize: compact ? 10 : 11,
+            fontSize: compact ? 8.5 : 9.5,
             fontWeight: 700,
-            marginBottom: compact ? 14 : 18,
+            marginBottom: compact ? 10 : 12,
           }}
         >
           {data.codigo}
@@ -245,21 +258,21 @@ export function GiftCardVisual({
 
       {data.showDates && (data.emitidaEn || data.venceEn) ? (
         <>
-          <GiftCardGoldDivider style={{ marginBottom: 14, paddingInline: compact ? 20 : 28 }} />
+          <GiftCardGoldDivider style={{ marginBottom: 10, paddingInline: s.padX }} />
           <div
             style={{
-              fontSize: compact ? 9.5 : 10.5,
+              fontSize: compact ? 8 : 9,
               color: GIFT_CARD_THEME.textMuted,
               textAlign: 'center',
-              lineHeight: 1.8,
+              lineHeight: 1.7,
               fontFamily: 'system-ui, sans-serif',
               letterSpacing: '0.03em',
-              paddingInline: compact ? 20 : 28,
+              paddingInline: s.footerPad,
             }}
           >
             {data.emitidaEn ? <div>Emisión: {formatGiftCardDate(data.emitidaEn)}</div> : null}
             {data.venceEn ? <div>Canjeable hasta: {formatGiftCardDate(data.venceEn)}</div> : null}
-            <div style={{ color: GIFT_CARD_THEME.gold, marginTop: 3, fontSize: compact ? 9 : 9.5, letterSpacing: '0.04em' }}>
+            <div style={{ color: GIFT_CARD_THEME.gold, marginTop: 2, fontSize: compact ? 8 : 8.5, letterSpacing: '0.04em' }}>
               {GIFT_CARD_SITE_URL.replace(/^https:\/\//, '')}
             </div>
           </div>

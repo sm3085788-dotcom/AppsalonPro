@@ -21,10 +21,37 @@ export const GIFT_CARD_THEME = {
   font: "'Cormorant Garamond', Georgia, serif",
 } as const;
 
+/** Mismas proporciones que la tarjeta VIP anterior en web. */
 export function giftCardShellClass(compact: boolean) {
   return compact
-    ? 'mx-auto w-full max-w-[17.5rem] sm:max-w-[18rem]'
-    : 'mx-auto w-full max-w-[340px]';
+    ? 'mx-auto w-full max-w-[17.5rem] rounded-[20px] sm:max-w-[18rem]'
+    : 'mx-auto w-full max-w-sm rounded-[22px] sm:max-w-md sm:rounded-[26px]';
+}
+
+export function giftCardSizes(compact: boolean) {
+  return compact
+    ? {
+        title: 15,
+        amount: 32,
+        qr: 72,
+        headerLogo: 26,
+        headerMb: 12,
+        sectionMb: 10,
+        padX: 16,
+        footerPad: 16,
+        cornerTop: 58,
+      }
+    : {
+        title: 20,
+        amount: 48,
+        qr: 104,
+        headerLogo: 34,
+        headerMb: 16,
+        sectionMb: 14,
+        padX: 24,
+        footerPad: 24,
+        cornerTop: 64,
+      };
 }
 
 export function giftCardShellStyle(): CSSProperties {
@@ -80,20 +107,23 @@ export function GiftCardGoldDivider({ className = '', style }: { className?: str
 export function GiftCardHeaderBand({
   left,
   right,
+  compact = false,
 }: {
   left: ReactNode;
   right: ReactNode;
+  compact?: boolean;
 }) {
+  const s = giftCardSizes(compact);
   return (
     <div
       style={{
         width: '100%',
         background: `linear-gradient(135deg, ${GIFT_CARD_THEME.gold} 0%, ${GIFT_CARD_THEME.goldLight} 45%, ${GIFT_CARD_THEME.gold} 100%)`,
-        padding: '14px 20px',
+        padding: compact ? '10px 14px' : '12px 18px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 20,
+        marginBottom: s.headerMb,
       }}
     >
       {left}

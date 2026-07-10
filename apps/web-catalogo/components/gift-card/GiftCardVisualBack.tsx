@@ -12,6 +12,7 @@ import {
   GIFT_CARD_THEME,
   giftCardShellClass,
   giftCardShellStyle,
+  giftCardSizes,
 } from './giftCardVisualUi';
 
 export function GiftCardVisualBack({
@@ -24,13 +25,15 @@ export function GiftCardVisualBack({
   className?: string;
 }) {
   const copy = buildGiftCardBackCopy(data);
+  const s = giftCardSizes(compact);
 
   return (
     <div
       className={`relative flex flex-col ${giftCardShellClass(compact)} ${className}`}
-      style={{ ...giftCardShellStyle(), padding: '0 0 24px 0', minHeight: compact ? 520 : 620 }}
+      style={{ ...giftCardShellStyle(), padding: compact ? '0 0 12px 0' : '0 0 16px 0' }}
     >
       <GiftCardHeaderBand
+        compact={compact}
         left={
           <GiftCardBadge compact={compact}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2.2">
@@ -42,28 +45,28 @@ export function GiftCardVisualBack({
         right={<GiftCardHeaderLogo compact={compact} />}
       />
 
-      <GiftCardCornerOrnaments top={compact ? 62 : 68} />
+      <GiftCardCornerOrnaments top={s.cornerTop} />
 
       <div
         style={{
-          paddingInline: compact ? 20 : 26,
+          paddingInline: s.padX,
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        <div style={{ marginBottom: compact ? 14 : 18 }}>
+        <div style={{ marginBottom: s.sectionMb }}>
           <GiftCardParaDeBlock para={copy.para} de={copy.de} compact={compact} />
         </div>
 
         <div
           style={{
-            fontSize: compact ? 10 : 11,
+            fontSize: compact ? 8.5 : 10,
             fontWeight: 700,
             color: GIFT_CARD_THEME.gold,
-            letterSpacing: '0.16em',
-            marginBottom: compact ? 10 : 12,
-            lineHeight: 1.4,
+            letterSpacing: '0.14em',
+            marginBottom: compact ? 8 : 10,
+            lineHeight: 1.35,
             textTransform: 'uppercase',
           }}
         >
@@ -72,11 +75,11 @@ export function GiftCardVisualBack({
 
         <p
           style={{
-            fontSize: compact ? 12 : 13.5,
+            fontSize: compact ? 8.5 : 10.5,
             color: GIFT_CARD_THEME.brownSoft,
-            lineHeight: 1.8,
+            lineHeight: 1.65,
             textAlign: 'center',
-            marginBottom: compact ? 12 : 16,
+            marginBottom: compact ? 10 : 12,
             fontWeight: 400,
           }}
         >
@@ -84,14 +87,14 @@ export function GiftCardVisualBack({
         </p>
 
         {copy.personal ? (
-          <div style={{ position: 'relative', marginBottom: compact ? 14 : 18, paddingLeft: 16 }}>
+          <div style={{ position: 'relative', marginBottom: compact ? 10 : 12, paddingLeft: 12 }}>
             <div
               style={{
                 position: 'absolute',
                 left: 0,
                 top: 0,
                 bottom: 0,
-                width: 3,
+                width: 2,
                 borderRadius: 2,
                 background: `linear-gradient(to bottom, ${GIFT_CARD_THEME.gold}, ${GIFT_CARD_THEME.goldLight}, ${GIFT_CARD_THEME.gold})`,
               }}
@@ -101,16 +104,16 @@ export function GiftCardVisualBack({
                 background: 'rgba(201,168,76,0.06)',
                 border: `1px solid ${GIFT_CARD_THEME.quoteBorder}`,
                 borderLeft: 'none',
-                borderRadius: '0 10px 10px 0',
-                padding: compact ? '10px 14px' : '12px 16px',
+                borderRadius: '0 8px 8px 0',
+                padding: compact ? '8px 12px' : '10px 14px',
               }}
             >
               <p
                 style={{
                   fontStyle: 'italic',
                   color: GIFT_CARD_THEME.brown,
-                  fontSize: compact ? 12.5 : 14,
-                  lineHeight: 1.65,
+                  fontSize: compact ? 9.5 : 11,
+                  lineHeight: 1.55,
                   fontWeight: 500,
                   textAlign: 'center',
                   margin: 0,
@@ -124,11 +127,11 @@ export function GiftCardVisualBack({
 
         <p
           style={{
-            fontSize: compact ? 11.5 : 12.5,
+            fontSize: compact ? 8.5 : 10,
             color: GIFT_CARD_THEME.textMuted,
             textAlign: 'center',
-            lineHeight: 1.6,
-            marginBottom: compact ? 16 : 20,
+            lineHeight: 1.55,
+            marginBottom: compact ? 12 : 14,
           }}
         >
           Que este regalo te inspire a celebrarte, cuidarte y brillar.
@@ -136,23 +139,23 @@ export function GiftCardVisualBack({
           <span style={{ color: '#7A5C1E', fontWeight: 600, letterSpacing: '0.06em' }}>— Salón Andreas</span>
         </p>
 
-        <GiftCardGoldDivider style={{ marginBottom: 14 }} />
+        <GiftCardGoldDivider style={{ marginBottom: 10 }} />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={GIFT_CARD_THEME.gold} strokeWidth="1.6">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: compact ? 6 : 8 }}>
+          <svg width={compact ? 12 : 14} height={compact ? 12 : 14} viewBox="0 0 24 24" fill="none" stroke={GIFT_CARD_THEME.gold} strokeWidth="1.6">
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
           </svg>
           <span
             style={{
-              letterSpacing: '0.24em',
+              letterSpacing: '0.2em',
               color: GIFT_CARD_THEME.goldMuted,
-              fontSize: compact ? 9 : 10,
+              fontSize: compact ? 6.5 : 8,
               fontWeight: 700,
             }}
           >
             SALUD · BELLEZA · BIENESTAR
           </span>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={GIFT_CARD_THEME.gold} strokeWidth="1.6">
+          <svg width={compact ? 12 : 14} height={compact ? 12 : 14} viewBox="0 0 24 24" fill="none" stroke={GIFT_CARD_THEME.gold} strokeWidth="1.6">
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
           </svg>
         </div>
