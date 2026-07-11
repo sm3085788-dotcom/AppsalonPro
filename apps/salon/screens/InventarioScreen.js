@@ -1358,6 +1358,17 @@ export function InventarioScreen({ onBack }) {
             `El artículo quedó en inventario, pero no se pudo sincronizar con la agenda: ${syncErr.message || syncErr}`,
           );
         }
+      } else if (meta.articuloTipo === 'producto' && rowId) {
+        const { error: stockSyncErr } = await db.inventarioStockSucursal.syncFromCatalogSave({
+          inventarioId: rowId,
+          stockActual: payload.stock_actual,
+          stockMinimo: payload.stock_minimo,
+        });
+        if (stockSyncErr) {
+          uploadWarnings.push(
+            stockSyncErr.message || 'No se pudo sincronizar el stock en sucursal matriz',
+          );
+        }
       }
 
       setModalOpen(false);
@@ -1372,13 +1383,15 @@ export function InventarioScreen({ onBack }) {
         Alert.alert(
           'Listo',
           form.id
-            ? 'Artículo actualizado.'
+            ? meta.articuloTipo === 'producto' && form.visible_en_tienda && parseNum(form.stock_actual) > 0
+              ? 'Artículo actualizado. Stock sincronizado en sucursal matriz para App Clientes.'
+              : 'Artículo actualizado.'
             : `Artículo creado.${
                 form.visible_en_tienda
                   ? parseNum(form.stock_actual) <= 0
-                    ? '\n\nVisible en tienda: sí. Con stock 0 el cliente lo verá como sin stock.'
-                    : '\n\nYa debería aparecer en Tienda (App Clientes).'
-                  : '\n\nPara que aparezca en Tienda, activá «Visible en tienda (clientes)».'
+                    ? '\n\nVisible en tienda: sí, pero con stock 0 no aparece en App Clientes (solo se listan productos con stock en la sucursal del cliente).'
+                    : '\n\nStock sincronizado en sucursal matriz. Ya debería aparecer en Tienda (App Clientes).'
+                  : '\n\nPara que aparezca en Tienda, activá «Visible en tienda (clientes)» y asigná stock mayor a 0.'
               }`,
         );
       }

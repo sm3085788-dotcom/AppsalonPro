@@ -7459,6 +7459,44 @@ export const db = {
     },
 
     mergeCatalogo: (items, stockRows) => mergeInventarioWithSucursalStock(items, stockRows),
+
+    /**
+     * Tras crear/editar un producto en catálogo matriz, refleja stock_actual en inventario_stock_sucursal
+     * (sucursal matriz). Sin esto, App Clientes filtra stock 0 por sucursal y no lista el artículo.
+     */
+    syncFromCatalogSave: async ({ inventarioId, stockActual, stockMinimo, sucursalId = null }) => {
+      if (!inventarioId) return { data: null, error: null };
+
+      let targetSucursalId = sucursalId ? String(sucursalId) : null;
+      if (!targetSucursalId) {
+        const { data: sucursales, error: listErr } = await db.sucursales.listActivas();
+        if (listErr) return { data: null, error: listErr };
+        const matriz =
+          (sucursales || []).find((s) => s.es_matriz) || (sucursales || [])[0] || null;
+        targetSucursalId = matriz?.id ? String(matriz.id) : null;
+      }
+      if (!targetSucursalId) {
+        return { data: null, error: { message: 'No hay sucursal matriz activa para sincronizar stock.' } };
+      }
+
+      const stock = Math.max(0, Math.floor(Number(stockActual) || 0));
+      const minimo = Math.max(0, Math.floor(Number(stockMinimo) || 5));
+      const { data, error } = await supabase
+        .from('inventario_stock_sucursal')
+        .upsert(
+          {
+            sucursal_id: targetSucursalId,
+            inventario_id: inventarioId,
+            stock_actual: stock,
+            stock_minimo: minimo,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'sucursal_id,inventario_id' },
+        )
+        .select()
+        .maybeSingle();
+      return { data, error };
+    },
   },
 
   // ==================== ESTADÍSTICAS ====================
