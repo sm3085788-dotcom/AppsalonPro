@@ -18,7 +18,9 @@ export function buildGiftCardQrPayload(codigo: string): string {
 export function giftCardQrImageUrl(codigo: string, size = 220): string | null {
   const payload = buildGiftCardQrPayload(codigo);
   if (!payload) return null;
-  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=8&data=${encodeURIComponent(payload)}`;
+  const safeSize = Math.min(512, Math.max(64, Math.round(size)));
+  const params = new URLSearchParams({ data: payload, size: String(safeSize) });
+  return `/api/gift-card/qr?${params.toString()}`;
 }
 
 export function giftCardPublicPath(codigo: string): string {

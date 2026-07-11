@@ -1,5 +1,6 @@
 'use client';
 
+import { forwardRef } from 'react';
 import { buildGiftCardBackCopy } from '@/lib/gift-card/backCopy';
 import type { GiftCardDisplayData } from './GiftCardVisual';
 import {
@@ -10,28 +11,34 @@ import {
   GiftCardHeaderLogo,
   GiftCardParaDeBlock,
   GIFT_CARD_THEME,
+  giftCardExportShellClass,
+  giftCardExportShellStyle,
   giftCardShellClass,
   giftCardShellStyle,
   giftCardSizes,
 } from './giftCardVisualUi';
 
-export function GiftCardVisualBack({
-  data,
-  compact = false,
-  className = '',
-}: {
-  data: GiftCardDisplayData;
-  compact?: boolean;
-  className?: string;
-}) {
+export const GiftCardVisualBack = forwardRef<
+  HTMLDivElement,
+  {
+    data: GiftCardDisplayData;
+    compact?: boolean;
+    className?: string;
+  }
+>(function GiftCardVisualBack({ data, compact = false, className = '' }, ref) {
   const copy = buildGiftCardBackCopy(data);
   const s = giftCardSizes(compact);
 
   return (
     <div
-      className={`relative flex flex-col ${giftCardShellClass(compact)} ${className}`}
-      style={{ ...giftCardShellStyle(), padding: compact ? '0 0 12px 0' : '0 0 16px 0' }}
+      ref={ref}
+      className={`${giftCardExportShellClass(compact)} ${className}`}
+      style={giftCardExportShellStyle()}
     >
+      <div
+        className={giftCardShellClass(compact)}
+        style={{ ...giftCardShellStyle(compact), paddingBottom: compact ? 12 : 16 }}
+      >
       <GiftCardHeaderBand
         compact={compact}
         left={
@@ -50,7 +57,6 @@ export function GiftCardVisualBack({
       <div
         style={{
           paddingInline: s.padX,
-          flex: 1,
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -160,6 +166,7 @@ export function GiftCardVisualBack({
           </svg>
         </div>
       </div>
+      </div>
     </div>
   );
-}
+});

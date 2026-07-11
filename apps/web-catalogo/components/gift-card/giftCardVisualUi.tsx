@@ -16,16 +16,64 @@ export const GIFT_CARD_THEME = {
   blockBg: 'rgba(201,168,76,0.07)',
   blockBorder: '#E8D9A8',
   quoteBorder: '#EBD98C',
+  /** Sombra en pantalla (box-shadow en el inner shell). */
   shadow:
-    '0 20px 60px rgba(180,140,40,0.18), 0 4px 16px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)',
+    'inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -2px 10px rgba(140,100,30,0.1), 0 0 0 1px rgba(201,168,76,0.45), 0 3px 0 rgba(232,203,122,0.65)',
+  /** Profundidad 3D para exportación y vista (drop-shadow en el wrapper). */
+  depthShadow:
+    'drop-shadow(0 30px 50px rgba(92,61,14,0.38)) drop-shadow(0 14px 22px rgba(0,0,0,0.18)) drop-shadow(0 4px 8px rgba(0,0,0,0.12)) drop-shadow(0 0 1px rgba(92,61,14,0.25))',
   font: "'Cormorant Garamond', Georgia, serif",
 } as const;
 
-/** Mismas proporciones que la tarjeta VIP anterior en web. */
+/** Margen alrededor de la tarjeta para que el contorno y la sombra 3D no se recorten al exportar. */
+export const GIFT_CARD_CAPTURE_PAD = 20;
+
+/** Wrapper exterior: contorno 3D visible y espacio para captura PNG. */
+export function giftCardExportShellClass(compact: boolean) {
+  return compact
+    ? 'mx-auto w-full max-w-[17.5rem] sm:max-w-[18rem]'
+    : 'mx-auto w-full max-w-sm sm:max-w-md';
+}
+
+export function giftCardExportShellStyle(): CSSProperties {
+  return {
+    padding: GIFT_CARD_CAPTURE_PAD,
+    overflow: 'visible',
+    boxSizing: 'border-box',
+    filter: GIFT_CARD_THEME.depthShadow,
+  };
+}
+
+/** Grosor del borde dorado del inner shell (px). */
+export const GIFT_CARD_BORDER_PX = 3;
+
+export function giftCardShellRadius(compact: boolean): number {
+  return compact ? 20 : 22;
+}
+
+/** Radio superior del header para coincidir con la curva interior del borde. */
+export function giftCardHeaderTopRadius(compact: boolean): number {
+  return Math.max(0, giftCardShellRadius(compact) - GIFT_CARD_BORDER_PX);
+}
+
+/** Mismas proporciones que la tarjeta VIP anterior en web (patrón de layout de main). */
 export function giftCardShellClass(compact: boolean) {
   return compact
-    ? 'mx-auto w-full max-w-[17.5rem] rounded-[20px] sm:max-w-[18rem]'
-    : 'mx-auto w-full max-w-sm rounded-[22px] sm:max-w-md sm:rounded-[26px]';
+    ? 'relative flex w-full flex-col rounded-[20px]'
+    : 'relative flex w-full flex-col rounded-[22px] sm:rounded-[26px]';
+}
+
+export function giftCardShellStyle(compact = false): CSSProperties {
+  const radius = giftCardShellRadius(compact);
+  return {
+    background: `linear-gradient(168deg, #FFFEF9 0%, ${GIFT_CARD_THEME.bg} 38%, #F6EFE2 100%)`,
+    border: `${GIFT_CARD_BORDER_PX}px solid ${GIFT_CARD_THEME.border}`,
+    borderRadius: radius,
+    boxShadow: GIFT_CARD_THEME.shadow,
+    fontFamily: GIFT_CARD_THEME.font,
+    overflow: 'hidden',
+    boxSizing: 'border-box',
+  };
 }
 
 export function giftCardSizes(compact: boolean) {
@@ -34,7 +82,6 @@ export function giftCardSizes(compact: boolean) {
         title: 15,
         amount: 32,
         qr: 72,
-        headerLogo: 26,
         headerMb: 12,
         sectionMb: 10,
         padX: 16,
@@ -45,24 +92,12 @@ export function giftCardSizes(compact: boolean) {
         title: 20,
         amount: 48,
         qr: 104,
-        headerLogo: 34,
         headerMb: 16,
         sectionMb: 14,
         padX: 24,
         footerPad: 24,
         cornerTop: 64,
       };
-}
-
-export function giftCardShellStyle(): CSSProperties {
-  return {
-    background: GIFT_CARD_THEME.bg,
-    border: `1.5px solid ${GIFT_CARD_THEME.border}`,
-    borderRadius: 20,
-    boxShadow: GIFT_CARD_THEME.shadow,
-    fontFamily: GIFT_CARD_THEME.font,
-    overflow: 'hidden',
-  };
 }
 
 export function GiftCardCornerOrnaments({ top = 68 }: { top?: number }) {
@@ -114,6 +149,7 @@ export function GiftCardHeaderBand({
   compact?: boolean;
 }) {
   const s = giftCardSizes(compact);
+  const topRadius = giftCardHeaderTopRadius(compact);
   return (
     <div
       style={{
@@ -124,6 +160,8 @@ export function GiftCardHeaderBand({
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: s.headerMb,
+        borderTopLeftRadius: topRadius,
+        borderTopRightRadius: topRadius,
       }}
     >
       {left}
@@ -187,6 +225,7 @@ export function GiftCardParaDeBlock({
         borderRadius: 10,
         padding: compact ? '10px 14px' : '12px 16px',
         lineHeight: 1.9,
+        overflowWrap: 'anywhere',
       }}
     >
       <div style={{ fontSize: compact ? 12.5 : 13.5, color: GIFT_CARD_THEME.brownDark }}>
@@ -215,20 +254,23 @@ export function GiftCardHeaderLogo({ compact }: { compact?: boolean }) {
         style={{
           width: size,
           height: size,
-          borderRadius: '50%',
-          border: '1.5px solid rgba(255,255,255,0.7)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'rgba(255,255,255,0.2)',
-          overflow: 'hidden',
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={LOGO_SRC}
           alt="Andreas"
-          style={{ width: '78%', height: '78%', objectFit: 'contain' }}
+          crossOrigin="anonymous"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            filter: 'brightness(0) invert(1)',
+            opacity: 0.92,
+          }}
         />
       </div>
       <span

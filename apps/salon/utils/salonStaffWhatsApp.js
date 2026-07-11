@@ -18,15 +18,14 @@ export function buildGiftCardActivationWhatsAppMessage({ codigo, monto } = {}) {
   const code = String(codigo || '').trim().toUpperCase();
   const activateUrl = buildGiftCardActivateUrl(code);
   return [
-    `¡Tarjeta VIP ANDREAS · ${formatQ(monto)}!`,
-    `Código: ${code}`,
-    '',
-    '¡Actívala aquí (código precargado) y completá Para, De y mensaje de tu tarjeta!',
-    activateUrl,
+    `¡Tarjeta VIP ANDREAS · ${formatQ(monto)}`,
     '',
     '¡Gracias por tu noble gesto: el compartir es ganar, eres increíble!',
     SALON_CONTACTO.telefonoLabel,
     'Atención al cliente',
+    '',
+    '¡Actívala aquí (código precargado) y completá Para, De y mensaje de tu tarjeta!',
+    activateUrl,
   ].join('\n');
 }
 

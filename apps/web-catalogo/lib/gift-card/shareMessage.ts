@@ -1,6 +1,10 @@
 import { SALON_CONTACT } from '@/lib/salonContact';
 import { GIFT_CARD_SITE_URL, giftCardPublicPath } from '@/lib/gift-card/public';
 
+export function buildWhatsAppShareUrl(message: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+}
+
 export function buildGiftCardShareUrl(codigo: string): string {
   const code = String(codigo || '').trim();
   if (!code || code.includes('PREVIEW')) return GIFT_CARD_SITE_URL;

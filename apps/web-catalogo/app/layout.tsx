@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Geist_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { BranchProvider } from "@/components/branch/BranchContext";
@@ -33,6 +33,12 @@ export const metadata: Metadata = {
   title: "AppSalon Pro | Salones de belleza de lujo",
   description:
     "Reserva citas, compra productos premium y vive la experiencia AppSalon Pro. Descarga la app.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default async function RootLayout({

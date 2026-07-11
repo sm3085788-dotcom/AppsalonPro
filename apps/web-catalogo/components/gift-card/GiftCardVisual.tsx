@@ -1,5 +1,6 @@
 'use client';
 
+import { forwardRef } from 'react';
 import {
   formatGiftCardDate,
   giftCardQrImageUrl,
@@ -12,11 +13,20 @@ import {
   GiftCardHeaderBand,
   GiftCardParaDeBlock,
   GIFT_CARD_THEME,
+  giftCardExportShellClass,
+  giftCardExportShellStyle,
   giftCardShellClass,
   giftCardShellStyle,
   giftCardSizes,
   LOGO_SRC,
 } from './giftCardVisualUi';
+
+function splitGiftCardAmount(monto: number) {
+  const safe = Number.isFinite(Number(monto)) ? Number(monto) : 0;
+  const whole = Math.trunc(safe).toLocaleString('es-GT', { maximumFractionDigits: 0 });
+  const cents = String(Math.round(Math.abs(safe) * 100) % 100).padStart(2, '0');
+  return { whole, cents };
+}
 
 export interface GiftCardDisplayData {
   codigo: string;
@@ -31,27 +41,35 @@ export interface GiftCardDisplayData {
   incompletePreview?: boolean;
 }
 
-export function GiftCardVisual({
-  data,
-  compact = false,
-  className = '',
-  incompletePreview = false,
-}: {
-  data: GiftCardDisplayData;
-  compact?: boolean;
-  className?: string;
-  incompletePreview?: boolean;
-}) {
+export const GiftCardVisual = forwardRef<
+  HTMLDivElement,
+  {
+    data: GiftCardDisplayData;
+    compact?: boolean;
+    className?: string;
+    incompletePreview?: boolean;
+  }
+>(function GiftCardVisual(
+  { data, compact = false, className = '', incompletePreview = false },
+  ref,
+) {
   const s = giftCardSizes(compact);
-  const qrUrl = giftCardQrImageUrl(data.codigo, compact ? 120 : 160);
+  const { whole, cents } = splitGiftCardAmount(data.monto);
+  const qrFetchSize = Math.ceil(s.qr * 4);
+  const qrUrl = giftCardQrImageUrl(data.codigo, qrFetchSize);
   const dimmed = incompletePreview || data.incompletePreview;
   const showQr = qrUrl && data.codigo && !data.codigo.includes('PREVIEW');
 
   return (
     <div
-      className={`relative flex flex-col items-center ${giftCardShellClass(compact)} ${className}`}
-      style={{ ...giftCardShellStyle(), padding: compact ? '0 0 12px 0' : '0 0 16px 0' }}
+      ref={ref}
+      className={`${giftCardExportShellClass(compact)} ${className}`}
+      style={giftCardExportShellStyle()}
     >
+      <div
+        className={giftCardShellClass(compact)}
+        style={{ ...giftCardShellStyle(compact), paddingBottom: compact ? 12 : 16 }}
+      >
       <GiftCardHeaderBand
         compact={compact}
         left={
@@ -66,26 +84,8 @@ export function GiftCardVisual({
           </GiftCardBadge>
         }
         right={
-          <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 8 }}>
-            <div
-              style={{
-                width: s.headerLogo,
-                height: s.headerLogo,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={LOGO_SRC}
-                alt="Andreas"
-                style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(1.1)' }}
-              />
-            </div>
-            <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: compact ? 8 : 9, letterSpacing: '0.18em', fontWeight: 600 }}>
-              SALÓN
-            </div>
+          <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: compact ? 8 : 9, letterSpacing: '0.18em', fontWeight: 600 }}>
+            SALÓN
           </div>
         }
       />
@@ -101,6 +101,7 @@ export function GiftCardVisual({
           <img
             src={LOGO_SRC}
             alt="Andreas"
+            crossOrigin="anonymous"
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </div>
@@ -146,19 +147,17 @@ export function GiftCardVisual({
         >
           Valor de la Tarjeta
         </div>
-        <div style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'baseline', whiteSpace: 'nowrap' }}>
           <span
             style={{
-              fontSize: compact ? 12 : 14,
+              fontSize: compact ? 14 : 18,
               fontWeight: 600,
               color: GIFT_CARD_THEME.gold,
               lineHeight: 1,
-              alignSelf: 'flex-start',
-              marginTop: compact ? 6 : 8,
-              marginRight: 2,
+              marginRight: compact ? 3 : 4,
             }}
           >
-            $
+            Q
           </span>
           <span
             style={{
@@ -169,7 +168,18 @@ export function GiftCardVisual({
               lineHeight: 1,
             }}
           >
-            {data.monto}
+            {whole}
+          </span>
+          <span
+            style={{
+              fontSize: compact ? 13 : 18,
+              fontWeight: 700,
+              color: GIFT_CARD_THEME.brown,
+              letterSpacing: '-0.02em',
+              lineHeight: 1,
+            }}
+          >
+            .{cents}
           </span>
         </div>
         <div
@@ -219,40 +229,38 @@ export function GiftCardVisual({
       ) : null}
 
       {showQr ? (
-        <div
-          style={{
-            background: '#FFFFFF',
-            border: '1px solid #E0CFA0',
-            borderRadius: compact ? 10 : 12,
-            padding: compact ? '6px 6px 4px' : '8px 8px 5px',
-            marginBottom: 6,
-            boxShadow: '0 2px 12px rgba(180,140,40,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={qrUrl}
-            alt={`QR tarjeta ${data.codigo}`}
-            width={s.qr}
-            height={s.qr}
-          />
-        </div>
-      ) : null}
-
-      {showQr ? (
-        <div
-          style={{
-            letterSpacing: '0.2em',
-            color: '#9A7530',
-            fontSize: compact ? 8.5 : 9.5,
-            fontWeight: 700,
-            marginBottom: compact ? 10 : 12,
-          }}
-        >
-          {data.codigo}
+        <div className="flex w-full flex-col items-center gap-1.5 pt-1">
+          <div
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid #E0CFA0',
+              borderRadius: compact ? 10 : 12,
+              padding: compact ? '6px 6px 4px' : '8px 8px 5px',
+              boxShadow: '0 2px 12px rgba(180,140,40,0.1)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrUrl}
+              alt={`QR tarjeta ${data.codigo}`}
+              width={s.qr}
+              height={s.qr}
+              crossOrigin="anonymous"
+            />
+          </div>
+          <p
+            style={{
+              letterSpacing: '0.2em',
+              color: '#9A7530',
+              fontSize: compact ? 8.5 : 9.5,
+              fontWeight: 700,
+            }}
+          >
+            {data.codigo}
+          </p>
         </div>
       ) : null}
 
@@ -278,6 +286,7 @@ export function GiftCardVisual({
           </div>
         </>
       ) : null}
+      </div>
     </div>
   );
-}
+});
