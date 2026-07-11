@@ -12,7 +12,7 @@ export function GiftCardFrontBackDisplay({
   showDates?: boolean;
 }) {
   return (
-    <div className="grid gap-6 md:grid-cols-2 md:items-start">
+    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       <div className="space-y-2">
         <p className="text-center text-[10px] font-medium uppercase tracking-[0.2em] text-gold/80">
           Frente

@@ -1,101 +1,172 @@
 'use client';
 
-import { Heart, Sparkles } from 'lucide-react';
+import { forwardRef } from 'react';
 import { buildGiftCardBackCopy } from '@/lib/gift-card/backCopy';
 import type { GiftCardDisplayData } from './GiftCardVisual';
+import {
+  GiftCardBadge,
+  GiftCardCornerOrnaments,
+  GiftCardGoldDivider,
+  GiftCardHeaderBand,
+  GiftCardHeaderLogo,
+  GiftCardParaDeBlock,
+  GIFT_CARD_THEME,
+  giftCardExportShellClass,
+  giftCardExportShellStyle,
+  giftCardShellClass,
+  giftCardShellStyle,
+  giftCardSizes,
+} from './giftCardVisualUi';
 
-const LOGO_SRC = '/images/logo-andreas-transparent.png';
-
-export function GiftCardVisualBack({
-  data,
-  compact = false,
-  className = '',
-}: {
-  data: GiftCardDisplayData;
-  compact?: boolean;
-  className?: string;
-}) {
+export const GiftCardVisualBack = forwardRef<
+  HTMLDivElement,
+  {
+    data: GiftCardDisplayData;
+    compact?: boolean;
+    className?: string;
+  }
+>(function GiftCardVisualBack({ data, compact = false, className = '' }, ref) {
   const copy = buildGiftCardBackCopy(data);
-  const shell = compact
-    ? 'mx-auto w-full max-w-[17.5rem] rounded-[20px] p-4 sm:max-w-[18rem]'
-    : 'mx-auto w-full max-w-sm rounded-[22px] p-6 sm:max-w-md sm:rounded-[26px] sm:p-8';
-  const innerInset = compact ? 'inset-[0.72rem] rounded-[16px]' : 'inset-4 rounded-2xl';
+  const s = giftCardSizes(compact);
 
   return (
     <div
-      className={`relative overflow-hidden border border-gold/50 bg-gradient-to-br from-[#141416] via-charcoal to-black shadow-[0_24px_60px_-20px_rgba(212,175,55,0.35),0_0_0_1px_rgba(212,175,55,0.12)] ${shell} ${className}`}
+      ref={ref}
+      className={`${giftCardExportShellClass(compact)} ${className}`}
+      style={giftCardExportShellStyle()}
     >
-      <div className={`pointer-events-none absolute ${innerInset} border border-gold/25`} />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(212,175,55,0.14),transparent_55%),radial-gradient(ellipse_at_80%_100%,rgba(245,240,230,0.06),transparent_50%)]" />
-      <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gold/10 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-10 -left-6 h-28 w-28 rounded-full bg-cream/5 blur-3xl" />
+      <div
+        className={giftCardShellClass(compact)}
+        style={{ ...giftCardShellStyle(compact), paddingBottom: compact ? 12 : 16 }}
+      >
+      <GiftCardHeaderBand
+        compact={compact}
+        left={
+          <GiftCardBadge compact={compact}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2.2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+            REVERSO
+          </GiftCardBadge>
+        }
+        right={<GiftCardHeaderLogo compact={compact} />}
+      />
 
-      <span className="pointer-events-none absolute left-3 top-3 h-4 w-4 border-l border-t border-gold/45" />
-      <span className="pointer-events-none absolute right-3 top-3 h-4 w-4 border-r border-t border-gold/45" />
-      <span className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 border-b border-l border-gold/45" />
-      <span className="pointer-events-none absolute bottom-3 right-3 h-4 w-4 border-b border-r border-gold/45" />
+      <GiftCardCornerOrnaments top={s.cornerTop} />
 
-      <div className={`relative flex h-full flex-col ${compact ? 'justify-between gap-1.5' : 'gap-3.5'}`}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full border border-gold/55 bg-gradient-to-r from-gold/15 to-gold/5 px-2 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <Heart className="h-2.5 w-2.5 text-gold" strokeWidth={2.25} />
-            <span className="text-[7px] font-semibold uppercase tracking-[0.28em] text-gold">
-              Reverso
-            </span>
-          </span>
-          <div className="flex items-center gap-1.5">
-            <div className={compact ? 'h-5 w-5' : 'h-6 w-6'}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={LOGO_SRC}
-                alt=""
-                className="h-full w-full object-contain drop-shadow-[0_2px_8px_rgba(212,175,55,0.3)]"
-              />
-            </div>
-            <p className="text-[7px] font-medium uppercase tracking-[0.22em] text-gradient-gold">
-              Salón Andreas
-            </p>
-          </div>
-        </div>
-
-        <div className={`space-y-1 text-center ${compact ? 'text-[8.5px]' : 'text-[11px]'}`}>
-          <p>
-            <span className="font-semibold uppercase tracking-[0.12em] text-gold">Para:</span>{' '}
-            <span className="font-medium tracking-[0.06em] text-cream/90">{copy.para}</span>
-          </p>
-          <p>
-            <span className="font-semibold uppercase tracking-[0.12em] text-gold">De:</span>{' '}
-            <span className="font-medium tracking-[0.06em] text-cream/90">{copy.de}</span>
-          </p>
+      <div
+        style={{
+          paddingInline: s.padX,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ marginBottom: s.sectionMb }}>
+          <GiftCardParaDeBlock para={copy.para} de={copy.de} compact={compact} />
         </div>
 
         <div
-          className={`flex-1 space-y-2 overflow-hidden text-center leading-[1.55] ${
-            compact ? 'text-[8px]' : 'text-[10.5px]'
-          }`}
+          style={{
+            fontSize: compact ? 8.5 : 10,
+            fontWeight: 700,
+            color: GIFT_CARD_THEME.gold,
+            letterSpacing: '0.14em',
+            marginBottom: compact ? 8 : 10,
+            lineHeight: 1.35,
+            textTransform: 'uppercase',
+          }}
         >
-          <p className="font-semibold uppercase tracking-[0.12em] text-gradient-gold">{copy.intro}</p>
-          <p className="font-normal text-cream/82">{copy.body}</p>
-          {copy.personal ? (
-            <p className="rounded-lg border border-gold/25 bg-gold/10 px-2.5 py-2 font-medium italic text-cream/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-              &ldquo;{copy.personal}&rdquo;
-            </p>
-          ) : null}
-          <p className="font-light text-cream/70">{copy.closing}</p>
+          {copy.intro}
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 border-t border-gold/20 pt-2">
-          <Sparkles className="h-3 w-3 text-gold" strokeWidth={1.75} />
-          <p
-            className={`font-medium uppercase tracking-[0.2em] text-gold ${
-              compact ? 'text-[6.5px]' : 'text-[8px]'
-            }`}
+        <p
+          style={{
+            fontSize: compact ? 8.5 : 10.5,
+            color: GIFT_CARD_THEME.brownSoft,
+            lineHeight: 1.65,
+            textAlign: 'center',
+            marginBottom: compact ? 10 : 12,
+            fontWeight: 400,
+          }}
+        >
+          {copy.body}
+        </p>
+
+        {copy.personal ? (
+          <div style={{ position: 'relative', marginBottom: compact ? 10 : 12, paddingLeft: 12 }}>
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 2,
+                borderRadius: 2,
+                background: `linear-gradient(to bottom, ${GIFT_CARD_THEME.gold}, ${GIFT_CARD_THEME.goldLight}, ${GIFT_CARD_THEME.gold})`,
+              }}
+            />
+            <div
+              style={{
+                background: 'rgba(201,168,76,0.06)',
+                border: `1px solid ${GIFT_CARD_THEME.quoteBorder}`,
+                borderLeft: 'none',
+                borderRadius: '0 8px 8px 0',
+                padding: compact ? '8px 12px' : '10px 14px',
+              }}
+            >
+              <p
+                style={{
+                  fontStyle: 'italic',
+                  color: GIFT_CARD_THEME.brown,
+                  fontSize: compact ? 9.5 : 11,
+                  lineHeight: 1.55,
+                  fontWeight: 500,
+                  textAlign: 'center',
+                  margin: 0,
+                }}
+              >
+                &ldquo;{copy.personal}&rdquo;
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        <p
+          style={{
+            fontSize: compact ? 8.5 : 10,
+            color: GIFT_CARD_THEME.textMuted,
+            textAlign: 'center',
+            lineHeight: 1.55,
+            marginBottom: compact ? 12 : 14,
+          }}
+        >
+          Que este regalo te inspire a celebrarte, cuidarte y brillar.
+          <br />
+          <span style={{ color: '#7A5C1E', fontWeight: 600, letterSpacing: '0.06em' }}>— Salón Andreas</span>
+        </p>
+
+        <GiftCardGoldDivider style={{ marginBottom: 10 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: compact ? 6 : 8 }}>
+          <svg width={compact ? 12 : 14} height={compact ? 12 : 14} viewBox="0 0 24 24" fill="none" stroke={GIFT_CARD_THEME.gold} strokeWidth="1.6">
+            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+          </svg>
+          <span
+            style={{
+              letterSpacing: '0.2em',
+              color: GIFT_CARD_THEME.goldMuted,
+              fontSize: compact ? 6.5 : 8,
+              fontWeight: 700,
+            }}
           >
-            Salud · Belleza · Bienestar
-          </p>
-          <Sparkles className="h-3 w-3 text-gold" strokeWidth={1.75} />
+            SALUD · BELLEZA · BIENESTAR
+          </span>
+          <svg width={compact ? 12 : 14} height={compact ? 12 : 14} viewBox="0 0 24 24" fill="none" stroke={GIFT_CARD_THEME.gold} strokeWidth="1.6">
+            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+          </svg>
         </div>
+      </div>
       </div>
     </div>
   );
-}
+});

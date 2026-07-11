@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { GiftCardVisual, type GiftCardDisplayData } from './GiftCardVisual';
 import { GiftCardVisualBack } from './GiftCardVisualBack';
 import { GiftCardDualImageActions } from './GiftCardDualImageActions';
-import { buildGiftCardShareText, buildGiftCardShareUrl } from '@/lib/gift-card/shareMessage';
+import { shareGiftCardAssets } from '@/lib/gift-card/shareGiftCardAssets';
 
 export function GiftCardFrontBackPair({
   data,
@@ -22,8 +22,6 @@ export function GiftCardFrontBackPair({
   const frontRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
-
-  const shareUrl = buildGiftCardShareUrl(data.codigo);
 
   async function captureFront() {
     if (!frontRef.current) throw new Error('missing front ref');
@@ -54,16 +52,16 @@ export function GiftCardFrontBackPair({
           <p className="text-center text-[10px] font-medium uppercase tracking-[0.2em] text-gold/80">
             Frente
           </p>
-          <div ref={frontRef} className="inline-block w-full">
-            <GiftCardVisual compact={compact} data={{ ...data, showDates }} />
+          <div className="inline-block w-full">
+            <GiftCardVisual ref={frontRef} compact={compact} data={{ ...data, showDates }} />
           </div>
         </div>
         <div className={compact ? 'space-y-1' : 'space-y-1.5'}>
           <p className="text-center text-[10px] font-medium uppercase tracking-[0.2em] text-gold/80">
             Reverso
           </p>
-          <div ref={backRef} className="inline-block w-full">
-            <GiftCardVisualBack compact={compact} data={data} />
+          <div className="inline-block w-full">
+            <GiftCardVisualBack ref={backRef} compact={compact} data={data} />
           </div>
         </div>
       </div>
@@ -76,68 +74,21 @@ export function GiftCardFrontBackPair({
         busy={busy}
         onShare={() =>
           runBusy(async () => {
-            const { dataUrlToPngFile, triggerPngDownload } = await import(
-              '@/lib/gift-card/captureCardImage'
-            );
-            await new Promise<void>((resolve) => {
-              window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
-            });
-            const [frontUrl, backUrl] = await Promise.all([captureFront(), captureBack()]);
-            const text = buildGiftCardShareText({
-              codigo: data.codigo,
-              monto: data.monto,
-              paraNombre: data.paraNombre,
-            });
-            const frontFile = await dataUrlToPngFile(
-              frontUrl,
-              `tarjeta-vip-frente-${fileSlug}.png`,
-            );
-            const backFile = await dataUrlToPngFile(
-              backUrl,
-              `tarjeta-vip-reverso-${fileSlug}.png`,
-            );
-
-            if (navigator.share && navigator.canShare?.({ files: [frontFile, backFile] })) {
-              try {
-                await navigator.share({
-                  title: 'Tarjeta VIP ANDREAS',
-                  text,
-                  files: [frontFile, backFile],
-                });
-              } catch (err) {
-                if ((err as Error)?.name === 'AbortError') return;
-                throw err;
-              }
-              return;
+            try {
+              await shareGiftCardAssets({
+                codigo: data.codigo,
+                monto: data.monto,
+                paraNombre: data.paraNombre,
+                fileSlug,
+                captureFront,
+                captureBack,
+              });
+            } catch (err) {
+              console.error('[gift-card share]', err);
+              window.alert(
+                'No se pudo generar la tarjeta para compartir. Recargá la página e intentá de nuevo.',
+              );
             }
-
-            if (navigator.share && navigator.canShare?.({ files: [frontFile] })) {
-              try {
-                await navigator.share({
-                  title: 'Tarjeta VIP ANDREAS — Frente',
-                  text,
-                  files: [frontFile],
-                });
-              } catch (err) {
-                if ((err as Error)?.name === 'AbortError') return;
-                throw err;
-              }
-              return;
-            }
-
-            if (navigator.share) {
-              try {
-                await navigator.share({ title: 'Tarjeta VIP ANDREAS', text, url: shareUrl });
-                return;
-              } catch (err) {
-                if ((err as Error)?.name === 'AbortError') return;
-              }
-            }
-
-            triggerPngDownload(frontUrl, `tarjeta-vip-frente-${fileSlug}.png`);
-            window.setTimeout(() => {
-              triggerPngDownload(backUrl, `tarjeta-vip-reverso-${fileSlug}.png`);
-            }, 350);
           })
         }
       />
