@@ -19,9 +19,12 @@ export const GIFT_CARD_THEME = {
   /** Sombra en pantalla (box-shadow en el inner shell). */
   shadow:
     'inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -2px 10px rgba(140,100,30,0.1), 0 0 0 1px rgba(201,168,76,0.45), 0 3px 0 rgba(232,203,122,0.65)',
-  /** Profundidad 3D para exportación y vista (drop-shadow en el wrapper). */
+  /** Profundidad 3D solo al exportar PNG (drop-shadow; costoso en scroll). */
   depthShadow:
     'drop-shadow(0 30px 50px rgba(92,61,14,0.38)) drop-shadow(0 14px 22px rgba(0,0,0,0.18)) drop-shadow(0 4px 8px rgba(0,0,0,0.12)) drop-shadow(0 0 1px rgba(92,61,14,0.25))',
+  /** Sombra en pantalla (box-shadow cálido en el inner shell; sin negro puro). */
+  screenDepthBoxShadow:
+    '0 22px 44px -20px rgba(92,61,14,0.2), 0 10px 20px -14px rgba(180,140,60,0.14), 0 4px 10px -6px rgba(140,100,30,0.1)',
   font: "'Cormorant Garamond', Georgia, serif",
 } as const;
 
@@ -40,7 +43,6 @@ export function giftCardExportShellStyle(): CSSProperties {
     padding: GIFT_CARD_CAPTURE_PAD,
     overflow: 'visible',
     boxSizing: 'border-box',
-    filter: GIFT_CARD_THEME.depthShadow,
   };
 }
 
@@ -69,7 +71,7 @@ export function giftCardShellStyle(compact = false): CSSProperties {
     background: `linear-gradient(168deg, #FFFEF9 0%, ${GIFT_CARD_THEME.bg} 38%, #F6EFE2 100%)`,
     border: `${GIFT_CARD_BORDER_PX}px solid ${GIFT_CARD_THEME.border}`,
     borderRadius: radius,
-    boxShadow: GIFT_CARD_THEME.shadow,
+    boxShadow: `${GIFT_CARD_THEME.shadow}, ${GIFT_CARD_THEME.screenDepthBoxShadow}`,
     fontFamily: GIFT_CARD_THEME.font,
     overflow: 'hidden',
     boxSizing: 'border-box',
@@ -190,8 +192,7 @@ export function GiftCardBadge({
         fontSize: compact ? 9 : 10,
         letterSpacing: '0.22em',
         fontWeight: 700,
-        background: 'rgba(255,255,255,0.15)',
-        backdropFilter: 'blur(4px)',
+        background: 'rgba(255,255,255,0.22)',
       }}
     >
       {children}
