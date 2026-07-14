@@ -40,11 +40,11 @@ export function GiftCardSection() {
   return (
     <section
       id="tarjeta-regalo"
-      className="mx-auto max-w-7xl px-4 pt-16 pb-3 sm:px-6 lg:px-8"
+      className="mx-auto max-w-7xl px-4 pt-16 pb-3 sm:px-6 lg:px-8 [content-visibility:auto] [contain-intrinsic-size:auto_36rem]"
     >
       <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
         <div className="relative flex items-center justify-center lg:min-h-[27rem] lg:py-6">
-          <div className="absolute inset-0 -z-10 bg-gradient-to-br from-gold/20 via-transparent to-cream/10 blur-3xl opacity-40" />
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_center,rgba(212,175,55,0.16)_0%,rgba(245,234,210,0.06)_42%,transparent_72%)]" />
           <div className="origin-center lg:scale-[1.3]">
             <GiftCardVisual
               compact
