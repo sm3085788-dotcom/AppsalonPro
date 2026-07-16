@@ -27,15 +27,21 @@ export default async function ProductoPage({
       </Link>
 
       <div className="grid gap-12 lg:grid-cols-2">
-        <div className="media-3-4 rounded-[28px] border border-border bg-surface-2">
-          {product.imagenUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={product.imagenUrl} alt={product.nombre} />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <ShoppingBag className="h-16 w-16 text-border-strong" strokeWidth={1} />
-            </div>
-          )}
+        <div className="flex justify-center lg:justify-start">
+          <div
+            className={`product-detail-media overflow-hidden rounded-[28px] border border-border${
+              product.imagenUrl ? '' : ' product-detail-media--empty w-full bg-surface-2'
+            }`}
+          >
+            {product.imagenUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={product.imagenUrl} alt={product.nombre} />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <ShoppingBag className="h-16 w-16 text-border-strong" strokeWidth={1} />
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="lg:pt-4">

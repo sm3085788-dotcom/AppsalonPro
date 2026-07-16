@@ -7,14 +7,14 @@ import type { Product } from '@/lib/types/db';
 export function ProductCard({ product }: { product: Product }) {
   return (
     <Link href={`/producto/${product.id}`} className="group flex flex-col">
-      <div className="relative aspect-square overflow-hidden rounded-xl border border-border bg-surface-2 ring-gold-hover sm:aspect-[3/4] sm:rounded-2xl">
+      <div
+        className={`product-card-media relative w-full overflow-hidden rounded-xl border border-border ring-gold-hover sm:rounded-2xl${
+          product.imagenUrl ? '' : ' product-card-media--empty bg-surface-2'
+        }`}
+      >
         {product.imagenUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={product.imagenUrl}
-            alt={product.nombre}
-            className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-          />
+          <img src={product.imagenUrl} alt={product.nombre} />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <ShoppingBag className="h-8 w-8 text-border-strong sm:h-10 sm:w-10" strokeWidth={1} />
