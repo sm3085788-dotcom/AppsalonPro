@@ -156,6 +156,56 @@ body {
   transform: scale(1.05);
 }
 
+/* Ficha de producto: marco ajustado al tamaño real de la imagen. */
+.product-detail-media {
+  overflow: hidden;
+  line-height: 0;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.product-detail-media img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: min(70vh, 520px);
+  border-radius: 28px;
+}
+
+.product-detail-media--empty {
+  aspect-ratio: 3 / 4;
+  line-height: normal;
+}
+
+/* Tarjeta en listado /productos: marco ajustado a la imagen, sin bandas arriba/abajo. */
+.product-card-media {
+  line-height: 0;
+}
+
+.product-card-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.group:hover .product-card-media img {
+  transform: scale(1.03);
+}
+
+@media (min-width: 640px) {
+  .product-card-media img {
+    border-radius: 16px;
+  }
+}
+
+.product-card-media--empty {
+  aspect-ratio: 3 / 4;
+  line-height: normal;
+}
+
 /* Subrayado dorado animado para enlaces editoriales */
 .link-underline {
   position: relative;
