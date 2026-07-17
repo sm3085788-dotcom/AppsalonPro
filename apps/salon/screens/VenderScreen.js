@@ -480,6 +480,13 @@ export function VenderScreen({ onBack, onOpenTarjetasRegalo }) {
       return;
     }
     const precio = Number(p.precio_venta ?? 0);
+    if (!(precio > 0)) {
+      Alert.alert(
+        'Precio',
+        'Este producto no tiene precio de venta configurado. Configuralo en Inventario antes de venderlo.',
+      );
+      return;
+    }
     pushLine(p, { precio });
   };
 
