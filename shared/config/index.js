@@ -322,11 +322,15 @@ export {
 } from './bookingSlots.js';
 export {
   CITA_CONGESTION_THRESHOLD,
+  CITA_CONGESTION_GENERAL,
   CITA_DEFAULT_DURATION_MINUTES,
   citaNoShowDeadline,
   isCitaPastNoShowWindow,
   isActiveCitaForCongestion,
   isSlotCongested,
+  buildServicioCategoriaLookup,
+  resolveCitaCongestionCategoria,
+  citaMatchesCongestionCategoria,
   buildSlotDensityMap,
   isCitaInCongestedSlot,
 } from './citaCongestion.js';

@@ -103,6 +103,8 @@ export function BookingForm({
           value={fechaHora}
           onChange={setFechaHora}
           sucursalId={selectedBranchId}
+          servicioCategoria={selectedService?.categoria}
+          servicioId={serviceId || null}
           branchPhone={selectedBranch?.telefono}
           disabled={pending}
         />

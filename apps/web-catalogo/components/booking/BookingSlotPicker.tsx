@@ -25,6 +25,12 @@ export interface BookingSlotPickerProps {
   value: string | null;
   onChange: (iso: string | null) => void;
   sucursalId: string | null;
+  /** Categoría/rama del servicio (congestión independiente por rama). */
+  servicioCategoria?: string | null;
+  /** Alternativa: id de inventario para resolver categoría en el API. */
+  servicioId?: string | null;
+  /** Alternativa: nombre del servicio (reagendar). */
+  servicio?: string | null;
   branchPhone?: string | null;
   disabled?: boolean;
 }
@@ -112,6 +118,9 @@ export function BookingSlotPicker({
   value,
   onChange,
   sucursalId,
+  servicioCategoria = null,
+  servicioId = null,
+  servicio = null,
   branchPhone,
   disabled = false,
 }: BookingSlotPickerProps) {
@@ -151,6 +160,13 @@ export function BookingSlotPicker({
     void (async () => {
       try {
         const qs = new URLSearchParams({ date: dateStr, sucursalId });
+        if (servicioCategoria?.trim()) {
+          qs.set('categoria', servicioCategoria.trim());
+        } else if (servicioId?.trim()) {
+          qs.set('servicioId', servicioId.trim());
+        } else if (servicio?.trim()) {
+          qs.set('servicio', servicio.trim());
+        }
         const res = await fetch(`/api/booking/slots?${qs.toString()}`);
         const data = (await res.json()) as {
           slots?: SlotOption[];
@@ -181,7 +197,7 @@ export function BookingSlotPicker({
     return () => {
       cancelled = true;
     };
-  }, [dateStr, sucursalId]);
+  }, [dateStr, sucursalId, servicioCategoria, servicioId, servicio]);
 
   const selectedSlot = slots.find((s) => s.time === slotTime) ?? null;
   const showCongestionWarning = Boolean(selectedSlot?.congested);

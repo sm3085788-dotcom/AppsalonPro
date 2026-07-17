@@ -5,10 +5,12 @@ import { isSupabaseAdminConfigured, isSupabaseConfigured } from '@/lib/env';
 import {
   generateBookingSlots,
   buildSlotDensityMap,
+  buildServicioCategoriaLookup,
   formatBookingSlotLabel,
   dayInstantRangeForCalendarDate,
   zonedCalendarDateString,
   CITA_CONGESTION_THRESHOLD,
+  normalizeServicioCategoria,
 } from '@/lib/bookingSlots';
 
 export interface BookingSlotOption {
@@ -50,9 +52,48 @@ async function expireNoShowCitas(): Promise<void> {
   }
 }
 
+async function resolveCategoriaFilter(
+  categoria: string | null,
+  servicioId: string | null,
+  servicio: string | null,
+): Promise<string | null> {
+  const direct = categoria?.trim();
+  if (direct) return normalizeServicioCategoria(direct);
+
+  if (!isSupabaseConfigured) return null;
+
+  try {
+    const supabase = await createSupabaseServerClient();
+
+    if (servicioId) {
+      const { data } = await supabase
+        .from('inventario')
+        .select('categoria')
+        .eq('id', servicioId)
+        .maybeSingle();
+      if (data?.categoria) return normalizeServicioCategoria(String(data.categoria));
+    }
+
+    const servicioName = servicio?.trim();
+    if (servicioName) {
+      const { data } = await supabase
+        .from('inventario')
+        .select('categoria')
+        .ilike('nombre', servicioName)
+        .maybeSingle();
+      if (data?.categoria) return normalizeServicioCategoria(String(data.categoria));
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 async function densityFromRpc(
   date: string,
   sucursalId: string,
+  categoria: string | null,
 ): Promise<Record<string, number> | null> {
   if (!isSupabaseConfigured) return null;
   try {
@@ -60,6 +101,7 @@ async function densityFromRpc(
     const { data, error } = await supabase.rpc('get_booking_slot_density', {
       p_date: date,
       p_sucursal_id: sucursalId,
+      ...(categoria ? { p_categoria: categoria } : {}),
     });
     if (error) {
       console.warn('[booking/slots] RPC get_booking_slot_density', error.message);
@@ -75,6 +117,7 @@ async function densityFromRpc(
 async function densityFromCitasRows(
   date: string,
   sucursalId: string,
+  categoria: string | null,
   useAdmin: boolean,
 ): Promise<Record<string, number> | null> {
   const { start, end } = dayInstantRangeForCalendarDate(date);
@@ -86,7 +129,9 @@ async function densityFromCitasRows(
 
   const { data: citas, error } = await client
     .from('citas')
-    .select('id,fecha_hora,estado,sucursal_id,visita_validada_en,duracion_minutos')
+    .select(
+      'id,fecha_hora,estado,sucursal_id,visita_validada_en,duracion_minutos,servicio,notas_servicio',
+    )
     .eq('sucursal_id', sucursalId)
     .gte('fecha_hora', start)
     .lte('fecha_hora', end);
@@ -96,13 +141,22 @@ async function densityFromCitasRows(
     return null;
   }
 
+  let servicioLookup: ReturnType<typeof buildServicioCategoriaLookup> | undefined;
+  if (categoria) {
+    const { data: inventario } = await client
+      .from('inventario')
+      .select('id,nombre,categoria')
+      .not('nombre', 'is', null);
+    servicioLookup = buildServicioCategoriaLookup(inventario ?? []);
+  }
+
   const rows = (citas ?? []).filter(
     (row) => zonedCalendarDateString(row.fecha_hora) === date,
   );
-  const density = buildSlotDensityMap(rows, date, sucursalId) as Record<
-    string,
-    { count: number; congested: boolean }
-  >;
+  const density = buildSlotDensityMap(rows, date, sucursalId, {
+    ...(categoria ? { categoria } : {}),
+    ...(servicioLookup ? { servicioLookup } : {}),
+  }) as Record<string, { count: number; congested: boolean }>;
 
   const countBySlot: Record<string, number> = {};
   for (const [time, entry] of Object.entries(density)) {
@@ -117,6 +171,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const date = searchParams.get('date')?.trim();
     const sucursalId = searchParams.get('sucursalId')?.trim();
+    const categoriaParam = searchParams.get('categoria')?.trim() || null;
+    const servicioId = searchParams.get('servicioId')?.trim() || null;
+    const servicio = searchParams.get('servicio')?.trim() || null;
 
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return NextResponse.json({ error: 'Parámetro date inválido (YYYY-MM-DD).' }, { status: 400 });
@@ -127,14 +184,24 @@ export async function GET(request: NextRequest) {
 
     await expireNoShowCitas();
 
-    let countBySlot =
-      (await densityFromRpc(date, sucursalId)) ??
-      (isSupabaseAdminConfigured
-        ? await densityFromCitasRows(date, sucursalId, true)
-        : null) ??
-      (isSupabaseConfigured
-        ? await densityFromCitasRows(date, sucursalId, false)
-        : null);
+    const categoria = await resolveCategoriaFilter(categoriaParam, servicioId, servicio);
+
+    // Con filtro por rama: JS primero (fuzzy + keywords); RPC solo matchea nombre exacto en inventario.
+    let countBySlot = categoria
+      ? (isSupabaseAdminConfigured
+          ? await densityFromCitasRows(date, sucursalId, categoria, true)
+          : null) ??
+        (isSupabaseConfigured
+          ? await densityFromCitasRows(date, sucursalId, categoria, false)
+          : null) ??
+        (await densityFromRpc(date, sucursalId, categoria))
+      : (await densityFromRpc(date, sucursalId, categoria)) ??
+        (isSupabaseAdminConfigured
+          ? await densityFromCitasRows(date, sucursalId, categoria, true)
+          : null) ??
+        (isSupabaseConfigured
+          ? await densityFromCitasRows(date, sucursalId, categoria, false)
+          : null);
 
     const densityAvailable = countBySlot != null;
     if (!countBySlot) countBySlot = {};
@@ -143,7 +210,7 @@ export async function GET(request: NextRequest) {
       ? slotsFromCountMap(countBySlot)
       : emptySlots();
 
-    return NextResponse.json({ slots, densityAvailable });
+    return NextResponse.json({ slots, densityAvailable, categoria });
   } catch (err) {
     console.error('[booking/slots]', err);
     return NextResponse.json({ error: 'Error al consultar franjas.' }, { status: 500 });

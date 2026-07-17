@@ -25,13 +25,18 @@ export {
 
 export {
   CITA_CONGESTION_THRESHOLD,
+  CITA_CONGESTION_GENERAL,
   CITA_DEFAULT_DURATION_MINUTES,
   citaNoShowDeadline,
   isCitaPastNoShowWindow,
   isActiveCitaForCongestion,
   isSlotCongested,
+  buildServicioCategoriaLookup,
+  resolveCitaCongestionCategoria,
+  citaMatchesCongestionCategoria,
   buildSlotDensityMap,
   isCitaInCongestedSlot,
 } from '../../../shared/config/citaCongestion.js';
 
 export { localCalendarDateString } from '../../../shared/config/localDate.js';
+export { normalizeServicioCategoria } from '../../../shared/config/servicioCategorias.js';

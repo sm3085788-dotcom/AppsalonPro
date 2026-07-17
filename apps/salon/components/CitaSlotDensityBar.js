@@ -17,6 +17,7 @@ const EMPTY_FG = '#CFD8DC';
 
 /**
  * Barra horizontal de densidad por franja (8:00–22:00) para un día concreto.
+ * Vista global (todas las ramas); la reserva web filtra por categoría en BookingSlotPicker.
  */
 export function CitaSlotDensityBar({ citas, date, sucursalId, matrizId = null }) {
   const { colors: c } = useTheme();

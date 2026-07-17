@@ -42,6 +42,7 @@ import {
   formatCitaNotasDisplay,
   startBranchBookingListener,
   buildSlotDensityMap,
+  buildServicioCategoriaLookup,
   getSlotStart,
   isCitaInCongestedSlot,
   rowSucursalId,
@@ -420,6 +421,11 @@ export function AppointmentsScreen({ onBack }) {
     return buildSlotDensityMap(citas, agendaFecha, agendaSucursalId, { matrizId: matrizSucursalId });
   }, [citas, agendaFecha, agendaSucursalId, matrizSucursalId]);
 
+  const servicioCategoriaLookup = useMemo(
+    () => buildServicioCategoriaLookup(catalogServicios),
+    [catalogServicios],
+  );
+
   const clientMatches = useMemo(() => {
     if (selectedClient) return [];
     const q = clientQuery.trim().toLowerCase();
@@ -666,6 +672,7 @@ export function AppointmentsScreen({ onBack }) {
       cita &&
       isCitaInCongestedSlot(cita, citas, rowSucursalId(cita) || agendaSucursalId, {
         matrizId: matrizSucursalId,
+        servicioLookup: servicioCategoriaLookup,
       })
     ) {
       Alert.alert(
