@@ -43,13 +43,16 @@ export async function handlePaymentWebhookEvent(
 
     const customerName = meta.customer_name || 'Cliente web';
     const customerPhone = meta.customer_phone || '—';
+    const isDomicilio = fulfillment === 'domicilio';
 
     const { data: order, error: oErr } = await admin
       .from('ecommerce_orders')
       .insert({
         customer_name: customerName,
         customer_phone: customerPhone,
-        notes: `Pedido web · pago QPayPro · ${sessionRef}`,
+        notes: isDomicilio
+          ? `Pedido web · pago QPayPro · domicilio · ${sessionRef}`
+          : `Pedido web · pago QPayPro · retiro · ${sessionRef}`,
         status: 'confirmed',
         confirmed_at: new Date().toISOString(),
         total_amount: computed.order.total,

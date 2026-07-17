@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { StarRatingInput } from '@/components/ui/StarRating';
 import { createClient } from '@/lib/supabase/client';
+import { polishReviewComment } from '@/lib/text/polishReviewComment';
 import type { UUID } from '@/lib/types/db';
 
 /**
@@ -25,9 +26,16 @@ export function ReviewForm({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
+  function polishCommentField() {
+    const polished = polishReviewComment(comentario);
+    if (polished && polished !== comentario) setComentario(polished);
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const comentarioFinal = polishReviewComment(comentario);
+    if (comentarioFinal !== comentario) setComentario(comentarioFinal);
     setLoading(true);
     try {
       const supabase = createClient();
@@ -43,7 +51,7 @@ export function ReviewForm({
         client_user_id: user.id,
         autor_nombre: autorNombre || 'Cliente',
         rating,
-        comentario: comentario.trim(),
+        comentario: comentarioFinal.trim(),
       });
       if (error) {
         setError(
@@ -80,8 +88,11 @@ export function ReviewForm({
       <textarea
         value={comentario}
         onChange={(e) => setComentario(e.target.value)}
+        onBlur={polishCommentField}
         placeholder="Cuéntanos tu experiencia…"
         rows={3}
+        lang="es"
+        spellCheck
         className="mt-3 w-full resize-none rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-foreground outline-none focus:border-gold"
       />
       {error && <p className="mt-2 text-sm text-red-400">{error}</p>}

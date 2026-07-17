@@ -1,6 +1,13 @@
 'use server';
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import {
+  bookingSlotValidationError,
+  getSlotStartFromInstant,
+  instantFromDateAndSlotGT,
+  zonedCalendarDateString,
+} from '@/lib/bookingSlots';
+import { mergeBookingNotas } from '@/lib/bookingPolicy';
 import type { FulfillmentType, UUID } from '@/lib/types/db';
 
 export interface CreateBookingInput {
@@ -46,6 +53,18 @@ export async function createBooking(
       };
     }
 
+    const fecha = new Date(input.fechaHora);
+    const slotErr = bookingSlotValidationError(fecha);
+    if (slotErr) return { ok: false, error: slotErr };
+
+    const slot = getSlotStartFromInstant(fecha);
+    if (!slot) return { ok: false, error: 'Fecha u hora inválida.' };
+
+    const normalized = instantFromDateAndSlotGT(
+      zonedCalendarDateString(fecha),
+      slot,
+    )!.toISOString();
+
     const { data: inv } = await supabase
       .from('inventario')
       .select('precio_venta')
@@ -61,12 +80,15 @@ export async function createBooking(
         servicio: input.servicio,
         precio: Number(inv?.precio_venta ?? 0),
         duracion_minutos: 60,
-        fecha_hora: input.fechaHora,
+        fecha_hora: normalized,
         estado: 'pendiente',
         sucursal_id: input.sucursalId,
         latitud: esDomicilio ? (input.latitud ?? null) : null,
         longitud: esDomicilio ? (input.longitud ?? null) : null,
         direccion_domicilio: esDomicilio ? (input.direccion ?? null) : null,
+        notas_servicio: mergeBookingNotas('', {
+          servicio_id: input.servicioId,
+        }),
       })
       .select('id,estado')
       .single();

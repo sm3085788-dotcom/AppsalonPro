@@ -1,4 +1,5 @@
 import { Alert, Linking } from 'react-native';
+import { formatCitaFechaHoraSalon, formatCitaHoraSalon } from './citaFechaHora';
 
 /** Datos del salón para mensajes al cliente (sincronizado con ficha Google Maps). */
 export const SALON_CONTACTO = {
@@ -64,13 +65,13 @@ export function buildCitaWhatsAppMessage(p) {
   const nombre = String(p?.clienteNombre || 'Cliente').trim() || 'Cliente';
   const servicio = String(p?.servicio || 'Cita en salón').trim();
   const dt = p?.fechaHora instanceof Date ? p.fechaHora : new Date(p?.fechaHora || Date.now());
-  const fechaTxt = dt.toLocaleDateString('es-GT', {
+  const fechaTxt = formatCitaFechaHoraSalon(dt, {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
   });
-  const horaTxt = dt.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+  const horaTxt = formatCitaHoraSalon(dt);
   const prof = String(p?.profesionalNombre || '').trim();
   const precioTxt = formatPrecioGtq(p?.precio);
   const confirmada = String(p?.estado || 'pendiente').toLowerCase() === 'confirmado';

@@ -1,7 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UUID } from '@/lib/types/db';
 import { computeBookingDepositGtq } from '@/lib/bookingPolicy';
-import { servicioUsaPreciosPorVolumen } from '../../../../shared/config/inventarioMeta.js';
+import {
+  maybeRevertInventarioPromoExpired,
+  servicioUsaPreciosPorVolumen,
+} from '../../../../shared/config/inventarioMeta.js';
 
 export interface ComputedLine {
   product_id: UUID;
@@ -42,7 +45,7 @@ export async function computeProductOrder(
 
   const { data: rows, error } = await supabase
     .from('inventario')
-    .select('id,nombre,precio_venta')
+    .select('id,nombre,precio_venta,notas')
     .in('id', ids);
   if (error || !rows) return { ok: false, error: 'No se pudo leer el catálogo.' };
 
@@ -68,6 +71,7 @@ export async function computeProductOrder(
       id: string;
       nombre: string;
       precio_venta: number | null;
+      notas: string | null;
     }>).find((r) => r.id === item.inventarioId);
     if (!row) return { ok: false, error: 'Producto no encontrado.' };
 
@@ -81,7 +85,14 @@ export async function computeProductOrder(
       }
     }
 
-    const unit = Number(row.precio_venta ?? 0);
+    const fresh = maybeRevertInventarioPromoExpired(row);
+    const unit = Number(fresh.precio_venta ?? 0);
+    if (!(unit > 0)) {
+      return {
+        ok: false,
+        error: `${row.nombre} no tiene precio válido para compra en línea.`,
+      };
+    }
     lines.push({
       product_id: row.id,
       product_name: row.nombre,

@@ -38,7 +38,7 @@ export {
   productStockFromRow,
   validateCartBranchStock,
 } from './tiendaStock.js';
-export { crearPedidoEfectivo, crearPedidoTarjetaPendiente, crearPedidoTarjetaDomicilioCapturada, confirmarCobroPedidoSalon } from './pedidoSalon.js';
+export { crearPedidoEfectivo, crearPedidoTarjetaPendiente, crearPedidoTarjetaDomicilioCapturada, crearPedidoWebEfectivo, crearPedidoWebTarjetaPendiente, confirmarCobroPedidoSalon } from './pedidoSalon.js';
 export {
   isHomeDeliveryOrder,
   isRetiroSalonOrder,
@@ -46,6 +46,7 @@ export {
   isCardPayment,
   isPaymentCapturedInSnapshot,
   isPedidoTarjetaDomicilioCapturado,
+  isPedidoTarjetaRetiroCapturado,
   isPendingCashOrder,
   needsPickupQr,
   canSalonConfirmarEntregaPedido,
@@ -307,7 +308,33 @@ export {
   filterRowsBySucursal,
   resolveCitaCanal,
   formatCitaNotasDisplay,
+  formatCitaWebReservaHint,
 } from './salonSucursalHelpers.js';
+export {
+  BOOKING_OPEN,
+  BOOKING_CLOSE,
+  SLOT_MINUTES,
+  generateBookingSlots,
+  combineDateAndSlot,
+  getSlotStart,
+  snapToBookingSlot,
+  isValidBookingSlot,
+  bookingSlotValidationError,
+} from './bookingSlots.js';
+export {
+  CITA_CONGESTION_THRESHOLD,
+  CITA_CONGESTION_GENERAL,
+  CITA_DEFAULT_DURATION_MINUTES,
+  citaNoShowDeadline,
+  isCitaPastNoShowWindow,
+  isActiveCitaForCongestion,
+  isSlotCongested,
+  buildServicioCategoriaLookup,
+  resolveCitaCongestionCategoria,
+  citaMatchesCongestionCategoria,
+  buildSlotDensityMap,
+  isCitaInCongestedSlot,
+} from './citaCongestion.js';
 export {
   getClientSucursalId,
   setClientSucursalId,

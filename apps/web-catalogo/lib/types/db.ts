@@ -58,6 +58,18 @@ export interface Product {
   nombre: string;
   categoria: string | null;
   precio: number;
+  /** Precio tachado (promo / compare-at), si aplica. */
+  compareAt: number | null;
+  /** Etiqueta de precio del mapper compartido (p. ej. «Precio variable»). */
+  priceLabel: string | null;
+  /** Badge de promoción vigente. */
+  promoBadge: string | null;
+  promoVigente: boolean;
+  /** Línea de marca/categoría (mayúsculas), como en App Clientes. */
+  brandLine: string | null;
+  shippingLabel: string | null;
+  stockHint: string | null;
+  precioVariable: boolean;
   descripcion: string | null;
   imagenUrl: string | null;
   imagenesUrls: string[];

@@ -3,6 +3,12 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isSupabaseAdminConfigured } from '@/lib/env';
 import { clientePuedeModificarCita } from '@/lib/citaCliente';
+import {
+  bookingSlotValidationError,
+  getSlotStartFromInstant,
+  instantFromDateAndSlotGT,
+  zonedCalendarDateString,
+} from '@/lib/bookingSlots';
 import { emitSalonBookingBroadcast } from '@/lib/realtime/emitSalonBooking';
 
 /** Reprograma cita web (solo pendiente) y notifica App Salón. */
@@ -19,7 +25,23 @@ export async function POST(request: NextRequest) {
     if (Number.isNaN(nueva.getTime())) {
       return NextResponse.json({ error: 'Fecha u hora inválida.' }, { status: 400 });
     }
-    if (nueva.getTime() < Date.now() + 30 * 60 * 1000) {
+    const slotErr = bookingSlotValidationError(nueva);
+    if (slotErr) {
+      return NextResponse.json({ error: slotErr }, { status: 400 });
+    }
+
+    const slot = getSlotStartFromInstant(nueva);
+    if (!slot) {
+      return NextResponse.json({ error: 'Fecha u hora inválida.' }, { status: 400 });
+    }
+
+    const normalized = instantFromDateAndSlotGT(
+      zonedCalendarDateString(nueva),
+      slot,
+    )!;
+    const normalizedIso = normalized.toISOString();
+
+    if (normalized.getTime() < Date.now() + 30 * 60 * 1000) {
       return NextResponse.json(
         { error: 'Elegí una fecha y hora al menos 30 minutos en el futuro.' },
         { status: 400 },
@@ -62,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     const patch = {
-      fecha_hora: nueva.toISOString(),
+      fecha_hora: normalizedIso,
       estado: 'pendiente',
     };
 

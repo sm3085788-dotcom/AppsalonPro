@@ -178,17 +178,22 @@ body {
   line-height: normal;
 }
 
-/* Tarjeta en listado /productos: marco ajustado a la imagen, sin bandas arriba/abajo. */
+/* Tarjeta en listado /productos: zona clara + cuerpo como App Clientes / Inventario salón. */
 .product-card-media {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
   line-height: 0;
+  background: #f4f4f4;
 }
 
 .product-card-media img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
   border-radius: 12px;
-  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .group:hover .product-card-media img {
@@ -202,7 +207,7 @@ body {
 }
 
 .product-card-media--empty {
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 1 / 1;
   line-height: normal;
 }
 

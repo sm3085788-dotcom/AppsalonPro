@@ -1,4 +1,5 @@
 import { db, inventarioSearchSubtitle, searchGiftCardsStaff, looksLikeGiftCardQuery, clienteOrigenLabel } from '@appsalon/shared-config';
+import { formatCitaFechaHoraSalon } from '../utils/citaFechaHora';
 
 export const SALON_SEARCH_MIN_LEN = 2;
 const PER_SOURCE = 8;
@@ -25,7 +26,7 @@ function push(rows, item) {
 function formatFecha(iso) {
   if (!iso) return '';
   try {
-    return new Date(iso).toLocaleString('es-GT', {
+    return formatCitaFechaHoraSalon(iso, {
       day: 'numeric',
       month: 'short',
       year: 'numeric',

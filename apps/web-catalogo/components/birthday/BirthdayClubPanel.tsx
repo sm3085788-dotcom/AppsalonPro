@@ -2,33 +2,48 @@
 
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Cake, CheckCircle2, Gift, Heart, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Cake, CheckCircle2, Gift, Sparkles } from 'lucide-react';
+import { StarRatingInput } from '@/components/ui/StarRating';
 import { CustomerServiceWhatsAppButton } from '@/components/site/CustomerServiceWhatsAppButton';
 import { BIRTHDAY_CLUB_PACKAGE, birthdayGreeting, birthdayPackageIntro } from '@/lib/birthday/benefits';
 import { buildWhatsAppCustomerUrl, type WhatsAppCustomerContext } from '@/lib/salonContact';
 import {
   enrollBirthdayClubAction,
   sendBirthdayClubCommentAction,
-  setBirthdayReactionAction,
+  setBirthdayRatingAction,
 } from '@/app/tu-cumpleanos/actions';
+import { polishReviewComment } from '@/lib/text/polishReviewComment';
 
 type ReactionKind = 'like' | 'dislike' | 'love' | null;
+
+function ratingFromReaction(reaction: ReactionKind): number {
+  if (reaction === 'love') return 5;
+  if (reaction === 'like') return 4;
+  if (reaction === 'dislike') return 2;
+  return 5;
+}
 
 export function BirthdayClubPanel({
   initialEnrolled,
   initialReaction,
+  initialRating,
   initialComment,
   firstName,
   customerWhatsappContext,
 }: {
   initialEnrolled: boolean;
   initialReaction: ReactionKind;
+  initialRating?: number | null;
   initialComment: string;
   firstName?: string;
   customerWhatsappContext?: WhatsAppCustomerContext;
 }) {
   const [enrolled, setEnrolled] = useState(initialEnrolled);
-  const [reaction, setReaction] = useState<ReactionKind>(initialReaction);
+  const [rating, setRating] = useState(() => {
+    const r = Number(initialRating);
+    if (Number.isFinite(r) && r >= 1 && r <= 5) return r;
+    return ratingFromReaction(initialReaction);
+  });
   const [comment, setComment] = useState(initialComment);
   const [loveComment, setLoveComment] = useState(initialComment);
   const [error, setError] = useState<string | null>(null);
@@ -46,19 +61,19 @@ export function BirthdayClubPanel({
     });
   };
 
-  const onReaction = (kind: 'like' | 'dislike' | 'love') => {
+  const onRatingChange = (stars: number) => {
     if (!enrolled) {
       setError('Unite al club primero.');
       return;
     }
     setError(null);
+    setRating(stars);
     startTransition(async () => {
-      const res = await setBirthdayReactionAction(kind, null);
+      const res = await setBirthdayRatingAction(stars, loveComment.trim() || comment || null);
       if (!res.ok) {
         setError(res.error);
         return;
       }
-      setReaction(kind);
     });
   };
 
@@ -67,21 +82,20 @@ export function BirthdayClubPanel({
       setError('Unite al club primero.');
       return;
     }
-    const trimmed = loveComment.trim();
+    const trimmed = polishReviewComment(loveComment).trim();
+    if (trimmed !== loveComment) setLoveComment(trimmed);
     if (!trimmed) {
       setError('Escribí un comentario antes de enviar.');
       return;
     }
     setError(null);
-    const reactionToSend = reaction ?? 'love';
     startTransition(async () => {
-      const res = await sendBirthdayClubCommentAction(trimmed, reactionToSend);
+      const res = await sendBirthdayClubCommentAction(trimmed, rating);
       if (!res.ok) {
         setError(res.error);
         return;
       }
       setComment(trimmed);
-      if (!reaction) setReaction('love');
     });
   };
 
@@ -202,84 +216,65 @@ export function BirthdayClubPanel({
         </>
       )}
 
-      <div className="rounded-2xl border border-border bg-charcoal p-6">
-        <div className="flex items-center gap-2 text-gold">
-          <Cake className="h-5 w-5" />
-          <h2 className="text-lg font-light text-cream">¿Te emociona tu día especial?</h2>
+      <div className="rounded-xl border border-border bg-charcoal p-4 sm:p-5">
+        <div className="flex items-center gap-1.5 text-gold">
+          <Cake className="h-4 w-4" />
+          <h2 className="text-base font-light text-cream">¿Te emociona tu día especial?</h2>
         </div>
-        <p className="mt-2 text-sm text-muted">
-          Esta reseña es tu comentario de satisfacción por compartir tu tiempo y tu día especial en{' '}
-          <span className="font-serif font-medium uppercase tracking-[0.12em] text-gradient-gold">
+        <p className="mt-1.5 text-xs leading-relaxed text-muted">
+          Calificá tu experiencia y dejá un comentario sobre tu día especial en{' '}
+          <span className="font-serif font-medium uppercase tracking-[0.1em] text-gradient-gold">
             Salón Andreas
           </span>
           .
         </p>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => onReaction('like')}
-            disabled={pending || !enrolled}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${
-              reaction === 'like'
-                ? 'border-gold bg-gold/15 text-gold'
-                : 'border-border text-muted hover:border-gold/40'
-            }`}
-          >
-            <ThumbsUp className="h-4 w-4" /> Me gusta
-          </button>
-          <button
-            type="button"
-            onClick={() => onReaction('dislike')}
-            disabled={pending || !enrolled}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${
-              reaction === 'dislike'
-                ? 'border-red-400/50 bg-red-500/10 text-red-300'
-                : 'border-border text-muted hover:border-red-400/30'
-            }`}
-          >
-            <ThumbsDown className="h-4 w-4" /> No me convence
-          </button>
-          <button
-            type="button"
-            onClick={() => onReaction('love')}
-            disabled={pending || !enrolled}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${
-              reaction === 'love'
-                ? 'border-pink-400/50 bg-pink-500/10 text-pink-200'
-                : 'border-border text-muted hover:border-pink-400/30'
-            }`}
-          >
-            <Heart className="h-4 w-4" /> Me encanta
-          </button>
-        </div>
+        {enrolled ? (
+          <div className="mt-3">
+            <p className="mb-1 text-[10px] uppercase tracking-widest text-muted">
+              Tu calificación
+            </p>
+            <StarRatingInput
+              value={rating}
+              onChange={onRatingChange}
+              size={24}
+              disabled={pending}
+            />
+          </div>
+        ) : null}
 
         {enrolled ? (
-          <div className="mt-4">
-            <label className="mb-2 block text-xs uppercase tracking-widest text-muted">
+          <div className="mt-3">
+            <label className="mb-1 block text-[10px] uppercase tracking-widest text-muted">
               Comentario (opcional)
             </label>
             <textarea
               value={loveComment}
               onChange={(e) => setLoveComment(e.target.value)}
+              onBlur={() => {
+                const polished = polishReviewComment(loveComment);
+                if (polished && polished !== loveComment) setLoveComment(polished);
+              }}
               placeholder="Me encanta…"
               rows={2}
+              lang="es"
+              spellCheck
               disabled={pending}
-              className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-foreground outline-none focus:border-gold disabled:opacity-60"
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-foreground outline-none focus:border-gold disabled:opacity-60"
             />
-            <div className="mt-3 flex flex-wrap items-center gap-3">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={onSendComment}
                 disabled={pending || !loveComment.trim()}
-                className="rounded-full bg-gold px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-charcoal transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full bg-gold px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-charcoal transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {pending ? 'Enviando…' : 'Enviar'}
               </button>
               {comment ? (
-                <p className="inline-flex items-center gap-1.5 text-xs text-muted">
+                <p className="inline-flex items-center gap-1 text-[11px] text-muted">
                   <CheckCircle2
-                    className="h-4 w-4 shrink-0 text-emerald-500"
+                    className="h-3.5 w-3.5 shrink-0 text-emerald-500"
                     strokeWidth={2.5}
                     aria-hidden
                   />
@@ -293,7 +288,7 @@ export function BirthdayClubPanel({
         ) : null}
 
         {error ? (
-          <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-300">
+          <p className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 p-2.5 text-xs text-red-300">
             {error}
           </p>
         ) : null}

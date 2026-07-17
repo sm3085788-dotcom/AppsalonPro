@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { BookingCancelButton } from '@/components/booking/BookingCancelButton';
+import { BookingSlotPicker } from '@/components/booking/BookingSlotPicker';
 import {
   clientePuedeModificarCita,
+  clientePuedeCancelarCita,
   citaEstaCancelada,
   citaEstaCompletada,
   citaEstaConfirmada,
-  toDatetimeLocalValue,
 } from '@/lib/citaCliente';
 
 export function BookingCitaActions({
@@ -20,6 +21,9 @@ export function BookingCitaActions({
   servicio,
   hasDeposit,
   depositGtq,
+  visitaValidadaEn = null,
+  sucursalId = null,
+  branchPhone = null,
 }: {
   citaId: string;
   fechaHora: string;
@@ -27,10 +31,13 @@ export function BookingCitaActions({
   servicio?: string;
   hasDeposit: boolean;
   depositGtq?: number | null;
+  visitaValidadaEn?: string | null;
+  sucursalId?: string | null;
+  branchPhone?: string | null;
 }) {
   const router = useRouter();
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [newDateTime, setNewDateTime] = useState(() => toDatetimeLocalValue(fechaHora));
+  const [newFechaHora, setNewFechaHora] = useState<string | null>(fechaHora);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,16 +46,39 @@ export function BookingCitaActions({
   }
 
   if (!clientePuedeModificarCita(estado)) {
-    if (citaEstaConfirmada(estado)) {
+    if (citaEstaConfirmada(estado) && clientePuedeCancelarCita(estado, visitaValidadaEn)) {
       return (
-        <div className="mt-3">
-          <Link
-            href="/reservar"
-            className="inline-flex rounded-full border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-medium text-gold transition-colors hover:border-gold/60 hover:bg-gold/15"
-          >
-            Agendar otra cita
-          </Link>
-        </div>
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Link
+              href="/reservar"
+              className="inline-flex rounded-full border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-medium text-gold transition-colors hover:border-gold/60 hover:bg-gold/15"
+            >
+              Agendar otra cita
+            </Link>
+            {hasDeposit ? (
+              <BookingCancelButton
+                citaId={citaId}
+                fechaHora={fechaHora}
+                estado={estado}
+                hasDeposit={hasDeposit}
+                servicio={servicio}
+                depositGtq={depositGtq}
+                inline
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => void cancelSimple()}
+                disabled={loading}
+                className="inline-flex rounded-full border border-red-400/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/15 disabled:opacity-60"
+              >
+                {loading ? 'Cancelando…' : 'Cancelar cita'}
+              </button>
+            )}
+          </div>
+          {error ? <p className="mt-2 text-[11px] text-red-300">{error}</p> : null}
+        </>
       );
     }
     return null;
@@ -78,7 +108,7 @@ export function BookingCitaActions({
   }
 
   async function saveReschedule() {
-    if (!newDateTime) {
+    if (!newFechaHora) {
       setError('Elegí fecha y hora.');
       return;
     }
@@ -88,7 +118,7 @@ export function BookingCitaActions({
       const res = await fetch('/api/booking/reschedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ citaId, fechaHora: new Date(newDateTime).toISOString() }),
+        body: JSON.stringify({ citaId, fechaHora: newFechaHora }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -112,7 +142,7 @@ export function BookingCitaActions({
             type="button"
             onClick={() => {
               setError(null);
-              setNewDateTime(toDatetimeLocalValue(fechaHora));
+              setNewFechaHora(fechaHora);
               setRescheduleOpen(true);
             }}
             disabled={loading}
@@ -134,12 +164,16 @@ export function BookingCitaActions({
       ) : (
         <div className="rounded-xl border border-border bg-charcoal/60 p-3">
           <p className="text-xs font-medium text-cream">Nueva fecha y hora</p>
-          <input
-            type="datetime-local"
-            value={newDateTime}
-            onChange={(e) => setNewDateTime(e.target.value)}
-            className="mt-2 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-cream"
-          />
+          <div className="mt-2">
+            <BookingSlotPicker
+              value={newFechaHora}
+              onChange={setNewFechaHora}
+              sucursalId={sucursalId}
+              servicio={servicio ?? null}
+              branchPhone={branchPhone}
+              disabled={loading}
+            />
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"

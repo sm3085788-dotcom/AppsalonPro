@@ -41,8 +41,19 @@ import {
   resolveCitaCanal,
   formatCitaNotasDisplay,
   startBranchBookingListener,
+  buildSlotDensityMap,
+  buildServicioCategoriaLookup,
+  getSlotStart,
+  isCitaInCongestedSlot,
+  rowSucursalId,
 } from '@appsalon/shared-config';
+import { CitaSlotDensityBar } from '../components/CitaSlotDensityBar';
 import { CitaVisitaQrScannerModal } from '../components/CitaVisitaQrScannerModal';
+import {
+  citaCalendarDateKeyGT,
+  formatCitaFechaHoraSalon,
+  formatCitaFechaSalon,
+} from '../utils/citaFechaHora';
 import {
   notifyClienteCitaConfirmada,
   offerConfirmacionCitaCliente,
@@ -364,19 +375,12 @@ export function AppointmentsScreen({ onBack }) {
       completado: 'Completado',
     };
     const dtLbl = agendaFecha
-      ? agendaFecha.toLocaleDateString('es-GT', { day: 'numeric', month: 'short', year: 'numeric' })
+      ? formatCitaFechaSalon(agendaFecha, { day: 'numeric', month: 'short', year: 'numeric' })
       : null;
     return `${sortLabels[agendaSort] || agendaSort} · ${estLabels[agendaEstado] || agendaEstado}${dtLbl ? ` · ${dtLbl}` : ''}${!isGlobalAdmin && agendaSucursalNombre ? ` · ${agendaSucursalNombre}` : ''}`;
   }, [agendaSort, agendaEstado, agendaFecha, agendaSucursalNombre, isGlobalAdmin]);
 
-  const dateKeyLocal = (d) => {
-    const x = d instanceof Date ? d : new Date(d);
-    if (!Number.isFinite(x.getTime())) return '';
-    const y = x.getFullYear();
-    const m = String(x.getMonth() + 1).padStart(2, '0');
-    const day = String(x.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
+  const dateKeyLocal = (d) => citaCalendarDateKeyGT(d);
 
   const citasFiltradas = useMemo(() => {
     let rows = [...citas];
@@ -411,6 +415,16 @@ export function AppointmentsScreen({ onBack }) {
     });
     return rows;
   }, [citas, agendaEstado, agendaSort, agendaFecha, agendaSucursalId, matrizSucursalId]);
+
+  const agendaDensityMap = useMemo(() => {
+    if (!agendaFecha) return {};
+    return buildSlotDensityMap(citas, agendaFecha, agendaSucursalId, { matrizId: matrizSucursalId });
+  }, [citas, agendaFecha, agendaSucursalId, matrizSucursalId]);
+
+  const servicioCategoriaLookup = useMemo(
+    () => buildServicioCategoriaLookup(catalogServicios),
+    [catalogServicios],
+  );
 
   const clientMatches = useMemo(() => {
     if (selectedClient) return [];
@@ -621,35 +635,58 @@ export function AppointmentsScreen({ onBack }) {
         ? citaOrId
         : citas.find((c) => c.id === citaOrId) || (detailCita?.id === citaOrId ? detailCita : null);
     const id = cita?.id ?? citaOrId;
-    void solicitarActualizacionEstado(id, 'confirmado').then(async (ok) => {
-      if (!ok) return;
-      let visitaToken = null;
-      try {
-        const { data: token } = await supabase.rpc('cita_asegurar_visita_qr', { p_cita_id: id });
-        if (token) visitaToken = String(token);
-      } catch {
-        /* RPC opcional hasta ejecutar SQL */
-      }
-      setDetailCita((prev) =>
-        prev?.id === id ? { ...prev, estado: 'confirmado', visita_qr_token: visitaToken || prev?.visita_qr_token } : prev,
+
+    const ejecutarConfirmacion = () => {
+      void solicitarActualizacionEstado(id, 'confirmado').then(async (ok) => {
+        if (!ok) return;
+        let visitaToken = null;
+        try {
+          const { data: token } = await supabase.rpc('cita_asegurar_visita_qr', { p_cita_id: id });
+          if (token) visitaToken = String(token);
+        } catch {
+          /* RPC opcional hasta ejecutar SQL */
+        }
+        setDetailCita((prev) =>
+          prev?.id === id ? { ...prev, estado: 'confirmado', visita_qr_token: visitaToken || prev?.visita_qr_token } : prev,
+        );
+        if (cita && !citaVisitaYaValidada(cita)) {
+          void (async () => {
+            const params = await paramsConfirmacionCita({ ...cita, estado: 'confirmado' }, 'confirmado');
+            await notifyClienteCitaConfirmada(params);
+            if (params?.clienteUserId && params?.clienteId) {
+              const { db, REFERIDO_PREMIOS_COPY } = await import('@appsalon/shared-config');
+              void db.premiosAndreas.notifyReferidoAccion({
+                clientUserId: params.clienteUserId,
+                clienteId: params.clienteId,
+                titulo: 'Cita confirmada',
+                mensaje: REFERIDO_PREMIOS_COPY.citaConfirmada,
+                targetScreen: 'premios',
+              });
+            }
+          })();
+        }
+      });
+    };
+
+    if (
+      cita &&
+      isCitaInCongestedSlot(cita, citas, rowSucursalId(cita) || agendaSucursalId, {
+        matrizId: matrizSucursalId,
+        servicioLookup: servicioCategoriaLookup,
+      })
+    ) {
+      Alert.alert(
+        'Horario congestionado',
+        'Horario congestionado — verificá capacidad antes de confirmar.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Confirmar', onPress: ejecutarConfirmacion },
+        ],
       );
-      if (cita && !citaVisitaYaValidada(cita)) {
-        void (async () => {
-          const params = await paramsConfirmacionCita({ ...cita, estado: 'confirmado' }, 'confirmado');
-          await notifyClienteCitaConfirmada(params);
-          if (params?.clienteUserId && params?.clienteId) {
-            const { db, REFERIDO_PREMIOS_COPY } = await import('@appsalon/shared-config');
-            void db.premiosAndreas.notifyReferidoAccion({
-              clientUserId: params.clienteUserId,
-              clienteId: params.clienteId,
-              titulo: 'Cita confirmada',
-              mensaje: REFERIDO_PREMIOS_COPY.citaConfirmada,
-              targetScreen: 'premios',
-            });
-          }
-        })();
-      }
-    });
+      return;
+    }
+
+    ejecutarConfirmacion();
   };
 
   const validarVisitaReferido = useCallback(async () => {
@@ -870,6 +907,15 @@ export function AppointmentsScreen({ onBack }) {
             {agendaFiltroResumen}. Deslizá hacia abajo para actualizar.
           </Text>
 
+          {agendaFecha ? (
+            <CitaSlotDensityBar
+              citas={citas}
+              date={agendaFecha}
+              sucursalId={agendaSucursalId}
+              matrizId={matrizSucursalId}
+            />
+          ) : null}
+
           {citasError ? (
             <View style={styles.listErrorBox}>
               <Text style={[subStyles.muted, styles.listPlaceholderTxt]}>{citasError}</Text>
@@ -914,11 +960,19 @@ export function AppointmentsScreen({ onBack }) {
                 const picked = sel.isSelected(item.id);
                 const canal = resolveCitaCanal(item);
                 const notasDisplay = formatCitaNotasDisplay(item.notas_servicio, canal);
+                const slotKey = agendaFecha ? getSlotStart(item.fecha_hora) : null;
+                const slotCongested = Boolean(slotKey && agendaDensityMap[slotKey]?.congested);
                 return (
                   <View
                     style={[
                       styles.citaCard,
-                      { borderColor: picked ? c.primary : c.cardBorder, backgroundColor: picked ? c.surfaceMuted : c.card },
+                      {
+                        borderColor: picked ? c.primary : c.cardBorder,
+                        backgroundColor: picked ? c.surfaceMuted : c.card,
+                      },
+                      slotCongested
+                        ? { borderLeftWidth: 4, borderLeftColor: '#E65100' }
+                        : null,
                     ]}
                   >
                     <TouchableOpacity
@@ -953,6 +1007,11 @@ export function AppointmentsScreen({ onBack }) {
                         </Text>
                         <View style={styles.citaCardPills}>
                           <CitaCanalPill canal={canal} style={styles.canalPill} textStyle={styles.canalPillTxt} />
+                          {slotCongested ? (
+                            <View style={[styles.estadoPill, { backgroundColor: '#E65100' }]}>
+                              <Text style={[styles.estadoPillTxt, { color: '#FFFFFF' }]}>Saturado</Text>
+                            </View>
+                          ) : null}
                           <View style={[styles.estadoPill, { backgroundColor: estadoPillBg(c, est) }]}>
                             <Text style={[styles.estadoPillTxt, { color: estadoPillFg(c, est) }]}>
                               {estadoLabel(est)}
@@ -964,7 +1023,7 @@ export function AppointmentsScreen({ onBack }) {
                         {clienteNombre}
                       </Text>
                       <Text style={[styles.citaWhen, { color: c.primary }]} numberOfLines={1}>
-                        {new Date(item.fecha_hora).toLocaleString('es-GT', {
+                        {formatCitaFechaHoraSalon(item.fecha_hora, {
                           weekday: 'short',
                           day: 'numeric',
                           month: 'short',
@@ -1038,7 +1097,7 @@ export function AppointmentsScreen({ onBack }) {
                 >
                   <Text style={styles.selectTxt}>
                     {agendaFecha
-                      ? agendaFecha.toLocaleDateString('es-GT', {
+                      ? formatCitaFechaSalon(agendaFecha, {
                           day: 'numeric',
                           month: 'long',
                           year: 'numeric',
@@ -1178,7 +1237,7 @@ export function AppointmentsScreen({ onBack }) {
                     },
                     {
                       label: 'Fecha y hora',
-                      value: new Date(detailCita.fecha_hora).toLocaleString('es-GT', {
+                      value: formatCitaFechaHoraSalon(detailCita.fecha_hora, {
                         weekday: 'long',
                         day: 'numeric',
                         month: 'long',

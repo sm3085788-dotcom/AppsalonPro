@@ -4,6 +4,12 @@ import {
   isFullerName,
   joinFullName,
 } from '@/lib/clientDisplayName';
+import {
+  isValidClientPhone,
+  normalizeClientAuthPhone,
+  toClientPhoneE164,
+  type ClientAuthCountry,
+} from '@/lib/phone/clientAuthPhone';
 
 export interface ClienteRow {
   id: string;
@@ -20,7 +26,10 @@ export interface ClienteRow {
 export interface ClienteProfileInput {
   nombre: string;
   apellido: string;
-  telefono: string | null;
+  /** E.164 (+502… / +1…). Prefer over country+local when set. */
+  telefono?: string | null;
+  telefonoCountry?: ClientAuthCountry;
+  telefonoLocal?: string | null;
   email: string | null;
   direccion: string | null;
   cumpleanos: string | null;
@@ -34,7 +43,7 @@ export function isProfileComplete(row: ClienteRow | null): boolean {
   const full = String(row.nombre || '').trim();
   const parts = full.split(/\s+/).filter(Boolean);
   if (parts.length < 2 || full.length < 4) return false;
-  if (!String(row.telefono || '').replace(/\D/g, '').slice(-8)) return false;
+  if (!isValidClientPhone(row.telefono)) return false;
   if (!String(row.cumpleanos || '').trim()) return false;
   return true;
 }
@@ -47,8 +56,7 @@ export function profileMissingLabels(row: ClienteRow | null): string[] {
     .split(/\s+/)
     .filter(Boolean);
   if (parts.length < 2) missing.push('apellido');
-  if (!String(row.telefono || '').replace(/\D/g, '').slice(-8))
-    missing.push('teléfono');
+  if (!isValidClientPhone(row.telefono)) missing.push('teléfono');
   if (!String(row.cumpleanos || '').trim())
     missing.push('fecha de nacimiento');
   if (!String(row.direccion || '').trim()) missing.push('dirección');
@@ -79,6 +87,8 @@ export async function ensureClienteFromAuth(
 ): Promise<{ row: ClienteRow | null; error: string | null }> {
   const displayName = displayNameFromUser(user);
   const email = user.email?.trim() || null;
+  const telefono = user.phone?.trim() || null;
+  const telefonoE164 = toClientPhoneE164(telefono);
 
   const { data: existing, error: findErr } = await supabase
     .from('clientes')
@@ -93,6 +103,8 @@ export async function ensureClienteFromAuth(
   if (existing) {
     const patch: Record<string, string> = {};
     if (email && !String(existing.email || '').trim()) patch.email = email;
+    if (telefonoE164 && !String(existing.telefono || '').trim())
+      patch.telefono = telefonoE164;
     const md = (user.user_metadata ?? {}) as Record<string, unknown>;
     const signupSource = String(md.signup_source || '').toLowerCase();
     const tipo = String(existing.tipo_registro || '').toLowerCase();
@@ -123,6 +135,7 @@ export async function ensureClienteFromAuth(
       user_id: user.id,
       nombre: nom,
       email,
+      telefono: telefonoE164,
       tipo_registro: 'web_catalogo',
       categoria: 'Nuevo',
     })
@@ -193,8 +206,20 @@ export async function updateClienteProfile(
     };
   }
 
-  const digits = String(input.telefono || '').replace(/\D/g, '').slice(-8);
-  const telefono = digits ? `+502${digits}` : null;
+  const rawTelefono =
+    input.telefono?.trim() ||
+    (input.telefonoCountry && input.telefonoLocal != null
+      ? normalizeClientAuthPhone(input.telefonoCountry, input.telefonoLocal)
+      : null);
+
+  const telefono = toClientPhoneE164(rawTelefono);
+
+  if (!telefono) {
+    return {
+      row: null,
+      error: 'Ingresa un teléfono válido (Guatemala 8 dígitos o EE.UU./Canadá 10).',
+    };
+  }
 
   const { data, error } = await supabase
     .from('clientes')

@@ -14,10 +14,11 @@ export async function getBirthdayClubStatus() {
   return data ?? { ok: false, error: 'Sin respuesta.' };
 }
 
-export async function setBirthdayClubReaction(reaction, comment = null) {
+export async function setBirthdayClubReaction(reaction, comment = null, rating = null) {
   const { data, error } = await supabase.rpc('set_birthday_club_reaction', {
     p_reaction: reaction,
     p_comment: comment,
+    ...(rating != null ? { p_rating: rating } : {}),
   });
   if (error) return { ok: false, error: error.message };
   return data ?? { ok: false, error: 'Sin respuesta.' };

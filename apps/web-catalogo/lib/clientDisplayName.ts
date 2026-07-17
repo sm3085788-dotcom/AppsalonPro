@@ -1,5 +1,17 @@
 import type { User } from '@supabase/supabase-js';
 
+/** Capitaliza cada palabra mientras se escribe (nombre y apellido). */
+export function formatPersonNameInput(raw: string): string {
+  return raw.replace(/(^|[\s])(\S*)/g, (_, sep: string, word: string) => {
+    if (!word) return sep;
+    return (
+      sep +
+      word.charAt(0).toLocaleUpperCase('es') +
+      word.slice(1).toLocaleLowerCase('es')
+    );
+  });
+}
+
 export function splitFullName(full: string) {
   const parts = String(full || '')
     .trim()

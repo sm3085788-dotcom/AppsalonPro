@@ -62,6 +62,7 @@ async function crearPedidoTiendaCliente({
   total_amount: totalAmountOverride = null,
   sucursalId: sucursalIdOverride = null,
   status = 'pending',
+  source = 'mobile-client',
 }) {
   const stockCheck = await validateCartBranchStock(cartItems, sucursalIdOverride);
   if (!stockCheck.ok) {
@@ -102,6 +103,7 @@ async function crearPedidoTiendaCliente({
     delivery_address: deliveryAddress || null,
     checkout_snapshot: checkout_snapshot || null,
     sucursal_id: sucursalId,
+    source,
   });
 
   if (oErr || !order) {
@@ -123,6 +125,34 @@ async function crearPedidoTiendaCliente({
   }
 
   return { ok: true, order, trackingCode: order.tracking_code, total: total_amount, subtotal };
+}
+
+/**
+ * Pedido web · efectivo · retiro en salón (QR APSPICKUP).
+ */
+export async function crearPedidoWebEfectivo(params) {
+  return crearPedidoTiendaCliente({
+    ...params,
+    shipId: params.shipId || 'ship-store',
+    payment_method: 'efectivo',
+    notes: params.notes || 'Pedido web · pago en efectivo',
+    source: 'web',
+  });
+}
+
+/**
+ * Pedido web · tarjeta pendiente de captura en salón (retiro).
+ */
+export async function crearPedidoWebTarjetaPendiente(params) {
+  return crearPedidoTiendaCliente({
+    ...params,
+    shipId: params.shipId || 'ship-store',
+    payment_method: 'tarjeta',
+    notes:
+      params.notes ||
+      'Pedido web · tarjeta (pendiente de captura). El salón confirma en Pedidos.',
+    source: 'web',
+  });
 }
 
 /**

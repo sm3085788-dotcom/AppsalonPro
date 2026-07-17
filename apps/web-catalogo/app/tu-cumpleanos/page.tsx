@@ -62,11 +62,12 @@ export default async function TuCumpleanosPage() {
   const { data: statusData } = await supabase.rpc('get_birthday_club_status');
   const status = (statusData || {}) as {
     enrollment?: { status?: string } | null;
-    reaction?: { reaction?: string; comment?: string | null } | null;
+    reaction?: { reaction?: string; comment?: string | null; rating?: number | null } | null;
   };
 
   const enrolled = Boolean(status.enrollment);
   const reaction = (status.reaction?.reaction as 'like' | 'dislike' | 'love' | null) || null;
+  const initialRating = Number(status.reaction?.rating);
   const comment = status.reaction?.comment || '';
   const customerWhatsappContext = whatsappContextFromCliente(row, user.email);
 
@@ -89,6 +90,11 @@ export default async function TuCumpleanosPage() {
         <BirthdayClubPanel
           initialEnrolled={enrolled}
           initialReaction={reaction}
+          initialRating={
+            Number.isFinite(initialRating) && initialRating >= 1 && initialRating <= 5
+              ? initialRating
+              : null
+          }
           initialComment={comment}
           firstName={row.nombre?.split(/\s+/)[0]}
           customerWhatsappContext={customerWhatsappContext}
