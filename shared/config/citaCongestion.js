@@ -8,6 +8,13 @@ import {
 import { normalizeServicioCategoria } from './servicioCategorias.js';
 import { splitBookingNotas } from './reservaCheckout.js';
 
+/**
+ * @typedef {Object} ServicioCategoriaLookup
+ * @property {Map<string, string>} byName
+ * @property {Map<string, string>} byId
+ * @property {(key: string) => string|null} get
+ */
+
 /** Citas activas en la misma franja que marcan congestión. */
 export const CITA_CONGESTION_THRESHOLD = 3;
 
@@ -107,7 +114,11 @@ function lookupCategoriaForSegment(segment, lookup) {
   return fuzzyLookupCategoria(segment, lookup);
 }
 
-/** Resuelve la categoría/rama de congestión de una cita (null = legacy, excluir del filtro). */
+/**
+ * Resuelve la categoría/rama de congestión de una cita (null = legacy, excluir del filtro).
+ * @param {object|null|undefined} cita
+ * @param {ServicioCategoriaLookup|null} [lookup]
+ */
 export function resolveCitaCongestionCategoria(cita, lookup = null) {
   const servicioId = servicioIdFromCita(cita);
   if (servicioId && lookup?.byId?.has(servicioId)) {
@@ -178,7 +189,7 @@ export function isSlotCongested(count) {
  * @param {Array<object>} citas
  * @param {string|Date} date
  * @param {string|null} sucursalId
- * @param {{ matrizId?: string|null, rama?: string|null, categoria?: string|null, servicioLookup?: Map<string,string>|null }} [options]
+ * @param {{ matrizId?: string|null, rama?: string|null, categoria?: string|null, servicioLookup?: ServicioCategoriaLookup|null }} [options]
  */
 export function buildSlotDensityMap(
   citas,
@@ -218,6 +229,12 @@ export function buildSlotDensityMap(
 }
 
 /** ¿La cita cae en una franja ya congestionada (incluyéndola en el conteo)? */
+/**
+ * @param {object} cita
+ * @param {Array<object>} citas
+ * @param {string|null} sucursalId
+ * @param {{ matrizId?: string|null, servicioLookup?: ServicioCategoriaLookup|null }} [options]
+ */
 export function isCitaInCongestedSlot(
   cita,
   citas,

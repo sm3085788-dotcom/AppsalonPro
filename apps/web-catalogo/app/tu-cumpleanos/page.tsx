@@ -62,7 +62,7 @@ export default async function TuCumpleanosPage() {
   const { data: statusData } = await supabase.rpc('get_birthday_club_status');
   const status = (statusData || {}) as {
     enrollment?: { status?: string } | null;
-    reaction?: { reaction?: string; comment?: string | null } | null;
+    reaction?: { reaction?: string; comment?: string | null; rating?: number | null } | null;
   };
 
   const enrolled = Boolean(status.enrollment);
