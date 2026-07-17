@@ -1,7 +1,7 @@
 -- Auto-cancelar citas vencidas sin visita (pendiente/confirmada).
 -- Ventana: fecha_hora + duracion_minutos (default 60) sin visita_validada_en.
 -- Ejecutar en Supabase → SQL Editor, o vía migración.
--- Cron Vercel: GET /api/cron/expire-citas cada 10 min (CRON_SECRET).
+-- También se invoca al consultar /api/booking/slots (web-catalogo).
 
 CREATE OR REPLACE FUNCTION public.expire_citas_sin_asistencia()
 RETURNS integer

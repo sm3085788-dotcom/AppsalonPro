@@ -23,7 +23,7 @@ export function citaNoShowDeadline(cita) {
   return new Date(start.getTime() + minutes * 60 * 1000);
 }
 
-/** ¿Ya pasó la ventana sin visita? (el cron las cancelará como no-show). */
+/** ¿Ya pasó la ventana sin visita? (no cuenta para congestión; RPC las cancela). */
 export function isCitaPastNoShowWindow(cita, now = new Date()) {
   const deadline = citaNoShowDeadline(cita);
   if (!deadline) return false;
