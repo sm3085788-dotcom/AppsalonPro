@@ -7,7 +7,8 @@ export function ReviewList({ reviews }: { reviews: Review[] }) {
   if (reviews.length === 0) {
     return (
       <p className="rounded-2xl border border-dashed border-border bg-surface p-6 text-sm text-muted">
-        Aún no hay reseñas. Sé la primera persona en opinar.
+        Aún no hay reseñas verificadas. Si ya recibiste este producto en el salón, podés ser la primera
+        en opinar.
       </p>
     );
   }

@@ -14,11 +14,13 @@ import { isHomeHashHref, navigateHomeHash } from '@/lib/hashNavigation';
 export function MobileNavDrawer({
   open,
   onClose,
+  isLoggedIn,
   userEmail,
   userDisplayName,
 }: {
   open: boolean;
   onClose: () => void;
+  isLoggedIn: boolean;
   userEmail: string | null;
   userDisplayName?: string | null;
 }) {
@@ -98,7 +100,7 @@ export function MobileNavDrawer({
             ))}
           </nav>
 
-          {userEmail ? (
+          {isLoggedIn ? (
             <div className="mt-auto border-t border-border pt-4">
               <Link
                 href="/cuenta"
@@ -106,7 +108,9 @@ export function MobileNavDrawer({
                 className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-light text-pearl hover:bg-surface"
               >
                 <User2 className="h-4 w-4 text-gold" />
-                {userDisplayName?.split(/\s+/)[0] || userEmail.split('@')[0]}
+                {userDisplayName?.split(/\s+/)[0] ||
+                  userEmail?.split('@')[0] ||
+                  'Mi cuenta'}
               </Link>
               <button
                 type="button"

@@ -32,11 +32,18 @@ function formatRelativeTime(iso: string): string {
   return years === 1 ? 'hace 1 año' : `hace ${years} años`;
 }
 
+function reactionRating(reaction: BirthdayTestimonialRow['reaction']): number {
+  if (reaction === 'love') return 5;
+  if (reaction === 'like') return 4;
+  if (reaction === 'dislike') return 2;
+  return 5;
+}
+
 function mapBirthdayReview(row: BirthdayTestimonialRow): ClientReview {
   return {
     id: `birthday-${row.id}`,
     authorName: row.author_first_name || 'Cliente',
-    rating: row.reaction === 'love' ? 5 : 5,
+    rating: reactionRating(row.reaction),
     text: row.comment.trim(),
     relativeTime: formatRelativeTime(row.published_at),
     source: 'birthday_club',
@@ -71,7 +78,7 @@ async function fetchBirthdayClubPublicReviews(): Promise<ClientReview[]> {
 
 const getCachedBirthdayClubPublicReviews = unstable_cache(
   fetchBirthdayClubPublicReviews,
-  ['birthday-club-public-reviews'],
+  ['birthday-club-public-reviews-v2'],
   { revalidate: 3600, tags: ['birthday-club-reviews'] },
 );
 

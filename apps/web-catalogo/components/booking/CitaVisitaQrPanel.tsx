@@ -7,6 +7,7 @@ import {
   citaNecesitaValidacionVisita,
 } from '@/lib/citaCliente';
 import { visitaQrImageUrl } from '@/lib/visitaQr';
+import { ExpandableCompactQr } from '@/components/ui/ExpandableCompactQr';
 
 export function CitaVisitaQrPanel({
   citaId,
@@ -75,25 +76,20 @@ export function CitaVisitaQrPanel({
 
   if (!needsQr) return null;
 
-  const qrUrl = visitaQrImageUrl(token, 120);
+  const qrUrl = visitaQrImageUrl(token, 88);
+  const qrUrlLarge = visitaQrImageUrl(token, 280);
 
   return (
     <div className="flex shrink-0 flex-col items-center justify-center px-2">
       {loading ? (
         <Loader2 className="h-8 w-8 animate-spin text-muted" aria-hidden />
       ) : qrUrl ? (
-        <>
-          <img
-            src={qrUrl}
-            alt="Código QR de visita"
-            width={88}
-            height={88}
-            className="rounded-lg bg-white p-1"
-          />
-          <p className="mt-1 max-w-[7rem] text-center text-[10px] leading-tight text-muted">
-            Escanealo en salón
-          </p>
-        </>
+        <ExpandableCompactQr
+          src={qrUrl}
+          srcLarge={qrUrlLarge || qrUrl}
+          alt="Código QR de visita"
+          hint="Escanealo en salón"
+        />
       ) : (
         <div className="flex flex-col items-center gap-1 text-center">
           <p className="max-w-[7rem] text-[10px] leading-tight text-red-300">

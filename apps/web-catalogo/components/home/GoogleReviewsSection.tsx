@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Cake, ChevronLeft, ChevronRight, Gift, Star, X } from 'lucide-react';
+import { Cake, ChevronLeft, ChevronRight, Gift, ShoppingBag, Star, X } from 'lucide-react';
 import { GiftCardReviewPanel } from '@/components/gift-card/GiftCardReviewPanel';
 import type { GiftCardReviewStatus } from '@/app/gift-card-review/actions';
 import type { ClientReview, GoogleReviewsPayload } from '@/lib/data/googleReviews';
@@ -95,23 +95,70 @@ function ReviewCard({
   const isGoogle = review.source === 'google';
   const isBirthdayClub = review.source === 'birthday_club';
   const isGiftCard = review.source === 'gift_card';
-  const isVerifiedWeb = isBirthdayClub || isGiftCard;
+  const isProduct = review.source === 'product';
+  const isVerifiedWeb = isBirthdayClub || isGiftCard || isProduct;
 
   return (
     <article className="flex h-full min-h-[280px] flex-col rounded-xl bg-white px-5 py-6 text-center shadow-lg sm:min-h-[300px] sm:px-6 sm:py-7">
       <div className="mx-auto">
         <ReviewAvatar name={review.authorName} photoUrl={review.authorPhotoUrl} />
       </div>
-      <div className="mt-4">
+      <div className="mt-4 space-y-2">
         {isVerifiedWeb ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700 sm:text-[11px]">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
-            Experiencia verificada
+            {isProduct ? 'Compra verificada' : 'Experiencia verificada'}
           </span>
-        ) : (
-          <ReviewStars rating={review.rating} />
-        )}
+        ) : null}
+        {isGoogle || isProduct ? <ReviewStars rating={review.rating} /> : null}
       </div>
+      {isProduct && review.productName ? (
+        review.productId ? (
+          <Link
+            href={`/producto/${review.productId}`}
+            className="mx-auto mt-3 inline-flex max-w-full items-center gap-2.5 rounded-xl border border-[#e8e8e8] bg-[#f7f7f7] px-3 py-2 text-left transition-colors hover:border-[#1a4d3e]/25 hover:bg-[#f0f4f2]"
+          >
+            {review.productImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={review.productImageUrl}
+                alt=""
+                className="h-11 w-11 shrink-0 rounded-lg border border-white bg-white object-contain p-0.5"
+              />
+            ) : (
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white bg-white text-[#1a4d3e]">
+                <ShoppingBag className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+              </span>
+            )}
+            <span className="min-w-0">
+              <span className="block text-[9px] font-medium uppercase tracking-wide text-[#888]">
+                Producto
+              </span>
+              <span className="line-clamp-2 text-[11px] font-semibold uppercase leading-tight text-[#1a4d3e] sm:text-xs">
+                {review.productName}
+              </span>
+            </span>
+          </Link>
+        ) : (
+          <div className="mx-auto mt-3 inline-flex max-w-full items-center gap-2.5 rounded-xl border border-[#e8e8e8] bg-[#f7f7f7] px-3 py-2">
+            {review.productImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={review.productImageUrl}
+                alt=""
+                className="h-11 w-11 shrink-0 rounded-lg border border-white bg-white object-contain p-0.5"
+              />
+            ) : (
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white bg-white text-[#1a4d3e]">
+                <ShoppingBag className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+              </span>
+            )}
+            <span className="line-clamp-2 text-[11px] font-semibold uppercase leading-tight text-[#1a4d3e] sm:text-xs">
+              {review.productName}
+            </span>
+          </div>
+        )
+      ) : null}
       <p className="mt-4 line-clamp-5 flex-1 text-[13px] leading-relaxed text-[#333] sm:text-sm">
         {formatReviewExclamation(review.text)}
       </p>
@@ -153,14 +200,23 @@ function headerSubtitle(source: GoogleReviewsPayload['source'], totalReviews: nu
   if (source === 'google') {
     return `${totalReviews} reseñas en Google`;
   }
+  if (source === 'product') {
+    return totalReviews === 1
+      ? '1 reseña verificada de productos'
+      : `${totalReviews} reseñas verificadas de productos`;
+  }
   if (source === 'birthday_club') {
-    return `${totalReviews} clientas contentas con el Club Tu Cumpleaños`;
+    return totalReviews === 1
+      ? '1 clienta contenta con el Club Tu Cumpleaños'
+      : `${totalReviews} clientas contentas con el Club Tu Cumpleaños`;
   }
   if (source === 'gift_card') {
-    return `${totalReviews} clientas contentas con Tarjeta Regalo`;
+    return totalReviews === 1
+      ? '1 clienta contenta con Tarjeta Regalo'
+      : `${totalReviews} clientas contentas con Tarjeta Regalo`;
   }
   if (source === 'mixed') {
-    return `${totalReviews} reseñas de clientas y Google`;
+    return `${totalReviews} reseñas de clientas, productos y Google`;
   }
   return 'Sé la primera en compartir tu experiencia';
 }
@@ -168,6 +224,9 @@ function headerSubtitle(source: GoogleReviewsPayload['source'], totalReviews: nu
 function HeaderSourceIcon({ source }: { source: GoogleReviewsPayload['source'] }) {
   if (source === 'google' || source === 'mixed') {
     return <GoogleMark className="h-5 w-5" />;
+  }
+  if (source === 'product') {
+    return <ShoppingBag className="h-5 w-5 text-gold" strokeWidth={1.5} />;
   }
   if (source === 'gift_card') {
     return <Gift className="h-5 w-5 text-gold" strokeWidth={1.5} />;
@@ -227,7 +286,10 @@ export function GoogleReviewsSection({
   const roundedRating = rating.toFixed(1);
   const subtitle = headerSubtitle(source, totalReviews);
   const hasWebVerifiedReviews =
-    source === 'birthday_club' || source === 'gift_card' || source === 'mixed';
+    source === 'birthday_club' ||
+    source === 'gift_card' ||
+    source === 'product' ||
+    source === 'mixed';
 
   return (
     <section
@@ -381,8 +443,8 @@ export function GoogleReviewsSection({
 
             {hasWebVerifiedReviews ? (
               <p className="mt-8 text-center text-[11px] font-light leading-relaxed text-white/55 sm:text-xs">
-                Las reseñas con etiqueta Club Tu Cumpleaños o Tarjeta regalo son comentarios
-                reales de clientas que vivieron la experiencia en la web.
+                Las reseñas de productos, Club Tu Cumpleaños y Tarjeta regalo son comentarios
+                reales de clientas con compra o experiencia verificada en la web.
               </p>
             ) : null}
           </div>

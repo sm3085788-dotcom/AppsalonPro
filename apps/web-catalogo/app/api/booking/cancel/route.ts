@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isSupabaseAdminConfigured } from '@/lib/env';
 import { mergeBookingNotas, parseBookingNotas } from '@/lib/bookingPolicy';
-import { clientePuedeModificarCita, normalizeEstadoCita } from '@/lib/citaCliente';
+import { clientePuedeCancelarCita, normalizeEstadoCita } from '@/lib/citaCliente';
 import { emitSalonBookingBroadcast } from '@/lib/realtime/emitSalonBooking';
 
 function buildCancelNotas(raw: string | null | undefined): string {
@@ -31,7 +31,7 @@ async function updateCitaCancel(
     .single();
 }
 
-/** Cancela cita web (pendiente) y notifica App Salón por broadcast. */
+/** Cancela cita web (pendiente o confirmada) y notifica App Salón por broadcast. */
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { citaId?: string };
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     const { data: cita, error: citaErr } = await supabase
       .from('citas')
-      .select('id,cliente_id,estado,notas_servicio,sucursal_id')
+      .select('id,cliente_id,estado,notas_servicio,sucursal_id,visita_validada_en')
       .eq('id', citaId)
       .eq('cliente_id', cliente.id)
       .maybeSingle();
@@ -77,9 +77,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No se puede cancelar una cita completada.' }, { status: 400 });
     }
 
-    if (!clientePuedeModificarCita(cita.estado)) {
+    if (!clientePuedeCancelarCita(cita.estado, cita.visita_validada_en)) {
       return NextResponse.json(
-        { error: 'Solo podés cancelar citas pendientes de confirmación del salón.' },
+        {
+          error: cita.visita_validada_en
+            ? 'No se puede cancelar: tu visita ya fue registrada en el salón.'
+            : 'No se puede cancelar esta cita en su estado actual.',
+        },
         { status: 400 },
       );
     }

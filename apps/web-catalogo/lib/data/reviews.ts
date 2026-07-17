@@ -1,21 +1,37 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { isSupabaseConfigured } from '@/lib/env';
+import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { isSupabaseConfigured, isSupabaseAdminConfigured } from '@/lib/env';
 import type { Review, UUID } from '@/lib/types/db';
 
-/** Reseñas de un item de inventario (RLS: solo authenticated puede leer). */
+async function fetchReviews(
+  inventarioId: UUID,
+  client: SupabaseClient,
+): Promise<Review[]> {
+  const { data, error } = await client
+    .from('inventario_resenas')
+    .select(
+      'id,inventario_id,client_user_id,cliente_id,autor_nombre,rating,comentario,foto_urls,created_at',
+    )
+    .eq('inventario_id', inventarioId)
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return data as Review[];
+}
+
+/** Reseñas públicas de un item de inventario (tienda web + App Clientes). */
 export async function getReviews(inventarioId: UUID): Promise<Review[]> {
   if (!isSupabaseConfigured) return [];
   try {
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from('inventario_resenas')
-      .select(
-        'id,inventario_id,client_user_id,cliente_id,autor_nombre,rating,comentario,foto_urls,created_at',
-      )
-      .eq('inventario_id', inventarioId)
-      .order('created_at', { ascending: false });
-    if (error || !data) return [];
-    return data as Review[];
+    const rows = await fetchReviews(inventarioId, supabase);
+    if (rows.length > 0) return rows;
+
+    if (isSupabaseAdminConfigured) {
+      const admin = createSupabaseAdminClient();
+      return fetchReviews(inventarioId, admin);
+    }
+    return [];
   } catch {
     return [];
   }

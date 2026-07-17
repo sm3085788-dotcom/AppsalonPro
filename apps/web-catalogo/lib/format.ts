@@ -24,3 +24,16 @@ export function formatFechaHora(iso: string): string {
     return iso;
   }
 }
+
+/** Formatea fecha/hora de cita en zona del salón (America/Guatemala). */
+export function formatCitaFechaHora(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('es-GT', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: 'America/Guatemala',
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}

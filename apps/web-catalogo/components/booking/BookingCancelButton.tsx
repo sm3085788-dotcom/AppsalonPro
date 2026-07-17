@@ -10,7 +10,7 @@ import {
   bookingRefundDeadlineIso,
   BOOKING_REFUND_HOURS_BEFORE,
 } from '@/lib/bookingPolicy';
-import { formatFechaHora, formatQ } from '@/lib/format';
+import { formatCitaFechaHora, formatFechaHora, formatQ } from '@/lib/format';
 
 export function BookingCancelButton({
   citaId,
@@ -19,6 +19,7 @@ export function BookingCancelButton({
   hasDeposit,
   servicio,
   depositGtq,
+  inline = false,
 }: {
   citaId: string;
   fechaHora: string;
@@ -26,6 +27,7 @@ export function BookingCancelButton({
   hasDeposit: boolean;
   servicio?: string;
   depositGtq?: number | null;
+  inline?: boolean;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -68,7 +70,7 @@ export function BookingCancelButton({
 
   return (
     <>
-      <div className="mt-3">
+      <div className={inline ? undefined : 'mt-3'}>
         {eligible ? (
           <button
             type="button"
@@ -111,7 +113,7 @@ export function BookingCancelButton({
                   {servicio || 'Tu reserva'}
                 </h3>
                 <p className="mt-1 text-xs text-muted">
-                  {formatFechaHora(fechaHora)}
+                  {formatCitaFechaHora(fechaHora)}
                 </p>
               </div>
               <button

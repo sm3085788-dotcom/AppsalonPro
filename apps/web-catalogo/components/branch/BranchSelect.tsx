@@ -2,6 +2,7 @@
 
 import { MapPin, ChevronDown } from 'lucide-react';
 import { useBranch } from './BranchContext';
+import { useTiendaCart } from '@/components/tienda/TiendaCartContext';
 
 /** Selector de sucursal (Req 2: el usuario web elige branch_id antes de reservar). */
 export function BranchSelect({
@@ -13,6 +14,7 @@ export function BranchSelect({
   variant?: 'pill' | 'field';
 }) {
   const { branches, selectedBranchId, setSelectedBranchId } = useBranch();
+  const { clearCart } = useTiendaCart();
 
   if (branches.length === 0) {
     return (
@@ -24,17 +26,29 @@ export function BranchSelect({
 
   return (
     <label
-      className={`group flex items-center gap-2 border border-border text-sm font-light transition-colors hover:border-border-strong focus-within:border-gold ${
+      className={`group flex items-center gap-2 border border-border font-light transition-colors hover:border-border-strong focus-within:border-gold ${
         isField
-          ? 'w-full rounded-xl bg-surface-2 px-4 py-3'
-          : `rounded-full bg-surface/60 px-3.5 ${compact ? 'py-1.5' : 'py-2'}`
+          ? `w-full rounded-lg bg-surface-2 ${
+              compact ? 'px-3 py-2 text-xs' : 'rounded-xl px-4 py-3 text-sm'
+            }`
+          : `rounded-full bg-surface/60 px-3.5 text-sm ${compact ? 'py-1.5' : 'py-2'}`
       }`}
     >
-      <MapPin className="h-4 w-4 shrink-0 text-gold" strokeWidth={1.25} aria-hidden />
+      <MapPin
+        className={`shrink-0 text-gold ${compact && isField ? 'h-3.5 w-3.5' : 'h-4 w-4'}`}
+        strokeWidth={1.25}
+        aria-hidden
+      />
       <span className="sr-only">Sucursal</span>
       <select
         value={selectedBranchId ?? ''}
-        onChange={(e) => setSelectedBranchId(e.target.value)}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next && next !== selectedBranchId) {
+            clearCart();
+            setSelectedBranchId(next);
+          }
+        }}
         className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent pr-5 text-foreground outline-none"
       >
         {branches.map((b) => (
@@ -45,7 +59,9 @@ export function BranchSelect({
         ))}
       </select>
       <ChevronDown
-        className="-ml-5 h-4 w-4 shrink-0 text-muted group-hover:text-gold"
+        className={`-ml-5 shrink-0 text-muted group-hover:text-gold ${
+          compact && isField ? 'h-3.5 w-3.5' : 'h-4 w-4'
+        }`}
         aria-hidden
       />
     </label>

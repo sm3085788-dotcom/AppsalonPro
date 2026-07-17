@@ -3,11 +3,19 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, ArrowLeft, Phone } from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { saveClienteProfileAction } from '@/app/cuenta/actions';
 import { profileNameFromClienteAndAuth } from '@/lib/clientDisplayName';
 import type { ClienteRow } from '@/lib/data/cliente';
+import { PhoneCountryField } from '@/components/auth/PhoneCountryField';
+import {
+  formatPhoneForDisplay,
+  parseStoredPhone,
+  toClientPhoneE164,
+  type ClientAuthCountry,
+} from '@/lib/phone/clientAuthPhone';
+import { formatAddressInput, polishAddress } from '@/lib/text/polishAddress';
 
 function Field({
   label,
@@ -34,6 +42,17 @@ export function ProfileEditForm({
   redirectTo?: string;
 }) {
   const router = useRouter();
+  const verifiedAuthPhone = sessionUser.phone?.trim() || null;
+
+  const initialPhone = useMemo(() => {
+    const source = verifiedAuthPhone || clienteRow?.telefono || '';
+    const parsed = parseStoredPhone(source);
+    return {
+      country: parsed?.country ?? ('gt' as ClientAuthCountry),
+      localDigits: parsed?.localDigits ?? '',
+    };
+  }, [verifiedAuthPhone, clienteRow?.telefono]);
+
   const initial = useMemo(
     () => profileNameFromClienteAndAuth(clienteRow, sessionUser),
     [clienteRow, sessionUser],
@@ -41,11 +60,10 @@ export function ProfileEditForm({
 
   const [nombre, setNombre] = useState(initial.nombre);
   const [apellido, setApellido] = useState(initial.apellido);
-  const [telLocal, setTelLocal] = useState(() => {
-    const tel = String(clienteRow?.telefono || '').replace(/\D/g, '');
-    if (tel.startsWith('502')) return tel.slice(3, 11);
-    return tel.slice(0, 8);
-  });
+  const [phoneCountry, setPhoneCountry] = useState<ClientAuthCountry>(
+    initialPhone.country,
+  );
+  const [phoneLocal, setPhoneLocal] = useState(initialPhone.localDigits);
   const [correo, setCorreo] = useState(
     clienteRow?.email || sessionUser.email || '',
   );
@@ -56,6 +74,8 @@ export function ProfileEditForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const phoneLocked = Boolean(verifiedAuthPhone);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -64,9 +84,13 @@ export function ProfileEditForm({
       const res = await saveClienteProfileAction({
         nombre: nombre.trim(),
         apellido: apellido.trim(),
-        telefono: telLocal.trim() || null,
+        telefono: phoneLocked
+          ? toClientPhoneE164(verifiedAuthPhone) ?? verifiedAuthPhone
+          : undefined,
+        telefonoCountry: phoneLocked ? undefined : phoneCountry,
+        telefonoLocal: phoneLocked ? undefined : phoneLocal.trim() || null,
         email: correo.trim() || null,
-        direccion: direccion.trim() || null,
+        direccion: polishAddress(direccion) || null,
         cumpleanos: cumpleanos || null,
       });
       if (!res.ok) {
@@ -104,31 +128,29 @@ export function ProfileEditForm({
       </div>
 
       <div>
-        <label className="mb-2 block text-sm text-muted">
-          Teléfono (Guatemala)
-        </label>
-        <div className="flex items-center gap-3">
-          <span className="rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-foreground">
-            +502
-          </span>
-          <div className="relative flex-1">
-            <Phone className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <input
-              type="tel"
-              inputMode="numeric"
-              value={telLocal}
-              onChange={(e) =>
-                setTelLocal(e.target.value.replace(/\D/g, '').slice(0, 8))
-              }
-              placeholder="1234 5678"
-              className="w-full rounded-xl border border-border bg-surface-2 py-3 pl-11 pr-4 text-sm text-foreground outline-none placeholder:text-muted focus:border-gold"
-            />
+        <label className="mb-2 block text-sm text-muted">Teléfono</label>
+        {phoneLocked ? (
+          <div className="space-y-2">
+            <div className="rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-foreground">
+              {formatPhoneForDisplay(verifiedAuthPhone)}
+            </div>
+            <p className="text-xs text-muted">
+              Verificado con SMS al registrarte. Para cambiarlo, contacta al
+              salón.
+            </p>
           </div>
-        </div>
+        ) : (
+          <PhoneCountryField
+            country={phoneCountry}
+            localDigits={phoneLocal}
+            onCountryChange={setPhoneCountry}
+            onLocalDigitsChange={setPhoneLocal}
+          />
+        )}
       </div>
 
       <Field
-        label="Correo"
+        label="Correo (opcional)"
         type="email"
         value={correo}
         onChange={(e) => setCorreo(e.target.value)}
@@ -139,7 +161,8 @@ export function ProfileEditForm({
       <Field
         label="Dirección"
         value={direccion}
-        onChange={(e) => setDireccion(e.target.value)}
+        onChange={(e) => setDireccion(formatAddressInput(e.target.value))}
+        onBlur={() => setDireccion((prev) => polishAddress(prev))}
         placeholder="Zona, calle, ciudad"
         autoComplete="street-address"
       />

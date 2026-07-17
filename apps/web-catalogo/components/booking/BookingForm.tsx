@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, Store } from 'lucide-react';
+import { Store } from 'lucide-react';
 import { BranchSelect } from '@/components/branch/BranchSelect';
 import { useBranch } from '@/components/branch/BranchContext';
 import { formatQ } from '@/lib/format';
@@ -11,6 +11,7 @@ import {
   PRECIO_A_TU_MEDIDA_LABEL,
 } from '@/lib/bookingPolicy';
 import { createBooking } from '@/app/reservar/actions';
+import { BookingSlotPicker } from '@/components/booking/BookingSlotPicker';
 import type { Service } from '@/lib/types/db';
 
 export function BookingForm({
@@ -28,7 +29,7 @@ export function BookingForm({
       ? initialServiceId
       : (services[0]?.id ?? ''),
   );
-  const [fecha, setFecha] = useState('');
+  const [fechaHora, setFechaHora] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -40,7 +41,7 @@ export function BookingForm({
   function validar(): string | null {
     if (!serviceId) return 'Selecciona un servicio.';
     if (!selectedBranchId) return 'Selecciona una sucursal.';
-    if (!fecha) return 'Elige fecha y hora.';
+    if (!fechaHora) return 'Elige fecha y hora.';
     return null;
   }
 
@@ -50,12 +51,12 @@ export function BookingForm({
       setError(v);
       return;
     }
-    if (!selectedService || !selectedBranchId) return;
+    if (!selectedService || !selectedBranchId || !fechaHora) return;
     startTransition(async () => {
       const result = await createBooking({
         servicioId: serviceId,
         servicio: selectedService.nombre,
-        fechaHora: new Date(fecha).toISOString(),
+        fechaHora,
         sucursalId: selectedBranchId,
         fulfillment: 'salon',
       });
@@ -73,19 +74,19 @@ export function BookingForm({
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
-      <div className="space-y-6 rounded-2xl border border-border bg-surface p-6">
+    <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+      <div className="space-y-4 rounded-xl border border-border bg-surface p-4 sm:p-4">
         <div>
-          <label className="mb-2 block text-sm text-muted">Sucursal</label>
-          <BranchSelect variant="field" />
+          <label className="mb-1 block text-xs text-muted">Sucursal</label>
+          <BranchSelect variant="field" compact />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm text-muted">Servicio</label>
+          <label className="mb-1 block text-xs text-muted">Servicio</label>
           <select
             value={serviceId}
             onChange={(e) => setServiceId(e.target.value)}
-            className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-foreground outline-none focus:border-gold"
+            className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-sm text-foreground outline-none focus:border-gold"
           >
             {services.length === 0 && <option value="">Sin servicios</option>}
             {services.map((s) => (
@@ -97,42 +98,40 @@ export function BookingForm({
         </div>
 
         <div>
-          <label className="mb-2 block text-sm text-muted">Fecha y hora</label>
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-2 px-4 py-3 focus-within:border-gold">
-            <CalendarClock className="h-4 w-4 text-gold" />
-            <input
-              type="datetime-local"
-              value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
-              className="w-full bg-transparent text-sm text-foreground outline-none [color-scheme:dark]"
-            />
-          </div>
+          <label className="mb-1 block text-xs text-muted">Fecha y hora</label>
+          <BookingSlotPicker
+          value={fechaHora}
+          onChange={setFechaHora}
+          sucursalId={selectedBranchId}
+          branchPhone={selectedBranch?.telefono}
+          disabled={pending}
+        />
         </div>
 
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-2 px-4 py-3">
-          <Store className="h-4 w-4 text-gold" />
+        <div className="flex items-center gap-2.5 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+          <Store className="h-3.5 w-3.5 shrink-0 text-gold" />
           <div>
-            <p className="text-sm text-foreground">Atención en el salón</p>
-            <p className="text-xs text-muted">
+            <p className="text-xs text-foreground">Atención en el salón</p>
+            <p className="text-[11px] text-muted">
               Te esperamos en la sucursal seleccionada.
             </p>
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-xs text-red-400">{error}</p>}
 
         <button
           type="button"
           onClick={onReservar}
           disabled={pending}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gold py-3 text-sm font-semibold text-charcoal transition-colors hover:bg-gold-soft disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-gold py-2.5 text-xs font-semibold text-charcoal transition-colors hover:bg-gold-soft disabled:opacity-60 sm:text-sm"
         >
           {pending ? 'Reservando…' : 'Confirmar reserva'}
         </button>
       </div>
 
-      <aside className="h-fit space-y-4 rounded-2xl border border-border bg-surface p-6">
-        <h3 className="text-lg font-light text-cream">Tu reserva</h3>
+      <aside className="h-fit space-y-3 rounded-xl border border-border bg-surface p-4">
+        <h3 className="text-base font-light text-cream">Tu reserva</h3>
         <Row label="Servicio" value={selectedService?.nombre ?? '—'} />
         <Row label="Sucursal" value={selectedBranch?.nombre ?? '—'} />
         {selectedService?.precioVariable ? (
@@ -159,7 +158,7 @@ export function BookingForm({
                 : '—'
           }
         />
-        <p className="border-t border-border pt-4 text-xs leading-relaxed text-muted">
+        <p className="border-t border-border pt-3 text-[11px] leading-relaxed text-muted">
           Sin pago en línea. El salón confirmará tu cita y el valor final en recepción.
         </p>
       </aside>

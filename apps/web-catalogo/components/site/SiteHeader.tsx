@@ -2,14 +2,33 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, User2, LogOut, Menu } from 'lucide-react';
+import { ChevronDown, User2, LogOut, Menu, ShoppingCart } from 'lucide-react';
 import { BranchSelect } from '@/components/branch/BranchSelect';
 import { MobileNavDrawer } from '@/components/site/MobileNavDrawer';
+import { useTiendaCart } from '@/components/tienda/TiendaCartContext';
 import { createClient } from '@/lib/supabase/client';
 import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { useRouter } from 'next/navigation';
 import { NAV_MORE, NAV_PRIMARY } from '@/lib/navigation';
 import { isHomeHashHref, navigateHomeHash } from '@/lib/hashNavigation';
+function CartLink({ className = '' }: { className?: string }) {
+  const { cartCount } = useTiendaCart();
+  return (
+    <Link
+      href="/carrito"
+      aria-label={`Carrito${cartCount > 0 ? `, ${cartCount} artículos` : ''}`}
+      className={`relative rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold ${className}`}
+    >
+      <ShoppingCart className="h-4 w-4" />
+      {cartCount > 0 ? (
+        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white shadow-sm">
+          {cartCount > 99 ? '99+' : cartCount}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
 function LoginButton({ className = '' }: { className?: string }) {
   return (
     <Link
@@ -22,9 +41,11 @@ function LoginButton({ className = '' }: { className?: string }) {
 }
 
 export function SiteHeader({
+  isLoggedIn,
   userEmail,
   userDisplayName,
 }: {
+  isLoggedIn: boolean;
   userEmail: string | null;
   userDisplayName?: string | null;
 }) {
@@ -51,6 +72,12 @@ export function SiteHeader({
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [moreOpen]);
+
+  const accountLabel =
+    userDisplayName?.split(/\s+/)[0] ||
+    userEmail?.split('@')[0] ||
+    'Mi cuenta';
+
   const onLogout = async () => {
     if (!supabaseConfigured) return;
     await createClient().auth.signOut();
@@ -85,17 +112,16 @@ export function SiteHeader({
           />
         </Link>
 
-        <div className="justify-self-center">
-          {userEmail ? (
+        <div className="justify-self-center flex items-center gap-2">
+          <CartLink />
+          {isLoggedIn ? (
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"
               className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-light text-muted"
             >
               <User2 className="h-3.5 w-3.5 shrink-0 text-gold" />
-              <span className="max-w-[5.5rem] truncate">
-                {userDisplayName?.split(/\s+/)[0] || userEmail.split('@')[0]}
-              </span>
+              <span className="max-w-[5.5rem] truncate">{accountLabel}</span>
             </Link>
           ) : (
             <LoginButton />
@@ -173,19 +199,19 @@ export function SiteHeader({
           </div>
         </nav>
         <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+          <CartLink className="hidden sm:inline-flex" />
           <BranchSelect compact />
-          {userEmail ? (
+          {isLoggedIn ? (
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Link
                 href="/cuenta"
                 aria-label="Mi cuenta"
-                title={userDisplayName || userEmail}
+                title={userDisplayName || userEmail || accountLabel}
                 className="flex shrink-0 items-center gap-1.5 sm:max-w-[10rem]"
               >
                 <User2 className="h-4 w-4 shrink-0 text-muted" />
                 <span className="hidden truncate text-sm font-light sm:inline">
-                  {userDisplayName?.split(/\s+/)[0] ||
-                    userEmail.split('@')[0]}
+                  {accountLabel}
                 </span>
               </Link>
               <button
@@ -205,6 +231,7 @@ export function SiteHeader({
       <MobileNavDrawer
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
+        isLoggedIn={isLoggedIn}
         userEmail={userEmail}
         userDisplayName={userDisplayName}
       />

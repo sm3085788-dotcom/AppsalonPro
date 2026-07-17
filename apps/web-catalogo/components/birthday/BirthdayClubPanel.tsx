@@ -11,6 +11,7 @@ import {
   sendBirthdayClubCommentAction,
   setBirthdayReactionAction,
 } from '@/app/tu-cumpleanos/actions';
+import { polishReviewComment } from '@/lib/text/polishReviewComment';
 
 type ReactionKind = 'like' | 'dislike' | 'love' | null;
 
@@ -67,7 +68,8 @@ export function BirthdayClubPanel({
       setError('Unite al club primero.');
       return;
     }
-    const trimmed = loveComment.trim();
+    const trimmed = polishReviewComment(loveComment).trim();
+    if (trimmed !== loveComment) setLoveComment(trimmed);
     if (!trimmed) {
       setError('Escribí un comentario antes de enviar.');
       return;
@@ -262,8 +264,14 @@ export function BirthdayClubPanel({
             <textarea
               value={loveComment}
               onChange={(e) => setLoveComment(e.target.value)}
+              onBlur={() => {
+                const polished = polishReviewComment(loveComment);
+                if (polished && polished !== loveComment) setLoveComment(polished);
+              }}
               placeholder="Me encanta…"
               rows={2}
+              lang="es"
+              spellCheck
               disabled={pending}
               className="w-full rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-foreground outline-none focus:border-gold disabled:opacity-60"
             />

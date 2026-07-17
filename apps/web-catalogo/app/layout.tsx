@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Geist_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { BranchProvider } from "@/components/branch/BranchContext";
+import { TiendaCartProvider } from "@/components/tienda/TiendaCartContext";
 import { SupabaseConfigProvider } from "@/components/supabase/SupabaseConfigProvider";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
@@ -77,14 +78,17 @@ export default async function RootLayout({
             branches={branches}
             initialBranchId={initialBranchId}
           >
-            <ConfigStatusBanner configured={supabaseConfig.configured} />
-            <HashScrollSync />
-            <SiteHeader
-              userEmail={user?.email ?? null}
-              userDisplayName={displayName}
-            />
-            <main className="flex-1 pt-14 md:pt-[72px]">{children}</main>
-            <SiteFooter branches={branches} />
+            <TiendaCartProvider>
+              <ConfigStatusBanner configured={supabaseConfig.configured} />
+              <HashScrollSync />
+              <SiteHeader
+                isLoggedIn={!!user}
+                userEmail={user?.email ?? null}
+                userDisplayName={displayName}
+              />
+              <main className="flex-1 pt-14 md:pt-[72px]">{children}</main>
+              <SiteFooter branches={branches} />
+            </TiendaCartProvider>
           </BranchProvider>
         </SupabaseConfigProvider>
       </body>

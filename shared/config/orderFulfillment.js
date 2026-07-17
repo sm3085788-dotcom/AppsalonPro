@@ -45,6 +45,14 @@ export function isPedidoTarjetaDomicilioCapturado(order) {
   return st === 'confirmed' || st === 'prepared';
 }
 
+/** Retiro en salón pagado con tarjeta en web/app (sin QR; salón marca entregado). */
+export function isPedidoTarjetaRetiroCapturado(order) {
+  if (!isRetiroSalonOrder(order) || !isCardPayment(order)) return false;
+  if (isPaymentCapturedInSnapshot(order)) return true;
+  const st = String(order?.status || '');
+  return st === 'confirmed' || st === 'prepared';
+}
+
 export function isPendingCashOrder(order) {
   return String(order?.status || '') === 'pending' && isCashPayment(order);
 }
@@ -58,5 +66,6 @@ export function canSalonConfirmarEntregaPedido(order) {
   const st = String(order?.status || '');
   if (st === 'pending' && isCashPayment(order)) return true;
   if (isPedidoTarjetaDomicilioCapturado(order) && (st === 'confirmed' || st === 'prepared')) return true;
+  if (isPedidoTarjetaRetiroCapturado(order) && (st === 'confirmed' || st === 'prepared')) return true;
   return false;
 }

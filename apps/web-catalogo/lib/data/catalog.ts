@@ -3,10 +3,11 @@ import { isSupabaseConfigured } from '@/lib/env';
 import {
   INVENTARIO_COLUMNS,
   isServicio,
-  mapToProduct,
+  mapToProductFromTienda,
   mapToService,
 } from '@/lib/inventario';
 import type { InventarioRow, Product, Service, UUID } from '@/lib/types/db';
+import { TIENDA_WEB_PICKUP_LABEL } from '@/lib/tiendaPickup';
 
 /* ── Datos demo de referencia ──────────────────────────────────────────────
  * Se muestran solo cuando no hay inventario en Supabase, para poder visualizar
@@ -35,6 +36,14 @@ const DEMO_PRODUCTS: Product[] = [
     nombre: 'Sérum de Crecimiento de Pestañas',
     categoria: 'Cuidado',
     precio: 480,
+    compareAt: null,
+    priceLabel: 'Q 480.00',
+    promoBadge: null,
+    promoVigente: false,
+    brandLine: 'CUIDADO',
+    shippingLabel: TIENDA_WEB_PICKUP_LABEL,
+    stockHint: 'En stock · 12 u.',
+    precioVariable: false,
     descripcion:
       'Fórmula profesional con péptidos y biotina que fortalece y estimula el crecimiento de pestañas y cejas en 6 semanas.',
     imagenUrl: '/images/product-serum.png',
@@ -102,7 +111,7 @@ export async function getProducts(branchId: UUID | null): Promise<Product[]> {
   const stockMap = await fetchBranchStockMap(branchId);
   const products = rows
     .filter((r) => !isServicio(r) && r.visible_en_tienda === true)
-    .map((r) => mapToProduct(r, stockMap.get(r.id) ?? 0));
+    .map((r) => mapToProductFromTienda(r, stockMap.get(r.id) ?? 0));
   if (products.length > 0) return products;
   if (!isSupabaseConfigured) return [];
   return DEMO_PRODUCTS;
@@ -119,7 +128,7 @@ export async function getProductById(
     return DEMO_PRODUCTS.find((p) => p.id === id) ?? null;
   }
   const stockMap = await fetchBranchStockMap(branchId);
-  return mapToProduct(row, stockMap.get(row.id) ?? 0);
+  return mapToProductFromTienda(row, stockMap.get(row.id) ?? 0);
 }
 
 export async function getServiceById(id: UUID): Promise<Service | null> {

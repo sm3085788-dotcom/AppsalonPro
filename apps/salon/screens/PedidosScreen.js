@@ -16,7 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, Package, X, Check } from 'lucide-react-native';
 import { spacing, typography, radii } from '@appsalon/design-tokens';
-import { db, supabase, confirmarCobroPedidoSalon, parseCanjeFromCheckoutSnapshot, needsPickupQr, isPedidoTarjetaDomicilioCapturado, canSalonConfirmarEntregaPedido, isHomeDeliveryOrder, isCashPayment } from '@appsalon/shared-config';
+import { db, supabase, confirmarCobroPedidoSalon, parseCanjeFromCheckoutSnapshot, needsPickupQr, isPedidoTarjetaDomicilioCapturado, isPedidoTarjetaRetiroCapturado, canSalonConfirmarEntregaPedido, isHomeDeliveryOrder, isCashPayment } from '@appsalon/shared-config';
 import { SubScreenChrome, SalonButton, modalSheetBottomPad, modalScrollBottomPad } from '../components/luxury';
 import { ListSelectionToolbarLink, ListSelectionActionBar } from '../components/ListSelectionBar';
 import { useListSelection } from '../hooks/useListSelection';
@@ -83,6 +83,8 @@ function statusLabelSalon(status, order) {
   const s = String(status || '');
   if (isPedidoTarjetaDomicilioCapturado(order) && s === 'confirmed') return 'Confirmado · preparar envío';
   if (isPedidoTarjetaDomicilioCapturado(order) && s === 'prepared') return 'Listo · en camino';
+  if (isPedidoTarjetaRetiroCapturado(order) && s === 'confirmed') return 'Confirmado · listo para retirar';
+  if (isPedidoTarjetaRetiroCapturado(order) && s === 'prepared') return 'Listo para retirar';
   if (s === 'pending') return 'Pendiente';
   if (s === 'delivered') return 'Completado';
   if (s === 'cancelled') return 'Cancelado';
@@ -91,12 +93,19 @@ function statusLabelSalon(status, order) {
   return s || '—';
 }
 
+function orderSourceLabel(order) {
+  const src = String(order?.source || '').trim().toLowerCase();
+  if (src === 'web' || String(order?.notes || '').includes('Pedido web')) return 'Web';
+  return 'App Clientes';
+}
+
 function matchesTab(o, tab) {
   if (tab === 'todos') return true;
   const st = String(o?.status || '').toLowerCase();
   if (tab === 'pending') {
     if (st === 'pending') return true;
     if (isPedidoTarjetaDomicilioCapturado(o) && (st === 'confirmed' || st === 'prepared')) return true;
+    if (isPedidoTarjetaRetiroCapturado(o) && (st === 'confirmed' || st === 'prepared')) return true;
     return false;
   }
   return st === tab;
@@ -276,6 +285,17 @@ export function PedidosScreen({ onBack }) {
       );
       return;
     }
+    if (isPedidoTarjetaRetiroCapturado(o)) {
+      Alert.alert(
+        'Confirmar entrega',
+        `Pedido retiro · tarjeta confirmada · Q${Number(o.total_amount || 0).toFixed(2)}\n\nSe registrará la venta en la caja abierta, descontará stock y marcará el pedido como entregado.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Marcar entregado', onPress: ejecutarCobro },
+        ],
+      );
+      return;
+    }
     if (!o.tracking_code) {
       Alert.alert('Pedido', 'Este pedido no tiene código de seguimiento para validar el QR.');
       return;
@@ -356,7 +376,7 @@ export function PedidosScreen({ onBack }) {
                 {o.customer_name || 'Cliente'}
               </Text>
               <Text style={[styles.rowMeta, { color: isHomeDeliveryOrder(o) ? (isDark ? '#64B5F6' : '#1565C0') : c.primary }]} numberOfLines={1}>
-                {isHomeDeliveryOrder(o) ? 'Envío domicilio' : 'Compra tienda'}
+                {isHomeDeliveryOrder(o) ? 'Envío domicilio' : 'Compra tienda'} · {orderSourceLabel(o)}
               </Text>
             </View>
             <Text style={[styles.rowSub, { color: c.foregroundMuted }]} numberOfLines={1}>
@@ -605,7 +625,7 @@ export function PedidosScreen({ onBack }) {
                   title={
                     confirmBusy
                       ? 'Confirmando…'
-                      : isPedidoTarjetaDomicilioCapturado(detail.data)
+                      : isPedidoTarjetaDomicilioCapturado(detail.data) || isPedidoTarjetaRetiroCapturado(detail.data)
                         ? 'Marcar entregado y cerrar venta'
                         : 'Escanear QR y confirmar cobro'
                   }

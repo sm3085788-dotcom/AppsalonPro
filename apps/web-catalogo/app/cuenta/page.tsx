@@ -2,14 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { CalendarClock, ShoppingBag, UserPen, AlertCircle, Users } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { BookingCitaActions } from '@/components/booking/BookingCitaActions';
-import { CitaVisitaQrPanel } from '@/components/booking/CitaVisitaQrPanel';
 import { JoinTeamStatusBadge } from '@/components/recruitment/JoinTeamStatusBadge';
+import { CuentaPedidosCitasPanels } from '@/components/cuenta/CuentaPedidosCitasPanels';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/env';
-import { parseBookingNotas } from '@/lib/bookingPolicy';
 import { displayNameFromUser } from '@/lib/clientDisplayName';
 import type { JoinTeamEstado } from '@/lib/recruitment/constants';
 import {
@@ -17,8 +14,6 @@ import {
   isProfileComplete,
   profileMissingLabels,
 } from '@/lib/data/cliente';
-import { formatFechaHora, formatQ } from '@/lib/format';
-import { citaEstadoBadgeClass } from '@/lib/citaEstadoBadge';
 
 export const metadata = { title: 'Mi cuenta | AppSalon Pro' };
 
@@ -31,13 +26,33 @@ interface CitaRow {
   notas_servicio: string | null;
   visita_qr_token: string | null;
   visita_validada_en: string | null;
+  sucursal_id: string | null;
 }
 
-export default async function CuentaPage() {
+interface PedidoRow {
+  id: string;
+  tracking_code: string | null;
+  status: string;
+  total_amount: number | null;
+  payment_method: string | null;
+  fulfillment_type: string | null;
+  created_at: string;
+}
+
+export default async function CuentaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
+  const initialTab =
+    tab === 'pedidos' || tab === 'citas' ? (tab as 'pedidos' | 'citas') : undefined;
+
   const user = await getCurrentUser();
   if (!user) redirect('/login?redirect=/cuenta');
 
   let citas: CitaRow[] = [];
+  let pedidos: PedidoRow[] = [];
   let clienteNombre = displayNameFromUser(user);
   let profileComplete = false;
   let missing: string[] = [];
@@ -63,15 +78,26 @@ export default async function CuentaPage() {
         const { data } = await supabase
           .from('citas')
           .select(
-            'id,servicio,estado,fecha_hora,precio,notas_servicio,visita_qr_token,visita_validada_en',
+            'id,servicio,estado,fecha_hora,precio,notas_servicio,visita_qr_token,visita_validada_en,sucursal_id',
           )
           .eq('cliente_id', row.id)
           .order('fecha_hora', { ascending: false })
           .limit(6);
         citas = (data ?? []) as CitaRow[];
       }
+
+      const { data: pedidosData } = await supabase
+        .from('ecommerce_orders')
+        .select(
+          'id,tracking_code,status,total_amount,payment_method,fulfillment_type,created_at,notes',
+        )
+        .eq('client_user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(8);
+      pedidos = (pedidosData ?? []) as PedidoRow[];
     } catch {
       citas = [];
+      pedidos = [];
     }
   }
 
@@ -158,62 +184,7 @@ export default async function CuentaPage() {
         </Link>
       </div>
 
-      <h2 className="mb-4 text-xl font-light text-cream">Mis citas</h2>
-      {citas.length === 0 ? (
-        <EmptyState
-          title="Aún no tienes citas"
-          description="Reserva tu primera cita y aparecerá aquí."
-        />
-      ) : (
-        <ul className="space-y-3">
-          {citas.map((c) => {
-            const { meta } = parseBookingNotas(c.notas_servicio);
-            const hasDeposit = Boolean(meta.payment_intent_id);
-            const refunded = Boolean(meta.refunded);
-
-            return (
-              <li
-                key={c.id}
-                className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-cream">{c.servicio}</p>
-                  <p className="text-xs text-muted">
-                    {formatFechaHora(c.fecha_hora)}
-                  </p>
-                  <BookingCitaActions
-                    citaId={c.id}
-                    fechaHora={c.fecha_hora}
-                    estado={c.estado}
-                    hasDeposit={hasDeposit && !refunded}
-                    servicio={c.servicio}
-                    depositGtq={c.precio ?? meta.deposit_gtq ?? null}
-                  />
-                </div>
-                <CitaVisitaQrPanel
-                  citaId={c.id}
-                  estado={c.estado}
-                  visitaQrToken={c.visita_qr_token}
-                  visitaValidadaEn={c.visita_validada_en}
-                />
-                <div className="shrink-0 text-right">
-                  <span className={citaEstadoBadgeClass(c.estado)}>{c.estado}</span>
-                  {c.precio != null && hasDeposit && (
-                    <p className="mt-1 text-sm text-foreground">
-                      Anticipo {formatQ(c.precio)}
-                      {refunded && (
-                        <span className="block text-[11px] text-emerald-400">
-                          Reembolsado
-                        </span>
-                      )}
-                    </p>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <CuentaPedidosCitasPanels pedidos={pedidos} citas={citas} initialTab={initialTab} />
     </div>
   );
 }

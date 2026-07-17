@@ -6,6 +6,16 @@ export function clientePuedeModificarCita(estado: string | null | undefined): bo
   return normalizeEstadoCita(estado) === 'pendiente';
 }
 
+/** Cancelar cita pendiente o confirmada (antes de validar visita en salón). */
+export function clientePuedeCancelarCita(
+  estado: string | null | undefined,
+  visitaValidadaEn?: string | null,
+): boolean {
+  if (citaEstaCancelada(estado) || citaEstaCompletada(estado)) return false;
+  if (visitaValidadaEn) return false;
+  return clientePuedeModificarCita(estado) || citaEstaConfirmada(estado);
+}
+
 export function citaEstaCancelada(estado: string | null | undefined): boolean {
   const s = normalizeEstadoCita(estado);
   return s === 'cancelada' || s === 'cancelado' || s === 'rechazada' || s === 'rechazado';
