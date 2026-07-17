@@ -192,6 +192,7 @@ body {
   height: 100%;
   object-fit: contain;
   object-position: center;
+  border-radius: 12px;
   transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -200,9 +201,14 @@ body {
 }
 
 @media (min-width: 640px) {
-  .product-card-media {
-    aspect-ratio: 1 / 1;
+  .product-card-media img {
+    border-radius: 16px;
   }
+}
+
+.product-card-media--empty {
+  aspect-ratio: 1 / 1;
+  line-height: normal;
 }
 
 /* Subrayado dorado animado para enlaces editoriales */

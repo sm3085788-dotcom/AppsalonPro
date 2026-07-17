@@ -12,7 +12,11 @@ export function ProductCard({ product }: { product: Product }) {
       href={`/producto/${product.id}`}
       className="group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-border-strong sm:rounded-2xl"
     >
-      <div className="product-card-media relative w-full overflow-hidden border-b border-border bg-[#F4F4F4]">
+      <div
+        className={`product-card-media relative w-full overflow-hidden border-b border-border bg-[#F4F4F4]${
+          product.imagenUrl ? '' : ' product-card-media--empty'
+        }`}
+      >
         {product.imagenUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={product.imagenUrl} alt={product.nombre} />
