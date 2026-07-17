@@ -30,10 +30,27 @@ export async function enrollBirthdayClubAction(): Promise<
   return { ok: true };
 }
 
-export async function setBirthdayReactionAction(
-  reaction: 'like' | 'dislike' | 'love',
+function reactionFromRating(rating: number): 'like' | 'dislike' | 'love' {
+  if (rating >= 5) return 'love';
+  if (rating >= 4) return 'like';
+  return 'dislike';
+}
+
+function normalizeBirthdayRating(rating: number): number | null {
+  const r = Math.round(Number(rating));
+  if (!Number.isFinite(r) || r < 1 || r > 5) return null;
+  return r;
+}
+
+export async function setBirthdayRatingAction(
+  rating: number,
   comment?: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const stars = normalizeBirthdayRating(rating);
+  if (stars == null) {
+    return { ok: false, error: 'Elegí entre 1 y 5 estrellas.' };
+  }
+
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: 'Inicia sesión.' };
 
@@ -41,8 +58,9 @@ export async function setBirthdayReactionAction(
   await ensureClienteFromAuth(supabase, user);
 
   const { data, error } = await supabase.rpc('set_birthday_club_reaction', {
-    p_reaction: reaction,
+    p_reaction: reactionFromRating(stars),
     p_comment: comment?.trim() || null,
+    p_rating: stars,
   });
   if (error) return { ok: false, error: error.message };
 
@@ -55,15 +73,24 @@ export async function setBirthdayReactionAction(
   return { ok: true };
 }
 
+/** @deprecated Usar setBirthdayRatingAction */
+export async function setBirthdayReactionAction(
+  reaction: 'like' | 'dislike' | 'love',
+  comment?: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const rating = reaction === 'love' ? 5 : reaction === 'like' ? 4 : 2;
+  return setBirthdayRatingAction(rating, comment);
+}
+
 export async function sendBirthdayClubCommentAction(
   comment: string,
-  reaction: 'like' | 'dislike' | 'love' = 'love',
+  rating = 5,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const trimmed = comment.trim();
   if (!trimmed) {
     return { ok: false, error: 'Escribí un comentario antes de enviar.' };
   }
-  return setBirthdayReactionAction(reaction, trimmed);
+  return setBirthdayRatingAction(rating, trimmed);
 }
 
 export async function getBirthdayClubStatusAction() {

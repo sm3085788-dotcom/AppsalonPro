@@ -65,18 +65,34 @@ export function bookingRefundDeadlineIso(fechaHoraIso) {
   ).toISOString();
 }
 
-export function splitBookingNotas(raw) {
-  const s = String(raw || '');
-  const i = s.indexOf(BOOKING_META_MARK);
-  if (i === -1) return { staff: s.trim(), meta: /** @type {Record<string, unknown>} */ ({}) };
-  const staff = s.slice(0, i).trim();
+const WEB_RESERVA_META_TAG = '__WEB_RESERVA_JSON__';
+
+function parseWebReservaMetaJson(raw) {
   let meta = /** @type {Record<string, unknown>} */ ({});
   try {
-    meta = JSON.parse(s.slice(i + BOOKING_META_MARK.length).trim() || '{}');
+    meta = JSON.parse(String(raw || '').trim() || '{}');
   } catch {
     /* ignore */
   }
-  return { staff, meta };
+  return meta;
+}
+
+export function splitBookingNotas(raw) {
+  const s = String(raw || '');
+  const i = s.indexOf(BOOKING_META_MARK);
+  if (i !== -1) {
+    const staff = s.slice(0, i).trim();
+    return { staff, meta: parseWebReservaMetaJson(s.slice(i + BOOKING_META_MARK.length)) };
+  }
+
+  const alt = s.indexOf(WEB_RESERVA_META_TAG);
+  if (alt !== -1) {
+    const staff = s.slice(0, alt).trim();
+    const afterTag = s.slice(alt + WEB_RESERVA_META_TAG.length);
+    return { staff, meta: parseWebReservaMetaJson(afterTag) };
+  }
+
+  return { staff: s.trim(), meta: /** @type {Record<string, unknown>} */ ({}) };
 }
 
 export function mergeBookingNotas(staff, meta) {

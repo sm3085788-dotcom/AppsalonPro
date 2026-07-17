@@ -6,6 +6,7 @@ import type { ClientReview } from '@/lib/data/googleReviews';
 type BirthdayTestimonialRow = {
   id: string;
   reaction: 'like' | 'love' | 'dislike';
+  rating?: number | null;
   comment: string;
   author_first_name: string;
   published_at: string;
@@ -40,10 +41,15 @@ function reactionRating(reaction: BirthdayTestimonialRow['reaction']): number {
 }
 
 function mapBirthdayReview(row: BirthdayTestimonialRow): ClientReview {
+  const explicitRating = Number(row.rating);
+  const rating =
+    Number.isFinite(explicitRating) && explicitRating >= 1 && explicitRating <= 5
+      ? explicitRating
+      : reactionRating(row.reaction);
   return {
     id: `birthday-${row.id}`,
     authorName: row.author_first_name || 'Cliente',
-    rating: reactionRating(row.reaction),
+    rating,
     text: row.comment.trim(),
     relativeTime: formatRelativeTime(row.published_at),
     source: 'birthday_club',
@@ -78,7 +84,7 @@ async function fetchBirthdayClubPublicReviews(): Promise<ClientReview[]> {
 
 const getCachedBirthdayClubPublicReviews = unstable_cache(
   fetchBirthdayClubPublicReviews,
-  ['birthday-club-public-reviews-v2'],
+  ['birthday-club-public-reviews-v3'],
   { revalidate: 3600, tags: ['birthday-club-reviews'] },
 );
 

@@ -18,7 +18,7 @@ const DEMO_SERVICES: Service[] = [
   {
     id: 'demo-servicio-lifting',
     nombre: 'Lifting de Pestañas Premium',
-    categoria: 'Mirada',
+    categoria: 'Cejas y pestañas',
     precio: 350,
     precioVariable: false,
     descripcion:

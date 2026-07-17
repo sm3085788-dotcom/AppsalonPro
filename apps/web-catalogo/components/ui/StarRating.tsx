@@ -43,10 +43,12 @@ export function StarRatingInput({
   value,
   onChange,
   size = 28,
+  disabled = false,
 }: {
   value: number;
   onChange: (v: number) => void;
   size?: number;
+  disabled?: boolean;
 }) {
   const [hover, setHover] = useState(0);
   const active = hover || value;
@@ -56,11 +58,12 @@ export function StarRatingInput({
         <button
           key={i}
           type="button"
+          disabled={disabled}
           onClick={() => onChange(i)}
-          onMouseEnter={() => setHover(i)}
+          onMouseEnter={() => !disabled && setHover(i)}
           onMouseLeave={() => setHover(0)}
           aria-label={`${i} estrella${i > 1 ? 's' : ''}`}
-          className="p-0.5 transition-transform hover:scale-110"
+          className="p-0.5 transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
         >
           <Star
             width={size}

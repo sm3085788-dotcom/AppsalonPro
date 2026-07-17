@@ -110,7 +110,11 @@ function ReviewCard({
             {isProduct ? 'Compra verificada' : 'Experiencia verificada'}
           </span>
         ) : null}
-        {isGoogle || isProduct ? <ReviewStars rating={review.rating} /> : null}
+        {review.rating > 0 ? (
+          <ReviewStars
+            rating={Math.round(review.rating)}
+          />
+        ) : null}
       </div>
       {isProduct && review.productName ? (
         review.productId ? (

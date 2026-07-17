@@ -7,6 +7,7 @@ import {
   instantFromDateAndSlotGT,
   zonedCalendarDateString,
 } from '@/lib/bookingSlots';
+import { mergeBookingNotas } from '@/lib/bookingPolicy';
 import type { FulfillmentType, UUID } from '@/lib/types/db';
 
 export interface CreateBookingInput {
@@ -85,6 +86,9 @@ export async function createBooking(
         latitud: esDomicilio ? (input.latitud ?? null) : null,
         longitud: esDomicilio ? (input.longitud ?? null) : null,
         direccion_domicilio: esDomicilio ? (input.direccion ?? null) : null,
+        notas_servicio: mergeBookingNotas('', {
+          servicio_id: input.servicioId,
+        }),
       })
       .select('id,estado')
       .single();

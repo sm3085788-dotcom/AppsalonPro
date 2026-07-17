@@ -101,7 +101,7 @@ async function densityFromRpc(
     const { data, error } = await supabase.rpc('get_booking_slot_density', {
       p_date: date,
       p_sucursal_id: sucursalId,
-      ...(categoria ? { p_categoria: categoria } : {}),
+      p_categoria: categoria,
     });
     if (error) {
       console.warn('[booking/slots] RPC get_booking_slot_density', error.message);
@@ -186,22 +186,15 @@ export async function GET(request: NextRequest) {
 
     const categoria = await resolveCategoriaFilter(categoriaParam, servicioId, servicio);
 
-    // Con filtro por rama: JS primero (fuzzy + keywords); RPC solo matchea nombre exacto en inventario.
-    let countBySlot = categoria
-      ? (isSupabaseAdminConfigured
-          ? await densityFromCitasRows(date, sucursalId, categoria, true)
-          : null) ??
-        (isSupabaseConfigured
-          ? await densityFromCitasRows(date, sucursalId, categoria, false)
-          : null) ??
-        (await densityFromRpc(date, sucursalId, categoria))
-      : (await densityFromRpc(date, sucursalId, categoria)) ??
-        (isSupabaseAdminConfigured
-          ? await densityFromCitasRows(date, sucursalId, categoria, true)
-          : null) ??
-        (isSupabaseConfigured
-          ? await densityFromCitasRows(date, sucursalId, categoria, false)
-          : null);
+    // RPC (SECURITY DEFINER) funciona sin service role; JS enriquece si hay admin y el RPC falla.
+    let countBySlot =
+      (await densityFromRpc(date, sucursalId, categoria)) ??
+      (isSupabaseAdminConfigured
+        ? await densityFromCitasRows(date, sucursalId, categoria, true)
+        : null) ??
+      (isSupabaseConfigured
+        ? await densityFromCitasRows(date, sucursalId, categoria, false)
+        : null);
 
     const densityAvailable = countBySlot != null;
     if (!countBySlot) countBySlot = {};

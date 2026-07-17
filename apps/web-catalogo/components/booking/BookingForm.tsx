@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Store } from 'lucide-react';
+import { ChevronDown, Store } from 'lucide-react';
 import { BranchSelect } from '@/components/branch/BranchSelect';
 import { useBranch } from '@/components/branch/BranchContext';
 import { formatQ } from '@/lib/format';
@@ -83,18 +83,24 @@ export function BookingForm({
 
         <div>
           <label className="mb-1 block text-xs text-muted">Servicio</label>
-          <select
-            value={serviceId}
-            onChange={(e) => setServiceId(e.target.value)}
-            className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-sm text-foreground outline-none focus:border-gold"
-          >
-            {services.length === 0 && <option value="">Sin servicios</option>}
-            {services.map((s) => (
-              <option key={s.id} value={s.id}>
-                {serviceOptionLabel(s)}
-              </option>
-            ))}
-          </select>
+          <div className="group relative">
+            <select
+              value={serviceId}
+              onChange={(e) => setServiceId(e.target.value)}
+              className="w-full cursor-pointer appearance-none rounded-lg border border-border bg-surface-2 py-2.5 pl-3 pr-9 text-sm text-foreground outline-none focus:border-gold"
+            >
+              {services.length === 0 && <option value="">Sin servicios</option>}
+              {services.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {serviceOptionLabel(s)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted group-focus-within:text-gold"
+              aria-hidden
+            />
+          </div>
         </div>
 
         <div>
@@ -150,16 +156,6 @@ export function BookingForm({
             value={selectedService ? formatQ(selectedService.precio) : '—'}
           />
         )}
-        <Row
-          label="Precio referencia"
-          value={
-            selectedService?.precioVariable
-              ? PRECIO_A_TU_MEDIDA_LABEL
-              : selectedService
-                ? formatQ(selectedService.precio)
-                : '—'
-          }
-        />
         <p className="border-t border-border pt-3 text-[11px] leading-relaxed text-muted">
           Sin pago en línea. El salón confirmará tu cita y el valor final en recepción.
         </p>

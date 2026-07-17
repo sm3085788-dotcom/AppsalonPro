@@ -53,6 +53,11 @@ function slotPickerPlaceholder(
   return 'Seleccioná un horario';
 }
 
+function slotDemandLabel(count: number): string {
+  if (count === 1) return '1 cita';
+  return `${count} citas`;
+}
+
 function SlotChip({
   slot,
   selected,
@@ -65,6 +70,7 @@ function SlotChip({
   onSelect: () => void;
 }) {
   const congested = slot.congested;
+  const showDemand = !congested && slot.count > 0;
 
   return (
     <button
@@ -89,6 +95,10 @@ function SlotChip({
       {congested ? (
         <span className="mt-1 rounded-full bg-amber-500/25 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-200">
           Saturado
+        </span>
+      ) : showDemand ? (
+        <span className="mt-1 rounded-full bg-surface px-1.5 py-px text-[9px] font-medium tabular-nums text-muted">
+          {slotDemandLabel(slot.count)}
         </span>
       ) : null}
     </button>

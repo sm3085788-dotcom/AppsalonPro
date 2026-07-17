@@ -308,6 +308,7 @@ export {
   filterRowsBySucursal,
   resolveCitaCanal,
   formatCitaNotasDisplay,
+  formatCitaWebReservaHint,
 } from './salonSucursalHelpers.js';
 export {
   BOOKING_OPEN,
