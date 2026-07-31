@@ -13,6 +13,7 @@ import { resolveSelectedBranchId } from "@/lib/data/selectedBranch";
 import { getCurrentUser, getClienteDisplayName } from "@/lib/auth";
 import { getPublicSupabaseConfig } from "@/lib/supabase/public-config";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
+import { PwaInstallBanner } from "@/components/pwa/PwaInstallBanner";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -77,6 +78,7 @@ export default async function RootLayout({
     >
       <body className="relative flex min-h-full flex-col bg-background text-foreground">
         <ServiceWorkerRegistration />
+        <PwaInstallBanner />
         {/* Glows editoriales de fondo */}
         <div
           aria-hidden
