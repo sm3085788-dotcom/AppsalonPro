@@ -60,10 +60,14 @@ export async function createBooking(
     const slot = getSlotStartFromInstant(fecha);
     if (!slot) return { ok: false, error: 'Fecha u hora inválida.' };
 
-    const normalized = instantFromDateAndSlotGT(
+    const normalizedDate = instantFromDateAndSlotGT(
       zonedCalendarDateString(fecha),
       slot,
-    )!.toISOString();
+    );
+    if (!normalizedDate) {
+      return { ok: false, error: 'Fecha u hora inválida.' };
+    }
+    const normalized = normalizedDate.toISOString();
 
     const { data: inv } = await supabase
       .from('inventario')

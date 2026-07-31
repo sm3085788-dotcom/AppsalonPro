@@ -38,7 +38,10 @@ export async function POST(request: NextRequest) {
     const normalized = instantFromDateAndSlotGT(
       zonedCalendarDateString(nueva),
       slot,
-    )!;
+    );
+    if (!normalized) {
+      return NextResponse.json({ error: 'Fecha u hora inválida.' }, { status: 400 });
+    }
     const normalizedIso = normalized.toISOString();
 
     if (normalized.getTime() < Date.now() + 30 * 60 * 1000) {
