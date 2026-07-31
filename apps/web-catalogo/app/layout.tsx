@@ -12,6 +12,7 @@ import { listBranches } from "@/lib/data/branches";
 import { resolveSelectedBranchId } from "@/lib/data/selectedBranch";
 import { getCurrentUser, getClienteDisplayName } from "@/lib/auth";
 import { getPublicSupabaseConfig } from "@/lib/supabase/public-config";
+import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,12 +35,23 @@ export const metadata: Metadata = {
   title: "AppSalon Pro | Salones de belleza de lujo",
   description:
     "Reserva citas, compra productos premium y vive la experiencia AppSalon Pro. Descarga la app.",
+  applicationName: "Andreas",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Andreas",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  themeColor: "#0e0e0f",
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
@@ -64,6 +76,7 @@ export default async function RootLayout({
       className={`${inter.variable} ${cormorant.variable} ${geistMono.variable} h-full bg-background antialiased`}
     >
       <body className="relative flex min-h-full flex-col bg-background text-foreground">
+        <ServiceWorkerRegistration />
         {/* Glows editoriales de fondo */}
         <div
           aria-hidden
@@ -86,7 +99,9 @@ export default async function RootLayout({
                 userEmail={user?.email ?? null}
                 userDisplayName={displayName}
               />
-              <main className="flex-1 pt-14 md:pt-[72px]">{children}</main>
+              <main className="flex-1 pt-[calc(3.5rem+env(safe-area-inset-top,0px))] md:pt-[calc(4.5rem+env(safe-area-inset-top,0px))]">
+                {children}
+              </main>
               <SiteFooter branches={branches} />
             </TiendaCartProvider>
           </BranchProvider>
