@@ -37,7 +37,6 @@ export default async function ProductoPage({
         getClienteDisplayName(user.id, user),
       ])
     : [false, false, ''];
-
   const displayRating = averageRating(reviews, product.rating);
   const displayCount = reviews.length > 0 ? reviews.length : product.reviewCount;
   const showReviewForm = Boolean(user && eligible && !hasReviewed);
