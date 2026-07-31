@@ -9,7 +9,7 @@ import { SiteFooter } from "@/components/site/SiteFooter";
 import { ConfigStatusBanner } from "@/components/site/ConfigStatusBanner";
 import { HashScrollSync } from "@/components/site/HashScrollSync";
 import { listBranches } from "@/lib/data/branches";
-import { getSelectedBranchId } from "@/lib/data/selectedBranch";
+import { resolveSelectedBranchId } from "@/lib/data/selectedBranch";
 import { getCurrentUser, getClienteDisplayName } from "@/lib/auth";
 import { getPublicSupabaseConfig } from "@/lib/supabase/public-config";
 
@@ -47,16 +47,16 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [branches, initialBranchId, user, displayName, supabaseConfig] =
-    await Promise.all([
-      listBranches(),
-      getSelectedBranchId(),
-      getCurrentUser(),
-      getCurrentUser().then((u) =>
-        u ? getClienteDisplayName(u.id, u) : Promise.resolve(null),
-      ),
-      Promise.resolve(getPublicSupabaseConfig()),
-    ]);
+  const [branches, user, supabaseConfig] = await Promise.all([
+    listBranches(),
+    getCurrentUser(),
+    Promise.resolve(getPublicSupabaseConfig()),
+  ]);
+
+  const [initialBranchId, displayName] = await Promise.all([
+    resolveSelectedBranchId(branches),
+    user ? getClienteDisplayName(user.id, user) : Promise.resolve(null),
+  ]);
 
   return (
     <html

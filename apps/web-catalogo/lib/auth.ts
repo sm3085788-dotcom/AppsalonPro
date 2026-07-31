@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/env';
@@ -8,7 +9,7 @@ import {
 } from '@/lib/data/cliente';
 
 /** Usuario actual (o null). Seguro en modo demo y ante errores. */
-export async function getCurrentUser(): Promise<User | null> {
+export const getCurrentUser = cache(async function getCurrentUser(): Promise<User | null> {
   if (!isSupabaseConfigured) return null;
   try {
     const supabase = await createSupabaseServerClient();
@@ -19,7 +20,7 @@ export async function getCurrentUser(): Promise<User | null> {
   } catch {
     return null;
   }
-}
+});
 
 /** Nombre visible del cliente (clientes.nombre o metadata Auth). */
 export async function getClienteDisplayName(

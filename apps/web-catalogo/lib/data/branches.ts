@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/env';
 import type { Branch } from '@/lib/types/db';
@@ -6,7 +7,7 @@ import type { Branch } from '@/lib/types/db';
  * Sucursales activas. Usa la RPC `list_sucursales_activas` (otorgada a anon),
  * con fallback a SELECT directo. Devuelve [] en modo demo o ante errores.
  */
-export async function listBranches(): Promise<Branch[]> {
+export const listBranches = cache(async function listBranches(): Promise<Branch[]> {
   if (!isSupabaseConfigured) return [];
   try {
     const supabase = await createSupabaseServerClient();
@@ -24,7 +25,7 @@ export async function listBranches(): Promise<Branch[]> {
   } catch {
     return [];
   }
-}
+});
 
 export async function getBranchById(id: string): Promise<Branch | null> {
   const branches = await listBranches();
