@@ -30,9 +30,13 @@ export default async function ProductoPage({
 
   if (!product) notFound();
 
-  const eligible = user ? await canReview(id) : false;
-  const hasReviewed = user ? await userHasReviewed(id, user.id) : false;
-  const autorNombre = user ? await getClienteDisplayName(user.id, user) : '';
+  const [eligible, hasReviewed, autorNombre] = user
+    ? await Promise.all([
+        canReview(id),
+        userHasReviewed(id, user.id),
+        getClienteDisplayName(user.id, user),
+      ])
+    : [false, false, ''];
   const displayRating = averageRating(reviews, product.rating);
   const displayCount = reviews.length > 0 ? reviews.length : product.reviewCount;
   const showReviewForm = Boolean(user && eligible && !hasReviewed);

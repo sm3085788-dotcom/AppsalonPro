@@ -96,7 +96,7 @@ export function SiteHeader({
   };
 
   return (
-    <header className="glass fixed top-0 left-0 right-0 z-[100] border-b border-border">
+    <header className="glass fixed top-0 left-0 right-0 z-[100] border-b border-border pt-[env(safe-area-inset-top,0px)]">
       {/* Móvil: logo | ingresar | menú */}
       <div className="mx-auto grid h-14 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 md:hidden">
         <Link

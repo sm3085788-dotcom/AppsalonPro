@@ -1,26 +1,50 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
+import nextDynamic from 'next/dynamic';
 import {
   ArrowUpRight,
 } from 'lucide-react';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
 import { HeroCover } from '@/components/home/HeroCover';
 import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
-import { ValuesOrbitSection } from '@/components/home/ValuesOrbitSection';
-import { GiftCardSection } from '@/components/home/GiftCardSection';
+import { HomeReviewsBlock } from '@/components/home/HomeReviewsBlock';
 import { BrandMarquee } from '@/components/home/BrandMarquee';
-import { GoogleReviewsSection } from '@/components/home/GoogleReviewsSection';
-import { getGiftCardReviewStatusForPage } from '@/app/gift-card-review/actions';
 import { getServices } from '@/lib/data/catalog';
-import { getGoogleReviews } from '@/lib/data/googleReviews';
+
+const ValuesOrbitSection = nextDynamic(
+  () =>
+    import('@/components/home/ValuesOrbitSection').then((m) => ({
+      default: m.ValuesOrbitSection,
+    })),
+  {
+    ssr: true,
+    loading: () => (
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8" aria-hidden>
+        <div className="skeleton mx-auto h-56 max-w-md rounded-2xl" />
+      </div>
+    ),
+  },
+);
+
+const GiftCardSection = nextDynamic(
+  () =>
+    import('@/components/home/GiftCardSection').then((m) => ({
+      default: m.GiftCardSection,
+    })),
+  {
+    ssr: true,
+    loading: () => (
+      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8" aria-hidden>
+        <div className="skeleton h-40 rounded-2xl" />
+      </div>
+    ),
+  },
+);
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const [services, googleReviews, giftReviewStatus] = await Promise.all([
-    getServices(),
-    getGoogleReviews(),
-    getGiftCardReviewStatusForPage(),
-  ]);
+  const services = await getServices();
   const featuredServices = services.slice(0, 4);
 
   return (
@@ -242,7 +266,15 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <GoogleReviewsSection data={googleReviews} giftReviewStatus={giftReviewStatus} />
+      <Suspense
+        fallback={
+          <div className="mx-auto max-w-7xl px-4 pb-4 pt-5 sm:px-6 lg:px-8">
+            <div className="skeleton h-64 rounded-[29px] sm:h-72" aria-label="Cargando reseñas" />
+          </div>
+        }
+      >
+        <HomeReviewsBlock />
+      </Suspense>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/env';
 import {
@@ -55,7 +56,7 @@ const DEMO_PRODUCTS: Product[] = [
   },
 ];
 
-async function fetchInventario(): Promise<InventarioRow[]> {
+const fetchInventario = cache(async function fetchInventario(): Promise<InventarioRow[]> {
   if (!isSupabaseConfigured) return [];
   try {
     const supabase = await createSupabaseServerClient();
@@ -68,7 +69,7 @@ async function fetchInventario(): Promise<InventarioRow[]> {
   } catch {
     return [];
   }
-}
+});
 
 /** Stock por sucursal: mapa inventario_id -> stock_actual. */
 async function fetchBranchStockMap(

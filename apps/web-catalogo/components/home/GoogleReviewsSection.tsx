@@ -274,12 +274,22 @@ export function GoogleReviewsSection({
   }, [index, reviews, visible]);
 
   const goPrev = useCallback(() => {
+    if (reviews.length === 0) return;
     setIndex((prev) => (prev <= 0 ? reviews.length - 1 : prev - 1));
   }, [reviews.length]);
 
   const goNext = useCallback(() => {
+    if (reviews.length === 0) return;
     setIndex((prev) => (prev >= reviews.length - 1 ? 0 : prev + 1));
   }, [reviews.length]);
+
+  useEffect(() => {
+    if (reviews.length === 0) {
+      setIndex(0);
+      return;
+    }
+    if (index >= reviews.length) setIndex(0);
+  }, [index, reviews.length]);
 
   useEffect(() => {
     if (reviews.length <= visible) return;

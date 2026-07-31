@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { env } from '@/lib/env';
@@ -6,7 +7,7 @@ import { env } from '@/lib/env';
  * Cliente Supabase para Server Components, Server Actions y Route Handlers.
  * En Next 16 `cookies()` es asincrono.
  */
-export async function createSupabaseServerClient() {
+export const createSupabaseServerClient = cache(async function createSupabaseServerClient() {
   const cookieStore = await cookies();
 
   return createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
@@ -25,4 +26,4 @@ export async function createSupabaseServerClient() {
       },
     },
   });
-}
+});
