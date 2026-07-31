@@ -96,7 +96,8 @@ export function SiteHeader({
   };
 
   return (
-    <header className="glass fixed top-0 left-0 right-0 z-[100] border-b border-border pt-[env(safe-area-inset-top,0px)]">
+    <>
+    <header className="fixed top-0 left-0 right-0 z-[100] border-b pt-[env(safe-area-inset-top,0px)] max-md:border-white/10 max-md:bg-white/10 max-md:backdrop-blur-xl max-md:saturate-150 md:glass md:border-border">
       {/* Móvil: logo | ingresar | menú */}
       <div className="mx-auto grid h-14 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 md:hidden">
         <Link
@@ -227,6 +228,7 @@ export function SiteHeader({
           )}
         </div>
       </div>
+    </header>
 
       <MobileNavDrawer
         open={menuOpen}
@@ -235,6 +237,6 @@ export function SiteHeader({
         userEmail={userEmail}
         userDisplayName={userDisplayName}
       />
-    </header>
+    </>
   );
 }

@@ -31,6 +31,20 @@ export const GIFT_CARD_THEME = {
 /** Margen alrededor de la tarjeta para que el contorno y la sombra 3D no se recorten al exportar. */
 export const GIFT_CARD_CAPTURE_PAD = 20;
 
+/** Ancho CSS de la tarjeta al rasterizar (contenido igual; más px = más nitidez). */
+export const GIFT_CARD_EXPORT_WIDTH_PX = 400;
+
+/** Escala del canvas PNG (ancho final ≈ EXPORT_WIDTH × ratio). */
+export const GIFT_CARD_CAPTURE_PIXEL_RATIO = 4;
+
+/** Tamaño upstream del QR (px) acorde a la escala de exportación. */
+export function giftCardQrFetchSize(displayQrPx: number): number {
+  const target = Math.ceil(
+    displayQrPx * GIFT_CARD_CAPTURE_PIXEL_RATIO * 1.35,
+  );
+  return Math.min(512, Math.max(160, target));
+}
+
 /** Wrapper exterior: contorno 3D visible y espacio para captura PNG. */
 export function giftCardExportShellClass(compact: boolean) {
   return compact
@@ -265,6 +279,8 @@ export function GiftCardHeaderLogo({ compact }: { compact?: boolean }) {
           src={LOGO_SRC}
           alt="Andreas"
           crossOrigin="anonymous"
+          width={size * 2}
+          height={size * 2}
           style={{
             width: '100%',
             height: '100%',

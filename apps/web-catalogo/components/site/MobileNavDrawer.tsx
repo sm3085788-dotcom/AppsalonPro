@@ -64,9 +64,9 @@ export function MobileNavDrawer({
         className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
         onClick={onClose}
       />
-      <aside className="absolute right-0 top-0 flex h-full w-[min(100%,18.5rem)] flex-col border-l border-border bg-charcoal shadow-2xl">
+      <aside className="absolute right-0 top-0 z-10 flex h-full w-[min(100%,18.5rem)] flex-col border-l border-border bg-charcoal pt-[env(safe-area-inset-top,0px)] shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <span className="text-[11px] font-light uppercase tracking-[0.22em] text-muted">
+          <span className="text-[11px] font-light uppercase tracking-[0.22em] text-cream">
             Menú
           </span>
           <button
@@ -81,7 +81,7 @@ export function MobileNavDrawer({
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-5">
           <div>
-            <p className="mb-2 text-[10px] uppercase tracking-[0.2em] text-muted">
+            <p className="mb-2 text-[10px] uppercase tracking-[0.2em] text-gold-soft">
               Sucursal
             </p>
             <BranchSelect variant="field" />
@@ -93,7 +93,7 @@ export function MobileNavDrawer({
                 key={item.href}
                 href={item.href}
                 onClick={(event) => onNavClick(event, item.href)}
-                className="rounded-xl px-3 py-2.5 text-[13px] font-light uppercase tracking-[0.16em] text-pearl transition-colors hover:bg-surface hover:text-gold"
+                className="rounded-xl px-3 py-2.5 text-[13px] font-light uppercase tracking-[0.16em] text-cream transition-colors hover:bg-surface hover:text-gold"
               >
                 {item.label}
               </Link>
