@@ -12,7 +12,7 @@ export function normalizeHash(hash: string): string {
 
 export function getSiteHeaderOffset(): number {
   if (typeof document === 'undefined') return 72;
-  const header = document.querySelector('header.glass');
+  const header = document.querySelector('header');
   return header ? Math.ceil(header.getBoundingClientRect().height) + 8 : 72;
 }
 
