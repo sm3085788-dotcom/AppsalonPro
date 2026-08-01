@@ -51,7 +51,16 @@ export const env = {
   deliveryApiKey: process.env.DELIVERY_API_KEY ?? '',
   contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? '',
   siteUrl: readEnv('NEXT_PUBLIC_SITE_URL'),
+  /** Clave pública VAPID (Web Push). Segura en cliente. */
+  vapidPublicKey: readEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'VAPID_PUBLIC_KEY'),
+  /** Clave privada VAPID — solo servidor / Edge. */
+  vapidPrivateKey: readEnv('VAPID_PRIVATE_KEY'),
+  vapidSubject: readEnv('VAPID_SUBJECT') || 'mailto:contacto@appsalon.pro',
 } as const;
+
+/** Web Push listo (público + privado). */
+export const isWebPushConfigured =
+  Boolean(env.vapidPublicKey) && Boolean(env.vapidPrivateKey);
 
 /** Supabase listo (URL http(s) + anon/publishable key). Seguro de evaluar en cliente. */
 export const isSupabaseConfigured =
