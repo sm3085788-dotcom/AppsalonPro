@@ -4,6 +4,7 @@ import { CalendarClock, ShoppingBag, UserPen, AlertCircle, Users } from 'lucide-
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { JoinTeamStatusBadge } from '@/components/recruitment/JoinTeamStatusBadge';
 import { CuentaPedidosCitasPanels } from '@/components/cuenta/CuentaPedidosCitasPanels';
+import { WebPushOptInCard } from '@/components/pwa/WebPushOptInCard';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/env';
@@ -162,6 +163,8 @@ export default async function CuentaPage({
           </div>
         </Link>
       )}
+
+      <WebPushOptInCard />
 
       <div className="mb-8 flex flex-wrap gap-3">
         <Link
