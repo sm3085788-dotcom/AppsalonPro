@@ -10,7 +10,7 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'portrait-primary',
-    background_color: '#0e0e0f',
+    background_color: '#ffffff',
     theme_color: '#0e0e0f',
     lang: 'es',
     icons: [
