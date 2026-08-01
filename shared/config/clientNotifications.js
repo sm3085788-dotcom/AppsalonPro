@@ -1,5 +1,12 @@
 import { supabase } from './supabaseClient.js';
 import { upsertPushDeviceToken } from './pushTokens.js';
+import { isClienteAppVerificado } from './clienteAppMeta.js';
+import { REFERIDO_PREMIOS_COPY } from './referidoPremios.js';
+
+const SUPABASE_URL =
+  process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const APP_SLUG = 'clientes';
 
@@ -67,13 +74,80 @@ export async function enqueueClientNotification({
 }
 
 async function invokeClientPushSend(notificationId) {
+  const body = { notification_id: notificationId };
   try {
-    await supabase.functions.invoke('send-client-push', {
-      body: { notification_id: notificationId },
-    });
-  } catch {
-    /* Edge Function opcional hasta desplegarla */
+    const { error } = await supabase.functions.invoke('send-client-push', { body });
+    if (!error) return;
+    if (__DEV__) console.warn('[push dispatch] invoke', error.message || error);
+  } catch (err) {
+    if (__DEV__) console.warn('[push dispatch] invoke', err);
   }
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+
+  try {
+    const res = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/send-client-push`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok && __DEV__) {
+      const text = await res.text().catch(() => '');
+      console.warn('[push dispatch] fetch', res.status, text);
+    }
+  } catch (err) {
+    if (__DEV__) console.warn('[push dispatch] fetch', err);
+  }
+}
+
+/**
+ * Push al confirmar cita: app → Premios/QR; web/PWA → aviso simple en Mis citas.
+ */
+export async function notifyClientCitaConfirmadaPush({ clienteId, clienteUserId, cliente, citaId }) {
+  if (!clienteId) return { data: null, error: { message: 'Sin cliente' } };
+
+  let uid = clienteUserId || null;
+  let row = cliente && typeof cliente === 'object' ? { ...cliente } : {};
+
+  if (!uid || row.tipo_registro == null) {
+    const { data } = await supabase
+      .from('clientes')
+      .select('id, user_id, tipo_registro')
+      .eq('id', clienteId)
+      .maybeSingle();
+    if (data) {
+      row = { ...row, ...data };
+      uid = uid || data.user_id;
+    }
+  }
+
+  if (!uid) return { data: null, error: { message: 'Cliente sin cuenta vinculada' } };
+
+  const targetId = citaId != null ? String(citaId) : null;
+
+  if (isClienteAppVerificado(row)) {
+    const { db } = await import('./supabaseClient.js');
+    return db.premiosAndreas.notifyReferidoAccion({
+      clientUserId: uid,
+      clienteId,
+      titulo: 'Cita confirmada',
+      mensaje: REFERIDO_PREMIOS_COPY.citaConfirmada,
+      targetScreen: 'premios',
+    });
+  }
+
+  return enqueueClientNotification({
+    clientUserId: uid,
+    clienteId,
+    tipo: 'cita',
+    titulo: 'Tu cita está confirmada',
+    mensaje: 'El salón confirmó tu cita. Revisá fecha y detalles en Mi cuenta → Mis citas.',
+    targetScreen: 'citas',
+    targetId,
+  });
 }
 
 export async function fetchClientNotifications(limit = 40) {
