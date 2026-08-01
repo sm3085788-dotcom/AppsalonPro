@@ -653,15 +653,17 @@ export function AppointmentsScreen({ onBack }) {
           void (async () => {
             const params = await paramsConfirmacionCita({ ...cita, estado: 'confirmado' }, 'confirmado');
             await notifyClienteCitaConfirmada(params);
-            if (params?.clienteUserId && params?.clienteId) {
-              const { db, REFERIDO_PREMIOS_COPY } = await import('@appsalon/shared-config');
-              void db.premiosAndreas.notifyReferidoAccion({
-                clientUserId: params.clienteUserId,
+            if (params?.clienteId) {
+              const { notifyClientCitaConfirmadaPush } = await import('@appsalon/shared-config');
+              const pushResult = await notifyClientCitaConfirmadaPush({
                 clienteId: params.clienteId,
-                titulo: 'Cita confirmada',
-                mensaje: REFERIDO_PREMIOS_COPY.citaConfirmada,
-                targetScreen: 'premios',
+                clienteUserId: params.clienteUserId,
+                cliente: params.cliente,
+                citaId: cita?.id ?? id,
               });
+              if (pushResult?.error && __DEV__) {
+                console.warn('[cita push]', pushResult.error.message || pushResult.error);
+              }
             }
           })();
         }

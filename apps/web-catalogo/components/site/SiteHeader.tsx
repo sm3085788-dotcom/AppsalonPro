@@ -17,7 +17,7 @@ function CartLink({ className = '' }: { className?: string }) {
     <Link
       href="/carrito"
       aria-label={`Carrito${cartCount > 0 ? `, ${cartCount} artículos` : ''}`}
-      className={`relative rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold ${className}`}
+      className={`relative rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold max-md:border-white/15 max-md:text-pearl max-md:hover:text-cream ${className}`}
     >
       <ShoppingCart className="h-4 w-4" />
       {cartCount > 0 ? (
@@ -119,7 +119,7 @@ export function SiteHeader({
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"
-              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-light text-muted"
+              className="flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-[11px] font-light text-pearl"
             >
               <User2 className="h-3.5 w-3.5 shrink-0 text-gold" />
               <span className="max-w-[5.5rem] truncate">{accountLabel}</span>
@@ -133,7 +133,7 @@ export function SiteHeader({
           type="button"
           onClick={() => setMenuOpen(true)}
           aria-label="Abrir menú"
-          className="justify-self-end rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold"
+          className="justify-self-end rounded-full border border-white/15 p-2 text-pearl transition-colors hover:border-border-strong hover:text-cream"
         >
           <Menu className="h-5 w-5" />
         </button>

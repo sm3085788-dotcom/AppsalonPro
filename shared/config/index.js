@@ -173,6 +173,7 @@ export {
   notifyClientSalonMessage,
   notifyClientFromMdmId,
   notifyClientPedidoStatus,
+  notifyClientCitaConfirmadaPush,
   resolveClientUserIdFromClienteId,
   DEFAULT_CLIENT_NOTIF_PREFS_REMOTE,
   CLIENT_NOTIF_PREF_KEYS,

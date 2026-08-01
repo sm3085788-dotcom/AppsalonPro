@@ -9,9 +9,9 @@ function webPushTargetUrl(tipo: string | null, targetScreen: string | null): str
     '',
   );
   const path =
-    tipo === 'cita' || targetScreen === 'mensajes'
+    tipo === 'cita' || targetScreen === 'mensajes' || targetScreen === 'citas'
       ? '/cuenta?tab=citas'
-      : tipo === 'pedido'
+      : tipo === 'pedido' || targetScreen === 'mis_pedidos'
         ? '/cuenta?tab=pedidos'
         : '/cuenta';
   return site ? `${site}${path}` : path;
