@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Código vacío.' }, { status: 400 });
   }
 
-  const upstream = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=8&data=${encodeURIComponent(normalized)}`;
+  const upstream = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=4&format=png&data=${encodeURIComponent(normalized)}`;
   const res = await fetch(upstream, { next: { revalidate: 86400 } });
 
   if (!res.ok) {

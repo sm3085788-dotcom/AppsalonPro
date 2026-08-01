@@ -3,19 +3,53 @@
 import { toPng } from 'html-to-image';
 import {
   GIFT_CARD_CAPTURE_PAD,
+  GIFT_CARD_CAPTURE_PIXEL_RATIO,
+  GIFT_CARD_EXPORT_WIDTH_PX,
   GIFT_CARD_THEME,
 } from '@/components/gift-card/giftCardVisualUi';
 
-/** Escala de exportación para compartir sin perder nitidez. */
-export const GIFT_CARD_CAPTURE_PIXEL_RATIO = 3;
+export {
+  GIFT_CARD_CAPTURE_PIXEL_RATIO,
+  GIFT_CARD_EXPORT_WIDTH_PX,
+} from '@/components/gift-card/giftCardVisualUi';
 
 const CARD_BG = GIFT_CARD_THEME.bg;
-const EXPORT_WIDTH_PX = 280;
+const EXPORT_WIDTH_PX = GIFT_CARD_EXPORT_WIDTH_PX;
 
 async function waitForPaint() {
   await new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
   });
+}
+
+async function ensureMaxQrResolution(el: HTMLElement) {
+  const imgs = el.querySelectorAll('img[alt^="QR tarjeta"]');
+  await Promise.all(
+    Array.from(imgs).map(async (node) => {
+      const img = node as HTMLImageElement;
+      try {
+        const url = new URL(img.src, window.location.href);
+        if (url.pathname.includes('/api/gift-card/qr')) {
+          url.searchParams.set('size', '512');
+          const next = url.toString();
+          if (img.src !== next) {
+            img.src = next;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      if (img.complete && img.naturalWidth > 0) {
+        await img.decode?.().catch(() => undefined);
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true });
+        img.addEventListener('error', () => resolve(), { once: true });
+      });
+      await img.decode?.().catch(() => undefined);
+    }),
+  );
 }
 
 async function waitForImages(el: HTMLElement) {
@@ -65,6 +99,7 @@ export async function captureElementPng(el: HTMLElement): Promise<string> {
       inner.style.maxWidth = `${EXPORT_WIDTH_PX}px`;
     }
 
+    await ensureMaxQrResolution(el);
     await waitForImages(el);
     await waitForPaint();
 
@@ -72,6 +107,7 @@ export async function captureElementPng(el: HTMLElement): Promise<string> {
       cacheBust: true,
       pixelRatio: GIFT_CARD_CAPTURE_PIXEL_RATIO,
       backgroundColor: CARD_BG,
+      preferredFontFormat: 'woff2',
       style: {
         overflow: 'visible',
         height: 'auto',

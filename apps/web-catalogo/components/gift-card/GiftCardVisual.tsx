@@ -12,6 +12,7 @@ import {
   GiftCardGoldDivider,
   GiftCardHeaderBand,
   GiftCardParaDeBlock,
+  giftCardQrFetchSize,
   GIFT_CARD_THEME,
   giftCardExportShellClass,
   giftCardExportShellStyle,
@@ -55,7 +56,7 @@ export const GiftCardVisual = forwardRef<
 ) {
   const s = giftCardSizes(compact);
   const { whole, cents } = splitGiftCardAmount(data.monto);
-  const qrFetchSize = Math.ceil(s.qr * 4);
+  const qrFetchSize = giftCardQrFetchSize(s.qr);
   const qrUrl = giftCardQrImageUrl(data.codigo, qrFetchSize);
   const dimmed = incompletePreview || data.incompletePreview;
   const showQr = qrUrl && data.codigo && !data.codigo.includes('PREVIEW');

@@ -5,11 +5,12 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { ServiceCard } from '@/components/catalog/ServiceCard';
+import { ProductCard } from '@/components/catalog/ProductCard';
 import { HeroCover } from '@/components/home/HeroCover';
-import { HeroEliteCarousel } from '@/components/home/HeroEliteCarousel';
 import { HomeReviewsBlock } from '@/components/home/HomeReviewsBlock';
 import { BrandMarquee } from '@/components/home/BrandMarquee';
-import { getServices } from '@/lib/data/catalog';
+import { getProducts, getServices } from '@/lib/data/catalog';
+import { getSelectedBranch } from '@/lib/data/selectedBranch';
 
 const ValuesOrbitSection = nextDynamic(
   () =>
@@ -44,37 +45,25 @@ const GiftCardSection = nextDynamic(
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const services = await getServices();
+  const branch = await getSelectedBranch();
+  const [services, products] = await Promise.all([
+    getServices(),
+    getProducts(branch?.id ?? null),
+  ]);
   const featuredServices = services.slice(0, 4);
+  const featuredProducts = products.slice(0, 4);
 
   return (
     <div>
       {/* ── Portada + hero ─────────────────────────────── */}
       <HeroCover>
-        <p className="eyebrow text-[10px] tracking-[0.18em] sm:text-[11px]">
-          Salón premium · Belleza de autor
-        </p>
-        <div className="mt-3 flex items-center justify-center gap-3 md:mt-5 md:gap-4">
-          <span className="rule-gold hidden w-10 sm:block md:hidden" />
-          <span className="font-serif text-xl font-medium uppercase tracking-[0.18em] text-gradient-gold sm:text-3xl md:text-[2.7rem]">
-            Salón Andreas
-          </span>
-        </div>
-        <h1 className="mt-4 w-full overflow-visible text-3xl font-light leading-[1.14] tracking-tight sm:mt-6 sm:text-5xl md:text-6xl lg:text-7xl">
-          <span className="block text-balance text-shine">El arte de</span>
-          <span className="mt-0.5 block text-balance">
-            <span className="text-shine">verse </span>
-            <span className="text-gradient-gold italic">extraordinario</span>
-          </span>
+        <h1 className="font-serif text-[1.95rem] font-medium uppercase tracking-[0.16em] text-gradient-gold brightness-[1.1] sm:text-[2.44rem] md:text-[3.51rem]">
+          Salón Andreas
         </h1>
-        <p className="mt-4 max-w-md text-pretty text-sm font-light leading-relaxed text-muted sm:mt-6 sm:text-base">
-          Un espacio donde el detalle es lujo. Reserva con maestros del estilo,
-          descubre productos premium y vive una experiencia hecha a tu medida.
-        </p>
       </HeroCover>
 
-      <section className="mx-auto grid max-w-7xl items-start gap-8 px-4 pb-14 pt-8 sm:px-6 sm:pb-20 sm:pt-12 lg:grid-cols-12 lg:items-center lg:gap-8 lg:px-8 lg:pb-28 lg:pt-16">
-        <div className="lg:col-span-6">
+      <section className="mx-auto max-w-7xl px-4 pb-14 pt-8 sm:px-6 sm:pb-20 sm:pt-12 lg:px-8 lg:pb-28 lg:pt-16">
+        <div className="max-w-2xl lg:max-w-3xl">
           <div className="flex flex-wrap items-center gap-4 sm:gap-6">
             <Link
               href="/reservar"
@@ -94,12 +83,12 @@ export default async function HomePage() {
           {featuredServices.length > 0 && (
             <div className="mt-6 sm:mt-10">
               <div className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-muted sm:text-[11px] sm:tracking-[0.2em]">
+                <p className="eyebrow text-[10px] tracking-[0.22em] sm:text-[11px] sm:tracking-[0.28em]">
                   Servicios
                 </p>
                 <Link
                   href="/servicios"
-                  className="link-underline text-[10px] font-light uppercase tracking-[0.14em] text-gold sm:text-[11px] sm:tracking-[0.16em]"
+                  className="link-underline text-[10px] font-light uppercase tracking-[0.14em] text-emerald-400 sm:text-[11px] sm:tracking-[0.16em] hover:text-emerald-300"
                 >
                   Ver todos
                 </Link>
@@ -111,10 +100,27 @@ export default async function HomePage() {
               </div>
             </div>
           )}
-        </div>
 
-        <div className="relative flex justify-center lg:col-span-6 lg:items-center lg:self-stretch">
-          <HeroEliteCarousel />
+          {featuredProducts.length > 0 && (
+            <div className="mt-8 sm:mt-10">
+              <div className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
+                <p className="eyebrow text-[10px] tracking-[0.22em] sm:text-[11px] sm:tracking-[0.28em]">
+                  Productos
+                </p>
+                <Link
+                  href="/productos"
+                  className="link-underline text-[10px] font-light uppercase tracking-[0.14em] text-emerald-400 sm:text-[11px] sm:tracking-[0.16em] hover:text-emerald-300"
+                >
+                  Ver todos
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5 sm:max-w-xl sm:gap-4 lg:max-w-none">
+                {featuredProducts.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
