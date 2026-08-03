@@ -11,6 +11,7 @@ import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider'
 import { useRouter } from 'next/navigation';
 import { NAV_MORE, NAV_PRIMARY } from '@/lib/navigation';
 import { isHomeHashHref, navigateHomeHash } from '@/lib/hashNavigation';
+import { WebPushBellButton } from '@/components/pwa/WebPushBellButton';
 function CartLink({ className = '' }: { className?: string }) {
   const { cartCount } = useTiendaCart();
   return (
@@ -129,14 +130,17 @@ export function SiteHeader({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setMenuOpen(true)}
-          aria-label="Abrir menú"
-          className="justify-self-end rounded-full border border-white/15 p-2 text-pearl transition-colors hover:border-border-strong hover:text-cream"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        <div className="justify-self-end flex items-center gap-1.5">
+          {isLoggedIn ? <WebPushBellButton /> : null}
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Abrir menú"
+            className="rounded-full border border-white/15 p-2 text-pearl transition-colors hover:border-border-strong hover:text-cream"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* Desktop: logo | navegación centrada | sucursal + cuenta */}
