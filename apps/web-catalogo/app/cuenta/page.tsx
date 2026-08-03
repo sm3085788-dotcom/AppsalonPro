@@ -1,10 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CalendarClock, ShoppingBag, UserPen, AlertCircle, Users } from 'lucide-react';
+import { CalendarClock, FileText, ShoppingBag, UserPen, AlertCircle, Users } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { JoinTeamStatusBadge } from '@/components/recruitment/JoinTeamStatusBadge';
 import { CuentaPedidosCitasPanels } from '@/components/cuenta/CuentaPedidosCitasPanels';
-import { WebPushOptInCard } from '@/components/pwa/WebPushOptInCard';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/env';
@@ -94,7 +93,7 @@ export default async function CuentaPage({
         )
         .eq('client_user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(8);
+        .limit(6);
       pedidos = (pedidosData ?? []) as PedidoRow[];
     } catch {
       citas = [];
@@ -164,8 +163,6 @@ export default async function CuentaPage({
         </Link>
       )}
 
-      <WebPushOptInCard />
-
       <div className="mb-8 flex flex-wrap gap-3">
         <Link
           href="/reservar"
@@ -175,9 +172,15 @@ export default async function CuentaPage({
         </Link>
         <Link
           href="/productos"
-          className="flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:border-gold hover:text-gold"
+          className="flex items-center gap-2 rounded-full bg-gold px-5 py-2.5 text-sm font-semibold text-charcoal hover:bg-gold-soft"
         >
           <ShoppingBag className="h-4 w-4" /> Ir a la tienda
+        </Link>
+        <Link
+          href="/cuenta/facturas"
+          className="flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:border-gold hover:text-gold"
+        >
+          <FileText className="h-4 w-4" /> Ver facturas
         </Link>
         <Link
           href="/cuenta/perfil"

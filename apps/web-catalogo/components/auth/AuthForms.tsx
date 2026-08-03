@@ -3,12 +3,21 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Mail, Lock, User2 } from 'lucide-react';
+import { Loader2, User2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSupabaseConfig } from '@/components/supabase/SupabaseConfigProvider';
 import { DemoBanner } from '@/components/ui/DemoBanner';
 import { syncClienteFichaAction } from '@/app/cuenta/actions';
 import { splitFullName } from '@/lib/clientDisplayName';
+import { PhoneCountryField } from '@/components/auth/PhoneCountryField';
+import { OtpVerifyStep } from '@/components/auth/OtpVerifyStep';
+import { PasswordField } from '@/components/auth/PasswordField';
+import { traducirAuthError } from '@/components/auth/authErrors';
+import {
+  isBranchInternalPhone,
+  resolveAuthPhoneInput,
+  type ClientAuthCountry,
+} from '@/lib/phone/clientAuthPhone';
 
 function Field({
   icon: Icon,
@@ -37,10 +46,56 @@ async function afterAuth(router: ReturnType<typeof useRouter>, redirectTo: strin
   router.refresh();
 }
 
+function validatePasswordPair(
+  password: string,
+  password2: string,
+): string | null {
+  if (password.length < 8) {
+    return 'La contraseña debe tener al menos 8 caracteres.';
+  }
+  if (password !== password2) {
+    return 'Las contraseñas no coinciden.';
+  }
+  return null;
+}
+
+function validateFullName(fullName: string): string | null {
+  const { nombre: nom, apellido: ape } = splitFullName(fullName);
+  if (nom.length < 2) {
+    return 'Ingresa tu nombre (mínimo 2 caracteres).';
+  }
+  if (ape.length < 2) {
+    return 'Ingresa nombre y apellido separados por un espacio.';
+  }
+  return null;
+}
+
+function resolvePhoneOrError(
+  country: ClientAuthCountry,
+  localDigits: string,
+): { phone: string } | { error: string } {
+  const phone = resolveAuthPhoneInput(country, localDigits);
+  if (!phone) {
+    return {
+      error:
+        country === 'gt'
+          ? 'Ingresa un teléfono válido de 8 dígitos (Guatemala).'
+          : 'Ingresa un teléfono válido de 10 dígitos (EE.UU. / Canadá).',
+    };
+  }
+  if (isBranchInternalPhone(phone)) {
+    return {
+      error: 'Este número es de uso interno del salón. Usa tu teléfono personal.',
+    };
+  }
+  return { phone };
+}
+
 export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
   const router = useRouter();
   const { configured: supabaseConfigured } = useSupabaseConfig();
-  const [email, setEmail] = useState('');
+  const [phoneCountry, setPhoneCountry] = useState<ClientAuthCountry>('gt');
+  const [phoneLocal, setPhoneLocal] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -52,15 +107,20 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
       setError('Autenticación no disponible en modo demo.');
       return;
     }
+    const resolved = resolvePhoneOrError(phoneCountry, phoneLocal);
+    if ('error' in resolved) {
+      setError(resolved.error);
+      return;
+    }
     setLoading(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        phone: resolved.phone,
         password,
       });
-      if (error) {
-        setError(traducirError(error.message));
+      if (signInErr) {
+        setError(traducirAuthError(signInErr.message));
         return;
       }
       await afterAuth(router, redirectTo);
@@ -80,18 +140,14 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
         <DemoBanner message="Supabase no está configurado: el login está deshabilitado en modo demo." />
       )}
       <form onSubmit={onSubmit} className="space-y-3">
-        <Field
-          icon={Mail}
-          type="email"
-          required
-          placeholder="Correo electrónico"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoComplete="email"
+        <PhoneCountryField
+          country={phoneCountry}
+          localDigits={phoneLocal}
+          onCountryChange={setPhoneCountry}
+          onLocalDigitsChange={setPhoneLocal}
+          disabled={loading}
         />
-        <Field
-          icon={Lock}
-          type="password"
+        <PasswordField
           required
           placeholder="Contraseña"
           value={password}
@@ -102,6 +158,10 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
         <SubmitButton loading={loading}>Ingresar</SubmitButton>
       </form>
       <p className="mt-5 text-center text-sm text-muted">
+        <Link href="/recuperar-cuenta" className="text-gold hover:underline">
+          Recuperar cuenta
+        </Link>
+        <span className="mx-2 text-border">·</span>
         ¿No tienes cuenta?{' '}
         <Link href="/registro" className="text-gold hover:underline">
           Crear cuenta
@@ -114,48 +174,49 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
 export function RegisterForm() {
   const router = useRouter();
   const { configured: supabaseConfigured } = useSupabaseConfig();
+  const [step, setStep] = useState<'form' | 'otp'>('form');
+  const [phoneE164, setPhoneE164] = useState<string | null>(null);
   const [nombreCompleto, setNombreCompleto] = useState('');
-  const [email, setEmail] = useState('');
+  const [phoneCountry, setPhoneCountry] = useState<ClientAuthCountry>('gt');
+  const [phoneLocal, setPhoneLocal] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setInfo(null);
     if (!supabaseConfigured) {
       setError('Registro no disponible en modo demo.');
       return;
     }
 
     const fullName = nombreCompleto.trim().replace(/\s+/g, ' ');
+    const nameErr = validateFullName(fullName);
+    if (nameErr) {
+      setError(nameErr);
+      return;
+    }
+    const passErr = validatePasswordPair(password, password2);
+    if (passErr) {
+      setError(passErr);
+      return;
+    }
+
+    const resolved = resolvePhoneOrError(phoneCountry, phoneLocal);
+    if ('error' in resolved) {
+      setError(resolved.error);
+      return;
+    }
+
     const { nombre: nom, apellido: ape } = splitFullName(fullName);
-    if (nom.length < 2) {
-      setError('Ingresa tu nombre (mínimo 2 caracteres).');
-      return;
-    }
-    if (ape.length < 2) {
-      setError('Ingresa nombre y apellido separados por un espacio.');
-      return;
-    }
-    if (password.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres.');
-      return;
-    }
-    if (password !== password2) {
-      setError('Las contraseñas no coinciden.');
-      return;
-    }
 
     setLoading(true);
     try {
       const supabase = createClient();
-      const em = email.trim();
-      const { data, error } = await supabase.auth.signUp({
-        email: em,
+      const { data, error: signUpErr } = await supabase.auth.signUp({
+        phone: resolved.phone,
         password,
         options: {
           data: {
@@ -167,17 +228,16 @@ export function RegisterForm() {
           },
         },
       });
-      if (error) {
-        setError(traducirError(error.message));
+      if (signUpErr) {
+        setError(traducirAuthError(signUpErr.message));
         return;
       }
       if (data.session) {
         await afterAuth(router, '/cuenta/perfil');
-      } else {
-        setInfo(
-          'Cuenta creada. Revisa tu correo para confirmar el acceso; luego completa tu perfil al ingresar.',
-        );
+        return;
       }
+      setPhoneE164(resolved.phone);
+      setStep('otp');
     } catch {
       setError('No pudimos conectar. Revisa tu red e intenta de nuevo.');
     } finally {
@@ -193,51 +253,66 @@ export function RegisterForm() {
       {!supabaseConfigured && (
         <DemoBanner message="Supabase no está configurado: el registro está deshabilitado en modo demo." />
       )}
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Field
-          icon={User2}
-          type="text"
-          required
-          placeholder="Nombre y apellido"
-          value={nombreCompleto}
-          onChange={(e) => setNombreCompleto(e.target.value)}
-          autoComplete="name"
+      {step === 'otp' && phoneE164 ? (
+        <OtpVerifyStep
+          phoneE164={phoneE164}
+          onVerified={() => afterAuth(router, '/cuenta/perfil')}
+          onBack={() => {
+            setStep('form');
+            setPhoneE164(null);
+            setError(null);
+          }}
         />
-        <Field
-          icon={Mail}
-          type="email"
-          required
-          placeholder="Correo electrónico"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoComplete="email"
-        />
-        <Field
-          icon={Lock}
-          type="password"
-          required
-          placeholder="Contraseña (mín. 8 caracteres)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="new-password"
-        />
-        <Field
-          icon={Lock}
-          type="password"
-          required
-          placeholder="Confirmar contraseña"
-          value={password2}
-          onChange={(e) => setPassword2(e.target.value)}
-          autoComplete="new-password"
-        />
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        {info && <p className="text-sm text-gold-soft">{info}</p>}
-        <SubmitButton loading={loading}>Crear cuenta</SubmitButton>
-      </form>
-      <p className="mt-4 text-xs leading-relaxed text-muted">
-        Después del registro completarás teléfono, dirección y fecha de
-        nacimiento, igual que en la app Clientes.
-      </p>
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-3">
+          <Field
+            icon={User2}
+            type="text"
+            required
+            placeholder="Nombre y apellido"
+            value={nombreCompleto}
+            onChange={(e) => setNombreCompleto(e.target.value)}
+            autoComplete="name"
+            spellCheck
+            autoCorrect="on"
+            autoCapitalize="words"
+            lang="es"
+            disabled={loading}
+          />
+          <PhoneCountryField
+            country={phoneCountry}
+            localDigits={phoneLocal}
+            onCountryChange={setPhoneCountry}
+            onLocalDigitsChange={setPhoneLocal}
+            disabled={loading}
+          />
+          <PasswordField
+            required
+            placeholder="Contraseña (mín. 8 caracteres)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+          <PasswordField
+            required
+            placeholder="Confirmar contraseña"
+            value={password2}
+            onChange={(e) => setPassword2(e.target.value)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          <SubmitButton loading={loading}>Crear cuenta</SubmitButton>
+        </form>
+      )}
+      {step === 'form' && (
+        <p className="mt-4 text-xs leading-relaxed text-muted">
+          Confirmarás tu teléfono con un SMS. Después completarás correo
+          (opcional), dirección y fecha de nacimiento, igual que en la app
+          Clientes.
+        </p>
+      )}
       <p className="mt-5 text-center text-sm text-muted">
         ¿Ya tienes cuenta?{' '}
         <Link href="/login" className="text-gold hover:underline">
@@ -285,12 +360,137 @@ function SubmitButton({
   );
 }
 
-function traducirError(message: string): string {
-  const m = message.toLowerCase();
-  if (m.includes('invalid login')) return 'Correo o contraseña incorrectos.';
-  if (m.includes('already registered') || m.includes('already exists'))
-    return 'Ese correo ya está registrado.';
-  if (m.includes('email not confirmed'))
-    return 'Confirma tu correo antes de ingresar.';
-  return message;
+export function RecoverAccountForm() {
+  const router = useRouter();
+  const { configured: supabaseConfigured } = useSupabaseConfig();
+  const [step, setStep] = useState<'phone' | 'otp' | 'password'>('phone');
+  const [phoneE164, setPhoneE164] = useState<string | null>(null);
+  const [phoneCountry, setPhoneCountry] = useState<ClientAuthCountry>('gt');
+  const [phoneLocal, setPhoneLocal] = useState('');
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function onSendCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!supabaseConfigured) {
+      setError('Recuperación no disponible en modo demo.');
+      return;
+    }
+    const resolved = resolvePhoneOrError(phoneCountry, phoneLocal);
+    if ('error' in resolved) {
+      setError(resolved.error);
+      return;
+    }
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        phone: resolved.phone,
+        options: { shouldCreateUser: false },
+      });
+      if (otpErr) {
+        setError(traducirAuthError(otpErr.message));
+        return;
+      }
+      setPhoneE164(resolved.phone);
+      setStep('otp');
+    } catch {
+      setError('No pudimos enviar el SMS. Revisa tu red e intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onSetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const passErr = validatePasswordPair(password, password2);
+    if (passErr) {
+      setError(passErr);
+      return;
+    }
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      const { error: updateErr } = await supabase.auth.updateUser({ password });
+      if (updateErr) {
+        setError(traducirAuthError(updateErr.message));
+        return;
+      }
+      await afterAuth(router, '/cuenta');
+    } catch {
+      setError('No pudimos actualizar la contraseña. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <AuthCard
+      title="Recuperar cuenta"
+      subtitle="Te enviaremos un código SMS para verificar tu teléfono y crear una contraseña nueva."
+    >
+      {!supabaseConfigured && (
+        <DemoBanner message="Supabase no está configurado: la recuperación está deshabilitada en modo demo." />
+      )}
+      {step === 'otp' && phoneE164 ? (
+        <OtpVerifyStep
+          phoneE164={phoneE164}
+          onVerified={async () => {
+            setStep('password');
+            setError(null);
+          }}
+          onBack={() => {
+            setStep('phone');
+            setPhoneE164(null);
+            setError(null);
+          }}
+        />
+      ) : step === 'password' ? (
+        <form onSubmit={onSetPassword} className="space-y-3">
+          <p className="text-sm text-muted">
+            Teléfono verificado. Elige una contraseña nueva (mín. 8 caracteres).
+          </p>
+          <PasswordField
+            required
+            placeholder="Nueva contraseña"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+          <PasswordField
+            required
+            placeholder="Confirmar contraseña"
+            value={password2}
+            onChange={(e) => setPassword2(e.target.value)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          <SubmitButton loading={loading}>Guardar contraseña</SubmitButton>
+        </form>
+      ) : (
+        <form onSubmit={onSendCode} className="space-y-3">
+          <PhoneCountryField
+            country={phoneCountry}
+            localDigits={phoneLocal}
+            onCountryChange={setPhoneCountry}
+            onLocalDigitsChange={setPhoneLocal}
+            disabled={loading}
+          />
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          <SubmitButton loading={loading}>Enviar código SMS</SubmitButton>
+        </form>
+      )}
+      <p className="mt-5 text-center text-sm text-muted">
+        <Link href="/login" className="text-gold hover:underline">
+          Volver a ingresar
+        </Link>
+      </p>
+    </AuthCard>
+  );
 }

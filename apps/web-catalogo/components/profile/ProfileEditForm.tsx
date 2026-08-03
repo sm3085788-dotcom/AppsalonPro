@@ -116,6 +116,10 @@ export function ProfileEditForm({
           onChange={(e) => setNombre(e.target.value)}
           placeholder="María"
           autoComplete="given-name"
+          spellCheck
+          autoCorrect="on"
+          autoCapitalize="words"
+          lang="es"
         />
         <Field
           label="Apellido"
@@ -124,6 +128,10 @@ export function ProfileEditForm({
           onChange={(e) => setApellido(e.target.value)}
           placeholder="López"
           autoComplete="family-name"
+          spellCheck
+          autoCorrect="on"
+          autoCapitalize="words"
+          lang="es"
         />
       </div>
 
