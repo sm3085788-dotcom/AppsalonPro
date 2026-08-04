@@ -38,8 +38,17 @@ export type GoogleReviewsPayload = {
 const DEFAULT_MAPS_URL =
   'https://www.google.com/maps/search/?api=1&query=Sal%C3%B3n+Andreas+Guatemala';
 
+const BRAND_DISPLAY_NAME = 'Andreas Salón';
+
+/** Muestra el nombre comercial (Andreas primero) aunque Google devuelva "Salón Andreas". */
+function brandPlaceName(raw?: string | null): string {
+  const t = raw?.trim() ?? '';
+  if (!t || /^sal[oó]n\s+andreas$/i.test(t)) return BRAND_DISPLAY_NAME;
+  return t;
+}
+
 const EMPTY_PAYLOAD: GoogleReviewsPayload = {
-  placeName: 'Salón Andreas',
+  placeName: BRAND_DISPLAY_NAME,
   rating: 5,
   totalReviews: 0,
   googleMapsUrl: DEFAULT_MAPS_URL,
@@ -129,7 +138,7 @@ async function fetchGoogleReviews(): Promise<GoogleReviewsPayload | null> {
       .filter((r): r is ClientReview => r !== null);
 
     return {
-      placeName: data.result.name?.trim() || 'Salón Andreas',
+      placeName: brandPlaceName(data.result.name),
       rating: data.result.rating ?? 5,
       totalReviews: data.result.user_ratings_total ?? reviews.length,
       googleMapsUrl: data.result.url ?? DEFAULT_MAPS_URL,
@@ -165,7 +174,7 @@ function mergeAllReviews(
     if (hasGoogle && googlePayload) return googlePayload;
     if (hasProduct) {
       return {
-        placeName: 'Salón Andreas',
+        placeName: BRAND_DISPLAY_NAME,
         rating: averageRating(productReviews),
         totalReviews: productReviews.length,
         googleMapsUrl: googlePayload?.googleMapsUrl ?? DEFAULT_MAPS_URL,
@@ -175,7 +184,7 @@ function mergeAllReviews(
     }
     if (hasBirthday) {
       return {
-        placeName: 'Salón Andreas',
+        placeName: BRAND_DISPLAY_NAME,
         rating: averageRating(birthdayReviews),
         totalReviews: birthdayReviews.length,
         googleMapsUrl: googlePayload?.googleMapsUrl ?? DEFAULT_MAPS_URL,
@@ -184,7 +193,7 @@ function mergeAllReviews(
       };
     }
     return {
-      placeName: 'Salón Andreas',
+      placeName: BRAND_DISPLAY_NAME,
       rating: averageRating(giftCardReviews),
       totalReviews: giftCardReviews.length,
       googleMapsUrl: googlePayload?.googleMapsUrl ?? DEFAULT_MAPS_URL,
@@ -201,7 +210,7 @@ function mergeAllReviews(
   ];
 
   return {
-    placeName: googlePayload?.placeName ?? 'Salón Andreas',
+    placeName: brandPlaceName(googlePayload?.placeName),
     rating: averageRating(merged, googlePayload?.rating ?? 5),
     totalReviews:
       (googlePayload?.totalReviews ?? 0) +

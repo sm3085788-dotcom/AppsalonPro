@@ -58,7 +58,7 @@ export default async function HomePage() {
       {/* ── Portada + hero ─────────────────────────────── */}
       <HeroCover>
         <h1 className="font-serif text-[1.95rem] font-medium uppercase tracking-[0.16em] text-gradient-gold brightness-[1.1] sm:text-[2.44rem] md:text-[3.51rem]">
-          Salón Andreas
+          Andreas Salón
         </h1>
       </HeroCover>
 
@@ -158,7 +158,7 @@ export default async function HomePage() {
       <section className="mx-auto max-w-7xl px-4 pt-28 sm:px-6 lg:px-8">
           <div className="mb-12 flex items-end justify-between border-b border-border pb-6">
             <div>
-              <p className="eyebrow">El salón</p>
+              <p className="eyebrow">Andreas Salon</p>
               <h2 className="mt-3 text-balance text-3xl font-light text-cream sm:text-4xl">
                 Nuestro mundo en imágenes
               </h2>
