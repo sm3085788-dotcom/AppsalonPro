@@ -1,5 +1,3 @@
-import Link from 'next/link';
-
 import { Mail, MapPin } from 'lucide-react';
 import { SocialLogo, type SocialBrand } from '@/components/site/SocialLogos';
 import { CustomerServiceWhatsAppButton } from '@/components/site/CustomerServiceWhatsAppButton';
@@ -60,20 +58,16 @@ export function SiteFooter({ branches = [] }: { branches?: Branch[] }) {
 
             />
 
-            <span className="text-[15px] font-light tracking-[0.32em] text-cream">
-
-              APPSALON <span className="text-gold">PRO</span>
-
+            <span className="text-[15px] font-light tracking-[0.32em]">
+              <span className="uppercase text-gold">Andreas </span>
+              <span className="uppercase text-cream">Salón</span>
             </span>
 
           </div>
 
           <p className="mt-5 max-w-xs text-sm font-light leading-relaxed text-muted">
-
-            En Salón Andreas encontrás belleza de autor. Reserva tu cita,
-
-            descubre productos premium y vive una experiencia hecha a tu medida.
-
+            Reserva tu cita, descubre productos premium y vive una experiencia
+            hecha a tu medida.
           </p>
 
 
@@ -110,61 +104,9 @@ export function SiteFooter({ branches = [] }: { branches?: Branch[] }) {
 
 
 
-        <div className="text-sm lg:col-span-3 lg:col-start-7">
-
-          <h4 className="eyebrow mb-5">Explorar</h4>
-
-          <ul className="space-y-3 font-light text-muted">
-
-            <li>
-
-              <Link href="/servicios" className="transition-colors hover:text-cream">
-
-                Servicios
-
-              </Link>
-
-            </li>
-
-            <li>
-
-              <Link href="/productos" className="transition-colors hover:text-cream">
-
-                Productos
-
-              </Link>
-
-            </li>
-
-            <li>
-
-              <Link href="/reservar" className="transition-colors hover:text-cream">
-
-                Agendar cita
-
-              </Link>
-
-            </li>
-
-            <li>
-
-              <Link href="/membresias" className="transition-colors hover:text-cream">
-
-                Membresías
-
-              </Link>
-
-            </li>
-
-          </ul>
-
-        </div>
-
-
-
         <div
           id="contacto"
-          className="scroll-mt-20 text-sm md:scroll-mt-[4.5rem] lg:col-span-3"
+          className="scroll-mt-20 text-sm md:scroll-mt-[4.5rem] lg:col-span-3 lg:col-start-7"
         >
 
           <h4 className="eyebrow mb-5">Contacto</h4>

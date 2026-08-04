@@ -12,17 +12,34 @@ import { useRouter } from 'next/navigation';
 import { NAV_MORE, NAV_PRIMARY } from '@/lib/navigation';
 import { isHomeHashHref, navigateHomeHash } from '@/lib/hashNavigation';
 import { WebPushBellButton } from '@/components/pwa/WebPushBellButton';
-function CartLink({ className = '' }: { className?: string }) {
+
+/** Botones circulares del header móvil (campana, menú, carrito) — ~10% bajo h-10. */
+const MOBILE_HEADER_ICON_BTN =
+  'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 text-pearl transition-colors hover:border-border-strong hover:text-cream';
+
+const MOBILE_HEADER_ICON = 'h-[18px] w-[18px]';
+
+function CartLink({
+  className = '',
+  mobile = false,
+}: {
+  className?: string;
+  mobile?: boolean;
+}) {
   const { cartCount } = useTiendaCart();
   return (
     <Link
       href="/carrito"
       aria-label={`Carrito${cartCount > 0 ? `, ${cartCount} artículos` : ''}`}
-      className={`relative rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold max-md:border-white/15 max-md:text-pearl max-md:hover:text-cream ${className}`}
+      className={
+        mobile
+          ? `relative ${MOBILE_HEADER_ICON_BTN} ${className}`
+          : `relative rounded-full border border-border p-2 text-muted transition-colors hover:border-border-strong hover:text-gold max-md:border-white/15 max-md:text-pearl max-md:hover:text-cream ${className}`
+      }
     >
-      <ShoppingCart className="h-4 w-4" />
+      <ShoppingCart className={mobile ? MOBILE_HEADER_ICON : 'h-4 w-4'} />
       {cartCount > 0 ? (
-        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white shadow-sm">
+        <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-semibold text-white shadow-sm">
           {cartCount > 99 ? '99+' : cartCount}
         </span>
       ) : null}
@@ -100,7 +117,7 @@ export function SiteHeader({
     <>
     <header className="fixed top-0 left-0 right-0 z-[100] border-b pt-[env(safe-area-inset-top,0px)] max-md:border-white/10 max-md:bg-white/10 max-md:backdrop-blur-xl max-md:saturate-150 md:glass md:border-border">
       {/* Móvil: logo | ingresar | menú */}
-      <div className="mx-auto grid h-14 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 md:hidden">
+      <div className="mx-auto grid h-[3.15rem] max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-1.5 px-3 md:hidden">
         <Link
           href="/"
           className="flex shrink-0 items-center justify-self-start"
@@ -110,20 +127,20 @@ export function SiteHeader({
           <img
             src="/images/logo-andreas-transparent.png"
             alt=""
-            className="h-9 w-9 object-contain"
+            className="h-10 w-10 object-contain"
           />
         </Link>
 
-        <div className="justify-self-center flex items-center gap-2">
-          <CartLink />
+        <div className="justify-self-center flex items-center gap-1.5">
+          <CartLink mobile />
           {isLoggedIn ? (
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"
-              className="flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-[11px] font-light text-pearl"
+              className="flex h-9 max-w-[6.5rem] shrink-0 items-center gap-1 rounded-full border border-white/15 px-2 text-[10px] font-light text-pearl"
             >
-              <User2 className="h-3.5 w-3.5 shrink-0 text-gold" />
-              <span className="max-w-[5.5rem] truncate">{accountLabel}</span>
+              <User2 className={`${MOBILE_HEADER_ICON} shrink-0 text-gold`} />
+              <span className="min-w-0 truncate">{accountLabel}</span>
             </Link>
           ) : (
             <LoginButton />
@@ -131,14 +148,14 @@ export function SiteHeader({
         </div>
 
         <div className="justify-self-end flex items-center gap-1.5">
-          {isLoggedIn ? <WebPushBellButton /> : null}
+          {isLoggedIn ? <WebPushBellButton mobileHeader /> : null}
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
             aria-label="Abrir menú"
-            className="rounded-full border border-white/15 p-2 text-pearl transition-colors hover:border-border-strong hover:text-cream"
+            className={MOBILE_HEADER_ICON_BTN}
           >
-            <Menu className="h-5 w-5" />
+            <Menu className={MOBILE_HEADER_ICON} />
           </button>
         </div>
       </div>

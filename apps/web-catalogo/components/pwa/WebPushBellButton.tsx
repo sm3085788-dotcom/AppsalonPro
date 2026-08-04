@@ -12,7 +12,7 @@ import {
 
 type Status = 'loading' | 'unsupported' | 'off' | 'on' | 'denied';
 
-export function WebPushBellButton() {
+export function WebPushBellButton({ mobileHeader = false }: { mobileHeader?: boolean }) {
   const [status, setStatus] = useState<Status>('loading');
   const [busy, setBusy] = useState(false);
 
@@ -114,16 +114,18 @@ export function WebPushBellButton() {
             ? 'Avisos activos'
             : 'Activar avisos de citas'
       }
-      className={`rounded-full border p-2 transition-colors disabled:opacity-50 ${
+      className={`flex shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-50 ${
+        mobileHeader ? 'h-9 w-9' : 'p-2'
+      } ${
         isOn
-          ? 'border-red-500/50 bg-red-500/10 text-red-500 hover:border-red-400 hover:text-red-400'
+          ? 'border-emerald-500/55 bg-emerald-500/15 text-emerald-400 hover:border-emerald-400 hover:text-emerald-300'
           : 'border-white/15 text-pearl hover:border-border-strong hover:text-cream'
       }`}
     >
       {busy ? (
-        <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+        <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden />
       ) : (
-        <Icon className="h-5 w-5" aria-hidden />
+        <Icon className="h-[18px] w-[18px]" aria-hidden />
       )}
     </button>
   );

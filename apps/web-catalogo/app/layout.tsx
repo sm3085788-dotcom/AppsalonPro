@@ -101,7 +101,7 @@ export default async function RootLayout({
                 userEmail={user?.email ?? null}
                 userDisplayName={displayName}
               />
-              <main className="flex-1 pt-[calc(3.5rem+env(safe-area-inset-top,0px))] md:pt-[calc(4.5rem+env(safe-area-inset-top,0px))]">
+              <main className="flex-1 pt-[calc(3.15rem+env(safe-area-inset-top,0px))] md:pt-[calc(4.5rem+env(safe-area-inset-top,0px))]">
                 {children}
               </main>
               <SiteFooter branches={branches} />
